@@ -1,0 +1,394 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id                  String                 @id @default(cuid())
+  email               String                 @unique
+  name                String?
+  passwordHash        String
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  kanoInvitationsSent KanoSurveyInvitation[]
+  migrations          MigrationHistory[]
+  projectMemberships  ProjectMember[]
+  ownedProjects       Project[]              @relation("ProjectOwner")
+
+  @@map("users")
+}
+
+model Project {
+  id                       String                    @id @default(cuid())
+  name                     String
+  description              String?
+  ownerId                  String
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  businessPlanFile         String?
+  detailedDescription      String?
+  attributeFitnesses       AttributeFitness[]
+  benchmarks               Benchmark[]
+  requirements             CustomerRequirement[]
+  kanoResponses            KanoResponse[]
+  kanoInvitations          KanoSurveyInvitation[]
+  migrations               MigrationHistory[]
+  productAttributes        ProductAttribute[]
+  members                  ProjectMember[]
+  owner                    User                      @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  qfdMatrices              QFDMatrix[]
+  specFunctions            SpecFunction[]
+  techCorrelations         TechCorrelation[]
+  technicalCharacteristics TechnicalCharacteristic[]
+  fitnessMatrix            FitnessMatrix?
+  techTreeEntries          TechTreeEntry[]
+  improvementItems         ImprovementItem[]
+  targetSpecs              TargetSpec[]
+  techRoadmaps             TechRoadmap[]
+  devPlans                 DevPlan[]
+  salesEstimates           SalesEstimate[]
+
+  @@index([ownerId])
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String    @id @default(cuid())
+  projectId String
+  userId    String
+  role      String
+  invitedBy String?
+  invitedAt DateTime  @default(now())
+  joinedAt  DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+model SpecFunction {
+  id         String  @id @default(cuid())
+  projectId  String
+  level      String
+  parentId   String?
+  name       String
+  technology String?
+  order      Int     @default(0)
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("spec_functions")
+}
+
+model CustomerRequirement {
+  id            String         @id @default(cuid())
+  projectId     String
+  category      String
+  subcategory   String?
+  requirement   String
+  order         Int            @default(0)
+  createdAt     DateTime       @default(now())
+  benchmarks    Benchmark[]
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kanoResponses KanoResponse[]
+  qfdMatrices   QFDMatrix[]
+
+  @@index([projectId])
+  @@map("customer_requirements")
+}
+
+model TechnicalCharacteristic {
+  id            String            @id @default(cuid())
+  projectId     String
+  name          String
+  unit          String?
+  targetValue   String?
+  qfdMatrices   QFDMatrix[]
+  correlations2 TechCorrelation[] @relation("Tech2")
+  correlations1 TechCorrelation[] @relation("Tech1")
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("technical_characteristics")
+}
+
+model KanoSurveyInvitation {
+  id          String         @id @default(cuid())
+  projectId   String
+  email       String
+  token       String         @unique
+  invitedBy   String
+  expiresAt   DateTime
+  respondedAt DateTime?
+  isUsed      Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  responses   KanoResponse[]
+  inviter     User           @relation(fields: [invitedBy], references: [id])
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, email])
+  @@index([token])
+  @@map("kano_survey_invitations")
+}
+
+model KanoResponse {
+  id              String               @id @default(cuid())
+  projectId       String
+  requirementId   String
+  invitationId    String
+  respondentEmail String
+  positiveAnswer  Int
+  negativeAnswer  Int
+  kanoCategory    String
+  respondedAt     DateTime             @default(now())
+  invitation      KanoSurveyInvitation @relation(fields: [invitationId], references: [id])
+  requirement     CustomerRequirement  @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  project         Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([requirementId])
+  @@index([invitationId])
+  @@map("kano_responses")
+}
+
+model QFDMatrix {
+  id              String                  @id @default(cuid())
+  projectId       String
+  requirementId   String
+  technicalCharId String
+  strength        String
+  currentScore    Float?
+  competitorScore Float?
+  techChar        TechnicalCharacteristic @relation(fields: [technicalCharId], references: [id], onDelete: Cascade)
+  requirement     CustomerRequirement     @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  project         Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, requirementId, technicalCharId])
+  @@map("qfd_matrices")
+}
+
+model ProductAttribute {
+  id             String             @id @default(cuid())
+  projectId      String
+  productName    String?
+  customerName   String?
+  marketSegment  String?
+  customerNeed   String?
+  benefit        String?
+  attribute      String?
+  techCapability String?
+  order          Int                @default(0)
+  fitnesses      AttributeFitness[]
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("product_attributes")
+}
+
+model AttributeFitness {
+  id           String           @id @default(cuid())
+  projectId    String
+  attributeId  String
+  importance   Int              @default(0)
+  currentLevel Int              @default(0)
+  targetLevel  Int              @default(0)
+  note         String?
+  attribute    ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([attributeId])
+  @@map("attribute_fitnesses")
+}
+
+model TechCorrelation {
+  id          String                  @id @default(cuid())
+  projectId   String
+  techId1     String
+  techId2     String
+  correlation String
+  tech2       TechnicalCharacteristic @relation("Tech2", fields: [techId2], references: [id], onDelete: Cascade)
+  tech1       TechnicalCharacteristic @relation("Tech1", fields: [techId1], references: [id], onDelete: Cascade)
+  project     Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, techId1, techId2])
+  @@map("tech_correlations")
+}
+
+model Benchmark {
+  id            String              @id @default(cuid())
+  projectId     String
+  requirementId String
+  company       String
+  score         Int                 @default(0)
+  requirement   CustomerRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  project       Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, requirementId, company])
+  @@map("benchmarks")
+}
+
+model MigrationHistory {
+  id             String   @id @default(cuid())
+  projectId      String
+  userId         String
+  fileName       String
+  fileSize       Int
+  sheetsMigrated String
+  status         String
+  errorLog       String?
+  migratedAt     DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("migration_histories")
+}
+
+model AnalyticsInsight {
+  id           String   @id @default(cuid())
+  insightType  String
+  category     String?
+  data         String
+  projectCount Int
+  lastUpdated  DateTime @default(now())
+
+  @@map("analytics_insights")
+}
+
+// ─────────────────────────────────────────
+// 적합도 매트릭스 (FitnessWrapper)
+// ─────────────────────────────────────────
+model FitnessMatrix {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  marketsJson    String
+  matrixJson     String
+  managerComment String?
+  consultantNote String?
+  updatedAt      DateTime @updatedAt
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("fitness_matrices")
+}
+
+// ─────────────────────────────────────────
+// 기능기술체계 (TechTreeTable)
+// ─────────────────────────────────────────
+model TechTreeEntry {
+  id                 String  @id @default(cuid())
+  projectId          String
+  customerVoice      String?
+  coreSpec           String?
+  subSpec            String?
+  techCharacteristic String?
+  order              Int     @default(0)
+  project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("tech_tree_entries")
+}
+
+// ─────────────────────────────────────────
+// 개선포인트 (ImprovementsTable)
+// ─────────────────────────────────────────
+model ImprovementItem {
+  id              String  @id @default(cuid())
+  projectId       String
+  type            String  // "need" | "feature"
+  content         String?
+  improvementRate String?
+  devProportion   String?
+  priority        String?
+  order           Int     @default(0)
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("improvement_items")
+}
+
+// ─────────────────────────────────────────
+// 목표사양 (TargetSpecTable)
+// ─────────────────────────────────────────
+model TargetSpec {
+  id              String  @id @default(cuid())
+  projectId       String
+  category        String?
+  subCategory     String?
+  specItem        String?
+  unit            String?
+  currentValue    String?
+  competitorValue String?
+  targetValue     String?
+  note            String?
+  order           Int     @default(0)
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("target_specs")
+}
+
+// ─────────────────────────────────────────
+// 기술로드맵 (TechRoadmapTable)
+// ─────────────────────────────────────────
+model TechRoadmap {
+  id           String  @id @default(cuid())
+  projectId    String
+  category     String?
+  techItem     String?
+  currentLevel String?
+  q1           String?
+  q2           String?
+  q3           String?
+  q4           String?
+  targetLevel  String?
+  owner        String?
+  order        Int     @default(0)
+  project      Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("tech_roadmaps")
+}
+
+// ─────────────────────────────────────────
+// 개발계획 (DevPlanTable)
+// ─────────────────────────────────────────
+model DevPlan {
+  id          String  @id @default(cuid())
+  projectId   String
+  phase       String?
+  task        String?
+  description String?
+  startDate   String?
+  endDate     String?
+  owner       String?
+  status      String  @default("미시작")
+  order       Int     @default(0)
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("dev_plans")
+}
+
+// ─────────────────────────────────────────
+// 매출추정 (SalesTable)
+// ─────────────────────────────────────────
+model SalesEstimate {
+  id         String  @id @default(cuid())
+  projectId  String
+  customer   String?
+  amount     Float   @default(0)
+  competitor String?
+  order      Int     @default(0)
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("sales_estimates")
+}
