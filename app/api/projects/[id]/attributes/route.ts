@@ -1,16 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api/attributes');
 
-// GET: 프로젝트의 제품 속성서 조회
+// GET: 프로젝트의 제품 속성 조회
 export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
         const { id: projectId } = await params;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
         });
@@ -37,13 +40,15 @@ export async function GET(
     }
 }
 
-// POST: 제품 속성서 저장 (전체 교체)
+// POST: 제품 속성 저장(전체 교체)
 export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
         const { id: projectId } = await params;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
         });
@@ -78,36 +83,38 @@ export async function POST(
             });
         });
 
-        log.info('제품 속성서 저장 성공', { projectId, count: newAttributes.length });
+        log.info('제품 속성 저장 성공', { projectId, count: newAttributes.length });
 
         return NextResponse.json({
             attributes: updatedAttrs,
-            message: '제품 속성서가 저장되었습니다',
+            message: '제품 속성이 저장되었습니다',
         });
     } catch (error: unknown) {
-        log.error('제품 속성서 저장 실패', error);
+        log.error('제품 속성 저장 실패', error);
         return NextResponse.json(
-            { error: '제품 속성서 저장 실패' },
+            { error: '제품 속성 저장 실패' },
             { status: 500 }
         );
     }
 }
 
-// DELETE: 제품 속성서 리셋
+// DELETE: 제품 속성 리셋
 export async function DELETE(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
         const { id: projectId } = await params;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const deleteResult = await prisma.productAttribute.deleteMany({
             where: { projectId },
         });
 
-        log.info('제품 속성서 리셋', { projectId, removed: deleteResult.count });
+        log.info('제품 속성 리셋', { projectId, removed: deleteResult.count });
         return NextResponse.json({ success: true, removed: deleteResult.count });
     } catch (error: unknown) {
-        log.error('리셋 실패', error);
-        return NextResponse.json({ error: '리셋 실패' }, { status: 500 });
+        log.error('由ъ뀑 ?ㅽ뙣', error);
+        return NextResponse.json({ error: '由ъ뀑 ?ㅽ뙣' }, { status: 500 });
     }
 }

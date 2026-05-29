@@ -65,10 +65,10 @@ export function aggregateKanoResponses(
 
     const total = responses.length;
 
-    // 가장 많은 카테고리 찾기 (Q와 R 제외)
-    const validCategories: KanoCategory[] = ['M', 'O', 'A', 'I'];
+    // 가장 많은 카테고리 찾기 (이전엔 Q, R 제외했으나 지금은 모두 포함)
+    const validCategories: KanoCategory[] = ['M', 'O', 'A', 'I', 'R', 'Q'];
     let dominantCategory: KanoCategory = 'I';
-    let maxCount = 0;
+    let maxCount = -1; // 초기값을 -1로 하여 0개 항목이더라도 첫 항목이 들어가게 함
 
     for (const cat of validCategories) {
         if (counts[cat] > maxCount) {
@@ -77,11 +77,31 @@ export function aggregateKanoResponses(
         }
     }
 
+    // 만약 모두 0건이면 I로 리턴
+    if (total === 0) {
+        dominantCategory = 'I';
+    }
+
     return {
         ...counts,
         total,
         dominantCategory,
     };
+}
+
+/**
+ * Kano 영문 카테고리를 한글 명칭으로 변환
+ */
+export function translateKanoCategory(cat: KanoCategory): string {
+    switch (cat) {
+        case 'M': return '당연적';
+        case 'O': return '일원적';
+        case 'A': return '매력적';
+        case 'I': return '무관심';
+        case 'R': return '역';
+        case 'Q': return '회의적';
+        default: return '알 수 없음';
+    }
 }
 
 /**

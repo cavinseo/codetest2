@@ -8,6 +8,8 @@ interface Requirement {
     category: string;
     subcategory?: string;
     requirement: string;
+    kanoPositiveQ?: string | null;
+    kanoNegativeQ?: string | null;
     order: number;
 }
 
@@ -108,7 +110,8 @@ export default function SurveyPage() {
             });
 
             if (!response.ok) {
-                throw new Error('응답 제출 실패');
+                const errorData = await response.json();
+                throw new Error(errorData.error || errorData.message || '응답 제출 실패');
             }
 
             alert('설문 응답이 완료되었습니다. 감사합니다!');
@@ -121,11 +124,11 @@ export default function SurveyPage() {
     };
 
     const answerOptions: { value: KanoAnswer; label: string; emoji: string }[] = [
-        { value: 'LIKE', label: '매우 만족', emoji: '😍' },
-        { value: 'EXPECT', label: '당연함', emoji: '😊' },
-        { value: 'NEUTRAL', label: '상관없음', emoji: '😐' },
-        { value: 'TOLERATE', label: '견딜만함', emoji: '😕' },
-        { value: 'DISLIKE', label: '매우 불만', emoji: '😠' },
+        { value: 'LIKE', label: '마음에 든다', emoji: '😍' },
+        { value: 'EXPECT', label: '당연하다', emoji: '😊' },
+        { value: 'NEUTRAL', label: '아무런느낌이 없다.', emoji: '😐' },
+        { value: 'TOLERATE', label: '하는수 없다.', emoji: '😕' },
+        { value: 'DISLIKE', label: '마음에 안든다', emoji: '😠' },
     ];
 
     if (isLoading) {
@@ -212,9 +215,15 @@ export default function SurveyPage() {
                                 <span className="text-2xl">👍</span>
                                 <h3 className="text-lg font-bold text-white">긍정 질문</h3>
                             </div>
-                            <p className="text-gray-300">
-                                만약 <strong className="text-blue-400">{currentReq.requirement}</strong> 기능이{' '}
-                                <strong className="text-green-400">있다면</strong> 어떻게 느끼시겠습니까?
+                            <p className="text-gray-300 text-lg">
+                                {currentReq.kanoPositiveQ ? (
+                                    <span>{currentReq.kanoPositiveQ}</span>
+                                ) : (
+                                    <span>
+                                        만약 <strong className="text-blue-400">{currentReq.requirement}</strong> 기능이{' '}
+                                        <strong className="text-green-400">있다면</strong> 어떻게 느끼시겠습니까?
+                                    </span>
+                                )}
                             </p>
                         </div>
                         <div className="grid grid-cols-1 gap-3">
@@ -244,9 +253,15 @@ export default function SurveyPage() {
                                 <span className="text-2xl">👎</span>
                                 <h3 className="text-lg font-bold text-white">부정 질문</h3>
                             </div>
-                            <p className="text-gray-300">
-                                만약 <strong className="text-blue-400">{currentReq.requirement}</strong> 기능이{' '}
-                                <strong className="text-red-400">없다면</strong> 어떻게 느끼시겠습니까?
+                            <p className="text-gray-300 text-lg">
+                                {currentReq.kanoNegativeQ ? (
+                                    <span>{currentReq.kanoNegativeQ}</span>
+                                ) : (
+                                    <span>
+                                        만약 <strong className="text-blue-400">{currentReq.requirement}</strong> 기능이{' '}
+                                        <strong className="text-red-400">없다면</strong> 어떻게 느끼시겠습니까?
+                                    </span>
+                                )}
                             </p>
                         </div>
                         <div className="grid grid-cols-1 gap-3">

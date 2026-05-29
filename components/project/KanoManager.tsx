@@ -5,12 +5,17 @@ import Link from 'next/link';
 import KanoSurveyPreview from '@/components/KanoSurveyPreview';
 import Kano2DChart from '@/components/Kano2DChart';
 import CategoryPieChart from '@/components/CategoryPieChart';
+import KanoAggregationTable from '@/components/project/KanoAggregationTable';
+import KanoRespondentTable from '@/components/project/KanoRespondentTable';
+import { getKanoTopic } from '@/lib/utils/korean-utils';
 
 interface Requirement {
     id: string;
     category: string;
     subcategory?: string;
     requirement: string;
+    kanoPositiveQ?: string | null;
+    kanoNegativeQ?: string | null;
     order: number;
 }
 
@@ -32,6 +37,8 @@ interface AnalysisResult {
         I: number;
         R: number;
         Q: number;
+        total: number;
+        dominantCategory: any;
     };
     better: number;
     worse: number;
@@ -68,14 +75,22 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [createdFormUrl, setCreatedFormUrl] = useState('');
     const [createdFormId, setCreatedFormId] = useState('');
     const [isImporting, setIsImporting] = useState(false);
+    const [isUploadingExcel, setIsUploadingExcel] = useState(false);
+    const [excelFile, setExcelFile] = useState<File | null>(null);
     const [importMessage, setImportMessage] = useState('');
     const [projectName, setProjectName] = useState('');
 
     const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
-    const [analysisViewMode, setAnalysisViewMode] = useState<'list' | 'charts'>('charts');
+    const [analysisViewMode, setAnalysisViewMode] = useState<'list' | 'charts' | 'table' | 'respondents'>('charts');
+    const [respondentData, setRespondentData] = useState<any[]>([]);
+
+    // Kano 질문 직접 입력 관리
+    const [kanoQuestions, setKanoQuestions] = useState<Record<string, { positive: string; negative: string }>>({});
+    const [isSavingQuestions, setIsSavingQuestions] = useState(false);
 
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const excelInputRef = useRef<HTMLInputElement | null>(null);
 
     const showToast = (message: string, type: ToastType = 'success') => {
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -98,7 +113,18 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             const reqRes = await fetch(`/api/projects/${projectId}/requirements`);
             if (reqRes.ok) {
                 const reqData = await reqRes.json();
-                setRequirements(reqData.requirements || []);
+                const reqs = reqData.requirements || [];
+                setRequirements(reqs);
+                // Kano 질문 초기값 — DB에 저장된 값 우선, 없으면 getKanoTopic 기반 기본값
+                const qMap: Record<string, { positive: string; negative: string }> = {};
+                for (const r of reqs) {
+                    const topic = getKanoTopic(r.requirement);
+                    qMap[r.id] = {
+                        positive: r.kanoPositiveQ || `${topic}(이)라면 어떻게 생각하십니까?`,
+                        negative: r.kanoNegativeQ || `${topic}(이)가 아니라면 어떻게 생각하십니까?`,
+                    };
+                }
+                setKanoQuestions(qMap);
             }
 
             const invRes = await fetch(`/api/projects/${projectId}/kano/invitations`);
@@ -117,6 +143,12 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             if (analysisRes.ok) {
                 const analysisData = await analysisRes.json();
                 setAnalysis(analysisData);
+            }
+
+            const respondentsRes = await fetch(`/api/projects/${projectId}/kano/responses`);
+            if (respondentsRes.ok) {
+                const respData = await respondentsRes.json();
+                setRespondentData(respData.respondents || []);
             }
         } catch (error) {
             console.error('데이터 로드 실패:', error);
@@ -208,6 +240,74 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             showToast(error.message, 'error');
         } finally {
             setIsImporting(false);
+        }
+    };
+
+    const handleUploadExcelResponses = async () => {
+        if (!excelFile) {
+            showToast('업로드할 엑셀 파일을 선택하세요.', 'error');
+            return;
+        }
+
+        setIsUploadingExcel(true);
+        setImportMessage('');
+        try {
+            const formData = new FormData();
+            formData.append('file', excelFile);
+
+            const res = await fetch(`/api/projects/${projectId}/kano/upload-excel`, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '엑셀 업로드에 실패했습니다.');
+
+            setImportMessage(`success:${data.message}`);
+            showToast(data.message, 'success');
+            setExcelFile(null);
+            if (excelInputRef.current) excelInputRef.current.value = '';
+            await loadData();
+        } catch (error: any) {
+            const message = error.message || '엑셀 업로드에 실패했습니다.';
+            setImportMessage(`error:${message}`);
+            showToast(message, 'error');
+        } finally {
+            setIsUploadingExcel(false);
+        }
+    };
+
+    // Kano \uc9c8\ubb38 \uc800\uc7a5
+    const handleSaveKanoQuestions = async () => {
+        setIsSavingQuestions(true);
+        try {
+            // \uae30\uc874 \uc694\uad6c\uc0ac\ud56d\uc5d0 Kano \uc9c8\ubb38\uc744 \ud569\uccd9\ud558\uc5ec \uc800\uc7a5
+            const updatedRequirements = requirements.map((req) => ({
+                id: req.id,
+                category: req.category,
+                subcategory: req.subcategory ?? null,
+                requirement: req.requirement,
+                kanoPositiveQ: kanoQuestions[req.id]?.positive || null,
+                kanoNegativeQ: kanoQuestions[req.id]?.negative || null,
+                order: req.order,
+            }));
+            const res = await fetch(`/api/projects/${projectId}/requirements`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requirements: updatedRequirements }),
+            });
+            
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || errorData.message || '\uc800\uc7a5 \uc2e4\ud328');
+            }
+            
+            showToast('Kano \uc124\ubb38 \uc9c8\ubb38\uc774 \uc800\uc7a5\ub418\uc5c8\uc2b5\ub2c8\ub2e4!', 'success');
+            await loadData(); // \ucd5c\uc2e0 \ub370\uc774\ud130 \ub2e4\uc2dc \ubd88\ub7ec\uc624\uae30
+        } catch (error: any) {
+            console.error('Kano Save Error:', error);
+            showToast(`\uc624\ub958: ${error.message}`, 'error');
+        } finally {
+            setIsSavingQuestions(false);
         }
     };
 
@@ -393,7 +493,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 </div>
                             ) : (
                                 <div className="space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                                         <button
                                             onClick={() => setShowPreview(true)}
                                             className="p-4 bg-white/[0.03] border border-white/[0.08] hover:bg-white/[0.06] hover:border-white/[0.12] rounded-xl transition-all text-left group"
@@ -442,6 +542,34 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                             <h3 className="text-emerald-300 text-sm font-semibold">{isImporting ? '가져오는 중...' : '응답 가져오기'}</h3>
                                             <p className="text-xs text-gray-500 mt-1">{createdFormId ? 'Google Forms 응답을 가져옵니다' : '먼저 설문지를 생성하세요'}</p>
                                         </button>
+
+                                        <div className="p-4 bg-amber-500/[0.08] border border-amber-500/20 rounded-xl text-left">
+                                            <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center mb-3">
+                                                {isUploadingExcel ? (
+                                                    <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                    <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 16V4m0 12l-4-4m4 4l4-4M4 20h16" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                            <h3 className="text-amber-300 text-sm font-semibold">엑셀 응답 업로드</h3>
+                                            <p className="text-xs text-gray-500 mt-1 mb-3">KANO질문지 결과 파일을 업로드합니다</p>
+                                            <input
+                                                ref={excelInputRef}
+                                                type="file"
+                                                accept=".xlsx,.xls"
+                                                onChange={(event) => setExcelFile(event.target.files?.[0] ?? null)}
+                                                className="block w-full text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-200 hover:file:bg-amber-500/25"
+                                            />
+                                            <button
+                                                onClick={handleUploadExcelResponses}
+                                                disabled={isUploadingExcel || !excelFile}
+                                                className="mt-3 w-full px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:hover:bg-amber-600 text-white text-xs font-semibold transition-colors"
+                                            >
+                                                {isUploadingExcel ? '업로드 중...' : '업로드'}
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* 생성된 폼 URL */}
@@ -478,62 +606,110 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                         </div>
                     )}
 
-                    {/* 설문 구성 */}
+                    {/* 설문 질문 구성 */}
                     {requirements.length > 0 && (
                         <div className="card">
-                            <h2 className="text-lg font-display font-bold text-white mb-4 flex items-center gap-2">
-                                <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                                </svg>
-                                설문 구성 <span className="text-primary-400">({requirements.length * 2}개 질문)</span>
-                            </h2>
-                            <div className="bg-primary-500/[0.06] border border-primary-500/20 rounded-xl p-4 mb-4">
-                                <p className="text-sm text-gray-300">
-                                    각 요구사항마다 <strong className="text-white">긍정 질문</strong>과 <strong className="text-white">부정 질문</strong> 2개씩 자동 생성됩니다.
-                                    응답자는 5점 척도(매우 좋음 ~ 매우 싫음)로 답변합니다.
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                                    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                    </svg>
+                                    설문 질문 구성 <span className="text-primary-400">({requirements.length * 2}개 질문)</span>
+                                </h2>
+                                <button
+                                    onClick={handleSaveKanoQuestions}
+                                    disabled={isSavingQuestions}
+                                    className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50"
+                                >
+                                    {isSavingQuestions ? (
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    )}
+                                    질문 저장
+                                </button>
+                            </div>
+
+                            <div className="bg-amber-500/[0.06] border border-amber-500/20 rounded-xl p-4 mb-5">
+                                <p className="text-sm text-amber-200 flex items-start gap-2">
+                                    <svg className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <span>
+                                        <strong className="text-amber-300">설문 주제</strong>는 자동 추출되며,
+                                        <strong className="text-amber-300"> 긍정·부정 질문</strong>은 직접 수정하신 후 <strong className="text-white">「질문 저장」</strong> 버튼을 눌러주세요.
+                                        저장된 질문이 미리보기 및 Google Forms에 반영됩니다.
+                                    </span>
                                 </p>
                             </div>
 
-                            <div className="space-y-3">
-                                {requirements.map((req, index) => (
-                                    <div key={req.id} className="border border-white/[0.06] rounded-xl overflow-hidden">
-                                        <div className="bg-white/[0.03] px-4 py-3 flex items-center gap-3">
-                                            <span className="w-7 h-7 flex items-center justify-center bg-primary-500/20 text-primary-300 rounded-lg text-xs font-bold flex-shrink-0">
-                                                {index + 1}
-                                            </span>
-                                            <div className="flex-1 min-w-0">
-                                                {req.category && (
-                                                    <span className="text-xs text-blue-400">{req.category}{req.subcategory && ` > ${req.subcategory}`}</span>
-                                                )}
-                                                <p className="text-white text-sm font-medium truncate">{req.requirement}</p>
+                            <div className="space-y-4">
+                                {requirements.map((req, index) => {
+                                    const topic = getKanoTopic(req.requirement);
+                                    const q = kanoQuestions[req.id] || { positive: '', negative: '' };
+                                    return (
+                                        <div key={req.id} className="border border-white/[0.08] rounded-xl overflow-hidden">
+                                            {/* 주제 헤더 */}
+                                            <div className="bg-white/[0.04] px-4 py-3 flex items-center gap-3 border-b border-white/[0.06]">
+                                                <span className="w-7 h-7 flex items-center justify-center bg-primary-500/20 text-primary-300 rounded-lg text-xs font-bold flex-shrink-0">
+                                                    {index + 1}
+                                                </span>
+                                                <div className="flex-1 min-w-0">
+                                                    {req.category && (
+                                                        <span className="text-xs text-blue-400">{req.category}{req.subcategory && ` > ${req.subcategory}`}</span>
+                                                    )}
+                                                    <p className="text-gray-400 text-xs mt-0.5">원본: {req.requirement}</p>
+                                                </div>
+                                                <div className="flex items-center gap-2 flex-shrink-0">
+                                                    <span className="text-[10px] text-gray-500 uppercase tracking-wider">설문 주제</span>
+                                                    <span className="bg-primary-500/15 border border-primary-500/30 text-primary-300 text-xs font-semibold px-3 py-1 rounded-full">
+                                                        {topic}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* 질문 입력 폼 */}
+                                            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {/* 긍정 질문 */}
+                                                <div>
+                                                    <label className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                                                        <span className="w-4 h-4 rounded-full bg-emerald-500/20 flex items-center justify-center">👍</span>
+                                                        긍정 질문 (Functional)
+                                                    </label>
+                                                    <textarea
+                                                        value={q.positive}
+                                                        onChange={(e) => setKanoQuestions(prev => ({
+                                                            ...prev,
+                                                            [req.id]: { ...prev[req.id], positive: e.target.value }
+                                                        }))}
+                                                        rows={2}
+                                                        placeholder={`${topic}(이)라면 어떻게 생각하십니까?`}
+                                                        className="w-full px-3 py-2 bg-emerald-500/[0.05] border border-emerald-500/20 hover:border-emerald-500/40 focus:border-emerald-500/60 rounded-lg text-white text-sm resize-none transition-colors outline-none placeholder:text-gray-600"
+                                                    />
+                                                </div>
+                                                {/* 부정 질문 */}
+                                                <div>
+                                                    <label className="text-[10px] font-semibold text-red-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                                                        <span className="w-4 h-4 rounded-full bg-red-500/20 flex items-center justify-center">👎</span>
+                                                        부정 질문 (Dysfunctional)
+                                                    </label>
+                                                    <textarea
+                                                        value={q.negative}
+                                                        onChange={(e) => setKanoQuestions(prev => ({
+                                                            ...prev,
+                                                            [req.id]: { ...prev[req.id], negative: e.target.value }
+                                                        }))}
+                                                        rows={2}
+                                                        placeholder={`${topic}(이)가 아니라면 어떻게 생각하십니까?`}
+                                                        className="w-full px-3 py-2 bg-red-500/[0.05] border border-red-500/20 hover:border-red-500/40 focus:border-red-500/60 rounded-lg text-white text-sm resize-none transition-colors outline-none placeholder:text-gray-600"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="p-3 space-y-2">
-                                            <div className="flex items-start gap-3 p-3 bg-emerald-500/[0.05] border border-emerald-500/15 rounded-lg">
-                                                <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                                    <svg className="w-3 h-3 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                    </svg>
-                                                </div>
-                                                <div className="flex-1">
-                                                    <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">긍정 질문 (Functional)</span>
-                                                    <p className="text-gray-300 text-xs mt-0.5">&quot;만약 <span className="text-emerald-300 font-medium">{req.requirement}</span> 기능이 있다면?&quot;</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-start gap-3 p-3 bg-red-500/[0.05] border border-red-500/15 rounded-lg">
-                                                <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                                    <svg className="w-3 h-3 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                    </svg>
-                                                </div>
-                                                <div className="flex-1">
-                                                    <span className="text-[10px] font-semibold text-red-400 uppercase tracking-wider">부정 질문 (Dysfunctional)</span>
-                                                    <p className="text-gray-300 text-xs mt-0.5">&quot;만약 <span className="text-red-300 font-medium">{req.requirement}</span> 기능이 없다면?&quot;</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
@@ -638,33 +814,44 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
 
                             {/* 보기 토글 */}
                             <div className="flex justify-center">
-                                <div className="flex gap-1 p-1 bg-white/[0.04] border border-white/[0.06] rounded-xl">
+                                <div className="flex gap-1 p-1 bg-white/[0.04] border border-white/[0.06] rounded-xl flex-wrap">
                                     <button
                                         onClick={() => setAnalysisViewMode('charts')}
                                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${analysisViewMode === 'charts' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}`}
                                     >
                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
                                         </svg>
-                                        차트 보기
+                                        TIMKO
                                     </button>
                                     <button
-                                        onClick={() => setAnalysisViewMode('list')}
-                                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${analysisViewMode === 'list' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}`}
+                                        onClick={() => setAnalysisViewMode('table')}
+                                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${analysisViewMode === 'table' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}`}
                                     >
                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                         </svg>
-                                        목록 보기
+                                        분석 집계표
+                                    </button>
+                                    <button
+                                        onClick={() => setAnalysisViewMode('respondents')}
+                                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${analysisViewMode === 'respondents' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}`}
+                                    >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                        </svg>
+                                        응답자별 보기
                                     </button>
                                 </div>
                             </div>
+
 
                             {/* 차트 뷰 */}
                             {analysisViewMode === 'charts' && (
                                 <div className="space-y-6">
                                     <div className="card">
-                                        <h3 className="text-lg font-display font-bold text-white mb-4">Kano 2D 분석 차트</h3>
+                                        <h3 className="text-lg font-display font-bold text-white mb-4">TIMKO 분석 차트</h3>
                                         <div className="flex justify-center">
                                             <Kano2DChart
                                                 requirements={analysis.requirements.map((result, idx) => {
@@ -684,62 +871,25 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                             />
                                         </div>
                                     </div>
-                                    <div className="card">
-                                        <h3 className="text-lg font-display font-bold text-white mb-4">카테고리 분포</h3>
-                                        <div className="flex justify-center">
-                                            <CategoryPieChart
-                                                distribution={analysis.requirements.reduce(
-                                                    (acc, result) => {
-                                                        const dominant = Object.entries(result.aggregated).reduce(
-                                                            (max, [cat, count]) => count > max.count ? { category: cat, count } : max,
-                                                            { category: 'I', count: 0 }
-                                                        );
-                                                        acc[dominant.category as keyof typeof acc]++;
-                                                        return acc;
-                                                    },
-                                                    { M: 0, O: 0, A: 0, I: 0, R: 0, Q: 0 }
-                                                )}
-                                                total={analysis.requirements.length}
-                                            />
-                                        </div>
-                                    </div>
                                 </div>
                             )}
 
-                            {/* 목록 뷰 */}
-                            {analysisViewMode === 'list' && (
-                                <div className="space-y-3">
-                                    {analysis.requirements.map((result, index) => {
-                                        const reqInfo = getRequirementInfo(result.requirementId);
-                                        const dominantCategory = Object.entries(result.aggregated).reduce(
-                                            (max, [cat, count]) => count > max.count ? { category: cat, count } : max,
-                                            { category: 'I', count: 0 }
-                                        );
-                                        return (
-                                            <div key={result.requirementId} className="card">
-                                                <div className="flex items-start justify-between mb-3">
-                                                    <div className="flex items-start gap-3">
-                                                        <span className="text-xs text-gray-600 font-mono mt-1">#{index + 1}</span>
-                                                        <h3 className="text-white font-semibold">{reqInfo?.requirement || `요구사항 ${result.requirementId}`}</h3>
-                                                    </div>
-                                                    <span className={`px-2.5 py-1 rounded-lg border text-xs font-bold flex-shrink-0 ${getCategoryColor(dominantCategory.category)}`}>
-                                                        {dominantCategory.category} · {getCategoryName(dominantCategory.category).split(' ')[0]}
-                                                    </span>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div className="bg-emerald-500/[0.06] border border-emerald-500/15 rounded-xl p-3">
-                                                        <p className="text-xs text-gray-500 mb-1">Better (충족 시 만족도↑)</p>
-                                                        <p className="text-xl font-bold font-display text-emerald-400">{result.better.toFixed(2)}</p>
-                                                    </div>
-                                                    <div className="bg-red-500/[0.06] border border-red-500/15 rounded-xl p-3">
-                                                        <p className="text-xs text-gray-500 mb-1">Worse (미충족 시 불만↑)</p>
-                                                        <p className="text-xl font-bold font-display text-red-400">{Math.abs(result.worse).toFixed(2)}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                            {/* 집계표 표 뷰 */}
+                            {analysisViewMode === 'table' && (
+                                <KanoAggregationTable 
+                                    analysis={analysis.requirements.map(req => ({
+                                        ...req, 
+                                        requirementName: getRequirementInfo(req.requirementId)?.requirement 
+                                    }))} 
+                                />
+                            )}
+
+                            {/* 제출자별 보기 */}
+                            {analysisViewMode === 'respondents' && (
+                                <KanoRespondentTable 
+                                    respondents={respondentData}
+                                    requirements={requirements}
+                                />
                             )}
                         </>
                     )}

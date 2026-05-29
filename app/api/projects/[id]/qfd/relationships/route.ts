@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 
@@ -12,7 +13,7 @@ const relationshipSchema = z.object({
     strength: z.enum(['STRONG', 'MEDIUM', 'WEAK', 'NONE']),
 });
 
-// GET: 관계 조회
+// GET: 愿怨?議고쉶
 export async function GET(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -20,14 +21,16 @@ export async function GET(
     const params = await props.params;
     try {
         const projectId = params.id;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const projectRels = await prisma.qFDMatrix.findMany({
             where: { projectId },
         });
 
         return NextResponse.json({ relationships: projectRels });
     } catch (error: unknown) {
-        log.error('관계 조회 실패', error);
-        return NextResponse.json({ error: '관계 조회 실패' }, { status: 500 });
+        log.error('愿怨?議고쉶 ?ㅽ뙣', error);
+        return NextResponse.json({ error: '愿怨?議고쉶 ?ㅽ뙣' }, { status: 500 });
     }
 }
 
@@ -39,6 +42,8 @@ export async function POST(
     const params = await props.params;
     try {
         const projectId = params.id;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const body = await request.json();
         const data = relationshipSchema.parse(body);
 

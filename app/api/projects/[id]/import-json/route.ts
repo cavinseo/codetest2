@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api/import-json');
@@ -9,6 +10,8 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     const { id: projectId } = await params;
+    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    if (accessResult instanceof NextResponse) return accessResult;
 
     try {
         const importData = await request.json();
@@ -31,10 +34,10 @@ export async function POST(
             );
         }
 
-        // 해당 프로젝트의 기존 데이터 삭제 후 새 데이터로 교체 (트랜잭션)
+        // 해당 프로젝트의 기존 데이터를 삭제하고 새 데이터로 교체(트랜잭션)
         await prisma.$transaction(async (tx: any) => {
-            // 삭제 순서 주의: 외래 키 제약 조건 (onDelete Cascade가 설정되어 있지만 명시적으로 처리하거나 project를 유지하며 하위 데이터만 삭제)
-            // 여기서는 project 자체는 유지하고 하위 컬렉션만 교체
+            // 삭제 순서 주의: 프로젝트는 유지하고 하위 데이터만 명시적으로 삭제
+            // ?ш린?쒕뒗 project ?먯껜???좎??섍퀬 ?섏쐞 而щ젆?섎쭔 援먯껜
             await tx.specFunction.deleteMany({ where: { projectId } });
             await tx.productAttribute.deleteMany({ where: { projectId } });
             await tx.attributeFitness.deleteMany({ where: { projectId } });

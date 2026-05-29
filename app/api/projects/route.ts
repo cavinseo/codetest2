@@ -46,6 +46,8 @@ export async function GET(request: NextRequest) {
                 id: p.id,
                 name: p.name,
                 description: p.description,
+                detailedDescription: p.detailedDescription,
+                businessPlanFile: p.businessPlanFile,
                 createdAt: p.createdAt.toISOString(),
                 updatedAt: p.updatedAt.toISOString(),
                 memberCount: p._count.members + 1, // 소유자 포함
@@ -88,6 +90,8 @@ export async function POST(request: NextRequest) {
                 id: newProject.id,
                 name: newProject.name,
                 description: newProject.description,
+                detailedDescription: newProject.detailedDescription,
+                businessPlanFile: newProject.businessPlanFile,
                 createdAt: newProject.createdAt.toISOString(),
                 updatedAt: newProject.updatedAt.toISOString(),
                 memberCount: 1,

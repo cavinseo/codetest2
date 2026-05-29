@@ -1,18 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { isGoogleConfigured, getGoogleToken } from '@/lib/service-settings';
 import { createKanoForm } from '@/lib/google-forms';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api/kano/create-form');
 
-// POST: Google Forms로 Kano 설문지 생성
+// POST: Google Forms로 Kano 질문지 생성
 export async function POST(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
 ) {
     const params = await props.params;
     const projectId = params.id;
+    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    if (accessResult instanceof NextResponse) return accessResult;
 
     try {
         if (!isGoogleConfigured()) {
@@ -25,12 +28,11 @@ export async function POST(
         const token = getGoogleToken('default');
         if (!token) {
             return NextResponse.json(
-                { error: 'Google 인증이 필요합니다. 먼저 Google 계정을 연결하세요.', needsAuth: true },
+                { error: 'Google ?몄쬆???꾩슂?⑸땲?? 癒쇱? Google 怨꾩젙???곌껐?섏꽭??', needsAuth: true },
                 { status: 401 }
             );
         }
 
-        // 요구사항 가져오기
         const requirements = await prisma.customerRequirement.findMany({
             where: { projectId },
             orderBy: { order: 'asc' },
@@ -43,11 +45,11 @@ export async function POST(
             );
         }
 
-        // 프로젝트 이름 (간단히)
+        // 프로젝트 이름
         const body = await request.json().catch(() => ({}));
         const projectName = body.projectName || `프로젝트 ${projectId}`;
 
-        // Google Form 생성
+        // Google Form ?앹꽦
         const result = await createKanoForm(token.accessToken, projectName, requirements.map((r: any) => ({
             ...r,
             subcategory: r.subcategory ?? undefined
@@ -63,7 +65,7 @@ export async function POST(
     } catch (error: any) {
         log.error('Google Form creation error', error);
         return NextResponse.json(
-            { error: `Google Form 생성 실패: ${error.message}` },
+            { error: `Google Form ?앹꽦 ?ㅽ뙣: ${error.message}` },
             { status: 500 }
         );
     }

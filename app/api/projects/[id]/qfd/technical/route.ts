@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 
@@ -20,6 +21,8 @@ export async function GET(
     const params = await props.params;
     try {
         const projectId = params.id;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const projectTechs = await prisma.technicalCharacteristic.findMany({
             where: { projectId },
         });
@@ -41,6 +44,8 @@ export async function POST(
     const params = await props.params;
     try {
         const projectId = params.id;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const body = await request.json();
         const data = techSchema.parse(body);
 

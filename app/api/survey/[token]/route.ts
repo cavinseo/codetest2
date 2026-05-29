@@ -57,6 +57,8 @@ export async function GET(
                 category: r.category,
                 subcategory: r.subcategory,
                 requirement: r.requirement,
+                kanoPositiveQ: r.kanoPositiveQ ?? null,
+                kanoNegativeQ: r.kanoNegativeQ ?? null,
                 order: r.order,
             })),
             respondentEmail: invitation.email,

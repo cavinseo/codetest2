@@ -118,10 +118,7 @@ export default function DashboardPage() {
                                 🔗 서비스 설정
                             </Link>
                             <Link href="/admin" className="btn-ghost text-sm">
-                                🛡️ 관리자 대시보드
-                            </Link>
-                            <Link href="/admin/console" className="btn-ghost text-sm">
-                                ⚙️ 관리 콘솔
+                                🛡️ 관리자모드
                             </Link>
                             <div className="w-px h-6 bg-white/10" />
                             <div className="flex items-center gap-2">

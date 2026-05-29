@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
+import { requireAdmin } from '@/lib/authorization';
 
 const log = createLogger('api/admin/users');
 
 // ─── GET: 모든 사용자 목록 (passwordHash 제외) ─────────────────────────
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
+    const adminResult = await requireAdmin(request);
+    if (adminResult instanceof NextResponse) return adminResult;
+
     try {
         const users = await prisma.user.findMany({
             select: {
@@ -29,6 +33,9 @@ export async function GET(_request: NextRequest) {
 // ─── DELETE: 사용자 삭제 ──────────────────────────────────────────────
 
 export async function DELETE(request: NextRequest) {
+    const adminResult = await requireAdmin(request);
+    if (adminResult instanceof NextResponse) return adminResult;
+
     try {
         const body = await request.json();
         const userId: string | undefined = body?.userId;

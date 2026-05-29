@@ -1,53 +1,65 @@
+import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE_NAME } from '@/lib/constants';
+import { SESSION_COOKIE_NAME } from './constants';
 
-/** 세션 쿠키에 저장되는 페이로드 타입. */
 export interface SessionUser {
     userId: string;
     email: string;
-    name: string;
+    name: string | null;
 }
 
-/**
- * 요청에서 세션 사용자를 읽어 반환합니다.
- * 쿠키 미존재 또는 파싱 실패 시 null을 반환합니다.
- *
- * @param request - Next.js 요청 객체
- * @returns 파싱된 세션 사용자 또는 null
- */
+function getSessionSecret(): string {
+    const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET;
+    if (!secret && process.env.NODE_ENV === 'production') {
+        throw new Error('SESSION_SECRET or NEXTAUTH_SECRET is required in production.');
+    }
+    return secret || 'development-session-secret';
+}
+
+function signPayload(payload: string): string {
+    return createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
+}
+
+export function encodeSessionCookie(sessionUser: SessionUser): string {
+    const payload = Buffer.from(JSON.stringify(sessionUser), 'utf8').toString('base64url');
+    return `${payload}.${signPayload(payload)}`;
+}
+
+function decodeSignedSessionCookie(cookieValue: string): Partial<SessionUser> | null {
+    const [payload, signature] = cookieValue.split('.');
+    if (!payload || !signature) return null;
+
+    const expected = signPayload(payload);
+    const actualBuffer = Buffer.from(signature, 'base64url');
+    const expectedBuffer = Buffer.from(expected, 'base64url');
+    if (actualBuffer.length !== expectedBuffer.length) return null;
+    if (!timingSafeEqual(actualBuffer, expectedBuffer)) return null;
+
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Partial<SessionUser>;
+}
+
 export function getSessionUser(request: NextRequest): SessionUser | null {
     const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
     if (!cookieValue) return null;
 
     try {
-        const parsed = JSON.parse(cookieValue) as Partial<SessionUser>;
-        // 필수 필드 존재 여부 검증 — 손상된 쿠키를 받아들이지 않음
-        if (!parsed.userId || !parsed.email || !parsed.name) return null;
-        return parsed as SessionUser;
+        const parsed =
+            decodeSignedSessionCookie(cookieValue) ??
+            (process.env.NODE_ENV !== 'production'
+                ? (JSON.parse(cookieValue) as Partial<SessionUser>)
+                : null);
+
+        if (!parsed?.userId || !parsed.email) return null;
+        return { userId: parsed.userId, email: parsed.email, name: parsed.name ?? null };
     } catch {
         return null;
     }
 }
 
-/**
- * 인증이 필요한 라우트의 세션 사용자를 반환합니다.
- * 세션이 없으면 401 응답을 반환하여 호출 측에서 즉시 return할 수 있도록 합니다.
- *
- * @example
- * const authResult = requireAuth(request);
- * if (authResult instanceof NextResponse) return authResult;
- * const { userId } = authResult;
- *
- * @param request - Next.js 요청 객체
- * @returns SessionUser (인증 성공) 또는 NextResponse 401 (미인증)
- */
 export function requireAuth(request: NextRequest): SessionUser | NextResponse {
     const sessionUser = getSessionUser(request);
     if (!sessionUser) {
-        return NextResponse.json(
-            { error: '로그인이 필요합니다.' },
-            { status: 401 }
-        );
+        return NextResponse.json({ error: 'Login required.' }, { status: 401 });
     }
     return sessionUser;
 }

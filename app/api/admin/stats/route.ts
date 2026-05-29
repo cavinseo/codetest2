@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
+import { requireAdmin } from '@/lib/authorization';
 
 const log = createLogger('api/admin/stats');
 
 // GET: 관리자 통계
 export async function GET(request: NextRequest) {
+    const adminResult = await requireAdmin(request);
+    if (adminResult instanceof NextResponse) return adminResult;
+
     try {
         const [userCount, projectCount, responseCount, requirementCount] = await Promise.all([
             prisma.user.count(),

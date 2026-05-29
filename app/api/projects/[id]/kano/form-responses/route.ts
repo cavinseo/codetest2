@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { isGoogleConfigured, getGoogleToken } from '@/lib/service-settings';
 import { getFormResponses } from '@/lib/google-forms';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { classifyKano } from '@/lib/kano';
@@ -17,6 +18,8 @@ export async function POST(
 ) {
     const params = await props.params;
     const projectId = params.id;
+    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    if (accessResult instanceof NextResponse) return accessResult;
 
     try {
         if (!isGoogleConfigured()) {
@@ -29,7 +32,7 @@ export async function POST(
         const token = getGoogleToken('default');
         if (!token) {
             return NextResponse.json(
-                { error: 'Google 인증이 필요합니다.', needsAuth: true },
+                { error: 'Google ?몄쬆???꾩슂?⑸땲??', needsAuth: true },
                 { status: 401 }
             );
         }
@@ -39,7 +42,7 @@ export async function POST(
 
         if (!formId) {
             return NextResponse.json(
-                { error: 'formId가 필요합니다.' },
+                { error: 'formId媛 ?꾩슂?⑸땲??' },
                 { status: 400 }
             );
         }
@@ -61,9 +64,30 @@ export async function POST(
         const newKanoResponses: any[] = [];
         let importedCount = 0;
 
+        // Google Form 응답 저장용 시스템 공통 초대(Invitation) 확인 또는 생성
+        // Google Forms 응답은 개별 토큰이 없으므로 시스템용 공통 초대를 하나 만듭니다.
+        const systemEmail = 'google-forms-system@internal';
+        let systemInvitation = await prisma.kanoSurveyInvitation.findUnique({
+            where: {
+                projectId_email: { projectId, email: systemEmail }
+            }
+        });
+
+        if (!systemInvitation) {
+            systemInvitation = await prisma.kanoSurveyInvitation.create({
+                data: {
+                    id: generateId('inv'),
+                    projectId,
+                    email: systemEmail,
+                    token: `system_${generateId('inv')}`,
+                    invitedBy: 'system', // 시스템 응답은 현재 사용자 ID가 필요하지 않음
+                    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365), // 1??
+                }
+            });
+        }
+
         for (const response of responses) {
-            // Google Form 응답자용 가상 초대 ID 생성
-            const invitationId = `gform_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const respondentEmail = response.respondentEmail || 'anonymous@google-forms';
 
             for (const answer of response.answers) {
                 if (answer.requirementIndex < requirements.length) {
@@ -72,12 +96,13 @@ export async function POST(
 
                     newKanoResponses.push({
                         id: generateId('response'),
-                        invitationId,
+                        invitationId: systemInvitation.id,
                         projectId,
                         requirementId: req.id,
-                        functionalAnswer: answer.functional,
-                        dysfunctionalAnswer: answer.dysfunctional,
-                        category,
+                        respondentEmail: respondentEmail,
+                        positiveAnswer: answer.functional === 'LIKE' ? 1 : answer.functional === 'EXPECT' ? 2 : answer.functional === 'NEUTRAL' ? 3 : answer.functional === 'TOLERATE' ? 4 : 5,
+                        negativeAnswer: answer.dysfunctional === 'LIKE' ? 1 : answer.dysfunctional === 'EXPECT' ? 2 : answer.dysfunctional === 'NEUTRAL' ? 3 : answer.dysfunctional === 'TOLERATE' ? 4 : 5,
+                        kanoCategory: category,
                         respondedAt: new Date(response.submittedAt),
                     });
 
@@ -87,12 +112,13 @@ export async function POST(
         }
 
         if (newKanoResponses.length > 0) {
+            // 기존 중복 데이터 방지 로직이 필요할 수 있으나 우선 createMany로 처리
             await prisma.kanoResponse.createMany({
                 data: newKanoResponses,
             });
         }
 
-        log.info('Kano 응답 가져오기 성공', { projectId, responseCount: responses.length, importedCount });
+        log.info('Kano ?묐떟 媛?몄삤湲??깃났', { projectId, responseCount: responses.length, importedCount });
 
         return NextResponse.json({
             success: true,
@@ -103,7 +129,7 @@ export async function POST(
     } catch (error: any) {
         log.error('Form responses import error:', error);
         return NextResponse.json(
-            { error: `응답 가져오기 실패: ${error.message}` },
+            { error: `?묐떟 媛?몄삤湲??ㅽ뙣: ${error.message}` },
             { status: 500 }
         );
     }

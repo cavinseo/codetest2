@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 
@@ -22,14 +23,16 @@ export async function GET(
     try {
         const params = await props.params;
         const projectId = params.id;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
 
         const correlations = await prisma.techCorrelation.findMany({
             where: { projectId },
         });
         return NextResponse.json({ correlations });
     } catch (error: unknown) {
-        log.error('상관관계 조회 실패', error);
-        return NextResponse.json({ error: '상관관계 조회 실패' }, { status: 500 });
+        log.error('?곴?愿怨?議고쉶 ?ㅽ뙣', error);
+        return NextResponse.json({ error: '?곴?愿怨?議고쉶 ?ㅽ뙣' }, { status: 500 });
     }
 }
 
@@ -41,10 +44,12 @@ export async function POST(
     try {
         const params = await props.params;
         const projectId = params.id;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const body = await request.json();
         const { techId1, techId2, correlation } = correlationSchema.parse(body);
 
-        // 대칭성을 위해 ID 정렬 (항상 techId1 < techId2 가 되도록)
+        // 대칭성을 위해 ID 정렬(항상 techId1 < techId2가 되도록)
         const [sortedId1, sortedId2] = [techId1, techId2].sort();
 
         if (correlation === 'NONE') {
@@ -55,7 +60,7 @@ export async function POST(
                     techId2: sortedId2,
                 },
             });
-            log.info('상관관계 삭제', { projectId, techId1: sortedId1, techId2: sortedId2 });
+            log.info('?곴?愿怨???젣', { projectId, techId1: sortedId1, techId2: sortedId2 });
             return NextResponse.json({ success: true, action: 'deleted' });
         }
 
@@ -96,6 +101,8 @@ export async function DELETE(
     try {
         const params = await props.params;
         const projectId = params.id;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
 
         const deleteResult = await prisma.techCorrelation.deleteMany({
             where: { projectId },
@@ -104,7 +111,7 @@ export async function DELETE(
         log.info('상관관계 리셋 완료', { projectId, count: deleteResult.count });
         return NextResponse.json({ success: true, removed: deleteResult.count });
     } catch (error: unknown) {
-        log.error('상관관계 리셋 실패', error);
-        return NextResponse.json({ error: '상관관계 리셋 실패' }, { status: 500 });
+        log.error('?곴?愿怨?由ъ뀑 ?ㅽ뙣', error);
+        return NextResponse.json({ error: '?곴?愿怨?由ъ뀑 ?ㅽ뙣' }, { status: 500 });
     }
 }

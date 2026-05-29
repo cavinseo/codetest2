@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { KANO_ANSWER_SCORE } from '@/lib/constants';
 import {
@@ -11,7 +12,7 @@ import {
 
 const log = createLogger('api/kano/analysis');
 
-// GET: Kano 분석 결과 조회
+// GET: Kano 遺꾩꽍 寃곌낵 議고쉶
 export async function GET(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -19,6 +20,8 @@ export async function GET(
     const params = await props.params;
     try {
         const projectId = params.id;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
 
         const projectResponses = await prisma.kanoResponse.findMany({
             where: { projectId },
@@ -39,8 +42,8 @@ export async function GET(
 
         const results = Array.from(requirementMap.entries()).map(([reqId, responses]) => {
             const mappedResponses = responses.map((r: any) => ({
-                positive: KANO_ANSWER_SCORE[r.functionalAnswer as keyof typeof KANO_ANSWER_SCORE] ?? 3,
-                negative: KANO_ANSWER_SCORE[r.dysfunctionalAnswer as keyof typeof KANO_ANSWER_SCORE] ?? 3,
+                positive: (r.positiveAnswer || 3) as 1 | 2 | 3 | 4 | 5,
+                negative: (r.negativeAnswer || 3) as 1 | 2 | 3 | 4 | 5,
             }));
 
             const aggregated = aggregateKanoResponses(mappedResponses);
@@ -67,7 +70,7 @@ export async function GET(
             requirements: results,
         });
     } catch (error: unknown) {
-        log.error('Kano 분석 오류', error);
-        return NextResponse.json({ error: 'Kano 분석 실패' }, { status: 500 });
+        log.error('Kano 遺꾩꽍 ?ㅻ쪟', error);
+        return NextResponse.json({ error: 'Kano 遺꾩꽍 ?ㅽ뙣' }, { status: 500 });
     }
 }

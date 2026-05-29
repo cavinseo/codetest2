@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { serviceSettings, updateGoogleSettings, isGoogleConfigured, updateSmtpSettings, isSmtpConfigured } from '@/lib/service-settings';
+import { requireAdmin } from '@/lib/authorization';
 
 // GET: 현재 서비스 설정 조회
-export async function GET() {
+export async function GET(request: NextRequest) {
+    const adminResult = await requireAdmin(request);
+    if (adminResult instanceof NextResponse) return adminResult;
+
     return NextResponse.json({
         google: {
             clientId: serviceSettings.google.clientId ? '****' + serviceSettings.google.clientId.slice(-8) : '',
@@ -19,6 +23,9 @@ export async function GET() {
 
 // POST: 서비스 설정 업데이트
 export async function POST(request: NextRequest) {
+    const adminResult = await requireAdmin(request);
+    if (adminResult instanceof NextResponse) return adminResult;
+
     try {
         const body = await request.json();
 

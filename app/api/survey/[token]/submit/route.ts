@@ -62,9 +62,10 @@ export async function POST(
                     invitationId: invitation.id,
                     projectId: invitation.projectId,
                     requirementId,
-                    functionalAnswer: answer.functional,
-                    dysfunctionalAnswer: answer.dysfunctional,
-                    category: classifyKanoResponse(functionalScore, dysfunctionalScore),
+                    respondentEmail: invitation.email,
+                    positiveAnswer: functionalScore,
+                    negativeAnswer: dysfunctionalScore,
+                    kanoCategory: classifyKanoResponse(functionalScore as any, dysfunctionalScore as any),
                     respondedAt: now,
                 };
             });
@@ -87,11 +88,26 @@ export async function POST(
         log.info('설문 응답 제출 성공', { invitationId: invitation.id, responseCount: result });
 
         return NextResponse.json({ success: true, responseCount: result });
-    } catch (error: unknown) {
+    } catch (error: any) {
         if (error instanceof z.ZodError) {
-            return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
+            log.error('응답 검증 오류 (Zod)', { errors: error.errors });
+            return NextResponse.json({ error: error.errors[0].message, details: error.errors }, { status: 400 });
         }
-        log.error('응답 제출 오류', error);
-        return NextResponse.json({ error: '응답 제출 실패' }, { status: 500 });
+        
+        log.error('응답 제출 오류 상세', {
+            message: error.message,
+            code: error.code,
+            meta: error.meta,
+            stack: error.stack
+        });
+
+        return NextResponse.json(
+            { 
+                error: '응답 제출 실패', 
+                message: error.message,
+                code: error.code 
+            }, 
+            { status: 500 }
+        );
     }
 }

@@ -1,10 +1,14 @@
 'use client';
 
+import { getKanoTopic } from '@/lib/utils/korean-utils';
+
 interface Requirement {
     id: string;
     category: string;
     subcategory?: string;
     requirement: string;
+    kanoPositiveQ?: string | null;
+    kanoNegativeQ?: string | null;
     order: number;
 }
 
@@ -25,123 +29,126 @@ const answerOptions = [
 export default function KanoSurveyPreview({ projectName, requirements, onClose }: KanoSurveyPreviewProps) {
     return (
         <div className="fixed inset-0 bg-black/70 flex items-start justify-center overflow-y-auto z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full my-8">
-                {/* 폼 헤더 - 구글 Forms 스타일 */}
-                <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-t-xl p-1">
-                    <div className="bg-white rounded-t-lg p-8">
-                        <h1 className="text-3xl font-bold text-gray-800 mb-2">
-                            Kano 설문 조사
-                        </h1>
-                        <p className="text-gray-600 text-lg mb-4">{projectName}</p>
-                        <div className="border-t border-gray-200 pt-4">
-                            <p className="text-sm text-gray-500">
-                                이 설문은 제품/서비스의 각 기능에 대한 고객 만족도를 측정하기 위한 Kano 모델 기반 설문입니다.
-                                각 기능에 대해 <strong>긍정 질문</strong>(기능이 있을 때)과 <strong>부정 질문</strong>(기능이 없을 때) 두 가지에 답변해 주세요.
-                            </p>
+            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full my-8">
+                {/* 폼 헤더 */}
+                <div className="bg-[#673ab7] h-3 rounded-t-xl" />
+                <div className="p-8 border-b border-gray-200">
+                    <h1 className="text-3xl font-bold text-gray-900 mb-4">
+                        Kano 모델 기반 고객 만족도 조사
+                    </h1>
+                    <div className="bg-purple-50 text-purple-800 px-4 py-2 rounded-lg inline-block font-medium mb-6">
+                        프로젝트: {projectName}
+                    </div>
+
+                    <div className="space-y-4 text-gray-600 leading-relaxed">
+                        <p>
+                            안녕하세요! 본 설문은 제품의 각 기능이 제공되었을 때와 제공되지 않았을 때
+                            여러분이 느끼시는 만족도를 파악하기 위한 조사입니다.
+                        </p>
+                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 text-sm">
+                            <p className="font-bold text-gray-800 mb-2">💡 응답 요령:</p>
+                            <ul className="list-disc list-inside space-y-1">
+                                <li>각 기능에 대해 <strong>긍정 질문(있는 경우)</strong>과 <strong>부정 질문(없는 경우)</strong> 두 가지에 모두 답해 주세요.</li>
+                                <li>평소에 느끼시거나 기대하시는 바를 솔직하게 선택해 주시면 큰 도움이 됩니다.</li>
+                            </ul>
                         </div>
-                        <div className="mt-4 bg-red-50 border-l-4 border-red-500 p-3 rounded">
-                            <p className="text-sm text-red-700">* 표시는 필수 질문입니다</p>
+                        <div className="bg-red-50 border-l-4 border-red-400 p-3 rounded text-sm text-red-700">
+                            * 표시는 필수 항목입니다
                         </div>
                     </div>
                 </div>
 
-                {/* 설문 질문들 */}
-                <div className="p-6 space-y-6">
-                    {requirements.map((req, index) => (
-                        <div key={req.id} className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-                            {/* 질문 카드 상단 바 */}
-                            <div className="h-1 bg-gradient-to-r from-purple-500 to-blue-500" />
+                {/* 설문 본문 */}
+                <div className="p-8 space-y-10">
+                    {requirements.map((req, index) => {
+                        const topic = getKanoTopic(req.requirement);
+                        // DB에 저장된 질문 우선, 없으면 자동 생성
+                        const positiveQ = req.kanoPositiveQ || `${topic}(이)라면 어떻게 생각하십니까?`;
+                        const negativeQ = req.kanoNegativeQ || `${topic}(이)가 아니라면 어떻게 생각하십니까?`;
 
-                            <div className="p-6">
-                                {/* 질문 번호와 카테고리 */}
-                                <div className="flex items-center gap-2 mb-3">
-                                    <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-1 rounded">
-                                        Q{index + 1}
-                                    </span>
-                                    {req.category && (
-                                        <span className="text-xs text-gray-500">
-                                            {req.category}{req.subcategory && ` > ${req.subcategory}`}
-                                        </span>
-                                    )}
-                                </div>
-
-                                <h3 className="text-lg font-semibold text-gray-800 mb-6">
-                                    {req.requirement}
-                                </h3>
-
-                                {/* 긍정 질문 */}
-                                <div className="mb-6">
-                                    <p className="text-gray-700 mb-3 flex items-center gap-1">
-                                        <span className="text-green-600 font-medium">👍 긍정 질문:</span>
-                                        만약 이 기능이 <strong className="text-green-600">있다면</strong> 어떻게 느끼시겠습니까?
-                                        <span className="text-red-500">*</span>
-                                    </p>
-                                    <div className="space-y-2 ml-4">
-                                        {answerOptions.map((option) => (
-                                            <label key={option.value} className="flex items-center gap-3 p-2 rounded hover:bg-gray-50 cursor-pointer">
-                                                <input
-                                                    type="radio"
-                                                    name={`functional_${req.id}`}
-                                                    value={option.value}
-                                                    disabled
-                                                    className="w-4 h-4 text-purple-600"
-                                                />
-                                                <span className="text-gray-700">
-                                                    {option.emoji} {option.label}
+                        return (
+                            <div key={req.id} className="animate-fade-in group">
+                                {/* 기능 타이틀 */}
+                                <div className="flex items-start gap-4 mb-6">
+                                    <div className="flex-shrink-0 w-10 h-10 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center font-bold text-lg">
+                                        {index + 1}
+                                    </div>
+                                    <div className="flex-1 pt-1">
+                                        <div className="flex items-center gap-3 mb-1">
+                                            {req.category && (
+                                                <span className="text-xs font-semibold text-purple-500 uppercase tracking-wider bg-purple-50 px-2 py-0.5 rounded">
+                                                    {req.category}
                                                 </span>
-                                            </label>
-                                        ))}
+                                            )}
+                                            <span className="text-xs text-gray-400">주제: {topic}</span>
+                                        </div>
+                                        <h3 className="text-lg font-bold text-gray-800">
+                                            {req.requirement}
+                                        </h3>
                                     </div>
                                 </div>
 
-                                {/* 구분선 */}
-                                <hr className="my-4 border-gray-200" />
+                                {/* 문항 카드 */}
+                                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                                    {/* 긍정 질문 */}
+                                    <div className="p-6 border-b border-gray-100">
+                                        <p className="text-gray-800 font-semibold mb-5 flex items-center gap-2">
+                                            <span className="w-2 h-2 bg-emerald-500 rounded-full flex-shrink-0"></span>
+                                            Q{index+1}-1. {positiveQ}
+                                            <span className="text-red-500 ml-1">*</span>
+                                        </p>
+                                        <div className="grid grid-cols-5 gap-2">
+                                            {answerOptions.map((option) => (
+                                                <label key={option.value} className="flex flex-col items-center gap-2 cursor-pointer group/opt hover:bg-gray-50 p-2 rounded-lg transition-colors">
+                                                    <input type="radio" name={`func_${req.id}`} disabled className="w-4 h-4 text-purple-600" />
+                                                    <span className="text-[11px] text-gray-500 text-center">
+                                                        {option.emoji}<br/><span className="font-medium">{option.label}</span>
+                                                    </span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
 
-                                {/* 부정 질문 */}
-                                <div>
-                                    <p className="text-gray-700 mb-3 flex items-center gap-1">
-                                        <span className="text-red-600 font-medium">👎 부정 질문:</span>
-                                        만약 이 기능이 <strong className="text-red-600">없다면</strong> 어떻게 느끼시겠습니까?
-                                        <span className="text-red-500">*</span>
-                                    </p>
-                                    <div className="space-y-2 ml-4">
-                                        {answerOptions.map((option) => (
-                                            <label key={option.value} className="flex items-center gap-3 p-2 rounded hover:bg-gray-50 cursor-pointer">
-                                                <input
-                                                    type="radio"
-                                                    name={`dysfunctional_${req.id}`}
-                                                    value={option.value}
-                                                    disabled
-                                                    className="w-4 h-4 text-purple-600"
-                                                />
-                                                <span className="text-gray-700">
-                                                    {option.emoji} {option.label}
-                                                </span>
-                                            </label>
-                                        ))}
+                                    {/* 부정 질문 */}
+                                    <div className="p-6 bg-gray-50/50">
+                                        <p className="text-gray-800 font-semibold mb-5 flex items-center gap-2">
+                                            <span className="w-2 h-2 bg-red-400 rounded-full flex-shrink-0"></span>
+                                            Q{index+1}-2. {negativeQ}
+                                            <span className="text-red-500 ml-1">*</span>
+                                        </p>
+                                        <div className="grid grid-cols-5 gap-2">
+                                            {answerOptions.map((option) => (
+                                                <label key={option.value} className="flex flex-col items-center gap-2 cursor-pointer group/opt hover:bg-gray-50 p-2 rounded-lg transition-colors">
+                                                    <input type="radio" name={`dysfunc_${req.id}`} disabled className="w-4 h-4 text-purple-600" />
+                                                    <span className="text-[11px] text-gray-500 text-center">
+                                                        {option.emoji}<br/><span className="font-medium">{option.label}</span>
+                                                    </span>
+                                                </label>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
 
-                    {/* 제출 버튼 (미리보기이므로 비활성화) */}
-                    <div className="flex items-center justify-between pt-4">
+                    {/* 하단 안내 */}
+                    <div className="flex flex-col items-center justify-center py-10 border-t border-gray-100 mt-10">
                         <button
                             disabled
-                            className="bg-purple-600 text-white px-8 py-3 rounded-md font-medium opacity-50 cursor-not-allowed"
+                            className="bg-[#673ab7] text-white px-12 py-4 rounded-lg font-bold text-lg shadow-lg opacity-50 cursor-not-allowed mb-4"
                         >
-                            제출
+                            설문 제출하기
                         </button>
-                        <p className="text-xs text-gray-400">이 양식은 미리보기입니다</p>
+                        <p className="text-sm text-gray-400 italic">본 설문지는 미리보기 모드입니다. 실제 응답은 저장되지 않습니다.</p>
                     </div>
                 </div>
 
-                {/* 닫기 버튼 */}
-                <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 p-4 rounded-b-xl flex justify-end">
+                {/* 하단 제어바 */}
+                <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 p-4 rounded-b-xl flex justify-end z-10">
                     <button
                         onClick={onClose}
-                        className="bg-gray-800 text-white px-6 py-2 rounded-lg font-medium hover:bg-gray-700 transition-colors"
+                        className="bg-gray-100 text-gray-700 px-6 py-2.5 rounded-lg font-bold hover:bg-gray-200 transition-colors"
                     >
                         닫기
                     </button>

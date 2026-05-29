@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 
@@ -12,6 +13,8 @@ export async function GET(
 ) {
     try {
         const { id: projectId } = await params;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
         });
@@ -37,13 +40,15 @@ export async function GET(
     }
 }
 
-// POST: 제품 속성 적합도 저장 (전체 교체)
+// POST: 제품 속성 적합도 저장(전체 교체)
 export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
         const { id: projectId } = await params;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
         });

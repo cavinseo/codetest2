@@ -1,7 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
+import {
+    buildSpecPickerRows,
+    getCustomerNameSpan,
+    getMarketSegmentSpan,
+    resolveRelatedTechnology,
+} from '@/lib/product-attributes-utils';
 
 interface ProductAttributeRow {
     id: string;
@@ -21,19 +26,150 @@ interface SpecFunction {
     parentId?: string;
     name: string;
     technology?: string;
+    order?: number;
 }
 
 interface ProductAttributesTableProps {
     projectId: string;
+    onSaved?: () => void;
 }
 
 type ToastType = 'success' | 'error';
 
-export default function ProductAttributesTable({ projectId }: ProductAttributesTableProps) {
+// ─────────────────────────────────────────
+// AS-IS 스펙 엑셀 워크시트 형식 테이블 컴포넌트
+// ─────────────────────────────────────────
+interface FlatRow {
+    rowNo: number;
+    core: string;
+    sub: string;
+    detail: string;
+    technology: string;
+    pickValue: string; // attribute 모드: 기능명, techCapability 모드: 기술명
+    pickTech: string;
+}
+
+function buildFlatRows(specs: SpecFunction[], field: 'attribute' | 'techCapability'): FlatRow[] {
+    return buildSpecPickerRows(specs, field);
+}
+
+function SpecSheetTable({
+    specFunctions,
+    field,
+    onPick,
+}: {
+    specFunctions: SpecFunction[];
+    field: 'attribute' | 'techCapability';
+    onPick: (value: string, technology: string) => void;
+}) {
+    const flatRows = buildFlatRows(specFunctions, field);
+
+    // 행병합을 위한 헬퍼: 연속된 같은 값의 첫 행만 rowspan 계산
+    const getRowSpan = (arr: FlatRow[], key: 'core' | 'sub', index: number): number => {
+        if (index > 0 && arr[index][key] === arr[index - 1][key]) return 0; // 0이면 td 숨김
+        let count = 1;
+        for (let i = index + 1; i < arr.length; i++) {
+            if (arr[i][key] === arr[index][key] && (key === 'core' || arr[i].core === arr[index].core)) count++;
+            else break;
+        }
+        return count;
+    };
+
+    const isHighlighted = field === 'attribute';
+
+    return (
+        <table className="w-full border-collapse text-sm">
+            <thead>
+                <tr className="bg-white/[0.06] border-b border-white/[0.08] sticky top-0 z-10">
+                    <th className="border border-white/[0.08] px-3 py-2.5 text-gray-400 font-medium text-center w-[50px]">No.</th>
+                    <th className="border border-white/[0.08] px-3 py-2.5 text-blue-300 font-semibold text-center w-[160px]">핵심기능 (Core)</th>
+                    <th className="border border-white/[0.08] px-3 py-2.5 text-purple-300 font-semibold text-center w-[160px]">세부기능 (Sub)</th>
+                    <th className="border border-white/[0.08] px-3 py-2.5 text-emerald-300 font-semibold text-center">세세부기능 (Detail)</th>
+                    <th className="border border-white/[0.08] px-3 py-2.5 text-amber-300 font-semibold text-center w-[180px]">적용 기술</th>
+                </tr>
+            </thead>
+            <tbody>
+                {flatRows.length === 0 ? (
+                    <tr>
+                        <td colSpan={5} className="border border-white/[0.08] p-10 text-center text-gray-500 text-sm">
+                            스펙 데이터가 없습니다.
+                        </td>
+                    </tr>
+                ) : (
+                    flatRows.map((row, idx) => {
+                        const coreSpan = getRowSpan(flatRows, 'core', idx);
+                        const subSpan = getRowSpan(flatRows, 'sub', idx);
+
+                        // 클릭 시 가져올 값 결정
+                        const clickValue = field === 'attribute'
+                            ? (row.detail || row.sub || row.core)
+                            : (row.technology || row.detail || row.sub || row.core);
+
+                        return (
+                            <tr
+                                key={idx}
+                                onClick={() => onPick(clickValue, row.technology)}
+                                className={`border-b border-white/[0.04] cursor-pointer transition-colors
+                                    ${isHighlighted
+                                        ? 'hover:bg-cyan-500/10'
+                                        : 'hover:bg-amber-500/10'
+                                    }`}
+                                title={`클릭하여 '${clickValue}' 적용`}
+                            >
+                                {/* No */}
+                                <td className="border border-white/[0.06] px-3 py-2 text-center text-gray-600 text-xs select-none">
+                                    {row.rowNo}
+                                </td>
+
+                                {/* Core - 행병합 */}
+                                {coreSpan > 0 && (
+                                    <td
+                                        rowSpan={coreSpan}
+                                        className="border border-white/[0.06] px-3 py-2 text-blue-200 font-medium text-sm align-middle"
+                                    >
+                                        {row.core}
+                                    </td>
+                                )}
+
+                                {/* Sub - 행병합 */}
+                                {subSpan > 0 && (
+                                    <td
+                                        rowSpan={subSpan}
+                                        className="border border-white/[0.06] px-3 py-2 text-purple-200 text-sm align-middle"
+                                    >
+                                        {row.sub}
+                                    </td>
+                                )}
+                                {/* sub가 0이라는 건 병합됐다는 뜻이므로 td 없음 */}
+
+                                {/* Detail */}
+                                <td className={`border border-white/[0.06] px-3 py-2 text-sm align-middle
+                                    ${field === 'attribute' && row.detail ? 'text-emerald-200 font-medium' : 'text-gray-400'}`}>
+                                    {row.detail || <span className="text-gray-700 italic text-xs">—</span>}
+                                </td>
+
+                                {/* 기술 */}
+                                <td className={`border border-white/[0.06] px-3 py-2 text-sm align-middle font-mono
+                                    ${field === 'techCapability' && row.technology ? 'text-amber-200 font-semibold' : 'text-gray-500'}`}>
+                                    {row.technology || <span className="text-gray-700 italic text-xs">—</span>}
+                                </td>
+                            </tr>
+                        );
+                    })
+                )}
+            </tbody>
+        </table>
+    );
+}
+
+// ─────────────────────────────────────────
+// 메인 컴포넌트
+// ─────────────────────────────────────────
+export default function ProductAttributesTable({ projectId, onSaved }: ProductAttributesTableProps) {
     const [rows, setRows] = useState<ProductAttributeRow[]>([]);
     const [specFunctions, setSpecFunctions] = useState<SpecFunction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [showSpecPicker, setShowSpecPicker] = useState<{ rowId: string; field: 'attribute' | 'techCapability' } | null>(null);
+    const [showSpecPicker, setShowSpecPicker] = useState<{ rowId: string; field: 'attribute' } | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [productName, setProductName] = useState('');
     const [importedFields, setImportedFields] = useState<Set<string>>(new Set());
@@ -116,8 +252,7 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
         }
     };
 
-    const addRow = () => {
-        const newRow: ProductAttributeRow = {
+    const createRow = (order: number, overrides: Partial<ProductAttributeRow> = {}): ProductAttributeRow => ({
             id: `attr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
             productName: '',
             customerName: '',
@@ -126,9 +261,41 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
             benefit: '',
             attribute: '',
             techCapability: '',
-            order: rows.length,
-        };
-        setRows([...rows, newRow]);
+            order,
+            ...overrides,
+    });
+
+    const addRow = () => {
+        setRows([...rows, createRow(rows.length)]);
+    };
+
+    const addSegmentItem = (row: ProductAttributeRow) => {
+        const targetIndex = rows.findIndex(r => r.id === row.id);
+        const newRow = createRow(rows.length, { marketSegment: row.marketSegment });
+        const nextRows = targetIndex === -1
+            ? [...rows, newRow]
+            : [
+                ...rows.slice(0, targetIndex + 1),
+                newRow,
+                ...rows.slice(targetIndex + 1),
+            ];
+        setRows(nextRows.map((r, order) => ({ ...r, order })));
+    };
+
+    const addCustomerNeedItem = (row: ProductAttributeRow) => {
+        const targetIndex = rows.findIndex(r => r.id === row.id);
+        const newRow = createRow(rows.length, {
+            marketSegment: row.marketSegment,
+            customerName: row.customerName,
+        });
+        const nextRows = targetIndex === -1
+            ? [...rows, newRow]
+            : [
+                ...rows.slice(0, targetIndex + 1),
+                newRow,
+                ...rows.slice(targetIndex + 1),
+            ];
+        setRows(nextRows.map((r, order) => ({ ...r, order })));
     };
 
     const updateRow = (id: string, field: keyof ProductAttributeRow, value: string) => {
@@ -136,7 +303,7 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
     };
 
     const deleteRow = (id: string) => {
-        setRows(rows.filter(r => r.id !== id));
+        setRows(rows.filter(r => r.id !== id).map((r, order) => ({ ...r, order })));
     };
 
     const handleSave = async () => {
@@ -155,6 +322,7 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
             });
             if (res.ok) {
                 showToast('저장되었습니다.', 'success');
+                onSaved?.();
             } else {
                 showToast('저장에 실패했습니다.', 'error');
             }
@@ -178,94 +346,72 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
         }
     };
 
-    const getSubFunctions = () => specFunctions.filter(f => f.level === 'SUB' || f.level === 'DETAIL');
-    const getCoreFunctions = () => specFunctions.filter(f => f.level === 'CORE');
+    const getUniqueValues = (field: 'marketSegment' | 'customerNeed' | 'benefit') => {
+        return [...new Set(rows.map(r => r[field]).filter(Boolean))];
+    };
 
-    const getTechCapabilities = () => {
-        return specFunctions
-            .filter(f => f.technology && f.technology.trim())
-            .map(f => ({ name: f.name, tech: f.technology! }));
+    const getMarketSegmentRowSpan = (index: number) => {
+        return getMarketSegmentSpan(rows, index);
+    };
+
+    const getCustomerNameRowSpan = (index: number) => {
+        return getCustomerNameSpan(rows, index);
+    };
+
+    const updateMarketSegmentGroup = (startIndex: number, value: string) => {
+        const span = getMarketSegmentRowSpan(startIndex);
+        const targetIds = new Set(rows.slice(startIndex, startIndex + span).map(r => r.id));
+        setRows(rows.map(r => targetIds.has(r.id) ? { ...r, marketSegment: value } : r));
+    };
+
+    const updateCustomerNameGroup = (startIndex: number, value: string) => {
+        const span = getCustomerNameRowSpan(startIndex);
+        const targetIds = new Set(rows.slice(startIndex, startIndex + span).map(r => r.id));
+        setRows(rows.map(r => targetIds.has(r.id) ? { ...r, customerName: value } : r));
     };
 
     // 선택한 스펙 항목에 연결된 기술역량 자동 조회
-    const findRelatedTech = (specName: string): string => {
-        // 선택된 이름과 일치하는 스펙 항목 찾기
-        const matched = specFunctions.find(f => f.name === specName);
-        if (!matched) return '';
+    const findRelatedTech = (specName: string, pickedTechnology = ''): string =>
+        resolveRelatedTechnology(specFunctions, specName, pickedTechnology);
 
-        // DETAIL 레벨: technology 직접 사용
-        if (matched.level === 'DETAIL' && matched.technology) {
-            return matched.technology.trim();
-        }
-
-        // SUB 레벨: 해당 SUB의 DETAIL 자식들의 technology 수집
-        if (matched.level === 'SUB') {
-            const childDetails = specFunctions.filter(
-                f => f.level === 'DETAIL' && f.parentId === matched.id && f.technology
-            );
-            if (childDetails.length > 0) {
-                return [...new Set(childDetails.map(d => d.technology!.trim()))].join(', ');
-            }
-        }
-
-        // CORE 레벨: 하위 DETAIL들의 technology 수집
-        if (matched.level === 'CORE') {
-            const subIds = specFunctions
-                .filter(f => f.level === 'SUB' && f.parentId === matched.id)
-                .map(f => f.id);
-            const childDetails = specFunctions.filter(
-                f => f.level === 'DETAIL' && subIds.includes(f.parentId ?? '') && f.technology
-            );
-            if (childDetails.length > 0) {
-                return [...new Set(childDetails.map(d => d.technology!.trim()))].join(', ');
-            }
-        }
-
-        return '';
-    };
-
-    const applySpecPick = (value: string) => {
+    const applySpecPick = (value: string, pickedTechnology = '') => {
         if (!showSpecPicker) return;
-
-        const { rowId, field } = showSpecPicker;
-
-        if (field === 'attribute') {
-            // 제품속성과 기술역량을 단일 setRows 호출로 동시에 업데이트
-            // (두 번의 updateRow 호출은 React 배칭으로 인해 마지막 것만 반영됨)
-            const relatedTech = findRelatedTech(value);
-            const currentRow = rows.find(r => r.id === rowId);
-            const shouldAutoFill = !!relatedTech && !currentRow?.techCapability?.trim();
-
-            setRows(prev => prev.map(r => r.id === rowId ? {
-                ...r,
-                attribute: value,
-                ...(shouldAutoFill ? { techCapability: relatedTech } : {}),
-            } : r));
-
-            setImportedFields(prev => {
-                const next = new Set(prev);
-                next.add(`${rowId}_attribute`);
-                if (shouldAutoFill) next.add(`${rowId}_techCapability`);
-                return next;
-            });
-
-            if (shouldAutoFill) {
-                showToast(`기술역량 자동 입력: ${relatedTech}`, 'success');
-            }
-        } else {
-            updateRow(rowId, field, value);
-            setImportedFields(prev => {
-                const next = new Set(prev);
-                next.add(`${rowId}_${field}`);
-                return next;
-            });
+        const { rowId } = showSpecPicker;
+        const relatedTech = findRelatedTech(value, pickedTechnology);
+        setRows(prev => prev.map(r => r.id === rowId ? {
+            ...r,
+            attribute: value,
+            techCapability: relatedTech,
+        } : r));
+        setImportedFields(prev => {
+            const next = new Set(prev);
+            next.add(`${rowId}_attribute`);
+            if (relatedTech) next.add(`${rowId}_techCapability`);
+            return next;
+        });
+        if (relatedTech) {
+            showToast(`기술역량 자동 입력: ${relatedTech}`, 'success');
         }
-
         setShowSpecPicker(null);
     };
 
-
     const handleManualInput = (rowId: string, field: 'attribute' | 'techCapability', value: string) => {
+        if (field === 'attribute') {
+            const relatedTech = findRelatedTech(value);
+            setRows(rows.map(r => r.id === rowId ? {
+                ...r,
+                attribute: value,
+                ...(relatedTech && !r.techCapability.trim() ? { techCapability: relatedTech } : {}),
+            } : r));
+            setImportedFields(prev => {
+                const next = new Set(prev);
+                next.delete(`${rowId}_attribute`);
+                if (relatedTech) next.add(`${rowId}_techCapability`);
+                return next;
+            });
+            return;
+        }
+
         updateRow(rowId, field, value);
         setImportedFields(prev => {
             const next = new Set(prev);
@@ -275,10 +421,6 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
     };
 
     const isImported = (rowId: string, field: string) => importedFields.has(`${rowId}_${field}`);
-
-    const getUniqueValues = (field: 'marketSegment' | 'customerNeed' | 'benefit') => {
-        return [...new Set(rows.map(r => r[field]).filter(Boolean))];
-    };
 
     if (isLoading) {
         return (
@@ -316,32 +458,22 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-xl font-display font-bold text-white">제품속성서</h2>
-                    <p className="text-sm text-gray-500 mt-1">세분시장별 고객 니즈, 제공혜택, 제품속성, 기술역량을 정의합니다</p>
+                    <p className="text-sm text-gray-500 mt-1">세분시장별로 여러 고객명, 고객 니즈, 제공혜택, 제품속성, 기술역량을 행 단위로 정의합니다</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={addRow}
-                        className="btn-secondary text-sm flex items-center gap-1.5"
-                    >
+                    <button onClick={addRow} className="btn-secondary text-sm flex items-center gap-1.5">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
                         행 추가
                     </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50"
-                    >
+                    <button onClick={handleSave} disabled={isSaving} className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                         </svg>
                         {isSaving ? '저장 중...' : '저장'}
                     </button>
-                    <button
-                        onClick={() => setShowResetConfirm(true)}
-                        className="btn-ghost text-sm text-rose-400 hover:text-rose-300 flex items-center gap-1.5"
-                    >
+                    <button onClick={() => setShowResetConfirm(true)} className="btn-ghost text-sm text-rose-400 hover:text-rose-300 flex items-center gap-1.5">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
@@ -401,10 +533,7 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
                     </div>
                     <h3 className="text-lg font-display font-semibold text-gray-300 mb-2">데이터가 없습니다</h3>
                     <p className="text-sm text-gray-500 mb-6">우상단의 '행 추가' 버튼을 눌러 입력을 시작하세요</p>
-                    <button
-                        onClick={addRow}
-                        className="btn-primary inline-flex items-center gap-2 mx-auto"
-                    >
+                    <button onClick={addRow} className="btn-primary inline-flex items-center gap-2 mx-auto">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
@@ -417,8 +546,8 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
                         <thead>
                             <tr className="bg-white/[0.03] border-b border-white/[0.06]">
                                 <th className="px-3 py-3 text-gray-500 font-medium text-center text-xs w-[44px]">No</th>
-                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[110px]">고객명</th>
                                 <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[110px]">세분시장</th>
+                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[110px]">고객명</th>
                                 <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[150px]">고객 니즈</th>
                                 <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[150px]">제공혜택</th>
                                 <th className="px-3 py-3 text-left text-xs min-w-[170px]">
@@ -427,42 +556,79 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
                                 </th>
                                 <th className="px-3 py-3 text-left text-xs min-w-[170px]">
                                     <div className="text-amber-400 font-semibold">기술 역량</div>
-                                    <div className="text-[10px] text-gray-600 font-normal mt-0.5">📥 스펙에서 가져오기</div>
+                                    <div className="text-[10px] text-gray-600 font-normal mt-0.5">제품속성 선택 시 자동 입력</div>
                                 </th>
-                                <th className="px-3 py-3 text-gray-600 font-medium text-center text-xs w-[40px]"></th>
+                                <th className="px-3 py-3 text-gray-600 font-medium text-center text-xs w-[72px]"></th>
                             </tr>
                         </thead>
                         <tbody>
-                            {rows.map((row, idx) => (
+                            {rows.map((row, idx) => {
+                                const marketSegmentRowSpan = getMarketSegmentRowSpan(idx);
+                                const customerNameRowSpan = getCustomerNameRowSpan(idx);
+
+                                return (
                                 <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] group transition-colors">
                                     {/* No */}
                                     <td className="px-3 py-2 text-center text-gray-600 text-xs select-none">{idx + 1}</td>
 
-                                    {/* 고객명 */}
-                                    <td className="p-0">
-                                        <input
-                                            type="text"
-                                            value={row.customerName}
-                                            onChange={(e) => updateRow(row.id, 'customerName', e.target.value)}
-                                            className="w-full h-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                            placeholder="입력"
-                                        />
-                                    </td>
-
                                     {/* 세분시장 */}
-                                    <td className="p-0">
-                                        <input
-                                            type="text"
-                                            list={`ms_list_${row.id}`}
-                                            value={row.marketSegment}
-                                            onChange={(e) => updateRow(row.id, 'marketSegment', e.target.value)}
-                                            className="w-full h-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                            placeholder="입력"
-                                        />
-                                        <datalist id={`ms_list_${row.id}`}>
-                                            {getUniqueValues('marketSegment').map((v, i) => <option key={i} value={v} />)}
-                                        </datalist>
-                                    </td>
+                                    {marketSegmentRowSpan > 0 && (
+                                        <td rowSpan={marketSegmentRowSpan} className="p-0 align-top bg-white/[0.015] border-r border-white/[0.04]">
+                                            <div className="flex h-full min-h-[44px] flex-col">
+                                                <input
+                                                    type="text"
+                                                    list={`ms_list_${row.id}`}
+                                                    value={row.marketSegment}
+                                                    onChange={(e) => updateMarketSegmentGroup(idx, e.target.value)}
+                                                    className="w-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
+                                                    placeholder="입력"
+                                                />
+                                                <div className="flex items-center justify-between gap-2 px-3 pb-2">
+                                                    <span className="text-[10px] text-gray-600 whitespace-nowrap">
+                                                        {marketSegmentRowSpan > 1 ? `${marketSegmentRowSpan}개 항목` : '1개 항목'}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => addSegmentItem(row)}
+                                                        className="rounded-md border border-primary-500/20 px-2 py-1 text-[10px] text-primary-300 hover:bg-primary-500/10 transition-colors whitespace-nowrap"
+                                                        title="같은 세분시장 항목 추가"
+                                                    >
+                                                        + 항목
+                                                    </button>
+                                                </div>
+                                                <datalist id={`ms_list_${row.id}`}>
+                                                    {getUniqueValues('marketSegment').map((v, i) => <option key={i} value={v} />)}
+                                                </datalist>
+                                            </div>
+                                        </td>
+                                    )}
+                                    {/* 고객명 */}
+                                    {customerNameRowSpan > 0 && (
+                                        <td rowSpan={customerNameRowSpan} className="p-0 align-top bg-white/[0.01] border-r border-white/[0.04]">
+                                            <div className="flex h-full min-h-[44px] flex-col">
+                                                <input
+                                                    type="text"
+                                                    value={row.customerName}
+                                                    onChange={(e) => updateCustomerNameGroup(idx, e.target.value)}
+                                                    className="w-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
+                                                    placeholder="입력"
+                                                />
+                                                <div className="flex items-center justify-between gap-2 px-3 pb-2">
+                                                    <span className="text-[10px] text-gray-600 whitespace-nowrap">
+                                                        {customerNameRowSpan > 1 ? `${customerNameRowSpan}개 니즈` : '1개 니즈'}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => addCustomerNeedItem(row)}
+                                                        className="rounded-md border border-cyan-500/20 px-2 py-1 text-[10px] text-cyan-300 hover:bg-cyan-500/10 transition-colors whitespace-nowrap"
+                                                        title="같은 고객명에 고객니즈 추가"
+                                                    >
+                                                        + 니즈
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    )}
 
                                     {/* 고객 니즈 */}
                                     <td className="p-0">
@@ -521,23 +687,22 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
                                             type="text"
                                             value={row.techCapability}
                                             onChange={(e) => handleManualInput(row.id, 'techCapability', e.target.value)}
-                                            className={`w-full px-3 pr-8 py-2.5 bg-transparent text-sm outline-none focus:bg-amber-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-amber-500/30 transition-colors ${isImported(row.id, 'techCapability') ? 'text-amber-300' : 'text-gray-300'}`}
+                                            className={`w-full px-3 py-2.5 bg-transparent text-sm outline-none focus:bg-amber-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-amber-500/30 transition-colors ${isImported(row.id, 'techCapability') ? 'text-amber-300' : 'text-gray-300'}`}
                                             placeholder="입력"
                                         />
-                                        <button
-                                            type="button"
-                                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSpecPicker({ rowId: row.id, field: 'techCapability' }); }}
-                                            className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-amber-500 hover:text-amber-300 hover:bg-amber-500/20 rounded transition-colors cursor-pointer z-10"
-                                            title="AS-IS 스펙에서 가져오기"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                            </svg>
-                                        </button>
                                     </td>
 
                                     {/* 삭제 */}
                                     <td className="px-2 py-2 text-center">
+                                        <button
+                                            onClick={() => addSegmentItem(row)}
+                                            className="p-1.5 rounded-lg text-transparent group-hover:text-primary-400 hover:bg-primary-500/10 transition-all"
+                                            title="같은 세분시장 항목 추가"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                            </svg>
+                                        </button>
                                         <button
                                             onClick={() => deleteRow(row.id)}
                                             className="p-1.5 rounded-lg text-transparent group-hover:text-rose-500 hover:bg-rose-500/10 transition-all"
@@ -549,7 +714,8 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
                                         </button>
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                     {/* 테이블 하단 - 빠른 行 추가 */}
@@ -565,17 +731,24 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
                 </div>
             )}
 
-            {/* AS-IS 스펙 선택 모달 */}
+            {/* AS-IS 스펙 선택 모달 - 엑셀 워크시트 표 형식 */}
             {showSpecPicker && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-                    <div className="glass-strong max-w-lg w-full max-h-[70vh] overflow-hidden flex flex-col p-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-display font-bold text-white flex items-center gap-2">
-                                <svg className="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg>
-                                {showSpecPicker.field === 'attribute' ? 'AS-IS 스펙 → 제품속성 선택' : 'AS-IS 스펙 → 기술역량 선택'}
-                            </h3>
+                    <div className="glass-strong max-w-4xl w-full max-h-[82vh] overflow-hidden flex flex-col rounded-2xl border border-white/[0.1]">
+
+                        {/* 모달 헤더 */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] flex-shrink-0 bg-white/[0.02]">
+                            <div>
+                                <h3 className="text-base font-display font-bold text-white flex items-center gap-2">
+                                    <svg className="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    AS-IS 스펙표에서 가져오기
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                    행을 클릭하면 제품속성과 해당 적용기술이 함께 입력됩니다
+                                </p>
+                            </div>
                             <button
                                 onClick={() => setShowSpecPicker(null)}
                                 className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/[0.06] transition-colors"
@@ -586,87 +759,20 @@ export default function ProductAttributesTable({ projectId }: ProductAttributesT
                             </button>
                         </div>
 
-                        <div className="overflow-y-auto flex-1 space-y-1.5">
+                        {/* 모달 본문 - 엑셀 워크시트 표 형식 */}
+                        <div className="overflow-auto flex-1">
                             {specFunctions.length === 0 ? (
-                                <div className="text-center py-10 text-gray-400">
+                                <div className="text-center py-16 text-gray-400">
                                     <div className="text-4xl mb-3">📭</div>
                                     <p className="mb-2 text-sm">AS-IS 스펙이 아직 없습니다</p>
-                                    <Link href={`/project/${projectId}/spec`} className="text-primary-400 hover:text-primary-300 text-sm">
-                                        AS-IS 스펙표 작성하기 →
-                                    </Link>
+                                    <p className="text-xs text-gray-600">AS-IS 스펙 탭에서 먼저 기능을 입력해주세요</p>
                                 </div>
-                            ) : showSpecPicker.field === 'attribute' ? (
-                                <>
-                                    <p className="text-xs text-gray-500 mb-2 px-1">세부 기능을 제품속성으로 가져옵니다</p>
-                                    {getSubFunctions().map(f => (
-                                        <button
-                                            key={f.id}
-                                            onClick={() => applySpecPick(f.name)}
-                                            className="w-full text-left px-4 py-3 bg-white/[0.03] hover:bg-cyan-500/[0.08] border border-white/[0.06] hover:border-cyan-500/30 rounded-xl transition-colors text-sm"
-                                        >
-                                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] mr-2 ${f.level === 'SUB' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'}`}>
-                                                {f.level === 'SUB' ? '세부' : '상세'}
-                                            </span>
-                                            <span className="text-cyan-300">{f.name}</span>
-                                        </button>
-                                    ))}
-                                    {getSubFunctions().length === 0 && (
-                                        <p className="text-sm text-gray-500 text-center py-4">세부/상세 기능이 없습니다.</p>
-                                    )}
-                                    {getCoreFunctions().length > 0 && (
-                                        <>
-                                            <div className="border-t border-white/[0.06] my-3 pt-2">
-                                                <p className="text-xs text-gray-500 px-1">핵심 기능</p>
-                                            </div>
-                                            {getCoreFunctions().map(f => (
-                                                <button
-                                                    key={f.id}
-                                                    onClick={() => applySpecPick(f.name)}
-                                                    className="w-full text-left px-4 py-3 bg-white/[0.02] hover:bg-cyan-500/[0.06] border border-white/[0.04] hover:border-cyan-500/25 rounded-xl transition-colors text-sm"
-                                                >
-                                                    <span className="inline-block px-1.5 py-0.5 rounded text-[10px] mr-2 bg-emerald-500/20 text-emerald-300">핵심</span>
-                                                    <span className="text-cyan-300">{f.name}</span>
-                                                </button>
-                                            ))}
-                                        </>
-                                    )}
-                                </>
                             ) : (
-                                <>
-                                    <p className="text-xs text-gray-500 mb-2 px-1">AS-IS 스펙의 기술적 특성을 기술역량으로 가져옵니다</p>
-                                    {getTechCapabilities().length > 0 ? (
-                                        getTechCapabilities().map((item, i) => (
-                                            <button
-                                                key={i}
-                                                onClick={() => applySpecPick(item.tech)}
-                                                className="w-full text-left px-4 py-3 bg-white/[0.03] hover:bg-amber-500/[0.08] border border-white/[0.06] hover:border-amber-500/30 rounded-xl transition-colors text-sm"
-                                            >
-                                                <span className="text-gray-500 text-xs">{item.name} → </span>
-                                                <span className="text-amber-300">{item.tech}</span>
-                                            </button>
-                                        ))
-                                    ) : (
-                                        <div className="text-center py-6 text-gray-400">
-                                            <p className="text-sm mb-1">기술적 특성 데이터가 없습니다</p>
-                                            <p className="text-xs text-gray-600">AS-IS 스펙표에서 '기술적 특성' 컬럼을 입력하세요</p>
-                                        </div>
-                                    )}
-                                    <div className="border-t border-white/[0.06] my-3 pt-2">
-                                        <p className="text-xs text-gray-500 px-1">스펙 기능 직접 사용</p>
-                                    </div>
-                                    {specFunctions.map(f => (
-                                        <button
-                                            key={f.id}
-                                            onClick={() => applySpecPick(f.name)}
-                                            className="w-full text-left px-4 py-3 bg-white/[0.02] hover:bg-amber-500/[0.06] border border-white/[0.04] hover:border-amber-500/25 rounded-xl transition-colors text-sm"
-                                        >
-                                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] mr-2 ${f.level === 'CORE' ? 'bg-emerald-500/20 text-emerald-300' : f.level === 'SUB' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'}`}>
-                                                {f.level === 'CORE' ? '핵심' : f.level === 'SUB' ? '세부' : '상세'}
-                                            </span>
-                                            <span className="text-amber-300">{f.name}</span>
-                                        </button>
-                                    ))}
-                                </>
+                                <SpecSheetTable
+                                    specFunctions={specFunctions}
+                                    field={showSpecPicker.field}
+                                    onPick={applySpecPick}
+                                />
                             )}
                         </div>
                     </div>

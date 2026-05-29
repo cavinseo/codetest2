@@ -42,9 +42,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Prisma
-prisma/migrations
-
 # Temporary files
 temp_files/
 analyze_excel.py

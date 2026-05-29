@@ -15,15 +15,43 @@ import TargetSpecTable from '@/components/project/TargetSpecTable';
 import TechRoadmapTable from '@/components/project/TechRoadmapTable';
 import DevPlanTable from '@/components/project/DevPlanTable';
 import TechTreeTable from '@/components/project/TechTreeTable';
+import AssetsTable from '@/components/project/AssetsTable';
+import FundingTable from '@/components/project/FundingTable';
+import KanoSatisfactionGraph from '@/components/project/KanoSatisfactionGraph';
+import KanoTimkoTable from '@/components/project/KanoTimkoTable';
+import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import { useRouter } from 'next/navigation';
 
 interface ProjectData {
     id: string;
     name: string;
     description?: string;
+    detailedDescription?: string;
+    businessPlanFile?: string;
     createdAt: string;
     memberCount: number;
     role: string;
+}
+
+interface WorksheetCompletenessItem {
+    key: string;
+    title: string;
+    required: boolean;
+    status: 'EMPTY' | 'IN_PROGRESS' | 'COMPLETE';
+    percent: number;
+    worksheetKey: string;
+    nextStep: string;
+}
+
+interface WorksheetCompleteness {
+    status: 'IN_PROGRESS' | 'REPORT_READY';
+    percent: number;
+    requiredComplete: boolean;
+    completedRequired: number;
+    totalRequired: number;
+    items: WorksheetCompletenessItem[];
+    blockers: WorksheetCompletenessItem[];
+    nextAction: WorksheetCompletenessItem | null;
 }
 
 export default function ProjectDetailPage() {
@@ -34,7 +62,19 @@ export default function ProjectDetailPage() {
     const [reqCount, setReqCount] = useState(0);
     const [kanoCount, setKanoCount] = useState(0);
     const [specCount, setSpecCount] = useState(0);
+    const [kanoAnalysis, setKanoAnalysis] = useState<any>(null);
+    const [kanoRequirements, setKanoRequirements] = useState<any[]>([]);
+    const [worksheetCompleteness, setWorksheetCompleteness] = useState<WorksheetCompleteness | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isOverviewEditing, setIsOverviewEditing] = useState(false);
+    const [isOverviewSaving, setIsOverviewSaving] = useState(false);
+    const [overviewError, setOverviewError] = useState('');
+    const [overviewForm, setOverviewForm] = useState({
+        name: '',
+        description: '',
+        detailedDescription: '',
+        businessPlanFile: '',
+    });
 
     useEffect(() => {
         async function loadData() {
@@ -48,6 +88,24 @@ export default function ProjectDetailPage() {
                     else setProject({ id: projectId, name: '프로젝트', description: '', createdAt: new Date().toISOString(), memberCount: 1, role: 'OWNER' });
                 }
 
+                const overviewRes = await fetch(`/api/projects/${projectId}/overview`);
+                if (overviewRes.ok) {
+                    const overviewData = await overviewRes.json();
+                    setWorksheetCompleteness(overviewData.worksheetCompleteness || null);
+                    if (overviewData.project) {
+                        setProject((current) => ({
+                            id: overviewData.project.id,
+                            name: overviewData.project.name,
+                            description: overviewData.project.description || '',
+                            detailedDescription: overviewData.project.detailedDescription || '',
+                            businessPlanFile: overviewData.project.businessPlanFile || '',
+                            createdAt: overviewData.project.createdAt,
+                            memberCount: current?.memberCount ?? 1,
+                            role: current?.role ?? 'OWNER',
+                        }));
+                    }
+                }
+
                 // 요구사항 수
                 const reqRes = await fetch(`/api/projects/${projectId}/requirements`);
                 if (reqRes.ok) {
@@ -55,11 +113,19 @@ export default function ProjectDetailPage() {
                     setReqCount(reqData.requirements?.length || 0);
                 }
 
-                // Kano 응답 수
-                const kanoRes = await fetch(`/api/projects/${projectId}/kano/analysis`);
-                if (kanoRes.ok) {
-                    const kanoData = await kanoRes.json();
-                    setKanoCount(kanoData.totalResponses || 0);
+                // Kano 분석 데이터
+                const kanoAnalysisRes = await fetch(`/api/projects/${projectId}/kano/analysis`);
+                if (kanoAnalysisRes.ok) {
+                    const kanoAnalysisData = await kanoAnalysisRes.json();
+                    setKanoAnalysis(kanoAnalysisData);
+                    setKanoCount(kanoAnalysisData.totalResponses || 0);
+
+                    // Kano 요구사항 명칭을 위해 요구사항 목록도 가져옴
+                    const kanoReqRes = await fetch(`/api/projects/${projectId}/requirements`);
+                    if (kanoReqRes.ok) {
+                        const kanoReqData = await kanoReqRes.json();
+                        setKanoRequirements(kanoReqData.requirements || []);
+                    }
                 }
 
                 // 스펙 수
@@ -78,24 +144,85 @@ export default function ProjectDetailPage() {
         loadData();
     }, [projectId]);
 
+    useEffect(() => {
+        if (!project) return;
+        setOverviewForm({
+            name: project.name || '',
+            description: project.description || '',
+            detailedDescription: project.detailedDescription || '',
+            businessPlanFile: project.businessPlanFile || '',
+        });
+    }, [project]);
+
+    const handleOverviewCancel = () => {
+        if (!project) return;
+        setOverviewForm({
+            name: project.name || '',
+            description: project.description || '',
+            detailedDescription: project.detailedDescription || '',
+            businessPlanFile: project.businessPlanFile || '',
+        });
+        setOverviewError('');
+        setIsOverviewEditing(false);
+    };
+
+    const handleOverviewSave = async () => {
+        if (!project) return;
+        setOverviewError('');
+        if (!overviewForm.name.trim()) {
+            setOverviewError('프로젝트명을 입력하세요.');
+            return;
+        }
+
+        setIsOverviewSaving(true);
+        try {
+            const res = await fetch(`/api/projects/${projectId}/overview`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(overviewForm),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                throw new Error(data?.error || '제품개요 저장에 실패했습니다.');
+            }
+
+            setProject({
+                ...project,
+                name: data.project.name,
+                description: data.project.description || '',
+                detailedDescription: data.project.detailedDescription || '',
+                businessPlanFile: data.project.businessPlanFile || '',
+            });
+            setIsOverviewEditing(false);
+        } catch (error) {
+            setOverviewError(error instanceof Error ? error.message : '제품개요 저장에 실패했습니다.');
+        } finally {
+            setIsOverviewSaving(false);
+        }
+    };
+
     const iconSvg = (d: string) => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={d} /></svg>;
 
     const tabs = [
         { id: 'overview', name: '개요', icon: iconSvg('M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z') },
-        { id: 'sales', name: '매출추정', icon: iconSvg('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z') },
-        { id: 'spec', name: 'AS-IS 스펙', icon: iconSvg('M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z') },
-        { id: 'attributes', name: '제품속성서', icon: iconSvg('M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z') },
-        { id: 'fitness', name: '적합도', icon: iconSvg('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z') },
-        { id: 'requirements', name: '요구사항', icon: iconSvg('M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2') },
-        { id: 'kano', name: 'Kano 설문', icon: iconSvg('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z') },
+        { id: 'sales', name: '자사매출추정표', icon: iconSvg('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z') },
+        { id: 'spec', name: 'AS-IS스펙표', icon: iconSvg('M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z') },
+        { id: 'attributes', name: '제품속성표', icon: iconSvg('M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z') },
+        { id: 'fitness', name: '제품속성적합도', icon: iconSvg('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z') },
+        { id: 'requirements', name: '고객요구사항도출표', icon: iconSvg('M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2') },
+        { id: 'kano', name: 'KANO질문지', icon: iconSvg('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z') },
+        { id: 'kano-aggregation', name: 'kano분석 집계표', icon: iconSvg('M4 6h16M4 10h16M4 14h16M4 18h16') },
+        { id: 'kano-timko', name: 'TIMKO/만족계수 그래프', icon: iconSvg('M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10') },
         { id: 'qfd', name: 'QFD', icon: iconSvg('M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1') },
-        { id: 'tech-tree', name: '기능기술체계', icon: iconSvg('M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z') },
-        { id: 'improvements', name: '개선포인트', icon: iconSvg('M13 10V3L4 14h7v7l9-11h-7z') },
-        { id: 'target-spec', name: '목표사양', icon: iconSvg('M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z') },
-        { id: 'tech-roadmap', name: '기술로드맵', icon: iconSvg('M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7') },
+        { id: 'tech-tree', name: '기능기술체계도', icon: iconSvg('M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z') },
+        { id: 'improvements', name: '개선포인트도출', icon: iconSvg('M13 10V3L4 14h7v7l9-11h-7z') },
+        { id: 'target-spec', name: '최종목표스펙도출', icon: iconSvg('M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z') },
+        { id: 'tech-roadmap', name: '향후목표고객LIST', icon: iconSvg('M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7') },
         { id: 'dev-plan', name: '개발계획', icon: iconSvg('M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z') },
+        { id: 'assets', name: '핵심자산과 보완자산표', icon: iconSvg('M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4') },
+        { id: 'funding-plan', name: '자금소요계획표', icon: iconSvg('M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z') },
+        { id: 'funding-source', name: '자금조달계획표', icon: iconSvg('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 10v-1') },
         { id: 'import', name: '가져오기', icon: iconSvg('M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4') },
-        { id: 'settings', name: '설정', icon: iconSvg('M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z') },
     ];
 
     const quickStartSteps = [
@@ -153,17 +280,55 @@ export default function ProjectDetailPage() {
 
     const tabComponents: Record<string, React.ReactNode> = {
         attributes: <ProductAttributesTable projectId={projectId} />,
-        spec: <SpecTable projectId={projectId} />,
+        spec: <SpecTable projectId={projectId} onSaved={() => setActiveTab('attributes')} />,
         requirements: <RequirementsTable projectId={projectId} />,
         qfd: <QFDMatrix projectId={projectId} />,
         kano: <KanoManager projectId={projectId} />,
-        sales: <SalesTable projectId={projectId} />,
+        sales: <SalesTable projectId={projectId} onSaved={() => setActiveTab('spec')} />,
         fitness: <FitnessWrapper projectId={projectId} />,
         improvements: <ImprovementsTable projectId={projectId} />,
         'target-spec': <TargetSpecTable projectId={projectId} />,
         'tech-roadmap': <TechRoadmapTable projectId={projectId} />,
         'dev-plan': <DevPlanTable projectId={projectId} />,
         'tech-tree': <TechTreeTable projectId={projectId} />,
+        'assets': <AssetsTable projectId={projectId} />,
+        'funding-plan': <FundingTable projectId={projectId} />,
+        'funding-source': <FundingTable projectId={projectId} />,
+        'kano-aggregation': kanoAnalysis ? (
+            <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-2xl font-display font-bold text-white">Kano 분석 집계표</h2>
+                </div>
+                <KanoAggregationTable analysis={kanoAnalysis.requirements.map((r: any) => ({
+                    ...r,
+                    requirementName: kanoRequirements.find((req: any) => req.id === r.requirementId)?.requirement
+                }))} />
+            </div>
+        ) : (
+            <div className="card text-center py-20 text-gray-500">Kano 분석 데이터가 없습니다.</div>
+        ),
+        'kano-timko': kanoAnalysis ? (
+            <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-2xl font-display font-bold text-white">TIMKO/만족계수 그래프</h2>
+                </div>
+                {(() => {
+                    const analysis = kanoAnalysis.requirements.map((r: any) => ({
+                        ...r,
+                        requirementName: kanoRequirements.find((req: any) => req.id === r.requirementId)?.requirement
+                    }));
+
+                    return (
+                        <>
+                            <KanoSatisfactionGraph analysis={analysis} />
+                            <KanoTimkoTable analysis={analysis} />
+                        </>
+                    );
+                })()}
+            </div>
+        ) : (
+            <div className="card text-center py-20 text-gray-500">Kano 분석 데이터가 없습니다.</div>
+        ),
     };
 
     const renderTabContent = (tabId: string) => {
@@ -244,6 +409,9 @@ export default function ProjectDetailPage() {
                             <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 팀원 초대
                             </Link>
+                            <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
+                                설정
+                            </Link>
                         </div>
                     </div>
                 </div>
@@ -273,6 +441,189 @@ export default function ProjectDetailPage() {
             <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 page-enter">
                 {activeTab === 'overview' && (
                     <div className="space-y-8 animate-fade-in">
+                        <div className="card">
+                            <div className="flex items-start justify-between gap-4 mb-6">
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-primary-300 mb-2">Product Overview</p>
+                                    <h2 className="text-xl font-display font-bold text-white">제품개요</h2>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {isOverviewEditing ? (
+                                        <>
+                                            <button type="button" onClick={handleOverviewCancel} disabled={isOverviewSaving} className="btn-secondary text-xs">취소</button>
+                                            <button type="button" onClick={handleOverviewSave} disabled={isOverviewSaving} className="btn-primary text-xs">
+                                                {isOverviewSaving ? '저장 중...' : '저장'}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button type="button" onClick={() => setIsOverviewEditing(true)} className="btn-secondary text-xs">수정</button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {overviewError && (
+                                <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                                    {overviewError}
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+                                    <p className="text-xs text-gray-500 mb-2">프로젝트명</p>
+                                    {isOverviewEditing ? (
+                                        <input
+                                            type="text"
+                                            value={overviewForm.name}
+                                            onChange={(event) => setOverviewForm({ ...overviewForm, name: event.target.value })}
+                                            className="w-full rounded-md border border-white/[0.08] bg-gray-950 px-3 py-2 text-sm text-white outline-none focus:border-primary-500"
+                                        />
+                                    ) : (
+                                        <p className="text-sm font-semibold text-white whitespace-pre-wrap">{project.name}</p>
+                                    )}
+                                </div>
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+                                    <p className="text-xs text-gray-500 mb-2">사업계획 파일</p>
+                                    {isOverviewEditing ? (
+                                        <input
+                                            type="text"
+                                            value={overviewForm.businessPlanFile}
+                                            onChange={(event) => setOverviewForm({ ...overviewForm, businessPlanFile: event.target.value })}
+                                            className="w-full rounded-md border border-white/[0.08] bg-gray-950 px-3 py-2 text-sm text-white outline-none focus:border-primary-500"
+                                            placeholder="파일명 또는 경로"
+                                        />
+                                    ) : (
+                                        <p className="text-sm text-white break-all">{project.businessPlanFile || '등록된 파일 없음'}</p>
+                                    )}
+                                </div>
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
+                                    <p className="text-xs text-gray-500 mb-2">간단 설명</p>
+                                    {isOverviewEditing ? (
+                                        <textarea
+                                            value={overviewForm.description}
+                                            onChange={(event) => setOverviewForm({ ...overviewForm, description: event.target.value })}
+                                            rows={3}
+                                            className="w-full resize-y rounded-md border border-white/[0.08] bg-gray-950 px-3 py-2 text-sm leading-6 text-white outline-none focus:border-primary-500"
+                                        />
+                                    ) : (
+                                        <p className="text-sm leading-6 text-white whitespace-pre-wrap">{project.description || '입력된 간단 설명이 없습니다.'}</p>
+                                    )}
+                                </div>
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
+                                    <p className="text-xs text-gray-500 mb-2">상세 제품개요</p>
+                                    {isOverviewEditing ? (
+                                        <textarea
+                                            value={overviewForm.detailedDescription}
+                                            onChange={(event) => setOverviewForm({ ...overviewForm, detailedDescription: event.target.value })}
+                                            rows={7}
+                                            className="w-full resize-y rounded-md border border-white/[0.08] bg-gray-950 px-3 py-2 text-sm leading-6 text-white outline-none focus:border-primary-500"
+                                        />
+                                    ) : (
+                                        <p className="text-sm leading-6 text-white whitespace-pre-wrap">{project.detailedDescription || '입력된 상세 제품개요가 없습니다.'}</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {worksheetCompleteness && (
+                            <div className="card">
+                                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-primary-300 mb-2">Worksheet Readiness</p>
+                                        <h2 className="text-xl font-display font-bold text-white">
+                                            {worksheetCompleteness.status === 'REPORT_READY' ? '보고서 초안 생성 준비 완료' : '워크시트 완성도'}
+                                        </h2>
+                                        <p className="text-sm text-gray-400 mt-2">
+                                            필수 워크시트 {worksheetCompleteness.completedRequired}/{worksheetCompleteness.totalRequired}개 완료
+                                        </p>
+                                    </div>
+                                    <div className="min-w-[180px]">
+                                        <div className="flex items-end justify-between mb-2">
+                                            <span className="text-3xl font-display font-bold text-white">{worksheetCompleteness.percent}%</span>
+                                            <span className={`text-xs font-semibold px-2 py-1 rounded ${worksheetCompleteness.requiredComplete ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                                                {worksheetCompleteness.requiredComplete ? 'READY' : 'IN PROGRESS'}
+                                            </span>
+                                        </div>
+                                        <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
+                                            <div className="h-full rounded-full bg-primary-500" style={{ width: `${worksheetCompleteness.percent}%` }} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {worksheetCompleteness.nextAction && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveTab(worksheetCompleteness.nextAction?.worksheetKey || 'overview')}
+                                        className="mt-5 w-full text-left rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors"
+                                    >
+                                        <div className="flex items-center justify-between gap-4">
+                                            <div>
+                                                <p className="text-xs text-gray-500 mb-1">다음 작업</p>
+                                                <p className="text-sm font-semibold text-white">{worksheetCompleteness.nextAction.title}</p>
+                                                <p className="text-xs text-gray-400 mt-1">{worksheetCompleteness.nextAction.nextStep}</p>
+                                            </div>
+                                            <svg className="w-5 h-5 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                            </svg>
+                                        </div>
+                                    </button>
+                                )}
+
+                                {worksheetCompleteness.blockers.length > 0 && (
+                                    <div className="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {worksheetCompleteness.blockers.slice(0, 6).map((item) => (
+                                            <button
+                                                key={item.key}
+                                                type="button"
+                                                onClick={() => setActiveTab(item.worksheetKey)}
+                                                className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-3 text-left hover:bg-amber-500/[0.08] transition-colors"
+                                            >
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-sm font-semibold text-amber-200">{item.title}</span>
+                                                    <span className="text-xs text-amber-300">{item.percent}%</span>
+                                                </div>
+                                                <p className="text-xs text-amber-100/70 mt-2">{item.nextStep}</p>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="hidden">
+                            <div className="flex items-start justify-between gap-4 mb-6">
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-primary-300 mb-2">Product Overview</p>
+                                    <h2 className="text-xl font-display font-bold text-white">제품개요</h2>
+                                </div>
+                                <span className="badge-primary text-[10px]">프로젝트 생성 정보</span>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+                                    <p className="text-xs text-gray-500 mb-2">프로젝트명</p>
+                                    <p className="text-sm font-semibold text-white whitespace-pre-wrap">{project.name}</p>
+                                </div>
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+                                    <p className="text-xs text-gray-500 mb-2">사업계획 파일</p>
+                                    <p className="text-sm text-white break-all">
+                                        {project.businessPlanFile || '등록된 파일 없음'}
+                                    </p>
+                                </div>
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
+                                    <p className="text-xs text-gray-500 mb-2">간단 설명</p>
+                                    <p className="text-sm leading-6 text-white whitespace-pre-wrap">
+                                        {project.description || '입력된 간단 설명이 없습니다.'}
+                                    </p>
+                                </div>
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
+                                    <p className="text-xs text-gray-500 mb-2">상세 제품개요</p>
+                                    <p className="text-sm leading-6 text-white whitespace-pre-wrap">
+                                        {project.detailedDescription || '입력된 상세 제품개요가 없습니다.'}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Stats */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                             {[

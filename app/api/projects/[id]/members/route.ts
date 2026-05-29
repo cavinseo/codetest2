@@ -1,37 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
-import { requireAuth } from '@/lib/auth';
+import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api/members');
 
 const inviteSchema = z.object({
-    email: z.string().email('유효한 이메일을 입력하세요'),
+    email: z.string().email('Valid email is required.'),
     role: z.enum(['EDITOR', 'COACH'], {
-        errorMap: () => ({ message: 'EDITOR 또는 COACH 역할만 초대할 수 있습니다.' }),
+        errorMap: () => ({ message: 'Only EDITOR or COACH can be invited.' }),
     }),
 });
 
-// ─── POST: 팀원 초대 ──────────────────────────────────────────────────
+// POST: 팀원 초대
 
 export async function POST(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
 ) {
-    // 세션 인증: 로그인한 사용자만 팀원을 초대할 수 있습니다.
-    const authResult = requireAuth(request);
-    if (authResult instanceof NextResponse) return authResult;
-    const { userId: requesterId } = authResult;
-
     const { id: projectId } = await props.params;
+    const accessResult = await requireProjectAccess(request, projectId, { roles: ['OWNER'] });
+    if (accessResult instanceof NextResponse) return accessResult;
+    const { userId: requesterId } = accessResult.user;
 
     try {
         const body = await request.json();
         const { email, role } = inviteSchema.parse(body);
 
-        // 프로젝트 존재 확인 및 소유자 정보 가져오기
+        // 프로젝트 존재 여부 및 소유자 정보 확인
         const project = await prisma.project.findUnique({
             where: { id: projectId },
         });
@@ -108,13 +106,15 @@ export async function POST(
     }
 }
 
-// ─── GET: 팀원 목록 조회 ──────────────────────────────────────────────
+// GET: 팀원 목록 조회
 
 export async function GET(
-    _request: NextRequest,
+    request: NextRequest,
     props: { params: Promise<{ id: string }> }
 ) {
     const { id: projectId } = await props.params;
+    const accessResult = await requireProjectAccess(request, projectId);
+    if (accessResult instanceof NextResponse) return accessResult;
 
     try {
         const project = await prisma.project.findUnique({

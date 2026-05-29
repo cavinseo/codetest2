@@ -64,6 +64,67 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         toastTimerRef.current = setTimeout(() => setToast(null), 3000);
     };
 
+    // AI 자동생성 (규칙 기반)
+    const handleGenerateAI = async (mode: 'append' | 'overwrite') => {
+        setIsLoading(true);
+        try {
+            // 1. 제품속성서 데이터 가져오기
+            const res = await fetch(`/api/projects/${projectId}/attributes`);
+            if (!res.ok) throw new Error('제품속성 데이터를 가져오지 못했습니다.');
+            
+            const { attributes } = await res.json();
+            if (!attributes || attributes.length === 0) {
+                showToast('제품속성서에 데이터가 없습니다. 먼저 제품속성을 입력해주세요.', 'error');
+                return;
+            }
+
+            // 2. 규칙 기반 변환 (Mapping)
+            // 향후 이 부분을 외부 AI API 호출로 교체 가능하도록 설계
+            const generatedReqs = attributes.map((attr: any, idx: number) => {
+                const customerNeed = attr.customerNeed?.trim() || '';
+                const benefit = attr.benefit?.trim() || '';
+                
+                // 요구사항 문장 생성 패턴
+                let reqContent = '';
+                if (customerNeed && benefit) {
+                    reqContent = `${customerNeed}을(를) 통해 ${benefit}을(를) 얻고자 함`;
+                } else {
+                    reqContent = customerNeed || benefit || '요구사항을 정의해주세요';
+                }
+
+                return {
+                    id: `gen_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 5)}`,
+                    category: attr.marketSegment?.trim() || '일반',
+                    subcategory: attr.attribute?.trim() || '',
+                    requirement: reqContent,
+                    order: idx + 1
+                };
+            });
+
+            // 3. 상태 업데이트
+            if (mode === 'overwrite') {
+                setRequirements(generatedReqs);
+                showToast(`✨ ${generatedReqs.length}개의 요구사항으로 완전히 교체되었습니다.`);
+            } else {
+                // 중복 방지 (카테고리와 내용이 완전히 같은 경우 제외)
+                const existingKeys = new Set(requirements.map(r => `${r.category}|${r.requirement}`));
+                const filteredNew = generatedReqs.filter((r: any) => !existingKeys.has(`${r.category}|${r.requirement}`));
+                
+                if (filteredNew.length === 0) {
+                    showToast('새로 추가할 항목이 없습니다. (이미 동일한 항목이 존재함)', 'error');
+                } else {
+                    setRequirements(prev => [...prev, ...filteredNew]);
+                    showToast(`✨ ${filteredNew.length}개의 새로운 요구사항이 추가되었습니다.`);
+                }
+            }
+        } catch (error) {
+            console.error('AI 생성 오류:', error);
+            showToast('데이터 생성 중 오류가 발생했습니다.', 'error');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     useEffect(() => {
         async function load() {
             try {
@@ -208,6 +269,40 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                         <span><span className="text-white font-semibold">{requirements.length}</span>개 요구사항</span>
                         <span><span className="text-white font-semibold">{groupedCategories.length}</span>개 카테고리</span>
                     </div>
+
+                    {/* AI 자동생성 버튼 및 메뉴 */}
+                    <div className="relative group">
+                        <button
+                            onClick={() => handleGenerateAI('append')}
+                            disabled={isSaving}
+                            className="btn-secondary text-sm flex items-center gap-1.5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 border-indigo-500/30 text-indigo-300"
+                        >
+                            <span className="animate-pulse">✨</span>
+                            AI 자동생성
+                            <svg className="w-3.5 h-3.5 ml-0.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+
+                        {/* 드롭다운 메뉴 (기존 데이터가 있을 때) */}
+                        {requirements.length > 0 && (
+                            <div className="absolute right-0 top-full mt-2 w-48 py-2 bg-[#1a1c1e] border border-white/[0.08] rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                                <button
+                                    onClick={() => handleGenerateAI('append')}
+                                    className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/[0.04] hover:text-white transition-colors"
+                                >
+                                    기존 항목에 추가
+                                </button>
+                                <button
+                                    onClick={() => handleGenerateAI('overwrite')}
+                                    className="w-full text-left px-4 py-2 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
+                                >
+                                    전체 교체 (기존 삭제)
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
                     <button
                         onClick={() => {
                             setIsAddingNew(true);

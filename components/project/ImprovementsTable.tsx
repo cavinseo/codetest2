@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { buildImprovementSuggestionsFromQfd } from '@/lib/worksheet-links';
 
 interface ImprovementRow { id: string; customerNeed: string; improvementRate: string; devProportion: string; order: number; }
 interface ImprovementFeature { id: string; feature: string; priority: string; order: number; }
@@ -11,6 +12,7 @@ export default function ImprovementsTable({ projectId }: Props) {
     const [features, setFeatures] = useState<ImprovementFeature[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [qfdData, setQfdData] = useState<any>(null);
     const [toast, setToast] = useState<string | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -34,6 +36,9 @@ export default function ImprovementsTable({ projectId }: Props) {
                     }));
                     setRows(needs);
                     setFeatures(feats);
+                }
+                if (data?.qfdAnalysis) {
+                    setQfdData(data.qfdAnalysis);
                 }
             })
             .catch(console.error)
@@ -83,6 +88,18 @@ export default function ImprovementsTable({ projectId }: Props) {
         finally { setIsSaving(false); }
     };
 
+    const handleImportFromQFD = () => {
+        if (!qfdData?.requirements) {
+            showToast('QFD 분석 데이터가 없습니다.');
+            return;
+        }
+
+        const suggestions = buildImprovementSuggestionsFromQfd(qfdData.requirements);
+
+        setRows(suggestions);
+        showToast('QFD 데이터가 연동되었습니다.');
+    };
+
     if (isLoading) return <div className="flex items-center justify-center p-12"><div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" /></div>;
 
     const cellInput = (value: string, onChange: (v: string) => void, placeholder: string, colorClass = 'text-white') => (
@@ -103,6 +120,10 @@ export default function ImprovementsTable({ projectId }: Props) {
                     <p className="text-sm text-gray-500 mt-1">개선포인트점수 기반 고객니즈 우선순위</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <button onClick={handleImportFromQFD} className="btn-secondary text-sm flex items-center gap-1.5 border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        QFD 데이터 연동
+                    </button>
                     <button onClick={handleSave} disabled={isSaving} className="btn-primary text-sm flex items-center gap-1.5">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
                         {isSaving ? '저장 중...' : '저장'}

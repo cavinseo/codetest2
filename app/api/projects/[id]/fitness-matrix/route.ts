@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 
 // GET: 적합도 매트릭스 로드
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
+    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    if (accessResult instanceof NextResponse) return accessResult;
     try {
         const record = await prisma.fitnessMatrix.findUnique({ where: { projectId } });
         return NextResponse.json({ fitnessMatrix: record });
@@ -13,9 +16,11 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     }
 }
 
-// POST: 적합도 매트릭스 저장 (upsert)
+// POST: 적합도 매트릭스 저장(upsert)
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
+    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    if (accessResult instanceof NextResponse) return accessResult;
     try {
         const body = await request.json();
         const { marketsJson, matrixJson, managerComment, consultantNote } = body;

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
+import { encodeSessionCookie } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api/auth/login');
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
         const sessionPayload = { userId: user.id, email: user.email, name: user.name };
 
         const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(sessionPayload), {
+        cookieStore.set(SESSION_COOKIE_NAME, encodeSessionCookie(sessionPayload), {
             httpOnly: true,
             sameSite: 'strict',
             secure: process.env.NODE_ENV === 'production',

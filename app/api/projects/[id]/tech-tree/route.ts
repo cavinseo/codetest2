@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 
 // GET: 기능기술체계 목록
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
+    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    if (accessResult instanceof NextResponse) return accessResult;
     try {
         const entries = await prisma.techTreeEntry.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
         return NextResponse.json({ entries });
@@ -16,6 +19,8 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 // POST: 전체 목록 일괄 저장
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
+    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    if (accessResult instanceof NextResponse) return accessResult;
     try {
         const { entries } = await request.json() as {
             entries: { customerVoice?: string; coreSpec?: string; subSpec?: string; techCharacteristic?: string; order: number }[];

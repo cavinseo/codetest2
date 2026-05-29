@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -31,13 +32,15 @@ interface Stats {
     totalRequirements: number;
     totalResponses: number;
     kanoDistribution: Record<string, number>;
+    recentProjects: Array<{ id: string; name: string; createdAt: string }>;
 }
 
 type Tab = 'overview' | 'users' | 'projects';
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function AdminDashboard() {
+export default function AdminModePage() {
+    const router = useRouter();
     const [tab, setTab] = useState<Tab>('overview');
     const [stats, setStats] = useState<Stats | null>(null);
     const [users, setUsers] = useState<User[]>([]);
@@ -56,13 +59,21 @@ export default function AdminDashboard() {
                 fetch('/api/admin/users'),
                 fetch('/api/admin/projects'),
             ]);
+
+            // 403 권한 체크
+            if (statsRes.status === 403) {
+                alert('관리자 권한이 필요합니다.');
+                router.push('/dashboard');
+                return;
+            }
+
             if (statsRes.ok) setStats(await statsRes.json());
             if (usersRes.ok) { const d = await usersRes.json(); setUsers(d.users); }
             if (projectsRes.ok) { const d = await projectsRes.json(); setProjects(d.projects); }
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [router]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -131,6 +142,15 @@ export default function AdminDashboard() {
         { label: '총 설문 응답', value: stats?.totalResponses ?? 0, unit: '개', gradient: 'from-amber-500/20 to-orange-500/20', color: 'text-amber-400' },
     ];
 
+    const kanoMeta: Record<string, { label: string; color: string; bg: string }> = {
+        M: { label: 'Must-be', color: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/20' },
+        O: { label: 'One-Dim', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20' },
+        A: { label: 'Attractive', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
+        I: { label: 'Indifferent', color: 'text-gray-400', bg: 'bg-gray-500/10 border-gray-500/20' },
+        R: { label: 'Reverse', color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20' },
+        Q: { label: 'Question', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
+    };
+
     return (
         <div className="min-h-screen bg-surface-900 bg-grid relative">
             <div className="bg-orb w-[500px] h-[500px] bg-primary-600/40 top-[-200px] left-[5%] opacity-10" />
@@ -146,20 +166,26 @@ export default function AdminDashboard() {
                         <div className="w-px h-6 bg-white/10" />
                         <div>
                             <h1 className="text-xl font-display font-bold text-white flex items-center gap-2">
-                                <span className="w-6 h-6 rounded-md bg-gradient-to-br from-rose-500/30 to-orange-500/30 flex items-center justify-center text-xs">⚙</span>
-                                관리자 대시보드
+                                <span className="w-6 h-6 rounded-md bg-gradient-to-br from-rose-500/30 to-orange-500/30 flex items-center justify-center text-xs">🛡️</span>
+                                관리자모드
                             </h1>
-                            <p className="text-xs text-gray-500 mt-0.5">이용자 및 프로젝트 관리</p>
+                            <p className="text-xs text-gray-500 mt-0.5">시스템 관리 및 분석</p>
                         </div>
                     </div>
-                    <button
-                        onClick={load}
-                        className="btn-ghost text-sm flex items-center gap-1.5"
-                        id="admin-refresh-btn"
-                    >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                        새로고침
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 text-xs text-gray-600">
+                            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            {new Date().toLocaleString('ko-KR')}
+                        </div>
+                        <button
+                            onClick={load}
+                            className="btn-ghost text-sm flex items-center gap-1.5"
+                            id="admin-refresh-btn"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            새로고침
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -184,7 +210,7 @@ export default function AdminDashboard() {
                             {confirmDelete.type === 'user' ? '사용자 삭제' : '프로젝트 삭제'}
                         </h3>
                         <p className="text-sm text-gray-400 mb-1">
-                            <span className="text-white font-medium">"{confirmDelete.name}"</span>을(를) 삭제하시겠습니까?
+                            <span className="text-white font-medium">&quot;{confirmDelete.name}&quot;</span>을(를) 삭제하시겠습니까?
                         </p>
                         {confirmDelete.type === 'project' && (
                             <p className="text-xs text-rose-400 mt-1 mb-4">⚠️ 프로젝트의 모든 데이터(요구사항, QFD, Kano 응답 등)가 함께 삭제됩니다.</p>
@@ -249,6 +275,7 @@ export default function AdminDashboard() {
                         {/* ── Overview Tab ─────────────────────────────── */}
                         {tab === 'overview' && (
                             <div className="space-y-6">
+                                {/* 통계 카드 */}
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     {statItems.map((s) => (
                                         <div key={s.label} className="stat-card">
@@ -260,21 +287,18 @@ export default function AdminDashboard() {
                                     ))}
                                 </div>
 
-                                {/* Kano distribution */}
+                                {/* Kano 분포 */}
                                 {stats && (
                                     <div className="card">
-                                        <h2 className="text-base font-bold text-white mb-4">Kano 카테고리 분포</h2>
-                                        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                                        <div className="flex items-center gap-3 mb-5">
+                                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500/20 to-accent-500/20 flex items-center justify-center">
+                                                <svg className="w-4 h-4 text-primary-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                            </div>
+                                            <h2 className="text-base font-bold text-white">Kano 카테고리 분포</h2>
+                                        </div>
+                                        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-4">
                                             {Object.entries(stats.kanoDistribution).map(([cat, count]) => {
-                                                const meta: Record<string, { label: string; color: string; bg: string }> = {
-                                                    M: { label: 'Must-be', color: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/20' },
-                                                    O: { label: 'One-Dim', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20' },
-                                                    A: { label: 'Attractive', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
-                                                    I: { label: 'Indifferent', color: 'text-gray-400', bg: 'bg-gray-500/10 border-gray-500/20' },
-                                                    R: { label: 'Reverse', color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20' },
-                                                    Q: { label: 'Question', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
-                                                };
-                                                const m = meta[cat] || { label: cat, color: 'text-gray-400', bg: 'bg-gray-500/10 border-gray-500/20' };
+                                                const m = kanoMeta[cat] || { label: cat, color: 'text-gray-400', bg: 'bg-gray-500/10 border-gray-500/20' };
                                                 return (
                                                     <div key={cat} className={`rounded-xl border p-4 text-center ${m.bg}`}>
                                                         <div className={`text-2xl font-bold ${m.color}`}>{count}</div>
@@ -283,10 +307,71 @@ export default function AdminDashboard() {
                                                 );
                                             })}
                                         </div>
+                                        <div className="bg-primary-500/5 border border-primary-500/10 rounded-xl p-3">
+                                            <p className="text-xs text-gray-400">
+                                                <span className="text-primary-400 font-semibold">분석: </span>
+                                                전체 {Object.values(stats.kanoDistribution).reduce((a, b) => a + b, 0)}개의 응답이 수집되었습니다.
+                                            </p>
+                                        </div>
                                     </div>
                                 )}
 
-                                {/* Quick Links */}
+                                {/* 최근 프로젝트 + 시스템 정보 */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* 최근 프로젝트 */}
+                                    <div className="card">
+                                        <div className="flex items-center gap-3 mb-5">
+                                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center">
+                                                <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                                            </div>
+                                            <h2 className="text-base font-bold text-white">최근 프로젝트</h2>
+                                        </div>
+                                        {stats && stats.recentProjects && stats.recentProjects.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {stats.recentProjects.map((project) => (
+                                                    <Link
+                                                        key={project.id}
+                                                        href={`/project/${project.id}`}
+                                                        className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.06] hover:border-white/[0.1] transition-all duration-200"
+                                                    >
+                                                        <div>
+                                                            <p className="text-sm font-medium text-white">{project.name}</p>
+                                                            <p className="text-[10px] text-gray-600 mt-1">{new Date(project.createdAt).toLocaleDateString('ko-KR')}</p>
+                                                        </div>
+                                                        <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                                    </Link>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-gray-500 text-center py-8 text-sm">프로젝트가 없습니다</p>
+                                        )}
+                                    </div>
+
+                                    {/* 시스템 정보 */}
+                                    <div className="card">
+                                        <div className="flex items-center gap-3 mb-5">
+                                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-500/20 to-gray-400/20 flex items-center justify-center">
+                                                <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
+                                            </div>
+                                            <h2 className="text-base font-bold text-white">시스템 정보</h2>
+                                        </div>
+                                        <div className="space-y-3">
+                                            {[
+                                                { label: '저장소', value: 'SQLite (Prisma)', status: 'badge-emerald' },
+                                                { label: '버전', value: 'v1.0.0', status: 'badge-primary' },
+                                                { label: '환경', value: '개발 모드', status: 'badge-purple' },
+                                                { label: '상태', value: '정상 작동', status: 'badge-emerald' },
+                                            ].map((info) => (
+                                                <div key={info.label} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                                                    <span className="text-xs text-gray-500">{info.label}</span>
+                                                    <span className={`${info.status} text-[10px]`}>{info.value}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 빠른 이동 */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <button
                                         onClick={() => setTab('users')}
@@ -318,24 +403,6 @@ export default function AdminDashboard() {
                                             <svg className="w-4 h-4 text-gray-600 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                         </div>
                                     </button>
-                                </div>
-
-                                {/* System Info */}
-                                <div className="card">
-                                    <h2 className="text-base font-bold text-white mb-4">시스템 정보</h2>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                        {[
-                                            { label: '저장소', value: 'JSON 파일', status: 'badge-emerald' },
-                                            { label: '버전', value: 'v1.0.0', status: 'badge-primary' },
-                                            { label: '환경', value: '개발 모드', status: 'badge-purple' },
-                                            { label: '상태', value: '정상 작동', status: 'badge-emerald' },
-                                        ].map((info) => (
-                                            <div key={info.label} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-                                                <span className="text-xs text-gray-500">{info.label}</span>
-                                                <span className={`${info.status} text-[10px]`}>{info.value}</span>
-                                            </div>
-                                        ))}
-                                    </div>
                                 </div>
                             </div>
                         )}

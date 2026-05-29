@@ -1,6 +1,8 @@
 // Google Forms API 래퍼
 // Kano 설문지를 Google Forms로 자동 생성하고 응답을 가져옵니다
 
+import { getKanoTopic } from './utils/korean-utils';
+
 const FORMS_API_BASE = 'https://forms.googleapis.com/v1/forms';
 
 interface Requirement {
@@ -8,15 +10,17 @@ interface Requirement {
     category: string;
     subcategory?: string;
     requirement: string;
+    kanoPositiveQ?: string | null;
+    kanoNegativeQ?: string | null;
     order: number;
 }
 
 const KANO_CHOICES = [
-    '😍 매우 만족 (I like it)',
-    '😊 당연함 (I expect it)',
-    '😐 상관없음 (I am neutral)',
-    '😕 견딜만함 (I can tolerate it)',
-    '😠 매우 불만 (I dislike it)',
+    '😍 마음에 든다',
+    '😊 당연하다',
+    '😐 아무런느낌이 없다.',
+    '😕 하는수 없다.',
+    '😠 마음에 안든다',
 ];
 
 const ANSWER_MAP: Record<string, string> = {
@@ -67,7 +71,8 @@ export async function createKanoForm(
                 title: `Kano 설문 조사 - ${projectName}`,
                 description:
                     '이 설문은 제품/서비스의 각 기능에 대한 고객 만족도를 측정하기 위한 Kano 모델 기반 설문입니다.\n\n' +
-                    '각 기능에 대해 "긍정 질문"(기능이 있을 때)과 "부정 질문"(기능이 없을 때) 두 가지에 답변해 주세요.',
+                    '각 기능에 대해 "긍정 질문"(기능이 있을 때)과 "부정 질문"(기능이 없을 때) 두 가지에 답변해 주세요.\n\n' +
+                    '[참고] 설문 응답을 시스템으로 다시 가져오기 위해, 설문지 설정에서 "이메일 주소 수집"을 활성화해 주세요.',
             },
             updateMask: 'description',
         },
@@ -76,6 +81,7 @@ export async function createKanoForm(
     // 각 요구사항에 대해 긍정/부정 질문 쌍 생성
     let itemIndex = 0;
     for (const req of requirements) {
+        const topic = getKanoTopic(req.requirement);
         const categoryLabel = req.category
             ? `[${req.category}${req.subcategory ? ` > ${req.subcategory}` : ''}] `
             : '';
@@ -84,8 +90,8 @@ export async function createKanoForm(
         requests.push({
             createItem: {
                 item: {
-                    title: `👍 [긍정] ${categoryLabel}${req.requirement}`,
-                    description: `만약 "${req.requirement}" 기능이 있다면 어떻게 느끼시겠습니까?`,
+                    title: `👍 [긍정] ${categoryLabel}${topic}`,
+                    description: req.kanoPositiveQ || `만약 "${topic}"(이)라면 어떻게 느끼시겠습니까?`,
                     questionItem: {
                         question: {
                             required: true,
@@ -106,8 +112,8 @@ export async function createKanoForm(
         requests.push({
             createItem: {
                 item: {
-                    title: `👎 [부정] ${categoryLabel}${req.requirement}`,
-                    description: `만약 "${req.requirement}" 기능이 없다면 어떻게 느끼시겠습니까?`,
+                    title: `👎 [부정] ${categoryLabel}${topic}`,
+                    description: req.kanoNegativeQ || `만약 "${topic}"(이)가 아니라면 어떻게 느끼시겠습니까?`,
                     questionItem: {
                         question: {
                             required: true,

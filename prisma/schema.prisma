@@ -51,9 +51,65 @@ model Project {
   techRoadmaps             TechRoadmap[]
   devPlans                 DevPlan[]
   salesEstimates           SalesEstimate[]
+  assetItems               AssetItem[]
+  fundingPlans             FundingPlan[]
+  fundingSources           FundingSource[]
 
   @@index([ownerId])
   @@map("projects")
+}
+
+// ... (기존 모델들 보존) ...
+
+// ─────────────────────────────────────────
+// 핵심자산과 보완자산 (AssetsTable)
+// ─────────────────────────────────────────
+model AssetItem {
+  id        String  @id @default(cuid())
+  projectId String
+  type      String  // "CORE" | "COMPLEMENTARY"
+  category  String? // 핵심: (공란), 보완: "필요 항목"
+  content   String? // 핵심: "핵심자산", 보완: "해결방안"
+  order     Int     @default(0)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("asset_items")
+}
+
+// ─────────────────────────────────────────
+// 자금소요계획 (FundingReqTable)
+// ─────────────────────────────────────────
+model FundingPlan {
+  id        String  @id @default(cuid())
+  projectId String
+  category  String? // "매출액", "소요자금"
+  item      String? // "매출액", "생산비용", "운영관리비" 등
+  year1     Float   @default(0)
+  year2     Float   @default(0)
+  year3     Float   @default(0)
+  order     Int     @default(0)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("funding_plans")
+}
+
+// ─────────────────────────────────────────
+// 자금조달계획 (FundingSourceTable)
+// ─────────────────────────────────────────
+model FundingSource {
+  id        String  @id @default(cuid())
+  projectId String
+  category  String? // "정부자금", "엔젤투자금" 등
+  year1     String? // "출처:금액" 또는 JSON 형태 저장 가능성 고려하여 String
+  year2     String?
+  year3     String?
+  order     Int     @default(0)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("funding_sources")
 }
 
 model ProjectMember {
@@ -88,17 +144,19 @@ model SpecFunction {
 }
 
 model CustomerRequirement {
-  id            String         @id @default(cuid())
-  projectId     String
-  category      String
-  subcategory   String?
-  requirement   String
-  order         Int            @default(0)
-  createdAt     DateTime       @default(now())
-  benchmarks    Benchmark[]
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  kanoResponses KanoResponse[]
-  qfdMatrices   QFDMatrix[]
+  id             String         @id @default(cuid())
+  projectId      String
+  category       String
+  subcategory    String?
+  requirement    String
+  kanoPositiveQ  String?        // Kano 긍정 질문 (사용자 직접 입력)
+  kanoNegativeQ  String?        // Kano 부정 질문 (사용자 직접 입력)
+  order          Int            @default(0)
+  createdAt      DateTime       @default(now())
+  benchmarks     Benchmark[]
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kanoResponses  KanoResponse[]
+  qfdMatrices    QFDMatrix[]
 
   @@index([projectId])
   @@map("customer_requirements")
@@ -383,8 +441,10 @@ model DevPlan {
 model SalesEstimate {
   id         String  @id @default(cuid())
   projectId  String
+  period     String  @default("Y")
   customer   String?
   amount     Float   @default(0)
+  futureAmount Float @default(0)
   competitor String?
   order      Int     @default(0)
   project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api/export');
@@ -9,6 +10,8 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     const { id: projectId } = await params;
+    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    if (accessResult instanceof NextResponse) return accessResult;
 
     try {
         const project = await prisma.project.findUnique({

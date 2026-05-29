@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api/spec');
@@ -11,6 +12,8 @@ export async function GET(
 ) {
     try {
         const { id: projectId } = await params;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
         });
@@ -29,17 +32,17 @@ export async function GET(
 
         return NextResponse.json({ specFunctions: projectSpecs });
     } catch (error: unknown) {
-        log.error('스펙 조회 실패', error);
+        log.error('?ㅽ럺 議고쉶 ?ㅽ뙣', error);
         return NextResponse.json(
-            { error: '스펙 조회 실패' },
+            { error: '?ㅽ럺 議고쉶 ?ㅽ뙣' },
             { status: 500 }
         );
     }
 }
 
-// POST: 스펙 저장 (전체 교체)
-// 임시 ID(core_0, sub_1 등)를 사용하는 SpecTable의 serializeSpecs()
-// 결과물을 받아 CORE → SUB → DETAIL 순서로 단계별 저장
+// POST: 스펙 저장(전체 교체)
+// ?꾩떆 ID(core_0, sub_1 ??瑜??ъ슜?섎뒗 SpecTable??serializeSpecs()
+// 결과물을 받아 CORE -> SUB -> DETAIL 순서로 단계별 저장
 // 각 단계에서 Prisma가 실제 cuid를 생성하면 idMapping으로 parentId를 실제 id로 교체
 export async function POST(
     request: NextRequest,
@@ -47,6 +50,8 @@ export async function POST(
 ) {
     try {
         const { id: projectId } = await params;
+        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
         });
@@ -78,7 +83,7 @@ export async function POST(
             });
         }
 
-        // 임시 ID → 실제 Prisma cuid 매핑 테이블
+        // 임시 ID와 실제 Prisma cuid 매핑 테이블
         const idMapping = new Map<string, string>();
 
         // 1단계: CORE 저장
@@ -96,7 +101,7 @@ export async function POST(
             if (core.id) idMapping.set(core.id, created.id);
         }
 
-        // 2단계: SUB 저장 (parentId를 실제 CORE id로 교체)
+        // 2단계: SUB 저장(parentId를 실제 CORE id로 교체)
         const subs = newSpecs.filter(s => s.level === 'SUB');
         for (const sub of subs) {
             const realParentId = sub.parentId
@@ -115,7 +120,7 @@ export async function POST(
             if (sub.id) idMapping.set(sub.id, created.id);
         }
 
-        // 3단계: DETAIL 저장 (parentId를 실제 SUB id로 교체)
+        // 3단계: DETAIL 저장(parentId를 실제 SUB id로 교체)
         const details = newSpecs.filter(s => s.level === 'DETAIL');
         for (const detail of details) {
             const realParentId = detail.parentId

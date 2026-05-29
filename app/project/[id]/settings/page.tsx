@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 
 interface Member {
@@ -13,13 +13,20 @@ interface Member {
     joinedAt: string;
 }
 
+interface ProjectInfo {
+    id: string;
+    name: string;
+    description?: string | null;
+}
+
 export default function ProjectSettingsPage() {
     const params = useParams();
-    const router = useRouter();
     const projectId = params.id as string;
 
+    const [project, setProject] = useState<ProjectInfo | null>(null);
     const [members, setMembers] = useState<Member[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [projectError, setProjectError] = useState('');
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
     const [inviteRole, setInviteRole] = useState<'EDITOR' | 'COACH'>('EDITOR');
@@ -30,15 +37,27 @@ export default function ProjectSettingsPage() {
     const [isImporting, setIsImporting] = useState(false);
     const [importFile, setImportFile] = useState<File | null>(null);
 
-    // 임시 프로젝트 정보
-    const project = {
-        id: projectId,
-        name: '스마트 IoT 센서 개발',
-    };
-
     useEffect(() => {
+        loadProject();
         loadMembers();
     }, [projectId]);
+
+    const loadProject = async () => {
+        setProjectError('');
+        try {
+            const response = await fetch(`/api/projects/${projectId}/overview`);
+            const data = await response.json().catch(() => null);
+
+            if (!response.ok) {
+                throw new Error(data?.error || '프로젝트 정보를 불러오지 못했습니다.');
+            }
+
+            setProject(data.project);
+        } catch (error) {
+            console.error('프로젝트 로드 실패:', error);
+            setProjectError(error instanceof Error ? error.message : '프로젝트 정보를 불러오지 못했습니다.');
+        }
+    };
 
     const loadMembers = async () => {
         try {
@@ -131,7 +150,7 @@ export default function ProjectSettingsPage() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${project.name}_${new Date().toISOString().split('T')[0]}.json`;
+            a.download = `${project?.name || '프로젝트'}_${new Date().toISOString().split('T')[0]}.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -181,6 +200,8 @@ export default function ProjectSettingsPage() {
         }
     };
 
+    const projectName = project?.name || '현재 프로젝트';
+
     return (
         <div className="min-h-screen bg-gray-900">
             {/* 헤더 */}
@@ -197,7 +218,8 @@ export default function ProjectSettingsPage() {
                             <div className="h-6 w-px bg-gray-700" />
                             <div>
                                 <h1 className="text-2xl font-bold text-white">프로젝트 설정</h1>
-                                <p className="text-sm text-gray-400 mt-1">{project.name}</p>
+                                <p className="text-sm text-gray-400 mt-1">{projectName}</p>
+                                <p className="text-xs text-gray-500 mt-1">이 페이지의 설정은 현재 선택한 프로젝트에만 적용됩니다.</p>
                             </div>
                         </div>
                     </div>
@@ -206,6 +228,11 @@ export default function ProjectSettingsPage() {
 
             {/* 메인 콘텐츠 */}
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                {projectError && (
+                    <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                        {projectError}
+                    </div>
+                )}
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                     {/* 사이드바 */}
                     <div className="lg:col-span-1">

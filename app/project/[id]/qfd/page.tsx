@@ -28,8 +28,8 @@ export default function QFDPage() {
                 </div>
             </header>
 
-            <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <div className="bg-gray-900/50 p-6 min-h-[500px] rounded-xl overflow-hidden">
+            <main className="relative z-10 w-full px-4 sm:px-6 lg:px-8 py-8">
+                <div className="bg-gray-900/50 p-4 min-h-[500px] rounded-xl overflow-hidden">
                     <QFDMatrix projectId={projectId} />
                 </div>
             </main>

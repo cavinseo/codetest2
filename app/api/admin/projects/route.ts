@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
+import { requireAdmin } from '@/lib/authorization';
 
 const log = createLogger('api/admin/projects');
 
 // ─── GET: 모든 프로젝트 목록 (통계 포함) ──────────────────────────────
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
+    const adminResult = await requireAdmin(request);
+    if (adminResult instanceof NextResponse) return adminResult;
+
     try {
         const projects = await prisma.project.findMany({
             include: {
@@ -43,6 +47,9 @@ export async function GET(_request: NextRequest) {
 // ─── DELETE: 프로젝트 삭제 (연관 데이터 cascade) ──────────────────────
 
 export async function DELETE(request: NextRequest) {
+    const adminResult = await requireAdmin(request);
+    if (adminResult instanceof NextResponse) return adminResult;
+
     try {
         const body = await request.json();
         const projectId: string | undefined = body?.projectId;
