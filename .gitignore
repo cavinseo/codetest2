@@ -35,6 +35,12 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
+# Local development databases can contain private test/business data.
+prisma/dev.db
+prisma/dev.db-*
+*.sqlite
+*.sqlite3
+
 # Vercel
 .vercel
 
