@@ -1,6 +1,6 @@
 'use client';
 
-import { translateKanoCategory } from '@/lib/kano-algorithm';
+import { getKanoAnswerLabel, getKanoCategoryLabel } from '@/lib/kano-response-display';
 
 interface RespondentAnswer {
     requirementId: string;
@@ -25,18 +25,6 @@ export default function KanoRespondentTable({ respondents, requirements }: KanoR
     const formatDate = (dateString: string) => {
         const d = new Date(dateString);
         return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    };
-
-    const getShortCategory = (cat: string) => {
-        switch (cat) {
-            case 'M': return '당연(M)';
-            case 'O': return '일원(O)';
-            case 'A': return '매력(A)';
-            case 'I': return '무관심(I)';
-            case 'R': return '역(R)';
-            case 'Q': return '회의(Q)';
-            default: return '-';
-        }
     };
 
     const getCategoryColor = (cat: string) => {
@@ -64,14 +52,14 @@ export default function KanoRespondentTable({ respondents, requirements }: KanoR
             <h3 className="text-xl font-bold text-white mb-4">제출자별 응답 결과</h3>
             <div className="card overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-center">
+                    <table className="w-full text-sm">
                         <thead className="bg-white/[0.04]">
                             <tr className="text-gray-400 border-b border-white/[0.08]">
                                 <th className="px-4 py-3 text-left border-r border-white/5 whitespace-nowrap min-w-[150px]">이메일 (응답자)</th>
                                 <th className="px-4 py-3 text-left border-r border-white/5 whitespace-nowrap min-w-[120px]">응답 일시</th>
                                 {requirements.map((req, idx) => (
-                                    <th key={req.id} className="px-3 py-3 font-medium text-gray-300 min-w-[100px] border-r border-white/5 whitespace-nowrap">
-                                        <div className="max-w-[120px] overflow-hidden text-ellipsis inline-block align-bottom" title={req.requirement}>
+                                    <th key={req.id} className="px-3 py-3 font-medium text-gray-300 min-w-[220px] border-r border-white/5 whitespace-nowrap">
+                                        <div className="max-w-[240px] overflow-hidden text-ellipsis inline-block align-bottom" title={req.requirement}>
                                             Q{idx + 1}. {req.requirement}
                                         </div>
                                     </th>
@@ -91,11 +79,23 @@ export default function KanoRespondentTable({ respondents, requirements }: KanoR
                                         // 해당 요구사항에 대한 이 유저의 응답 찾기
                                         const ans = respondent.answers.find(a => a.requirementId === req.id);
                                         if (!ans) {
-                                            return <td key={req.id} className="px-3 py-3 border-r border-white/5 text-gray-600">-</td>;
+                                            return <td key={req.id} className="px-3 py-3 border-r border-white/5 text-center text-gray-600">-</td>;
                                         }
                                         return (
-                                            <td key={req.id} className={`px-3 py-3 border-r border-white/5 ${getCategoryColor(ans.kanoCategory)}`}>
-                                                {getShortCategory(ans.kanoCategory)}
+                                            <td key={req.id} className="px-3 py-3 border-r border-white/5 align-top">
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="text-[11px] text-emerald-400">긍정</span>
+                                                        <span className="text-xs text-gray-200 text-right">{getKanoAnswerLabel(ans.positiveAnswer)}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="text-[11px] text-rose-400">부정</span>
+                                                        <span className="text-xs text-gray-200 text-right">{getKanoAnswerLabel(ans.negativeAnswer)}</span>
+                                                    </div>
+                                                    <div className={`pt-1 text-xs text-right ${getCategoryColor(ans.kanoCategory)}`}>
+                                                        {getKanoCategoryLabel(ans.kanoCategory)}
+                                                    </div>
+                                                </div>
                                             </td>
                                         );
                                     })}

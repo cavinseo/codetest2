@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     buildSpecPickerRows,
     getCustomerNameSpan,
@@ -166,20 +166,19 @@ function SpecSheetTable({
 // 메인 컴포넌트
 // ─────────────────────────────────────────
 export default function ProductAttributesTable({ projectId, onSaved }: ProductAttributesTableProps) {
+    const templateDownloadUrl = `/api/projects/${projectId}/import/template`;
     const [rows, setRows] = useState<ProductAttributeRow[]>([]);
     const [specFunctions, setSpecFunctions] = useState<SpecFunction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showSpecPicker, setShowSpecPicker] = useState<{ rowId: string; field: 'attribute' } | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [productName, setProductName] = useState('');
     const [importedFields, setImportedFields] = useState<Set<string>>(new Set());
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    useEffect(() => {
-        loadData();
-    }, [projectId]);
+    const excelInputRef = useRef<HTMLInputElement | null>(null);
 
     const showToast = (message: string, type: ToastType = 'success') => {
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -187,7 +186,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         toastTimerRef.current = setTimeout(() => setToast(null), 3000);
     };
 
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
             const [attrRes, specRes, projRes] = await Promise.all([
@@ -199,8 +198,8 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             if (projRes.ok) {
                 const projData = await projRes.json();
                 const found = projData.projects?.find((p: any) => p.id === projectId);
-                if (found && !productName) {
-                    setProductName(found.name || '');
+                if (found) {
+                    setProductName((current) => current || found.name || '');
                 }
             }
 
@@ -250,7 +249,11 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [projectId]);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
 
     const createRow = (order: number, overrides: Partial<ProductAttributeRow> = {}): ProductAttributeRow => ({
             id: `attr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -331,6 +334,55 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             showToast('저장 중 오류가 발생했습니다.', 'error');
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleExcelUpload = async (file: File | null) => {
+        if (!file) return;
+        const fileName = file.name.toLowerCase();
+        if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
+            showToast('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', 'error');
+            return;
+        }
+
+        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 데이터를 지우고 새롭게 업로드', '1');
+        if (uploadPolicy === null) return;
+        const shouldReplace = uploadPolicy.trim() === '2';
+        if (!shouldReplace && uploadPolicy.trim() !== '1') {
+            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
+            return;
+        }
+
+        setIsUploadingExcel(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('action', 'apply');
+            formData.append('writePolicy', shouldReplace ? 'replace' : 'append');
+            formData.append('sheetNames', '제품속성표');
+
+            const res = await fetch(`/api/projects/${projectId}/import`, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json().catch(() => null);
+
+            if (!res.ok) {
+                const available = data?.availableSheets?.length
+                    ? ` 사용 가능한 시트: ${data.availableSheets.join(', ')}`
+                    : '';
+                throw new Error(`${data?.error || '제품속성표 엑셀 업로드에 실패했습니다.'}${available}`);
+            }
+
+            const importedCount = data?.appliedCounts?.productAttributes ?? data?.counts?.productAttributes ?? 0;
+            await loadData();
+            showToast(`제품속성표 ${importedCount}개 항목을 엑셀에서 반영했습니다.`, 'success');
+        } catch (error) {
+            console.error('제품속성표 엑셀 업로드 실패:', error);
+            showToast(error instanceof Error ? error.message : '제품속성표 엑셀 업로드에 실패했습니다.', 'error');
+        } finally {
+            setIsUploadingExcel(false);
+            if (excelInputRef.current) excelInputRef.current.value = '';
         }
     };
 
@@ -461,6 +513,34 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     <p className="text-sm text-gray-500 mt-1">세분시장별로 여러 고객명, 고객 니즈, 제공혜택, 제품속성, 기술역량을 행 단위로 정의합니다</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <a
+                        href={templateDownloadUrl}
+                        className="btn-secondary text-sm flex items-center gap-1.5"
+                        title="제품속성표가 포함된 업로드 양식을 다운로드합니다."
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                        </svg>
+                        양식 다운로드
+                    </a>
+                    <input
+                        ref={excelInputRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={(event) => handleExcelUpload(event.target.files?.[0] ?? null)}
+                        className="hidden"
+                        id={`attributes-excel-upload-${projectId}`}
+                    />
+                    <label
+                        htmlFor={`attributes-excel-upload-${projectId}`}
+                        className={`btn-secondary text-sm flex items-center gap-1.5 ${isSaving || isUploadingExcel ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
+                        title="엑셀 파일의 제품속성표 시트를 현재 표에 반영합니다."
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        {isUploadingExcel ? '업로드 중...' : '엑셀 업로드'}
+                    </label>
                     <button onClick={addRow} className="btn-secondary text-sm flex items-center gap-1.5">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -532,7 +612,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         </svg>
                     </div>
                     <h3 className="text-lg font-display font-semibold text-gray-300 mb-2">데이터가 없습니다</h3>
-                    <p className="text-sm text-gray-500 mb-6">우상단의 '행 추가' 버튼을 눌러 입력을 시작하세요</p>
+                    <p className="text-sm text-gray-500 mb-6">우상단의 &apos;행 추가&apos; 버튼을 눌러 입력을 시작하세요</p>
                     <button onClick={addRow} className="btn-primary inline-flex items-center gap-2 mx-auto">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

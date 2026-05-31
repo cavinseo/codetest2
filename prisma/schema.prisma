@@ -151,6 +151,7 @@ model CustomerRequirement {
   requirement    String
   kanoPositiveQ  String?        // Kano 긍정 질문 (사용자 직접 입력)
   kanoNegativeQ  String?        // Kano 부정 질문 (사용자 직접 입력)
+  kanoWeight     Float?
   order          Int            @default(0)
   createdAt      DateTime       @default(now())
   benchmarks     Benchmark[]

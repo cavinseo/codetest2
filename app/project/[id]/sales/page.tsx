@@ -104,7 +104,7 @@ export default function SalesPage() {
                             {rows.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="border border-gray-700 p-8 text-center text-gray-500">
-                                        데이터가 없습니다. 우상단의 '행 추가' 버튼을 눌러 입력을 시작하세요.
+                                        데이터가 없습니다. 우상단의 &apos;행 추가&apos; 버튼을 눌러 입력을 시작하세요.
                                     </td>
                                 </tr>
                             ) : (

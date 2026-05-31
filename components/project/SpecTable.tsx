@@ -42,6 +42,7 @@ interface GroupedSpecRow extends FlatSpecRow {
 
 export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const router = useRouter();
+    const templateDownloadUrl = `/api/projects/${projectId}/import/template`;
     const [project, setProject] = useState<ProjectData | null>(null);
     const [rows, setRows] = useState<FlatSpecRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -245,10 +246,19 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
             return;
         }
 
+        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 데이터를 지우고 새롭게 업로드', '1');
+        if (uploadPolicy === null) return;
+        const shouldReplace = uploadPolicy.trim() === '2';
+        if (!shouldReplace && uploadPolicy.trim() !== '1') {
+            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
+            return;
+        }
+
         setIsUploadingExcel(true);
         try {
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('writePolicy', shouldReplace ? 'replace' : 'append');
             const res = await fetch(`/api/projects/${projectId}/spec/upload-excel`, {
                 method: 'POST',
                 body: formData,
@@ -537,6 +547,16 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <a
+                        href={templateDownloadUrl}
+                        className="px-3 py-1.5 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/30 text-blue-200 text-sm rounded transition-colors flex items-center gap-1"
+                        title="업로드할 워크시트 엑셀 양식을 다운로드합니다."
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                        </svg>
+                        양식 다운로드
+                    </a>
                     <input
                         ref={excelInputRef}
                         type="file"
@@ -680,7 +700,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                 {rows.length === 0 ? (
                                     <tr>
                                         <td colSpan={6} className="border border-gray-700 p-8 text-center text-gray-500 bg-gray-800/20">
-                                            데이터가 없습니다. 우상단의 '행 추가' 버튼을 눌러 입력을 시작하세요.
+                                            데이터가 없습니다. 우상단의 &apos;행 추가&apos; 버튼을 눌러 입력을 시작하세요.
                                         </td>
                                     </tr>
                                 ) : (

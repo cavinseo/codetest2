@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import KanoSurveyPreview from '@/components/KanoSurveyPreview';
 import Kano2DChart from '@/components/Kano2DChart';
@@ -16,6 +16,7 @@ interface Requirement {
     requirement: string;
     kanoPositiveQ?: string | null;
     kanoNegativeQ?: string | null;
+    kanoWeight?: number | null;
     order: number;
 }
 
@@ -42,7 +43,8 @@ interface AnalysisResult {
     };
     better: number;
     worse: number;
-    timkoCategory: string;
+    kanoWeight?: number | null;
+    timkoCategory?: string | null;
     quadrant: string;
 }
 
@@ -58,8 +60,11 @@ interface KanoManagerProps {
 }
 
 type ToastType = 'success' | 'error' | 'info';
+type ExcelUploadFormat = 'template' | 'googleForms';
 
 export default function KanoManager({ projectId, initialView }: KanoManagerProps) {
+    const kanoUploadTemplateUrl = `/api/projects/${projectId}/kano/upload-template`;
+    const kanoFormScriptUrl = `/api/projects/${projectId}/kano/form-script`;
     const [activeTab, setActiveTab] = useState<'manage' | 'analysis'>('manage');
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -75,13 +80,16 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [createdFormUrl, setCreatedFormUrl] = useState('');
     const [createdFormId, setCreatedFormId] = useState('');
     const [isImporting, setIsImporting] = useState(false);
+    const [isResettingResponses, setIsResettingResponses] = useState(false);
+    const [isResettingInvitations, setIsResettingInvitations] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [excelFile, setExcelFile] = useState<File | null>(null);
+    const [excelUploadFormat, setExcelUploadFormat] = useState<ExcelUploadFormat>('template');
     const [importMessage, setImportMessage] = useState('');
     const [projectName, setProjectName] = useState('');
 
     const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
-    const [analysisViewMode, setAnalysisViewMode] = useState<'list' | 'charts' | 'table' | 'respondents'>('charts');
+    const [analysisViewMode, setAnalysisViewMode] = useState<'list' | 'charts' | 'respondents'>('charts');
     const [respondentData, setRespondentData] = useState<any[]>([]);
 
     // Kano 질문 직접 입력 관리
@@ -98,10 +106,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         toastTimerRef.current = setTimeout(() => setToast(null), 3500);
     };
 
-    useEffect(() => { loadData(); }, [projectId]);
-    useEffect(() => { if (initialView) setActiveTab(initialView); }, [initialView]);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
             const projRes = await fetch(`/api/projects/${projectId}`);
@@ -155,7 +160,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [projectId]);
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -204,7 +209,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             if (!res.ok) throw new Error(data.error);
             setCreatedFormUrl(data.formUrl);
             setCreatedFormId(data.formId);
-            showToast(`Google Forms 설문지가 생성되었습니다! (${data.questionCount}개 질문)`, 'success');
+            showToast(`Google Forms 설문지가 생성되었습니다! (${data.questionCount}개 질문 세트)`, 'success');
         } catch (error: any) {
             showToast(`오류: ${error.message}`, 'error');
         } finally {
@@ -243,9 +248,20 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         }
     };
 
+    useEffect(() => { loadData(); }, [loadData]);
+    useEffect(() => { if (initialView) setActiveTab(initialView); }, [initialView]);
+
     const handleUploadExcelResponses = async () => {
         if (!excelFile) {
             showToast('업로드할 엑셀 파일을 선택하세요.', 'error');
+            return;
+        }
+
+        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 응답/초대 데이터를 지우고 새롭게 업로드', '1');
+        if (uploadPolicy === null) return;
+        const shouldReplace = uploadPolicy.trim() === '2';
+        if (!shouldReplace && uploadPolicy.trim() !== '1') {
+            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
             return;
         }
 
@@ -254,6 +270,8 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         try {
             const formData = new FormData();
             formData.append('file', excelFile);
+            formData.append('format', excelUploadFormat);
+            formData.append('writePolicy', shouldReplace ? 'replace' : 'append');
 
             const res = await fetch(`/api/projects/${projectId}/kano/upload-excel`, {
                 method: 'POST',
@@ -276,6 +294,59 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         }
     };
 
+    const handleResetResponses = async () => {
+        const ok = window.confirm('현재 프로젝트의 Kano 응답 데이터와 응답 완료 상태를 모두 리셋할까요? 이 작업은 되돌릴 수 없습니다.');
+        if (!ok) return;
+
+        setIsResettingResponses(true);
+        setImportMessage('');
+        try {
+            const res = await fetch(`/api/projects/${projectId}/kano/responses`, {
+                method: 'DELETE',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '응답 데이터 리셋에 실패했습니다.');
+
+            setCreatedFormId('');
+            setCreatedFormUrl('');
+            setRespondentData([]);
+            setAnalysis({ totalResponses: 0, uniqueRespondents: 0, requirements: [] });
+            showToast(data.message || '응답 데이터가 리셋되었습니다.', 'success');
+            await loadData();
+        } catch (error: any) {
+            showToast(error.message || '응답 데이터 리셋에 실패했습니다.', 'error');
+        } finally {
+            setIsResettingResponses(false);
+        }
+    };
+
+    const handleResetInvitations = async () => {
+        const ok = window.confirm('현재 프로젝트의 Kano 응답 데이터와 응답자 초대 내역을 모두 리셋할까요? 이 작업은 되돌릴 수 없습니다.');
+        if (!ok) return;
+
+        setIsResettingInvitations(true);
+        setImportMessage('');
+        try {
+            const res = await fetch(`/api/projects/${projectId}/kano/responses?includeInvitations=true`, {
+                method: 'DELETE',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '초대 내역 리셋에 실패했습니다.');
+
+            setCreatedFormId('');
+            setCreatedFormUrl('');
+            setInvitations([]);
+            setRespondentData([]);
+            setAnalysis({ totalResponses: 0, uniqueRespondents: 0, requirements: [] });
+            showToast(data.message || '초대 내역이 리셋되었습니다.', 'success');
+            await loadData();
+        } catch (error: any) {
+            showToast(error.message || '초대 내역 리셋에 실패했습니다.', 'error');
+        } finally {
+            setIsResettingInvitations(false);
+        }
+    };
+
     // Kano \uc9c8\ubb38 \uc800\uc7a5
     const handleSaveKanoQuestions = async () => {
         setIsSavingQuestions(true);
@@ -288,6 +359,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 requirement: req.requirement,
                 kanoPositiveQ: kanoQuestions[req.id]?.positive || null,
                 kanoNegativeQ: kanoQuestions[req.id]?.negative || null,
+                kanoWeight: req.kanoWeight ?? null,
                 order: req.order,
             }));
             const res = await fetch(`/api/projects/${projectId}/requirements`, {
@@ -312,6 +384,11 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     };
 
     const getRequirementInfo = (reqId: string) => requirements.find(r => r.id === reqId);
+
+    const openResponseResults = () => {
+        setAnalysisViewMode('respondents');
+        setActiveTab('analysis');
+    };
 
     const getCategoryColor = (category: string) => {
         const colors: Record<string, string> = {
@@ -430,7 +507,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                     {/* 통계 카드 */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {[
-                            { label: '설문 질문', value: `${requirements.length * 2}개`, sub: `긍정/부정 각 ${requirements.length}개`, color: 'text-blue-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+                            { label: '설문 질문', value: `${requirements.length}개`, sub: '긍정/부정 2문항이 1세트', color: 'text-blue-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
                             { label: '초대 발송', value: `${invitations.length}명`, sub: '응답자 초대', color: 'text-purple-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg> },
                             { label: '응답 완료', value: `${respondedCount}명`, sub: '설문 완료자', color: 'text-emerald-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
                             { label: '응답률', value: `${invitations.length > 0 ? Math.round((respondedCount / invitations.length) * 100) : 0}%`, sub: '완료/발송', color: 'text-amber-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg> },
@@ -444,6 +521,34 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 <p className="text-[11px] text-gray-600 mt-1">{item.sub}</p>
                             </div>
                         ))}
+                    </div>
+
+                    <div className="flex justify-end">
+                        <div className="flex flex-wrap justify-end gap-2">
+                            <button
+                                onClick={openResponseResults}
+                                className="btn-secondary inline-flex items-center gap-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-6m4 6V7m4 10v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                응답 결과 보기
+                            </button>
+                            <button
+                                onClick={handleResetResponses}
+                                disabled={isResettingResponses || (!analysis?.totalResponses && respondentData.length === 0)}
+                                className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50 disabled:hover:bg-red-500/10"
+                            >
+                                {isResettingResponses ? (
+                                    <div className="w-4 h-4 border-2 border-red-300 border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4h6v3m-8 0h10" />
+                                    </svg>
+                                )}
+                                응답 데이터 리셋
+                            </button>
+                        </div>
                     </div>
 
                     {/* 요구사항 없음 */}
@@ -479,7 +584,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 </h2>
                             </div>
 
-                            {!googleConfigured ? (
+                            {!googleConfigured && (
                                 <div className="bg-blue-500/[0.08] border border-blue-500/20 rounded-xl p-4">
                                     <p className="text-blue-300 text-sm mb-3">
                                         Google Forms로 Kano 설문지를 자동 생성하려면 먼저 Google OAuth를 설정하세요.
@@ -491,9 +596,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                         서비스 설정으로 이동
                                     </Link>
                                 </div>
-                            ) : (
+                            )}
                                 <div className="space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                                         <button
                                             onClick={() => setShowPreview(true)}
                                             className="p-4 bg-white/[0.03] border border-white/[0.08] hover:bg-white/[0.06] hover:border-white/[0.12] rounded-xl transition-all text-left group"
@@ -522,8 +627,21 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                                 )}
                                             </div>
                                             <h3 className="text-blue-300 text-sm font-semibold">{isCreatingForm ? '생성 중...' : 'Google Forms 생성'}</h3>
-                                            <p className="text-xs text-gray-500 mt-1">{requirements.length * 2}개 질문의 설문지를 자동 생성합니다</p>
+                                            <p className="text-xs text-gray-500 mt-1">{requirements.length}개 질문 세트의 설문지를 자동 생성합니다</p>
                                         </button>
+
+                                        <a
+                                            href={kanoFormScriptUrl}
+                                            className="p-4 bg-indigo-500/[0.08] border border-indigo-500/20 hover:bg-indigo-500/[0.14] hover:border-indigo-500/30 rounded-xl transition-all text-left group"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-indigo-500/15 flex items-center justify-center mb-3">
+                                                <svg className="w-4 h-4 text-indigo-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3M5 11h14M7 21h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2zm4-6l-2 2 2 2m2-4l2 2-2 2" />
+                                                </svg>
+                                            </div>
+                                            <h3 className="text-indigo-200 text-sm font-semibold">생성 스크립트</h3>
+                                            <p className="text-xs text-gray-500 mt-1">Google Apps Script 파일을 다운로드합니다</p>
+                                        </a>
 
                                         <button
                                             onClick={handleImportResponses}
@@ -555,6 +673,47 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                             </div>
                                             <h3 className="text-amber-300 text-sm font-semibold">엑셀 응답 업로드</h3>
                                             <p className="text-xs text-gray-500 mt-1 mb-3">KANO질문지 결과 파일을 업로드합니다</p>
+                                            <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg border border-amber-500/20 bg-black/10 p-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setExcelUploadFormat('template')}
+                                                    className={`rounded-md px-2 py-1.5 text-[11px] font-semibold transition-colors ${excelUploadFormat === 'template'
+                                                        ? 'bg-amber-500/20 text-amber-100'
+                                                        : 'text-gray-400 hover:bg-white/[0.05] hover:text-gray-200'
+                                                        }`}
+                                                >
+                                                    전용 양식
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setExcelUploadFormat('googleForms')}
+                                                    className={`rounded-md px-2 py-1.5 text-[11px] font-semibold transition-colors ${excelUploadFormat === 'googleForms'
+                                                        ? 'bg-amber-500/20 text-amber-100'
+                                                        : 'text-gray-400 hover:bg-white/[0.05] hover:text-gray-200'
+                                                        }`}
+                                                >
+                                                    Google Forms
+                                                </button>
+                                            </div>
+                                            {requirements.length > 0 ? (
+                                                <a
+                                                    href={`${kanoUploadTemplateUrl}?format=${excelUploadFormat}`}
+                                                    className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-500/20"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                                                    </svg>
+                                                    {excelUploadFormat === 'googleForms' ? 'Google Forms 양식 다운로드' : '업로드 양식 다운로드'}
+                                                </a>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    disabled
+                                                    className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-xs font-semibold text-gray-600"
+                                                >
+                                                    업로드 양식 다운로드
+                                                </button>
+                                            )}
                                             <input
                                                 ref={excelInputRef}
                                                 type="file"
@@ -602,7 +761,6 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                         </div>
                                     )}
                                 </div>
-                            )}
                         </div>
                     )}
 
@@ -614,7 +772,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                     <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                                     </svg>
-                                    설문 질문 구성 <span className="text-primary-400">({requirements.length * 2}개 질문)</span>
+                                    설문 질문 구성 <span className="text-primary-400">({requirements.length}개 질문 세트)</span>
                                 </h2>
                                 <button
                                     onClick={handleSaveKanoQuestions}
@@ -731,6 +889,22 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                     {/* 초대 내역 */}
                     {invitations.length > 0 && (
                         <div className="card">
+                            <div className="mb-4 flex justify-end">
+                                <button
+                                    onClick={handleResetInvitations}
+                                    disabled={isResettingInvitations}
+                                    className="inline-flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-200 transition-colors hover:bg-red-500/25 disabled:opacity-50 disabled:hover:bg-red-500/15"
+                                >
+                                    {isResettingInvitations ? (
+                                        <div className="w-4 h-4 border-2 border-red-200 border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8m-2 11H5a2 2 0 01-2-2V7m16 12a2 2 0 002-2V7m-6 8l4 4m0-4l-4 4" />
+                                        </svg>
+                                    )}
+                                    초대 내역 리셋
+                                </button>
+                            </div>
                             <h2 className="text-lg font-display font-bold text-white mb-4 flex items-center gap-2">
                                 <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -812,6 +986,23 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 ))}
                             </div>
 
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={handleResetResponses}
+                                    disabled={isResettingResponses || analysis.totalResponses === 0}
+                                    className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50 disabled:hover:bg-red-500/10"
+                                >
+                                    {isResettingResponses ? (
+                                        <div className="w-4 h-4 border-2 border-red-300 border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4h6v3m-8 0h10" />
+                                        </svg>
+                                    )}
+                                    응답 데이터 리셋
+                                </button>
+                            </div>
+
                             {/* 보기 토글 */}
                             <div className="flex justify-center">
                                 <div className="flex gap-1 p-1 bg-white/[0.04] border border-white/[0.06] rounded-xl flex-wrap">
@@ -824,15 +1015,6 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
                                         </svg>
                                         TIMKO
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisViewMode('table')}
-                                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${analysisViewMode === 'table' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}`}
-                                    >
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                        </svg>
-                                        분석 집계표
                                     </button>
                                     <button
                                         onClick={() => setAnalysisViewMode('respondents')}
@@ -871,19 +1053,18 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                             />
                                         </div>
                                     </div>
+                                    <KanoAggregationTable
+                                        projectId={projectId}
+                                        onWeightsSaved={loadData}
+                                        analysis={analysis.requirements.map(req => ({
+                                            ...req,
+                                            requirementName: getRequirementInfo(req.requirementId)?.requirement
+                                        }))}
+                                    />
                                 </div>
                             )}
 
                             {/* 집계표 표 뷰 */}
-                            {analysisViewMode === 'table' && (
-                                <KanoAggregationTable 
-                                    analysis={analysis.requirements.map(req => ({
-                                        ...req, 
-                                        requirementName: getRequirementInfo(req.requirementId)?.requirement 
-                                    }))} 
-                                />
-                            )}
-
                             {/* 제출자별 보기 */}
                             {analysisViewMode === 'respondents' && (
                                 <KanoRespondentTable 

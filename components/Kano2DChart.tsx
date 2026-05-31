@@ -12,34 +12,66 @@ interface Kano2DChartProps {
     }>;
 }
 
+const quadrantColors = {
+    attractive: '#10b981',
+    oneDimensional: '#3b82f6',
+    mustBe: '#ef4444',
+    indifferent: '#6b7280',
+};
+
+const width = 600;
+const height = 600;
+const padding = 60;
+const plotWidth = width - 2 * padding;
+const plotHeight = height - 2 * padding;
+
 export default function Kano2DChart({ requirements }: Kano2DChartProps) {
-    const categoryColors: Record<string, string> = {
-        M: '#ef4444', // red
-        O: '#3b82f6', // blue
-        A: '#10b981', // green
-        I: '#6b7280', // gray
-        R: '#a855f7', // purple
-        Q: '#eab308', // yellow
-    };
+    // SVG ?ш린
+    const xAxisTicks = [
+        '-1.0\n~-0.91',
+        '-0.9\n~-0.81',
+        '-0.8\n~-0.71',
+        '-0.7\n~-0.61',
+        '-0.6\n~-0.50',
+        '-0.49\n~-0.41',
+        '-0.4\n~-0.31',
+        '-0.3\n~-0.21',
+        '-0.2\n~-0.11',
+        '-0.1\n~0.0',
+    ];
+    const yAxisTicks = [
+        '1.0\n~0.91',
+        '0.9\n~0.81',
+        '0.8\n~0.71',
+        '0.7\n~0.61',
+        '0.6\n~0.50',
+        '0.49\n~0.41',
+        '0.4\n~0.31',
+        '0.3\n~0.21',
+        '0.2\n~0.11',
+        '0.1\n~0.0',
+    ];
 
-    // SVG 크기
-    const width = 600;
-    const height = 600;
-    const padding = 60;
-
-    // 요구사항의 위치 계산 (표준 TIMKO 엑셀 파일 형식 기준)
+    // ?붽뎄?ы빆???꾩튂 怨꾩궛 (?쒖? TIMKO ?묒? ?뚯씪 ?뺤떇 湲곗?)
     const points = useMemo(() => {
         return requirements.map((req) => {
-            // X축: 불만족계수 (Worse의 절대값, 0 -> 1)
-            const x = padding + (Math.abs(req.worse) * (width - 2 * padding));
-            // Y축: 만족계수 (Better, 아래에서 위로 0 -> 1)
-            const y = height - padding - (req.better * (height - 2 * padding));
+            const normalizedWorse = Math.min(1, Math.max(0, req.worse + 1));
+            const x = padding + (normalizedWorse * plotWidth);
+            const y = height - padding - (req.better * plotHeight);
+            const absWorse = Math.abs(req.worse);
+            const color = req.better >= 0.5 && absWorse < 0.5
+                ? quadrantColors.attractive
+                : req.better >= 0.5 && absWorse >= 0.5
+                    ? quadrantColors.oneDimensional
+                    : req.better < 0.5 && absWorse >= 0.5
+                        ? quadrantColors.mustBe
+                        : quadrantColors.indifferent;
 
             return {
                 ...req,
                 x,
                 y,
-                color: categoryColors[req.category] || categoryColors.I,
+                color,
             };
         });
     }, [requirements]);
@@ -51,60 +83,93 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                 height={height}
                 className="bg-gray-800/30 rounded-lg border border-white/10"
             >
-                {/* 사분면 배경 */}
+                {/* ?щ텇硫?諛곌꼍 */}
                 <g opacity="0.1">
-                    {/* 무관심 (좌하) */}
+                    {/* 臾닿???(醫뚰븯) */}
                     <rect
                         x={padding}
                         y={height / 2}
-                        width={(width - 2 * padding) / 2}
-                        height={(height - 2 * padding) / 2}
-                        fill="#6b7280"
+                        width={plotWidth / 2}
+                        height={plotHeight / 2}
+                        fill={quadrantColors.mustBe}
                     />
-                    {/* 당연적 (우하) */}
+                    {/* ?뱀뿰??(?고븯) */}
                     <rect
                         x={width / 2}
                         y={height / 2}
-                        width={(width - 2 * padding) / 2}
-                        height={(height - 2 * padding) / 2}
-                        fill="#ef4444"
+                        width={plotWidth / 2}
+                        height={plotHeight / 2}
+                        fill={quadrantColors.indifferent}
                     />
-                    {/* 매력적 (좌상) */}
+                    {/* 留ㅻ젰??(醫뚯긽) */}
                     <rect
                         x={padding}
                         y={padding}
-                        width={(width - 2 * padding) / 2}
-                        height={(height - 2 * padding) / 2}
-                        fill="#10b981"
+                        width={plotWidth / 2}
+                        height={plotHeight / 2}
+                        fill={quadrantColors.oneDimensional}
                     />
-                    {/* 일원적 (우상) */}
+                    {/* ?쇱썝??(?곗긽) */}
                     <rect
                         x={width / 2}
                         y={padding}
-                        width={(width - 2 * padding) / 2}
-                        height={(height - 2 * padding) / 2}
-                        fill="#3b82f6"
+                        width={plotWidth / 2}
+                        height={plotHeight / 2}
+                        fill={quadrantColors.attractive}
                     />
                 </g>
 
-                {/* 축 */}
+                {/* 異?*/}
                 <g stroke="#4b5563" strokeWidth="2">
-                    {/* X축 */}
+                    {/* X異?*/}
                     <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} />
-                    {/* Y축 */}
+                    {/* Y異?*/}
                     <line x1={padding} y1={padding} x2={padding} y2={height - padding} />
                 </g>
 
-                {/* 중심 축 (0.5 기준) */}
+                {/* 以묒떖 異?(0.5 湲곗?) */}
                 <g stroke="#6b7280" strokeWidth="1" strokeDasharray="4">
                     <line x1={width / 2} y1={padding} x2={width / 2} y2={height - padding} />
                     <line x1={padding} y1={height / 2} x2={width - padding} y2={height / 2} />
                 </g>
 
-                {/* 축 레이블 */}
+                <g stroke="#334155" strokeWidth="1" opacity="0.55">
+                    {xAxisTicks.map((_, idx) => {
+                        const x = padding + ((idx + 1) * plotWidth) / 10;
+                        return <line key={`x-grid-${idx}`} x1={x} y1={padding} x2={x} y2={height - padding} />;
+                    })}
+                    {yAxisTicks.map((_, idx) => {
+                        const y = padding + ((idx + 1) * plotHeight) / 10;
+                        return <line key={`y-grid-${idx}`} x1={padding} y1={y} x2={width - padding} y2={y} />;
+                    })}
+                </g>
+
+                <g fill="#9ca3af" fontSize="10">
+                    {xAxisTicks.map((label, idx) => {
+                        const x = padding + ((idx + 0.5) * plotWidth) / 10;
+                        const [top, bottom] = label.split('\n');
+                        return (
+                            <text key={label} x={x} y={height - padding + 18} textAnchor="middle">
+                                <tspan x={x}>{top}</tspan>
+                                <tspan x={x} dy="12">{bottom}</tspan>
+                            </text>
+                        );
+                    })}
+                    {yAxisTicks.map((label, idx) => {
+                        const y = padding + ((idx + 0.5) * plotHeight) / 10;
+                        const [top, bottom] = label.split('\n');
+                        return (
+                            <text key={label} x={padding - 10} y={y - 5} textAnchor="end">
+                                <tspan x={padding - 10}>{top}</tspan>
+                                <tspan x={padding - 10} dy="12">{bottom}</tspan>
+                            </text>
+                        );
+                    })}
+                </g>
+
+                {/* 異??덉씠釉?*/}
                 <text x={width / 2} y={height - 20} textAnchor="middle" fill="#9ca3af" fontSize="12" fontWeight="bold">
-                    불만족 계수 (Worse) →
-                </text>
+                    遺덈쭔議깃퀎??                </text>
                 <text
                     x={20}
                     y={height / 2}
@@ -114,59 +179,56 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                     fontWeight="bold"
                     transform={`rotate(-90, 20, ${height / 2})`}
                 >
-                    만족 계수 (Better) →
+                    留뚯”怨꾩닔
                 </text>
 
-                {/* 사분면 라벨 */}
-                <text x={padding + 20} y={padding + 20} fill="#9ca3af" fontSize="12" fontWeight="bold" opacity="0.8">
-                    매력적
+                {/* ?щ텇硫??쇰꺼 */}
+                <text x={width - padding - 110} y={padding + 20} fill={quadrantColors.attractive} fontSize="12" fontWeight="bold" opacity="0.9">
+                    1?щ텇硫?留ㅻ젰?덉쭏
                 </text>
-                <text x={width - padding - 50} y={padding + 20} fill="#9ca3af" fontSize="12" fontWeight="bold" opacity="0.8">
-                    일원적
+                <text x={padding + 20} y={padding + 20} fill={quadrantColors.oneDimensional} fontSize="12" fontWeight="bold" opacity="0.9">
+                    2?щ텇硫??쇱썝???덉쭏
                 </text>
-                <text x={padding + 20} y={height - padding - 15} fill="#9ca3af" fontSize="12" fontWeight="bold" opacity="0.8">
-                    무관심
+                <text x={padding + 20} y={height - padding - 15} fill={quadrantColors.mustBe} fontSize="12" fontWeight="bold" opacity="0.9">
+                    3?щ텇硫??뱀뿰?덉쭏
                 </text>
-                <text x={width - padding - 50} y={height - padding - 15} fill="#9ca3af" fontSize="12" fontWeight="bold" opacity="0.8">
-                    당연적
-                </text>
+                <text x={width - padding - 110} y={height - padding - 15} fill={quadrantColors.indifferent} fontSize="12" fontWeight="bold" opacity="0.9">
+                    4?щ텇硫?臾닿??ы뭹吏?                </text>
 
-                {/* 데이터 점 찍기 및 교차선(Crosshairs) */}
+                {/* ?곗씠????李띻린 諛?援먯감??Crosshairs) */}
                 {points.map((p, idx) => (
                     <g key={p.id}>
-                        {/* 교차선 (가로세로 축으로 안내선) */}
-                        <line x1={p.x} y1={p.y} x2={p.x} y2={height - padding} stroke="#2563eb" strokeWidth="1" strokeDasharray="4" opacity="0.5" />
-                        <line x1={p.x} y1={p.y} x2={padding} y2={p.y} stroke="#2563eb" strokeWidth="1" strokeDasharray="4" opacity="0.5" />
+                        {/* 援먯감??(媛濡쒖꽭濡?異뺤쑝濡??덈궡?? */}
 
-                        {/* 데이터 포인트 원 */}
-                        <circle cx={p.x} cy={p.y} r="8" fill="#3b82f6" stroke="#fff" strokeWidth="2" className="cursor-pointer hover:r-10 transition-all">
-                            <title>{p.name} (만족계수: {p.better.toFixed(2)}, 불만족계수: {p.worse.toFixed(2)})</title>
+                        {/* ?곗씠???ъ씤????*/}
+                        <circle cx={p.x} cy={p.y} r="8" fill={p.color} stroke="#fff" strokeWidth="2" className="cursor-pointer hover:r-10 transition-all">
+                            <title>{p.name} (留뚯”怨꾩닔: {p.better.toFixed(2)}, 遺덈쭔議깃퀎?? {p.worse.toFixed(2)})</title>
                         </circle>
-                        
-                        {/* 원 안의 숫자 표기 */}
-                        <circle cx={p.x} cy={p.y} r="8" fill="#1e3a8a" opacity="0.8" />
                         <text x={p.x} y={p.y + 3} textAnchor="middle" fill="#fff" fontSize="9" fontWeight="bold" className="pointer-events-none">
                             {idx + 1}
                         </text>
-                        
-                        {/* 점 옆에 실제 계수 텍스트 표시 */}
-                        <rect x={p.x + 12} y={p.y - 12} width="115" height="24" fill="#ffffff" stroke="#94a3b8" rx="4" opacity="0.9" />
-                        <text x={p.x + 16} y={p.y + 4} fontSize="11" fill="#1e293b" fontWeight="bold">
-                            Q{idx + 1} (W: {p.worse.toFixed(2)}, B: {p.better.toFixed(2)})
-                        </text>
+
+                        {/* ???덉쓽 ?レ옄 ?쒓린 */}
+
+                        {/* ???놁뿉 ?ㅼ젣 怨꾩닔 ?띿뒪???쒖떆 */}
                     </g>
                 ))}
             </svg>
 
-            {/* 범례 */}
+            {/* 踰붾? */}
             <div className="mt-4 flex flex-wrap gap-3 text-xs">
-                {Object.entries(categoryColors).map(([cat, color]) => (
-                    <div key={cat} className="flex items-center gap-1.5">
+                {[
+                    ['1?щ텇硫?留ㅻ젰?덉쭏', quadrantColors.attractive],
+                    ['2?щ텇硫??쇱썝???덉쭏', quadrantColors.oneDimensional],
+                    ['3?щ텇硫??뱀뿰?덉쭏', quadrantColors.mustBe],
+                    ['4?щ텇硫?臾닿??ы뭹吏?', quadrantColors.indifferent],
+                ].map(([label, color]) => (
+                    <div key={label} className="flex items-center gap-1.5">
                         <div
                             className="w-3 h-3 rounded-full border-2 border-white"
                             style={{ backgroundColor: color }}
                         />
-                        <span className="text-gray-300">{cat}</span>
+                        <span className="text-gray-300">{label}</span>
                     </div>
                 ))}
             </div>

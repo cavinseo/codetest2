@@ -99,6 +99,27 @@ describe('workbook importer', () => {
         expect(result.records.specFunctions.some((item) => item.level === 'DETAIL')).toBe(false);
     });
 
+    it('keeps customer requirements in worksheet row order regardless of group names', () => {
+        const parsed = workbook([
+            sheet('고객요구사항도출표', [
+                ['고객요구사항 도출표'],
+                ['번호', '항목(검색색 글씨)', '1차 그룹(빨간색 글씨)', '2차 그룹(파란색 글씨)'],
+                [1, '첫 번째 항목', 'B 그룹', 'B-2'],
+                [2, '두 번째 항목', 'A 그룹', 'A-1'],
+                [3, '세 번째 항목', 'B 그룹', 'B-1'],
+            ]),
+        ]);
+
+        const result = parseWorkbookImport(parsed, { sheetNames: ['고객요구사항도출표'] });
+
+        expect(result.records.customerRequirements.map((item) => item.requirement)).toEqual([
+            '첫 번째 항목',
+            '두 번째 항목',
+            '세 번째 항목',
+        ]);
+        expect(result.records.customerRequirements.map((item) => item.order)).toEqual([0, 1, 2]);
+    });
+
     it('imports only selected worksheets when sheet names are provided', () => {
         const parsed = workbook([
             sheet('자사매출추정표', [

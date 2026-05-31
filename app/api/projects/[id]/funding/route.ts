@@ -27,9 +27,9 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
             const initialSources = [
                 { category: '정부자금', order: 0 },
                 { category: '엔젤투자금', order: 1 },
-                { category: 'R&D 지원금', order: 2 },
-                { category: 'TIPS', order: 3 },
-                { category: 'VC', order: 4 },
+                { category: '연구개발 지원금(R&D)', order: 2 },
+                { category: '민간투자주도형 기술창업지원(TIPS)', order: 3 },
+                { category: '벤처캐피털(VC)', order: 4 },
                 { category: '기타', order: 5 },
             ];
 

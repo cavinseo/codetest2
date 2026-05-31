@@ -7,7 +7,7 @@ interface AnalysisResult {
     requirementName?: string;
     better: number;
     worse: number;
-    timkoCategory: string;
+    timkoCategory?: string | null;
     quadrant: string;
 }
 
@@ -16,17 +16,49 @@ interface KanoSatisfactionGraphProps {
 }
 
 export default function KanoSatisfactionGraph({ analysis }: KanoSatisfactionGraphProps) {
-    // SVG 크기
-    const width = 600;
-    const height = 600;
-    const padding = 60;
+    const width = 720;
+    const height = 700;
+    const margin = { top: 64, right: 56, bottom: 118, left: 78 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const xAxisY = height - margin.bottom;
+    const yAxisX = margin.left;
+    const quadrantColors = {
+        attractive: '#10b981',
+        oneDimensional: '#3b82f6',
+        mustBe: '#ef4444',
+        indifferent: '#6b7280',
+    };
+    const xAxisTicks = [
+        '-1.0\n~-0.91',
+        '-0.9\n~-0.81',
+        '-0.8\n~-0.71',
+        '-0.7\n~-0.61',
+        '-0.6\n~-0.50',
+        '-0.49\n~-0.41',
+        '-0.4\n~-0.31',
+        '-0.3\n~-0.21',
+        '-0.2\n~-0.11',
+        '-0.1\n~0.0',
+    ];
+    const yAxisTicks = [
+        '1.0\n~0.91',
+        '0.9\n~0.81',
+        '0.8\n~0.71',
+        '0.7\n~0.61',
+        '0.6\n~0.50',
+        '0.49\n~0.41',
+        '0.4\n~0.31',
+        '0.3\n~0.21',
+        '0.2\n~0.11',
+        '0.1\n~0.0',
+    ];
 
     const points = useMemo(() => {
         return analysis.map((req) => {
-            // Better: 0 to 1 -> x축 (가로)
-            // Worse: -1 to 0 -> y축 (세로, 위가 0, 아래가 -1이므로 절대값 사용하거나 반대로 매핑)
-            const x = padding + (req.better * (width - 2 * padding));
-            const y = height - padding - (Math.abs(req.worse) * (height - 2 * padding));
+            const normalizedWorse = Math.min(1, Math.max(0, req.worse + 1));
+            const x = yAxisX + (normalizedWorse * plotWidth);
+            const y = margin.top + ((1 - req.better) * plotHeight);
 
             return {
                 ...req,
@@ -34,13 +66,13 @@ export default function KanoSatisfactionGraph({ analysis }: KanoSatisfactionGrap
                 y,
             };
         });
-    }, [analysis]);
+    }, [analysis, margin.top, plotHeight, plotWidth, yAxisX]);
 
     return (
         <div className="space-y-8">
-            <div className="card items-center justify-center flex flex-col p-8">
+            <div className="card items-center justify-center flex flex-col p-8 pb-12">
                 <h3 className="text-xl font-bold text-white mb-6">만족/불만족 계수 (Better-Worse) 그래프</h3>
-                <div className="relative">
+                <div className="relative w-full overflow-x-auto pb-4">
                     <svg
                         width={width}
                         height={height}
@@ -48,39 +80,62 @@ export default function KanoSatisfactionGraph({ analysis }: KanoSatisfactionGrap
                     >
                         {/* 배경 격자 및 사분면 컬러 */}
                         <g opacity="0.05">
-                            {/* 매력적 (좌상) - 실제로는 Better 높음/Worse 낮음이므로 오른쪽 위 영역이지만 Kano 2D와 다름에 주의 */}
-                            {/* 여기서는 일반적인 4분면 논리: 중앙 0.5선 기준 */}
-                            <rect x={padding} y={padding} width={(width - 2 * padding) / 2} height={(height - 2 * padding) / 2} fill="#10b981" />
-                            <rect x={width / 2} y={padding} width={(width - 2 * padding) / 2} height={(height - 2 * padding) / 2} fill="#ef4444" />
-                            <rect x={padding} y={height / 2} width={(width - 2 * padding) / 2} height={(height - 2 * padding) / 2} fill="#6b7280" />
-                            <rect x={width / 2} y={height / 2} width={(width - 2 * padding) / 2} height={(height - 2 * padding) / 2} fill="#3b82f6" />
+                            <rect x={yAxisX + plotWidth / 2} y={margin.top} width={plotWidth / 2} height={plotHeight / 2} fill={quadrantColors.attractive} />
+                            <rect x={yAxisX} y={margin.top} width={plotWidth / 2} height={plotHeight / 2} fill={quadrantColors.oneDimensional} />
+                            <rect x={yAxisX} y={margin.top + plotHeight / 2} width={plotWidth / 2} height={plotHeight / 2} fill={quadrantColors.mustBe} />
+                            <rect x={yAxisX + plotWidth / 2} y={margin.top + plotHeight / 2} width={plotWidth / 2} height={plotHeight / 2} fill={quadrantColors.indifferent} />
                         </g>
 
                         {/* 메인 축 */}
-                        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#64748b" strokeWidth="2" />
-                        <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#64748b" strokeWidth="2" />
+                        <line x1={yAxisX} y1={xAxisY} x2={yAxisX + plotWidth} y2={xAxisY} stroke="#64748b" strokeWidth="2" />
+                        <line x1={yAxisX} y1={margin.top} x2={yAxisX} y2={xAxisY} stroke="#64748b" strokeWidth="2" />
 
                         {/* 중앙 임계선 (0.5) */}
-                        <line x1={width / 2} y1={padding} x2={width / 2} y2={height - padding} stroke="#475569" strokeDasharray="4" />
-                        <line x1={padding} y1={height / 2} x2={width - padding} y2={height / 2} stroke="#475569" strokeDasharray="4" />
+                        <line x1={yAxisX + plotWidth / 2} y1={margin.top} x2={yAxisX + plotWidth / 2} y2={xAxisY} stroke="#475569" strokeDasharray="4" />
+                        <line x1={yAxisX} y1={margin.top + plotHeight / 2} x2={yAxisX + plotWidth} y2={margin.top + plotHeight / 2} stroke="#475569" strokeDasharray="4" />
 
-                        {/* 축 레이블 */}
-                        <text x={width - padding + 10} y={height - padding} dominantBaseline="middle" fill="#94a3b8" fontSize="12">Better</text>
-                        <text x={padding} y={padding - 15} textAnchor="middle" fill="#94a3b8" fontSize="12">|Worse|</text>
+                        <g stroke="#334155" strokeWidth="1" opacity="0.55">
+                            {xAxisTicks.map((_, idx) => {
+                                const x = yAxisX + ((idx + 1) * plotWidth) / 10;
+                                return <line key={`x-grid-${idx}`} x1={x} y1={margin.top} x2={x} y2={xAxisY} />;
+                            })}
+                            {yAxisTicks.map((_, idx) => {
+                                const y = margin.top + ((idx + 1) * plotHeight) / 10;
+                                return <line key={`y-grid-${idx}`} x1={yAxisX} y1={y} x2={yAxisX + plotWidth} y2={y} />;
+                            })}
+                        </g>
 
-                        {/* 수치 눈금 */}
-                        {[0, 0.25, 0.5, 0.75, 1.0].map(val => (
-                            <g key={val}>
-                                <text x={padding + (val * (width - 2 * padding))} y={height - padding + 20} textAnchor="middle" fill="#475569" fontSize="10">{val}</text>
-                                <text x={padding - 20} y={height - padding - (val * (height - 2 * padding))} dominantBaseline="middle" textAnchor="end" fill="#475569" fontSize="10">{val}</text>
-                            </g>
-                        ))}
+                        <g fill="#cbd5e1" fontSize="11">
+                            {xAxisTicks.map((label, idx) => {
+                                const x = yAxisX + ((idx + 0.5) * plotWidth) / 10;
+                                const [top, bottom] = label.split('\n');
+                                return (
+                                    <text key={label} x={x} y={xAxisY + 24} textAnchor="middle">
+                                        <tspan x={x}>{top}</tspan>
+                                        <tspan x={x} dy="14">{bottom}</tspan>
+                                    </text>
+                                );
+                            })}
+                            {yAxisTicks.map((label, idx) => {
+                                const y = margin.top + ((idx + 0.5) * plotHeight) / 10;
+                                const [top, bottom] = label.split('\n');
+                                return (
+                                    <text key={label} x={yAxisX - 12} y={y - 5} textAnchor="end">
+                                        <tspan x={yAxisX - 12}>{top}</tspan>
+                                        <tspan x={yAxisX - 12} dy="14">{bottom}</tspan>
+                                    </text>
+                                );
+                            })}
+                        </g>
+
+                        <text x={yAxisX + plotWidth / 2} y={height - 26} textAnchor="middle" fill="#e2e8f0" fontSize="14" fontWeight="700">불만족계수</text>
+                        <text x={28} y={margin.top + plotHeight / 2} textAnchor="middle" fill="#e2e8f0" fontSize="14" fontWeight="700" transform={`rotate(-90, 28, ${margin.top + plotHeight / 2})`}>만족계수</text>
 
                         {/* 사분면 이름 */}
-                        <text x={padding + 30} y={padding + 30} fill="#10b981" fontSize="11" opacity="0.8">흥분형(Attractive)</text>
-                        <text x={width - padding - 80} y={padding + 30} fill="#ef4444" fontSize="11" opacity="0.8">일원적(One-dimensional)</text>
-                        <text x={padding + 30} y={height - padding - 20} fill="#94a3b8" fontSize="11" opacity="0.8">무관심(Indifferent)</text>
-                        <text x={width - padding - 80} y={height - padding - 20} fill="#3b82f6" fontSize="11" opacity="0.8">당연적(Must-be)</text>
+                        <text x={yAxisX + plotWidth - 150} y={margin.top + 30} fill={quadrantColors.attractive} fontSize="13" fontWeight="700" opacity="0.95">1사분면 매력품질</text>
+                        <text x={yAxisX + 32} y={margin.top + 30} fill={quadrantColors.oneDimensional} fontSize="13" fontWeight="700" opacity="0.95">2사분면 일원적 품질</text>
+                        <text x={yAxisX + 32} y={xAxisY - 28} fill={quadrantColors.mustBe} fontSize="13" fontWeight="700" opacity="0.95">3사분면 당연품질</text>
+                        <text x={yAxisX + plotWidth - 165} y={xAxisY - 28} fill={quadrantColors.indifferent} fontSize="13" fontWeight="700" opacity="0.95">4사분면 무관심품질</text>
 
                         {/* 데이터 포인트 */}
                         {points.map((p, idx) => (
@@ -89,25 +144,23 @@ export default function KanoSatisfactionGraph({ analysis }: KanoSatisfactionGrap
                                     cx={p.x}
                                     cy={p.y}
                                     r="6"
-                                    fill={p.quadrant === 'ATTRACTIVE' ? '#10b981' : p.quadrant === 'ONE_DIMENSIONAL' ? '#ef4444' : p.quadrant === 'MUST_BE' ? '#3b82f6' : '#64748b'}
+                                    fill={p.quadrant === 'ATTRACTIVE' ? quadrantColors.attractive : p.quadrant === 'ONE_DIMENSIONAL' ? quadrantColors.oneDimensional : p.quadrant === 'MUST_BE' ? quadrantColors.mustBe : quadrantColors.indifferent}
                                     stroke="#ffffff"
                                     strokeWidth="2"
                                     className="filter drop-shadow-sm transition-transform hover:scale-150"
                                 />
                                 <text
                                     x={p.x}
-                                    y={p.y - 12}
+                                    y={p.y + 3}
                                     textAnchor="middle"
-                                    fill="#0f172a"
-                                    stroke="#ffffff"
-                                    strokeWidth="3"
-                                    paintOrder="stroke"
-                                    fontSize="10"
+                                    fill="#fff"
+                                    fontSize="8"
                                     fontWeight="bold"
+                                    className="pointer-events-none"
                                 >
                                     {idx + 1}
                                 </text>
-                                <title>{p.requirementName || `요구사항 ${idx + 1}`}</title>
+                                <title>{p.requirementName}</title>
                             </g>
                         ))}
                     </svg>
@@ -135,8 +188,8 @@ export default function KanoSatisfactionGraph({ analysis }: KanoSatisfactionGrap
                                 <td className="px-4 py-3 text-center text-rose-400 font-mono font-bold">{item.worse.toFixed(3)}</td>
                                 <td className="px-4 py-3 text-center">
                                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${item.quadrant === 'ATTRACTIVE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
-                                            item.quadrant === 'ONE_DIMENSIONAL' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' :
-                                                item.quadrant === 'MUST_BE' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' :
+                                            item.quadrant === 'ONE_DIMENSIONAL' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' :
+                                                item.quadrant === 'MUST_BE' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' :
                                                     'bg-gray-500/10 text-gray-400 border-gray-500/30'
                                         }`}>
                                         {item.quadrant}

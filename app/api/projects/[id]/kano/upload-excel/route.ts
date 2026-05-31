@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { classifyKanoResponse, type KanoAnswer } from '@/lib/kano-algorithm';
+import { parseGoogleFormsResponseSheet, parseKanoTemplateResponseSheet } from '@/lib/kano-upload-parser';
 
 type ParsedAnswer = {
     respondentEmail: string;
@@ -12,12 +13,18 @@ type ParsedAnswer = {
     negativeAnswer: KanoAnswer;
 };
 
+type WritePolicy = 'append' | 'replace';
+
+function parseWritePolicy(rawValue: FormDataEntryValue | null): WritePolicy {
+    return rawValue === 'replace' ? 'replace' : 'append';
+}
+
 const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
     [/^\s*1\s*$|마음에\s*든다|like/i, 1],
     [/^\s*2\s*$|당연|expect/i, 2],
     [/^\s*3\s*$|아무런\s*느낌|중립|neutral/i, 3],
     [/^\s*4\s*$|할\s*수\s*없|하는수\s*없|참을|tolerate/i, 4],
-    [/^\s*5\s*$|안\s*든다|싫|dislike/i, 5],
+    [/^\s*5\s*$|마음에\s*안\s*든다|마음에\s*안든다|안\s*든다|싫|dislike/i, 5],
 ];
 
 function normalizeAnswer(value: unknown): KanoAnswer | null {
@@ -114,6 +121,25 @@ function parseTabularResponses(sheet: XLSX.WorkSheet, requirementCount: number):
     return parsed;
 }
 
+function pickKanoUploadSheet(workbook: XLSX.WorkBook, format: string): string | undefined {
+    if (format === 'googleForms') {
+        return workbook.SheetNames.find((name) => /form responses|responses|응답/i.test(name)) ?? workbook.SheetNames[0];
+    }
+    return workbook.SheetNames.find((name) => name.includes('KANO') || name.includes('Kano') || name.includes('질문지')) ?? workbook.SheetNames[0];
+}
+
+function parseByUploadFormat(sheet: XLSX.WorkSheet, requirementCount: number, format: string): ParsedAnswer[] {
+    const parsers = format === 'googleForms'
+        ? [parseGoogleFormsResponseSheet, parseKanoTemplateResponseSheet, parseTabularResponses, parseWorksheetMatrix]
+        : [parseKanoTemplateResponseSheet, parseWorksheetMatrix, parseTabularResponses, parseGoogleFormsResponseSheet];
+
+    for (const parser of parsers) {
+        const answers = parser(sheet, requirementCount);
+        if (answers.length > 0) return answers;
+    }
+    return [];
+}
+
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
     const accessResult = await requireProjectAccess(request, projectId, { write: true });
@@ -122,6 +148,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     try {
         const formData = await request.formData();
         const file = formData.get('file');
+        const uploadFormat = String(formData.get('format') ?? 'template');
+        const writePolicy = parseWritePolicy(formData.get('writePolicy'));
         if (!(file instanceof File)) {
             return NextResponse.json({ error: '업로드할 엑셀 파일이 필요합니다.' }, { status: 400 });
         }
@@ -136,28 +164,35 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
         const bytes = Buffer.from(await file.arrayBuffer());
         const workbook = XLSX.read(bytes, { type: 'buffer' });
-        const sheetName = workbook.SheetNames.find((name) => name.includes('KANO') || name.includes('Kano') || name.includes('질문지')) ?? workbook.SheetNames[0];
+        const sheetName = pickKanoUploadSheet(workbook, uploadFormat);
+        if (!sheetName) {
+            return NextResponse.json({ error: '엑셀 파일에서 읽을 수 있는 시트를 찾지 못했습니다.' }, { status: 400 });
+        }
         const sheet = workbook.Sheets[sheetName];
         if (!sheet) {
             return NextResponse.json({ error: '엑셀 파일에서 읽을 수 있는 시트를 찾지 못했습니다.' }, { status: 400 });
         }
 
-        const matrixAnswers = parseWorksheetMatrix(sheet, requirements.length);
-        const answers = matrixAnswers.length > 0 ? matrixAnswers : parseTabularResponses(sheet, requirements.length);
+        const answers = parseByUploadFormat(sheet, requirements.length, uploadFormat);
         if (answers.length === 0) {
-            return NextResponse.json({ error: 'Kano 응답을 찾지 못했습니다. 1~5 점수 또는 기준 KANO질문지 체크 형식을 확인하세요.' }, { status: 400 });
+            return NextResponse.json({ error: 'Kano 응답을 찾지 못했습니다. 전용 업로드 양식 또는 Google Forms 응답 시트의 1~5 점수/응답 텍스트를 확인하세요.' }, { status: 400 });
         }
 
         const respondentEmails = Array.from(new Set(answers.map((answer) => answer.respondentEmail)));
         const invitations = new Map<string, string>();
 
         await prisma.$transaction(async (tx) => {
-            await tx.kanoResponse.deleteMany({
-                where: {
-                    projectId,
-                    respondentEmail: { in: respondentEmails },
-                },
-            });
+            if (writePolicy === 'replace') {
+                await tx.kanoResponse.deleteMany({ where: { projectId } });
+                await tx.kanoSurveyInvitation.deleteMany({ where: { projectId } });
+            } else {
+                await tx.kanoResponse.deleteMany({
+                    where: {
+                        projectId,
+                        respondentEmail: { in: respondentEmails },
+                    },
+                });
+            }
 
             for (const email of respondentEmails) {
                 const invitation = await tx.kanoSurveyInvitation.upsert({
@@ -203,6 +238,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             message: `${respondentEmails.length}명 응답자의 ${answers.length}개 Kano 응답을 업로드했습니다.`,
             respondentCount: respondentEmails.length,
             importedCount: answers.length,
+            writePolicy,
             sheetName,
         });
     } catch (error) {

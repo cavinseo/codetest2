@@ -84,4 +84,49 @@ describe('qfd worksheet calculations', () => {
         expect(result.totals.weight).toBe(6);
         expect(result.totals.absoluteImportance).toBe(10);
     });
+
+    it('uses the highest added competitor score for the worksheet competitor comparison', () => {
+        const result = calculateQfdWorksheet({
+            requirements: [
+                { id: 'r1', category: 'A', subcategory: 'A-1', requirement: 'Need 1', importance: 4 },
+            ],
+            technicals: [],
+            relationships: [],
+            benchmarks: [
+                { requirementId: 'r1', company: 'self', score: 2 },
+                { requirementId: 'r1', company: 'competitor', score: 3 },
+                { requirementId: 'r1', company: '경쟁사 2', score: 5 },
+                { requirementId: 'r1', company: '경쟁사 3', score: 4 },
+            ],
+        });
+
+        expect(result.requirements[0]).toMatchObject({
+            selfScore: 2,
+            competitorScore: 5,
+            planQuality: 5,
+            improvementRate: 2.5,
+            absoluteImportance: 10,
+        });
+    });
+
+    it('keeps customer requirement rows linked by id and in worksheet input order', () => {
+        const result = calculateQfdWorksheet({
+            requirements: [
+                { id: 'r-later', category: '동일 그룹', subcategory: '반복 그룹', requirement: '두 번째 저장 항목', importance: 5 },
+                { id: 'r-first', category: '동일 그룹', subcategory: '반복 그룹', requirement: '첫 번째 저장 항목', importance: 3 },
+            ],
+            technicals: [
+                { id: 't-speed', name: '처리 속도' },
+            ],
+            relationships: [
+                { requirementId: 'r-first', technicalCharId: 't-speed', strength: 'STRONG' },
+                { requirementId: 'r-later', technicalCharId: 't-speed', strength: 'WEAK' },
+            ],
+            benchmarks: [],
+        });
+
+        expect(result.requirements.map((row) => row.requirementId)).toEqual(['r-later', 'r-first']);
+        expect(result.requirements.map((row) => row.requirement)).toEqual(['두 번째 저장 항목', '첫 번째 저장 항목']);
+        expect(result.technicals[0].totalScore).toBe(32);
+    });
 });

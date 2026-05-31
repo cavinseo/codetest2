@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -43,9 +43,7 @@ export default function TechTreePage() {
         toastTimer.current = setTimeout(() => setToast(null), 3000);
     };
 
-    useEffect(() => { loadData(); }, [projectId]);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         try {
             const [specRes, reqRes] = await Promise.all([
                 fetch(`/api/projects/${projectId}/spec`),
@@ -57,7 +55,9 @@ export default function TechTreePage() {
             if (saved) { setRows(JSON.parse(saved)); }
         } catch (e) { console.error(e); }
         finally { setIsLoading(false); }
-    };
+    }, [projectId]);
+
+    useEffect(() => { loadData(); }, [loadData]);
 
     const save = (data: TechTreeRow[]) => {
         localStorage.setItem(`techTree_${projectId}`, JSON.stringify(data));

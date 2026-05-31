@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 interface AssetItem {
     id: string;
@@ -19,11 +19,7 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
-    useEffect(() => {
-        loadData();
-    }, [projectId]);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/assets`);
@@ -36,7 +32,11 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [projectId]);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
 
     const addRow = (type: 'CORE' | 'COMPLEMENTARY') => {
         const newRow: AssetItem = {

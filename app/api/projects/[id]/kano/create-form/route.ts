@@ -60,7 +60,7 @@ export async function POST(
             formId: result.formId,
             formUrl: result.formUrl,
             editUrl: result.editUrl,
-            questionCount: requirements.length * 2,
+            questionCount: requirements.length,
         });
     } catch (error: any) {
         log.error('Google Form creation error', error);

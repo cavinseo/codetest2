@@ -21,6 +21,8 @@ type ParsedSpec = {
     order: number;
 };
 
+type WritePolicy = 'append' | 'replace';
+
 type SheetLayout = 'asisSpec' | 'productAttribute' | 'targetSpec';
 
 type HeaderMatch = {
@@ -31,6 +33,10 @@ type HeaderMatch = {
 function isSupportedExcelFile(fileName: string) {
     const lowerName = fileName.toLowerCase();
     return lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls');
+}
+
+function parseWritePolicy(rawValue: FormDataEntryValue | null): WritePolicy {
+    return rawValue === 'append' ? 'append' : 'replace';
 }
 
 function normalizeCell(value: unknown) {
@@ -247,8 +253,17 @@ function flattenRowsToSpecs(rows: FlatSpecRow[]) {
     return specs;
 }
 
-async function saveSpecs(projectId: string, specs: ParsedSpec[]) {
-    await prisma.specFunction.deleteMany({ where: { projectId } });
+async function saveSpecs(projectId: string, specs: ParsedSpec[], writePolicy: WritePolicy) {
+    const orderOffset = writePolicy === 'append'
+        ? (await prisma.specFunction.aggregate({
+            where: { projectId },
+            _max: { order: true },
+        }))._max.order ?? -1
+        : -1;
+
+    if (writePolicy === 'replace') {
+        await prisma.specFunction.deleteMany({ where: { projectId } });
+    }
     const idMapping = new Map<string, string>();
 
     for (const core of specs.filter((item) => item.level === 'CORE')) {
@@ -258,7 +273,7 @@ async function saveSpecs(projectId: string, specs: ParsedSpec[]) {
                 level: 'CORE',
                 name: core.name,
                 technology: core.technology || null,
-                order: core.order,
+                order: orderOffset + 1 + core.order,
             },
         });
         idMapping.set(core.id, created.id);
@@ -272,7 +287,7 @@ async function saveSpecs(projectId: string, specs: ParsedSpec[]) {
                 parentId: sub.parentId ? idMapping.get(sub.parentId) ?? null : null,
                 name: sub.name,
                 technology: sub.technology || null,
-                order: sub.order,
+                order: orderOffset + 1 + sub.order,
             },
         });
         idMapping.set(sub.id, created.id);
@@ -286,7 +301,7 @@ async function saveSpecs(projectId: string, specs: ParsedSpec[]) {
                 parentId: detail.parentId ? idMapping.get(detail.parentId) ?? null : null,
                 name: detail.name,
                 technology: detail.technology || null,
-                order: detail.order,
+                order: orderOffset + 1 + detail.order,
             },
         });
     }
@@ -314,6 +329,7 @@ export async function POST(
         const formData = await request.formData();
         const file = formData.get('file');
         const requestedSheetName = normalizeCell(formData.get('sheetName'));
+        const writePolicy = parseWritePolicy(formData.get('writePolicy'));
 
         if (!(file instanceof File)) {
             return NextResponse.json({ error: '파일이 없습니다.' }, { status: 400 });
@@ -363,13 +379,14 @@ export async function POST(
             }, { status: 400 });
         }
 
-        const specFunctions = await saveSpecs(projectId, parsedSpecs);
+        const specFunctions = await saveSpecs(projectId, parsedSpecs, writePolicy);
 
         return NextResponse.json({
             success: true,
             sheetName,
             importedRows: flatRows.length,
             specCount: specFunctions.length,
+            writePolicy,
             specFunctions,
             availableSheets: workbook.SheetNames,
         });

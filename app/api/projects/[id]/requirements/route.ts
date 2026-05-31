@@ -16,6 +16,7 @@ const bulkRequirementsSchema = z.object({
             requirement: z.string(),
             kanoPositiveQ: z.string().optional().nullable(),
             kanoNegativeQ: z.string().optional().nullable(),
+            kanoWeight: z.number().optional().nullable(),
             order: z.number(),
         })
     ),
@@ -44,6 +45,7 @@ export async function GET(
                 requirement: r.requirement,
                 kanoPositiveQ: r.kanoPositiveQ ?? null,
                 kanoNegativeQ: r.kanoNegativeQ ?? null,
+                kanoWeight: r.kanoWeight ?? null,
                 order: r.order,
             })),
         });
@@ -85,6 +87,7 @@ export async function POST(
                         requirement: req.requirement,
                         kanoPositiveQ: req.kanoPositiveQ ?? null,
                         kanoNegativeQ: req.kanoNegativeQ ?? null,
+                        kanoWeight: req.kanoWeight ?? null,
                         order: req.order,
                     })),
                 });

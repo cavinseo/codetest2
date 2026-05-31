@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -37,12 +37,7 @@ export default function ProjectSettingsPage() {
     const [isImporting, setIsImporting] = useState(false);
     const [importFile, setImportFile] = useState<File | null>(null);
 
-    useEffect(() => {
-        loadProject();
-        loadMembers();
-    }, [projectId]);
-
-    const loadProject = async () => {
+    const loadProject = useCallback(async () => {
         setProjectError('');
         try {
             const response = await fetch(`/api/projects/${projectId}/overview`);
@@ -57,9 +52,9 @@ export default function ProjectSettingsPage() {
             console.error('프로젝트 로드 실패:', error);
             setProjectError(error instanceof Error ? error.message : '프로젝트 정보를 불러오지 못했습니다.');
         }
-    };
+    }, [projectId]);
 
-    const loadMembers = async () => {
+    const loadMembers = useCallback(async () => {
         try {
             const response = await fetch(`/api/projects/${projectId}/members`);
             if (response.ok) {
@@ -71,7 +66,12 @@ export default function ProjectSettingsPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [projectId]);
+
+    useEffect(() => {
+        loadProject();
+        loadMembers();
+    }, [loadMembers, loadProject]);
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();

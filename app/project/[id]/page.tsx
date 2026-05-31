@@ -299,10 +299,17 @@ export default function ProjectDetailPage() {
                 <div className="flex items-center justify-between">
                     <h2 className="text-2xl font-display font-bold text-white">Kano 분석 집계표</h2>
                 </div>
-                <KanoAggregationTable analysis={kanoAnalysis.requirements.map((r: any) => ({
-                    ...r,
-                    requirementName: kanoRequirements.find((req: any) => req.id === r.requirementId)?.requirement
-                }))} />
+                <KanoAggregationTable
+                    projectId={projectId}
+                    onWeightsSaved={async () => {
+                        const res = await fetch(`/api/projects/${projectId}/kano/analysis`);
+                        if (res.ok) setKanoAnalysis(await res.json());
+                    }}
+                    analysis={kanoAnalysis.requirements.map((r: any) => ({
+                        ...r,
+                        requirementName: kanoRequirements.find((req: any) => req.id === r.requirementId)?.requirement
+                    }))}
+                />
             </div>
         ) : (
             <div className="card text-center py-20 text-gray-500">Kano 분석 데이터가 없습니다.</div>
@@ -392,7 +399,7 @@ export default function ProjectDetailPage() {
 
             {/* Header */}
             <header className="relative z-10 glass border-b border-white/[0.06] rounded-none">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div className="mx-auto w-full max-w-[1800px] px-3 py-4 sm:px-4 lg:px-6 2xl:px-8">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <Link href="/dashboard" className="btn-ghost text-sm flex items-center gap-1">
@@ -419,7 +426,7 @@ export default function ProjectDetailPage() {
 
             {/* Tab Navigation */}
             <div className="relative z-10 border-b border-white/[0.06] bg-surface-900/80 backdrop-blur-sm">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="mx-auto w-full max-w-[1800px] px-3 sm:px-4 lg:px-6 2xl:px-8">
                     <nav className="flex gap-1 py-2 overflow-x-auto">
                         {tabs.map((tab) => (
                             <button
@@ -438,7 +445,7 @@ export default function ProjectDetailPage() {
             </div>
 
             {/* Main Content */}
-            <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 page-enter">
+            <main className="relative z-10 mx-auto w-full max-w-[1800px] px-3 py-8 sm:px-4 lg:px-6 2xl:px-8 page-enter">
                 {activeTab === 'overview' && (
                     <div className="space-y-8 animate-fade-in">
                         <div className="card">

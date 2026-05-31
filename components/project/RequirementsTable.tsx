@@ -1,7 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef, KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, KeyboardEvent } from 'react';
 import Link from 'next/link';
+import {
+    shouldShowPrimaryGroup,
+    shouldShowSecondaryGroup,
+    sortRequirementsByWorksheetOrder,
+} from '@/lib/requirements-table-utils';
 
 interface Requirement {
     id: string;
@@ -40,9 +45,11 @@ function useCategoryColor(categories: string[]) {
 }
 
 export default function RequirementsTable({ projectId }: RequirementsTableProps) {
+    const templateDownloadUrl = `/api/projects/${projectId}/import/template`;
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValues, setEditValues] = useState<Partial<Requirement>>({});
 
@@ -53,9 +60,11 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const excelInputRef = useRef<HTMLInputElement | null>(null);
 
     // 카테고리 목록 (자동완성용)
     const categoryList = [...new Set(requirements.map(r => r.category).filter(Boolean))];
+    const subcategoryList = [...new Set(requirements.map(r => r.subcategory).filter(Boolean))];
     const categoryColors = useCategoryColor(categoryList);
 
     const showToast = (message: string, type: ToastType = 'success') => {
@@ -125,22 +134,23 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         }
     };
 
-    useEffect(() => {
-        async function load() {
-            try {
-                const res = await fetch(`/api/projects/${projectId}/requirements`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setRequirements(data.requirements || []);
-                }
-            } catch (e) {
-                console.error('요구사항 로딩 실패:', e);
-            } finally {
-                setIsLoading(false);
+    const loadRequirements = useCallback(async () => {
+        try {
+            const res = await fetch(`/api/projects/${projectId}/requirements`);
+            if (res.ok) {
+                const data = await res.json();
+                setRequirements(data.requirements || []);
             }
+        } catch (e) {
+            console.error('요구사항 로딩 실패:', e);
+        } finally {
+            setIsLoading(false);
         }
-        load();
     }, [projectId]);
+
+    useEffect(() => {
+        loadRequirements();
+    }, [loadRequirements]);
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -152,6 +162,8 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             });
             if (res.ok) {
                 showToast('저장되었습니다.', 'success');
+                setEditingId(null);
+                setEditValues({});
             } else {
                 showToast('저장에 실패했습니다.', 'error');
             }
@@ -159,6 +171,55 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             showToast('저장 중 오류가 발생했습니다.', 'error');
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleExcelUpload = async (file: File | null) => {
+        if (!file) return;
+        const fileName = file.name.toLowerCase();
+        if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
+            showToast('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', 'error');
+            return;
+        }
+
+        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 데이터를 지우고 새롭게 업로드', '1');
+        if (uploadPolicy === null) return;
+        const shouldReplace = uploadPolicy.trim() === '2';
+        if (!shouldReplace && uploadPolicy.trim() !== '1') {
+            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
+            return;
+        }
+
+        setIsUploadingExcel(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('action', 'apply');
+            formData.append('writePolicy', shouldReplace ? 'replace' : 'append');
+            formData.append('sheetNames', '고객요구사항도출표');
+
+            const res = await fetch(`/api/projects/${projectId}/import`, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json().catch(() => null);
+
+            if (!res.ok) {
+                const available = data?.availableSheets?.length
+                    ? ` 사용 가능한 시트: ${data.availableSheets.join(', ')}`
+                    : '';
+                throw new Error(`${data?.error || '고객요구사항도출표 엑셀 업로드에 실패했습니다.'}${available}`);
+            }
+
+            const importedCount = data?.appliedCounts?.customerRequirements ?? data?.counts?.customerRequirements ?? 0;
+            await loadRequirements();
+            showToast(`고객요구사항도출표 ${importedCount}개 항목을 엑셀에서 반영했습니다.`, 'success');
+        } catch (error) {
+            console.error('고객요구사항도출표 엑셀 업로드 실패:', error);
+            showToast(error instanceof Error ? error.message : '고객요구사항도출표 엑셀 업로드에 실패했습니다.', 'error');
+        } finally {
+            setIsUploadingExcel(false);
+            if (excelInputRef.current) excelInputRef.current.value = '';
         }
     };
 
@@ -217,11 +278,8 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         setRequirements(prev => prev.filter(r => r.id !== id));
     };
 
-    // 정렬: 카테고리 → order
-    const sorted = [...requirements].sort((a, b) => {
-        if (a.category !== b.category) return a.category.localeCompare(b.category);
-        return a.order - b.order;
-    });
+    // 워크시트 행 순서를 보존한다. 1차/2차 그룹 값으로 항목 순서를 재정렬하지 않는다.
+    const sorted = sortRequirementsByWorksheetOrder(requirements);
 
     const groupedCategories = [...new Set(sorted.map(r => r.category))];
 
@@ -269,6 +327,35 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                         <span><span className="text-white font-semibold">{requirements.length}</span>개 요구사항</span>
                         <span><span className="text-white font-semibold">{groupedCategories.length}</span>개 카테고리</span>
                     </div>
+
+                    <a
+                        href={templateDownloadUrl}
+                        className="btn-secondary text-sm flex items-center gap-1.5"
+                        title="고객요구사항도출표가 포함된 업로드 양식을 다운로드합니다."
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                        </svg>
+                        양식 다운로드
+                    </a>
+                    <input
+                        ref={excelInputRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={(event) => handleExcelUpload(event.target.files?.[0] ?? null)}
+                        className="hidden"
+                        id={`requirements-excel-upload-${projectId}`}
+                    />
+                    <label
+                        htmlFor={`requirements-excel-upload-${projectId}`}
+                        className={`btn-secondary text-sm flex items-center gap-1.5 ${isSaving || isUploadingExcel ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
+                        title="엑셀 파일의 고객요구사항도출표 시트를 현재 표에 반영합니다."
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        {isUploadingExcel ? '업로드 중...' : '엑셀 업로드'}
+                    </label>
 
                     {/* AI 자동생성 버튼 및 메뉴 */}
                     <div className="relative group">
@@ -340,10 +427,10 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                     <thead>
                         <tr className="bg-white/[0.03] border-b border-white/[0.06]">
                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-12">No</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-blue-400 w-36">카테고리</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-purple-400 w-32">서브카테고리</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-400">요구사항</th>
-                            <th className="px-4 py-3 w-10"></th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-400">항목</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-red-400 w-44">1차 그룹</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-blue-400 w-44">2차 그룹</th>
+                            <th className="px-4 py-3 w-20"></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -352,28 +439,44 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                 <td colSpan={5} className="px-4 py-16 text-center">
                                     <div className="text-4xl mb-3">📝</div>
                                     <p className="text-gray-400 text-sm mb-1">요구사항이 없습니다</p>
-                                    <p className="text-gray-600 text-xs">우상단 '행 추가' 버튼 또는 테이블 하단 영역을 클릭하세요</p>
+                                    <p className="text-gray-600 text-xs">우상단 &apos;행 추가&apos; 버튼 또는 테이블 하단 영역을 클릭하세요</p>
                                 </td>
                             </tr>
                         )}
 
                         {(() => {
                             let no = 1;
-                            let prevCat = '';
-                            return sorted.map((req) => {
-                                const isNewCat = req.category !== prevCat;
-                                prevCat = req.category;
-                                const catColor = categoryColors[req.category] || CATEGORY_COLORS[0];
+                            return sorted.map((req, idx) => {
                                 const isEditing = editingId === req.id;
+                                const showCategory = shouldShowPrimaryGroup(sorted, idx);
+                                const showSubcategory = shouldShowSecondaryGroup(sorted, idx);
 
                                 return (
                                     <tr
                                         key={req.id}
-                                        className={`border-b border-white/[0.04] group transition-colors ${isEditing ? 'bg-primary-500/[0.04]' : 'hover:bg-white/[0.02]'} ${isNewCat && no > 1 ? 'border-t border-white/[0.08]' : ''}`}
+                                        className={`border-b border-white/[0.04] group transition-colors ${isEditing ? 'bg-primary-500/[0.04]' : 'hover:bg-white/[0.02]'}`}
                                     >
                                         <td className="px-4 py-2.5 text-gray-600 font-mono text-xs">{no++}</td>
 
-                                        {/* 카테고리 */}
+                                        {/* 항목 */}
+                                        <td className="px-2 py-1.5">
+                                            {isEditing ? (
+                                                <input
+                                                    type="text"
+                                                    value={editValues.requirement ?? ''}
+                                                    onChange={e => setEditValues(v => ({ ...v, requirement: e.target.value }))}
+                                                    onKeyDown={e => { if (e.key === 'Enter') commitEdit(req.id); if (e.key === 'Escape') cancelEdit(); }}
+                                                    className="w-full px-2 py-1.5 bg-white/[0.06] border border-primary-500/30 rounded-lg text-white text-xs outline-none focus:ring-1 focus:ring-primary-500/50"
+                                                    autoFocus
+                                                />
+                                            ) : (
+                                                <span className="text-gray-200 text-sm block py-0.5">
+                                                    {req.requirement}
+                                                </span>
+                                            )}
+                                        </td>
+
+                                        {/* 1차 그룹 */}
                                         <td className="px-2 py-1.5">
                                             {isEditing ? (
                                                 <>
@@ -383,68 +486,51 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                         value={editValues.category ?? ''}
                                                         onChange={e => setEditValues(v => ({ ...v, category: e.target.value }))}
                                                         onKeyDown={e => { if (e.key === 'Enter') commitEdit(req.id); if (e.key === 'Escape') cancelEdit(); }}
-                                                        className="w-full px-2 py-1.5 bg-white/[0.06] border border-primary-500/30 rounded-lg text-white text-xs outline-none focus:ring-1 focus:ring-primary-500/50"
+                                                        className="w-full px-2 py-1.5 bg-white/[0.06] border border-red-500/30 rounded-lg text-red-100 text-xs outline-none focus:ring-1 focus:ring-red-500/50"
                                                     />
                                                     <datalist id="cat_autocomplete">
                                                         {categoryList.map(c => <option key={c} value={c} />)}
                                                     </datalist>
                                                 </>
                                             ) : (
-                                                isNewCat ? (
-                                                    <span
-                                                        onClick={() => startEdit(req)}
-                                                        className={`cursor-pointer inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${catColor.bg} ${catColor.text} ${catColor.border}`}
-                                                    >
-                                                        {req.category}
-                                                    </span>
-                                                ) : (
-                                                    <span
-                                                        onClick={() => startEdit(req)}
-                                                        className="cursor-pointer text-transparent select-none"
-                                                    >
-                                                        {req.category}
-                                                    </span>
-                                                )
-                                            )}
-                                        </td>
-
-                                        {/* 서브카테고리 */}
-                                        <td className="px-2 py-1.5">
-                                            {isEditing ? (
-                                                <input
-                                                    type="text"
-                                                    value={editValues.subcategory ?? ''}
-                                                    onChange={e => setEditValues(v => ({ ...v, subcategory: e.target.value }))}
-                                                    onKeyDown={e => { if (e.key === 'Enter') commitEdit(req.id); if (e.key === 'Escape') cancelEdit(); }}
-                                                    placeholder="선택사항"
-                                                    className="w-full px-2 py-1.5 bg-white/[0.06] border border-primary-500/30 rounded-lg text-white text-xs outline-none focus:ring-1 focus:ring-primary-500/50"
-                                                />
-                                            ) : (
-                                                <span
-                                                    onClick={() => startEdit(req)}
-                                                    className="cursor-pointer text-purple-300/70 text-xs"
-                                                >
-                                                    {req.subcategory || <span className="text-gray-700">—</span>}
+                                                <span className="text-red-300 text-xs font-medium">
+                                                    {showCategory ? (req.category || <span className="text-gray-700">—</span>) : ''}
                                                 </span>
                                             )}
                                         </td>
 
-                                        {/* 요구사항 */}
+                                        {/* 2차 그룹 */}
                                         <td className="px-2 py-1.5">
                                             {isEditing ? (
-                                                <div className="flex items-center gap-2">
+                                                <>
                                                     <input
                                                         type="text"
-                                                        value={editValues.requirement ?? ''}
-                                                        onChange={e => setEditValues(v => ({ ...v, requirement: e.target.value }))}
+                                                        list="subcat_autocomplete"
+                                                        value={editValues.subcategory ?? ''}
+                                                        onChange={e => setEditValues(v => ({ ...v, subcategory: e.target.value }))}
                                                         onKeyDown={e => { if (e.key === 'Enter') commitEdit(req.id); if (e.key === 'Escape') cancelEdit(); }}
-                                                        className="flex-1 px-2 py-1.5 bg-white/[0.06] border border-primary-500/30 rounded-lg text-white text-xs outline-none focus:ring-1 focus:ring-primary-500/50"
-                                                        autoFocus
+                                                        placeholder="선택사항"
+                                                        className="w-full px-2 py-1.5 bg-white/[0.06] border border-blue-500/30 rounded-lg text-blue-100 text-xs outline-none focus:ring-1 focus:ring-blue-500/50"
                                                     />
+                                                    <datalist id="subcat_autocomplete">
+                                                        {subcategoryList.map(c => <option key={c} value={c} />)}
+                                                    </datalist>
+                                                </>
+                                            ) : (
+                                                <span className="text-blue-300/80 text-xs">
+                                                    {showSubcategory ? (req.subcategory || <span className="text-gray-700">—</span>) : ''}
+                                                </span>
+                                            )}
+                                        </td>
+
+                                        {/* 삭제 */}
+                                        <td className="px-2 py-2 text-center">
+                                            {isEditing ? (
+                                                <div className="flex items-center justify-center gap-1">
                                                     <button
                                                         onClick={() => commitEdit(req.id)}
-                                                        className="p-1 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors flex-shrink-0"
-                                                        title="확인 (Enter)"
+                                                        className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors"
+                                                        title="저장"
                                                     >
                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
@@ -452,8 +538,8 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                     </button>
                                                     <button
                                                         onClick={cancelEdit}
-                                                        className="p-1 rounded-lg bg-white/[0.04] text-gray-500 hover:bg-white/[0.08] transition-colors flex-shrink-0"
-                                                        title="취소 (Esc)"
+                                                        className="p-1.5 rounded-lg bg-white/[0.04] text-gray-500 hover:bg-white/[0.08] hover:text-white transition-colors"
+                                                        title="취소"
                                                     >
                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
@@ -461,27 +547,28 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                     </button>
                                                 </div>
                                             ) : (
-                                                <span
-                                                    onClick={() => startEdit(req)}
-                                                    className="cursor-pointer text-gray-200 text-sm hover:text-white block py-0.5"
-                                                    title="클릭하여 수정"
-                                                >
-                                                    {req.requirement}
-                                                </span>
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <button
+                                                        onClick={() => startEdit(req)}
+                                                        className="p-1.5 rounded-lg text-gray-500 hover:text-primary-300 hover:bg-primary-500/10 transition-colors"
+                                                        title="수정"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.862 4.487l1.651-1.651a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 7.125L16.875 4.5" />
+                                                        </svg>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(req.id)}
+                                                        className="p-1.5 rounded-lg text-transparent group-hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                                                        title="삭제"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
                                             )}
-                                        </td>
-
-                                        {/* 삭제 */}
-                                        <td className="px-2 py-2 text-center">
-                                            <button
-                                                onClick={() => handleDelete(req.id)}
-                                                className="p-1.5 rounded-lg text-transparent group-hover:text-rose-500 hover:bg-rose-500/10 transition-all"
-                                                title="삭제"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </button>
                                         </td>
                                     </tr>
                                 );
@@ -493,38 +580,14 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                             <tr className="border-b border-primary-500/20 bg-primary-500/[0.04]">
                                 <td className="px-4 py-2.5 text-gray-600 text-xs">새</td>
                                 <td className="px-2 py-1.5">
-                                    <input
-                                        ref={newCatRef}
-                                        type="text"
-                                        list="new_cat_autocomplete"
-                                        value={newRow.category}
-                                        onChange={e => setNewRow(v => ({ ...v, category: e.target.value }))}
-                                        onKeyDown={handleNewRowKey}
-                                        placeholder="카테고리 *"
-                                        className="w-full px-2 py-1.5 bg-white/[0.06] border border-primary-500/30 rounded-lg text-white text-xs outline-none focus:ring-1 focus:ring-primary-500/50 placeholder-gray-600"
-                                    />
-                                    <datalist id="new_cat_autocomplete">
-                                        {categoryList.map(c => <option key={c} value={c} />)}
-                                    </datalist>
-                                </td>
-                                <td className="px-2 py-1.5">
-                                    <input
-                                        type="text"
-                                        value={newRow.subcategory}
-                                        onChange={e => setNewRow(v => ({ ...v, subcategory: e.target.value }))}
-                                        onKeyDown={handleNewRowKey}
-                                        placeholder="서브 (선택)"
-                                        className="w-full px-2 py-1.5 bg-white/[0.06] border border-white/[0.08] rounded-lg text-white text-xs outline-none focus:ring-1 focus:ring-primary-500/50 placeholder-gray-600"
-                                    />
-                                </td>
-                                <td className="px-2 py-1.5">
                                     <div className="flex items-center gap-2">
                                         <input
+                                            ref={newCatRef}
                                             type="text"
                                             value={newRow.requirement}
                                             onChange={e => setNewRow(v => ({ ...v, requirement: e.target.value }))}
                                             onKeyDown={handleNewRowKey}
-                                            placeholder="요구사항 내용 * (Enter로 추가)"
+                                            placeholder="항목 * (Enter로 추가)"
                                             className="flex-1 px-2 py-1.5 bg-white/[0.06] border border-white/[0.08] rounded-lg text-white text-xs outline-none focus:ring-1 focus:ring-primary-500/50 placeholder-gray-600"
                                         />
                                         <button
@@ -542,6 +605,34 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                             </svg>
                                         </button>
                                     </div>
+                                </td>
+                                <td className="px-2 py-1.5">
+                                    <input
+                                        type="text"
+                                        list="new_cat_autocomplete"
+                                        value={newRow.category}
+                                        onChange={e => setNewRow(v => ({ ...v, category: e.target.value }))}
+                                        onKeyDown={handleNewRowKey}
+                                        placeholder="1차 그룹 *"
+                                        className="w-full px-2 py-1.5 bg-white/[0.06] border border-red-500/30 rounded-lg text-red-100 text-xs outline-none focus:ring-1 focus:ring-red-500/50 placeholder-gray-600"
+                                    />
+                                    <datalist id="new_cat_autocomplete">
+                                        {categoryList.map(c => <option key={c} value={c} />)}
+                                    </datalist>
+                                </td>
+                                <td className="px-2 py-1.5">
+                                    <input
+                                        type="text"
+                                        list="new_subcat_autocomplete"
+                                        value={newRow.subcategory}
+                                        onChange={e => setNewRow(v => ({ ...v, subcategory: e.target.value }))}
+                                        onKeyDown={handleNewRowKey}
+                                        placeholder="2차 그룹 (선택)"
+                                        className="w-full px-2 py-1.5 bg-white/[0.06] border border-blue-500/30 rounded-lg text-blue-100 text-xs outline-none focus:ring-1 focus:ring-blue-500/50 placeholder-gray-600"
+                                    />
+                                    <datalist id="new_subcat_autocomplete">
+                                        {subcategoryList.map(c => <option key={c} value={c} />)}
+                                    </datalist>
                                 </td>
                                 <td />
                             </tr>
@@ -571,7 +662,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                             <span className="text-gray-700">|</span>
                             <span><span className="text-white font-semibold">{groupedCategories.length}</span>개 카테고리</span>
                             <span className="text-gray-700">|</span>
-                            <span>Kano 질문 <span className="text-primary-400 font-semibold">{requirements.length * 2}</span>개 생성 가능</span>
+                            <span>Kano 질문 세트 <span className="text-primary-400 font-semibold">{requirements.length}</span>개 생성 가능</span>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                             {groupedCategories.map(cat => {

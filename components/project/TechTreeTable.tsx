@@ -1,16 +1,19 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getTopRankedQfdRequirements, type RankedTechTreeRequirement } from '@/lib/tech-tree-qfd';
 
 interface SpecFunction { id: string; level: 'CORE' | 'SUB' | 'DETAIL'; parentId?: string; name: string; technology?: string; }
 interface Requirement { id: string; category: string; requirement: string; }
 interface TechTreeRow { id: string; customerVoice: string; coreSpec: string; subSpec: string; techCharacteristic: string; order: number; }
 interface Props { projectId: string; }
+type SourceRequirement = Pick<RankedTechTreeRequirement, 'id' | 'requirement'>;
 
 export default function TechTreeTable({ projectId }: Props) {
     const [rows, setRows] = useState<TechTreeRow[]>([]);
     const [specs, setSpecs] = useState<SpecFunction[]>([]);
     const [requirements, setRequirements] = useState<Requirement[]>([]);
+    const [qfdTopRequirements, setQfdTopRequirements] = useState<RankedTechTreeRequirement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -22,24 +25,82 @@ export default function TechTreeTable({ projectId }: Props) {
         setToast({ message, type }); toastTimer.current = setTimeout(() => setToast(null), 3000);
     };
 
-    useEffect(() => { loadData(); }, [projectId]);
+    function buildGeneratedRows(sourceRequirements: SourceRequirement[], sourceSpecs: SpecFunction[]) {
+        const generated: TechTreeRow[] = [];
+        const coreSpecs = sourceSpecs.filter(s => s.level === 'CORE');
+        const timestamp = Date.now();
 
-    const loadData = async () => {
+        if (sourceRequirements.length === 0 && coreSpecs.length === 0) return generated;
+
+        if (sourceRequirements.length === 0) {
+            coreSpecs.forEach(core => {
+                const subs = sourceSpecs.filter(s => s.level === 'SUB' && s.parentId === core.id);
+                if (subs.length === 0) {
+                    generated.push({ id: `tt_${timestamp}_${core.id}`, customerVoice: '', coreSpec: core.name, subSpec: '', techCharacteristic: core.technology || '', order: generated.length });
+                } else {
+                    subs.forEach((sub, i) => generated.push({ id: `tt_${timestamp}_${core.id}_${sub.id}`, customerVoice: '', coreSpec: i === 0 ? core.name : '', subSpec: sub.name, techCharacteristic: sub.technology || '', order: generated.length }));
+                }
+            });
+            return generated;
+        }
+
+        if (coreSpecs.length === 0) {
+            sourceRequirements.forEach((req, rIdx) => {
+                generated.push({ id: `tt_${timestamp}_${req.id}_${rIdx}`, customerVoice: req.requirement, coreSpec: '', subSpec: '', techCharacteristic: '', order: generated.length });
+            });
+            return generated;
+        }
+
+        sourceRequirements.forEach((req) => {
+            coreSpecs.forEach((core, cIdx) => {
+                const subs = sourceSpecs.filter(s => s.level === 'SUB' && s.parentId === core.id);
+                if (subs.length === 0) {
+                    generated.push({ id: `tt_${timestamp}_${req.id}_${core.id}`, customerVoice: cIdx === 0 ? req.requirement : '', coreSpec: core.name, subSpec: '', techCharacteristic: core.technology || '', order: generated.length });
+                } else {
+                    subs.forEach((sub, sIdx) => {
+                        generated.push({
+                            id: `tt_${timestamp}_${req.id}_${core.id}_${sub.id}`,
+                            customerVoice: sIdx === 0 && cIdx === 0 ? req.requirement : '',
+                            coreSpec: sIdx === 0 ? core.name : '',
+                            subSpec: sub.name,
+                            techCharacteristic: sub.technology || '',
+                            order: generated.length,
+                        });
+                    });
+                }
+            });
+        });
+
+        return generated;
+    }
+
+    const loadData = useCallback(async () => {
         try {
-            const [specRes, reqRes, treeRes] = await Promise.all([
+            const [specRes, reqRes, treeRes, qfdRes] = await Promise.all([
                 fetch(`/api/projects/${projectId}/spec`),
                 fetch(`/api/projects/${projectId}/requirements`),
                 fetch(`/api/projects/${projectId}/tech-tree`),
+                fetch(`/api/projects/${projectId}/qfd/analysis`),
             ]);
-            if (specRes.ok) { const d = await specRes.json(); setSpecs(d.specFunctions || []); }
+            let nextSpecs: SpecFunction[] = [];
+            let nextQfdTopRequirements: RankedTechTreeRequirement[] = [];
+            if (specRes.ok) { const d = await specRes.json(); nextSpecs = d.specFunctions || []; setSpecs(nextSpecs); }
             if (reqRes.ok) { const d = await reqRes.json(); setRequirements(d.requirements || []); }
+            if (qfdRes.ok) {
+                const d = await qfdRes.json();
+                nextQfdTopRequirements = getTopRankedQfdRequirements(d.requirements || [], 5);
+                setQfdTopRequirements(nextQfdTopRequirements);
+            }
             if (treeRes.ok) {
                 const d = await treeRes.json();
-                setRows((d.entries || []).map((e: any) => ({ id: e.id, customerVoice: e.customerVoice ?? '', coreSpec: e.coreSpec ?? '', subSpec: e.subSpec ?? '', techCharacteristic: e.techCharacteristic ?? '', order: e.order })));
+                const savedRows = (d.entries || []).map((e: any) => ({ id: e.id, customerVoice: e.customerVoice ?? '', coreSpec: e.coreSpec ?? '', subSpec: e.subSpec ?? '', techCharacteristic: e.techCharacteristic ?? '', order: e.order }));
+                setRows(savedRows.length > 0 ? savedRows : buildGeneratedRows(nextQfdTopRequirements, nextSpecs));
             }
         } catch (e) { console.error(e); }
         finally { setIsLoading(false); }
-    };
+    }, [projectId]);
+
+    useEffect(() => { loadData(); }, [loadData]);
 
     const save = async (data: typeof rows) => {
         const res = await fetch(`/api/projects/${projectId}/tech-tree`, {
@@ -54,29 +115,14 @@ export default function TechTreeTable({ projectId }: Props) {
     const handleReset = async () => { setIsSaving(true); const ok = await save([]); if (ok) { setRows([]); setShowResetConfirm(false); showToast('초기화되었습니다.'); } setIsSaving(false); };
 
     const autoGenerate = () => {
-        const generated: TechTreeRow[] = [];
-        const coreSpecs = specs.filter(s => s.level === 'CORE');
-        requirements.forEach((req, rIdx) => {
-            coreSpecs.forEach((core, cIdx) => {
-                const subs = specs.filter(s => s.level === 'SUB' && s.parentId === core.id);
-                if (subs.length === 0) {
-                    generated.push({ id: `tt_${Date.now()}_${rIdx}_${cIdx}`, customerVoice: req.requirement, coreSpec: core.name, subSpec: '', techCharacteristic: core.technology || '', order: generated.length });
-                } else {
-                    subs.forEach((sub, sIdx) => {
-                        generated.push({ id: `tt_${Date.now()}_${rIdx}_${cIdx}_${sIdx}`, customerVoice: sIdx === 0 && cIdx === 0 ? req.requirement : '', coreSpec: sIdx === 0 ? core.name : '', subSpec: sub.name, techCharacteristic: sub.technology || '', order: generated.length });
-                    });
-                }
-            });
-        });
-        if (generated.length === 0) {
-            coreSpecs.forEach(core => {
-                const subs = specs.filter(s => s.level === 'SUB' && s.parentId === core.id);
-                if (subs.length === 0) generated.push({ id: `tt_${Date.now()}_${core.id}`, customerVoice: '', coreSpec: core.name, subSpec: '', techCharacteristic: core.technology || '', order: generated.length });
-                else subs.forEach((sub, i) => generated.push({ id: `tt_${Date.now()}_${core.id}_${sub.id}`, customerVoice: '', coreSpec: i === 0 ? core.name : '', subSpec: sub.name, techCharacteristic: sub.technology || '', order: generated.length }));
-            });
-        }
+        const sourceRequirements = qfdTopRequirements.length > 0
+            ? qfdTopRequirements
+            : requirements.map((req) => ({ id: req.id, requirement: req.requirement }));
+        const generated = buildGeneratedRows(sourceRequirements, specs);
         setRows(generated);
-        showToast(`${generated.length}개 행이 자동 생성되었습니다.`, 'info');
+        showToast(qfdTopRequirements.length > 0
+            ? `QFD 랭킹 1~5위 항목 ${qfdTopRequirements.length}개를 반영했습니다.`
+            : `${generated.length}개 행이 자동 생성되었습니다.`, 'info');
     };
 
     const addRow = () => setRows(prev => [...prev, { id: `new_${Date.now()}`, customerVoice: '', coreSpec: '', subSpec: '', techCharacteristic: '', order: prev.length }]);
@@ -91,7 +137,7 @@ export default function TechTreeTable({ projectId }: Props) {
             <div className="flex items-center justify-between">
                 <div><h2 className="text-xl font-display font-bold text-white">기능기술체계도</h2><p className="text-sm text-gray-500 mt-1">고객의 소리와 기술특성 연결</p></div>
                 <div className="flex items-center gap-2">
-                    {(specs.length > 0 || requirements.length > 0) && <button onClick={autoGenerate} className="btn-secondary text-sm flex items-center gap-1.5"><svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>자동 생성</button>}
+                    {(specs.length > 0 || requirements.length > 0 || qfdTopRequirements.length > 0) && <button onClick={autoGenerate} className="btn-secondary text-sm flex items-center gap-1.5"><svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>{qfdTopRequirements.length > 0 ? 'QFD TOP5 반영' : '자동 생성'}</button>}
                     <button onClick={addRow} className="btn-secondary text-sm flex items-center gap-1.5"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>행 추가</button>
                     <button onClick={handleSave} disabled={rows.length === 0 || isSaving} className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-40"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>{isSaving ? '저장 중...' : '저장'}</button>
                     {rows.length > 0 && <button onClick={() => setShowResetConfirm(true)} className="px-3 py-2 text-sm text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>}
@@ -111,7 +157,7 @@ export default function TechTreeTable({ projectId }: Props) {
                     <h3 className="text-lg font-display font-semibold text-white mb-2">기능기술체계도를 작성하세요</h3>
                     <p className="text-gray-500 text-sm mb-5">고객의 소리와 제품 기능 스펙, 기술특성을 연결합니다</p>
                     <div className="flex items-center justify-center gap-3">
-                        {(specs.length > 0 || requirements.length > 0) && <button onClick={autoGenerate} className="btn-primary text-sm flex items-center gap-1.5"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>스펙에서 자동 생성</button>}
+                        {(specs.length > 0 || requirements.length > 0 || qfdTopRequirements.length > 0) && <button onClick={autoGenerate} className="btn-primary text-sm flex items-center gap-1.5"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>{qfdTopRequirements.length > 0 ? 'QFD TOP5 반영' : '스펙에서 자동 생성'}</button>}
                         <button onClick={addRow} className="btn-secondary text-sm flex items-center gap-1.5"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>직접 입력</button>
                     </div>
                 </div>

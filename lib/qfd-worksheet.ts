@@ -103,13 +103,19 @@ function getBenchmarkScore(benchmarks: QfdBenchmarkInput[], requirementId: strin
     return benchmarks.find((item) => item.requirementId === requirementId && item.company === company)?.score ?? 0;
 }
 
+function getMaxCompetitorBenchmarkScore(benchmarks: QfdBenchmarkInput[], requirementId: string): number {
+    return benchmarks
+        .filter((item) => item.requirementId === requirementId && item.company !== 'self')
+        .reduce((max, item) => Math.max(max, item.score || 0), 0);
+}
+
 export function calculateQfdWorksheet(input: QfdWorksheetInput): QfdWorksheetResult {
     const totalWeight = input.requirements.reduce((sum, req) => sum + (req.importance || 0), 0);
 
     const requirementBaseRows = input.requirements.map((req) => {
         const weight = req.importance || 0;
         const selfScore = getBenchmarkScore(input.benchmarks, req.id, 'self');
-        const competitorScore = getBenchmarkScore(input.benchmarks, req.id, 'competitor');
+        const competitorScore = getMaxCompetitorBenchmarkScore(input.benchmarks, req.id);
         const planQuality = Math.max(selfScore, competitorScore);
         const improvementRate = selfScore > 0 ? planQuality / selfScore : 0;
         const absoluteImportance = weight * improvementRate;

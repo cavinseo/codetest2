@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 interface FundingPlan {
     id: string;
@@ -30,6 +30,23 @@ interface FundingTableProps {
     projectId: string;
 }
 
+const YEAR_FIELDS = ['year1', 'year2', 'year3'] as const;
+type YearField = (typeof YEAR_FIELDS)[number];
+
+const YEAR_LABELS: Record<YearField, string> = {
+    year1: '1차년도(Y+1)',
+    year2: '2차년도(Y+2)',
+    year3: '3차년도(Y+3)',
+};
+
+const FUNDING_LABELS: Record<string, string> = {
+    'R&D 지원금': '연구개발 지원금(R&D)',
+    TIPS: '민간투자주도형 기술창업지원(TIPS)',
+    VC: '벤처캐피털(VC)',
+};
+
+const formatFundingLabel = (value: string) => FUNDING_LABELS[value] ?? value;
+
 const parseYear = (value?: string): FundingSourceYear => {
     if (!value) return { source: '', amount: '' };
 
@@ -50,11 +67,7 @@ export default function FundingTable({ projectId }: FundingTableProps) {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
-    useEffect(() => {
-        loadData();
-    }, [projectId]);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/funding`);
@@ -68,7 +81,11 @@ export default function FundingTable({ projectId }: FundingTableProps) {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [projectId]);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -89,13 +106,13 @@ export default function FundingTable({ projectId }: FundingTableProps) {
         }
     };
 
-    const updatePlan = (id: string, field: keyof FundingPlan, value: number) => {
-        setPlans(plans.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
+    const updatePlan = (id: string, field: YearField, value: number) => {
+        setPlans(plans.map((plan) => (plan.id === id ? { ...plan, [field]: value } : plan)));
     };
 
     const updateSourceYear = (
         id: string,
-        field: 'year1' | 'year2' | 'year3',
+        field: YearField,
         part: keyof FundingSourceYear,
         value: string
     ) => {
@@ -106,44 +123,60 @@ export default function FundingTable({ projectId }: FundingTableProps) {
         }));
     };
 
-    const sourceTotal = (field: 'year1' | 'year2' | 'year3') =>
+    const planTotal = (field: YearField) =>
+        plans.reduce((sum, plan) => sum + (Number(plan[field]) || 0), 0);
+
+    const sourceTotal = (field: YearField) =>
         sources.reduce((sum, source) => sum + (Number(parseYear(source[field]).amount) || 0), 0);
 
-    if (isLoading) return <div className="p-8 text-center text-gray-400">로딩 중...</div>;
+    if (isLoading) {
+        return <div className="p-8 text-center text-gray-400">로딩 중...</div>;
+    }
 
     return (
-        <div className="space-y-12">
+        <div className="space-y-6">
             <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-white">자금소요 및 조달계획</h2>
+                <h2 className="text-xl font-bold text-white">자금소요 및 조달계획표</h2>
                 <button onClick={handleSave} disabled={isSaving} className="btn-primary">
                     {isSaving ? '저장 중...' : '저장'}
                 </button>
             </div>
 
             <div className="card">
-                <h3 className="text-lg font-semibold text-blue-400 mb-4">자금소요계획표(3년간) <span className="text-xs text-gray-500">(단위: 백만원)</span></h3>
+                <div className="mb-4 flex items-end justify-between gap-4">
+                    <h3 className="text-lg font-semibold text-blue-400">자금계획 통합표</h3>
+                    <span className="text-xs text-gray-500">단위: 백만원</span>
+                </div>
+
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-center border-collapse">
+                    <table className="w-full min-w-[920px] border-collapse text-sm">
                         <thead>
-                            <tr className="border-b border-white/10 text-gray-400">
-                                <th className="px-4 py-2 text-left">구분</th>
-                                <th className="px-4 py-2 text-left">항목</th>
-                                <th className="px-4 py-2">Y+1년차</th>
-                                <th className="px-4 py-2">Y+2년차</th>
-                                <th className="px-4 py-2">Y+3년차</th>
+                            <tr className="border-b border-white/10 text-center text-gray-400">
+                                <th className="w-[120px] px-4 py-3 text-left">구분</th>
+                                <th className="w-[220px] px-4 py-3 text-left">항목</th>
+                                {YEAR_FIELDS.map((field) => (
+                                    <th key={field} className="px-4 py-3">{YEAR_LABELS[field]}</th>
+                                ))}
                             </tr>
                         </thead>
                         <tbody>
-                            {plans.map((p, index) => (
-                                <tr key={p.id} className="border-b border-white/5">
-                                    <td className="px-4 py-2 text-left text-gray-400">{index === 0 || plans[index - 1]?.category !== p.category ? p.category : ''}</td>
-                                    <td className="px-4 py-2 text-left text-white">{p.item}</td>
-                                    {(['year1', 'year2', 'year3'] as const).map((field) => (
+                            <tr className="bg-blue-500/10 text-blue-200">
+                                <td colSpan={5} className="px-4 py-2 font-semibold">자금소요계획</td>
+                            </tr>
+                            {plans.map((plan, index) => (
+                                <tr key={plan.id} className="border-b border-white/5">
+                                    <td className="px-4 py-2 text-left text-gray-400">
+                                        {index === 0 || plans[index - 1]?.category !== plan.category
+                                            ? formatFundingLabel(plan.category)
+                                            : ''}
+                                    </td>
+                                    <td className="px-4 py-2 text-left text-white">{formatFundingLabel(plan.item)}</td>
+                                    {YEAR_FIELDS.map((field) => (
                                         <td key={field} className="p-0">
                                             <input
                                                 type="number"
-                                                value={p[field] || ''}
-                                                onChange={(e) => updatePlan(p.id, field, Number(e.target.value) || 0)}
+                                                value={plan[field] || ''}
+                                                onChange={(e) => updatePlan(plan.id, field, Number(e.target.value) || 0)}
                                                 className="w-full bg-transparent px-4 py-2 text-right text-white outline-none focus:bg-white/5"
                                                 placeholder="0"
                                             />
@@ -151,68 +184,56 @@ export default function FundingTable({ projectId }: FundingTableProps) {
                                     ))}
                                 </tr>
                             ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                            <tr className="border-b border-white/10 bg-white/[0.03] font-semibold text-white">
+                                <td className="px-4 py-2 text-left" colSpan={2}>자금소요 합계</td>
+                                {YEAR_FIELDS.map((field) => (
+                                    <td key={field} className="px-4 py-2 text-right">
+                                        {planTotal(field).toLocaleString()}
+                                    </td>
+                                ))}
+                            </tr>
 
-            <div className="card">
-                <h3 className="text-lg font-semibold text-emerald-400 mb-4">자금조달계획표(3년간) <span className="text-xs text-gray-500">(단위: 백만원)</span></h3>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-center border-collapse">
-                        <thead>
-                            <tr className="border-b border-white/10 text-gray-400">
-                                <th className="px-4 py-2 text-left" rowSpan={2}>구분</th>
-                                <th className="px-4 py-2" colSpan={2}>Y+1년차</th>
-                                <th className="px-4 py-2" colSpan={2}>Y+2년차</th>
-                                <th className="px-4 py-2" colSpan={2}>Y+3년차</th>
+                            <tr className="bg-emerald-500/10 text-emerald-200">
+                                <td colSpan={5} className="px-4 py-2 font-semibold">자금조달계획</td>
                             </tr>
-                            <tr className="border-b border-white/10 text-gray-500">
-                                <th className="px-4 py-2">출처</th>
-                                <th className="px-4 py-2">금액</th>
-                                <th className="px-4 py-2">출처</th>
-                                <th className="px-4 py-2">금액</th>
-                                <th className="px-4 py-2">출처</th>
-                                <th className="px-4 py-2">금액</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {sources.map((s) => (
-                                <tr key={s.id} className="border-b border-white/5">
-                                    <td className="px-4 py-2 text-left text-white font-medium">{s.category}</td>
-                                    {(['year1', 'year2', 'year3'] as const).flatMap((field) => {
-                                        const year = parseYear(s[field]);
-                                        return [
-                                            <td key={`${field}-source`} className="p-0">
-                                                <input
-                                                    type="text"
-                                                    value={year.source}
-                                                    onChange={(e) => updateSourceYear(s.id, field, 'source', e.target.value)}
-                                                    className="w-full bg-transparent px-4 py-2 text-white outline-none focus:bg-white/5"
-                                                    placeholder="출처"
-                                                />
-                                            </td>,
-                                            <td key={`${field}-amount`} className="p-0">
-                                                <input
-                                                    type="number"
-                                                    value={year.amount}
-                                                    onChange={(e) => updateSourceYear(s.id, field, 'amount', e.target.value)}
-                                                    className="w-full bg-transparent px-4 py-2 text-right text-white outline-none focus:bg-white/5"
-                                                    placeholder="0"
-                                                />
-                                            </td>,
-                                        ];
+                            {sources.map((source) => (
+                                <tr key={source.id} className="border-b border-white/5 align-top">
+                                    <td className="px-4 py-2 text-left text-emerald-200">조달</td>
+                                    <td className="px-4 py-2 text-left font-medium text-white">
+                                        {formatFundingLabel(source.category)}
+                                    </td>
+                                    {YEAR_FIELDS.map((field) => {
+                                        const year = parseYear(source[field]);
+                                        return (
+                                            <td key={field} className="p-0">
+                                                <div className="grid grid-cols-[minmax(120px,1fr)_110px] divide-x divide-white/5">
+                                                    <input
+                                                        type="text"
+                                                        value={year.source}
+                                                        onChange={(e) => updateSourceYear(source.id, field, 'source', e.target.value)}
+                                                        className="min-w-0 bg-transparent px-3 py-2 text-white outline-none focus:bg-white/5"
+                                                        placeholder="출처"
+                                                    />
+                                                    <input
+                                                        type="number"
+                                                        value={year.amount}
+                                                        onChange={(e) => updateSourceYear(source.id, field, 'amount', e.target.value)}
+                                                        className="min-w-0 bg-transparent px-3 py-2 text-right text-white outline-none focus:bg-white/5"
+                                                        placeholder="0"
+                                                    />
+                                                </div>
+                                            </td>
+                                        );
                                     })}
                                 </tr>
                             ))}
-                            <tr className="bg-white/[0.03] text-white font-semibold">
-                                <td className="px-4 py-2 text-left">합계</td>
-                                <td />
-                                <td className="px-4 py-2 text-right">{sourceTotal('year1').toLocaleString()}</td>
-                                <td />
-                                <td className="px-4 py-2 text-right">{sourceTotal('year2').toLocaleString()}</td>
-                                <td />
-                                <td className="px-4 py-2 text-right">{sourceTotal('year3').toLocaleString()}</td>
+                            <tr className="bg-white/[0.03] font-semibold text-white">
+                                <td className="px-4 py-2 text-left" colSpan={2}>자금조달 합계</td>
+                                {YEAR_FIELDS.map((field) => (
+                                    <td key={field} className="px-4 py-2 text-right">
+                                        {sourceTotal(field).toLocaleString()}
+                                    </td>
+                                ))}
                             </tr>
                         </tbody>
                     </table>

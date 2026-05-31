@@ -16,14 +16,19 @@ interface Requirement {
 }
 
 const KANO_CHOICES = [
-    '😍 마음에 든다',
-    '😊 당연하다',
-    '😐 아무런느낌이 없다.',
-    '😕 하는수 없다.',
-    '😠 마음에 안든다',
+    '마음에 든다',
+    '당연하다',
+    '아무런느낌이 없다',
+    '하는수 없다',
+    '마음에 안든다',
 ];
 
 const ANSWER_MAP: Record<string, string> = {
+    '마음에 든다': 'LIKE',
+    '당연하다': 'EXPECT',
+    '아무런느낌이 없다': 'NEUTRAL',
+    '하는수 없다': 'TOLERATE',
+    '마음에 안든다': 'DISLIKE',
     '😍 매우 만족 (I like it)': 'LIKE',
     '😊 당연함 (I expect it)': 'EXPECT',
     '😐 상관없음 (I am neutral)': 'NEUTRAL',

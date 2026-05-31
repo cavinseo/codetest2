@@ -19,11 +19,11 @@ interface KanoSurveyPreviewProps {
 }
 
 const answerOptions = [
-    { value: 'LIKE', label: '매우 만족', emoji: '😍' },
-    { value: 'EXPECT', label: '당연함', emoji: '😊' },
-    { value: 'NEUTRAL', label: '상관없음', emoji: '😐' },
-    { value: 'TOLERATE', label: '견딜만함', emoji: '😕' },
-    { value: 'DISLIKE', label: '매우 불만', emoji: '😠' },
+    { value: 'LIKE', label: '마음에 든다', emoji: '😍' },
+    { value: 'EXPECT', label: '당연하다', emoji: '😊' },
+    { value: 'NEUTRAL', label: '아무런느낌이 없다', emoji: '😐' },
+    { value: 'TOLERATE', label: '하는수 없다', emoji: '😕' },
+    { value: 'DISLIKE', label: '마음에 안든다', emoji: '😠' },
 ];
 
 export default function KanoSurveyPreview({ projectName, requirements, onClose }: KanoSurveyPreviewProps) {

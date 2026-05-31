@@ -85,6 +85,7 @@ const COUNT_LABELS: Record<string, string> = {
 export default function ImportPage() {
     const params = useParams();
     const projectId = params.id as string;
+    const templateDownloadUrl = `/api/projects/${projectId}/import/template`;
 
     const [file, setFile] = useState<File | null>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -196,7 +197,18 @@ export default function ImportPage() {
             <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
                 <div className="space-y-6">
                     <div className="card border border-blue-500/30 bg-blue-500/10">
-                        <h3 className="mb-2 font-semibold text-white">업로드 방식</h3>
+                        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <h3 className="font-semibold text-white">업로드 방식</h3>
+                            <a
+                                href={templateDownloadUrl}
+                                className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-400/40 bg-blue-500/15 px-3 py-2 text-sm font-semibold text-blue-100 transition-colors hover:bg-blue-500/25"
+                            >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                                </svg>
+                                업로드 양식 다운로드
+                            </a>
+                        </div>
                         <ul className="space-y-1 text-sm text-gray-300">
                             <li>전체 워크북을 한 번에 분석하거나, 지정한 워크시트만 분석할 수 있습니다.</li>
                             <li>분석 결과를 확인한 뒤 시스템 반영을 실행합니다.</li>

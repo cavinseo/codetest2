@@ -7,7 +7,7 @@
         "build": "next build",
         "start": "next start",
         "test": "vitest run --pool=threads",
-        "lint": "next lint"
+        "lint": "eslint ."
     },
     "dependencies": {
         "@prisma/client": "^6.19.2",

@@ -1,6 +1,19 @@
 import type { Metadata } from "next";
+import { Inter, Outfit } from "next/font/google";
 import ThemeToggle from "@/components/ThemeToggle";
 import "./globals.css";
+
+const inter = Inter({
+    subsets: ["latin"],
+    variable: "--font-inter",
+    display: "swap",
+});
+
+const outfit = Outfit({
+    subsets: ["latin"],
+    variable: "--font-outfit",
+    display: "swap",
+});
 
 export const metadata: Metadata = {
     title: "Kano & QFD — Product Quality Intelligence",
@@ -26,14 +39,8 @@ export default function RootLayout({
         <html lang="ko" className="dark">
             <head>
                 <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-                <link rel="preconnect" href="https://fonts.googleapis.com" />
-                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-                <link
-                    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
-                    rel="stylesheet"
-                />
             </head>
-            <body className="antialiased bg-noise">
+            <body className={`${inter.variable} ${outfit.variable} antialiased bg-noise`}>
                 <ThemeToggle />
                 {children}
             </body>

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
+import { resolveBenchmarkDeleteScope } from '@/lib/qfd-benchmark-guards';
 
 const log = createLogger('api/qfd/benchmarks');
 
@@ -26,6 +27,10 @@ export async function GET(
 
         const projectBenchmarks = await prisma.benchmark.findMany({
             where: { projectId },
+            orderBy: [
+                { company: 'asc' },
+                { requirementId: 'asc' },
+            ],
         });
         return NextResponse.json({ benchmarks: projectBenchmarks });
     } catch (error: unknown) {
@@ -46,6 +51,15 @@ export async function POST(
         if (accessResult instanceof NextResponse) return accessResult;
         const body = await request.json();
         const { requirementId, company, score } = benchmarkSchema.parse(body);
+
+        const requirement = await prisma.customerRequirement.findFirst({
+            where: { id: requirementId, projectId },
+            select: { id: true },
+        });
+
+        if (!requirement) {
+            return NextResponse.json({ error: '현재 프로젝트의 요구사항만 설정할 수 있습니다.' }, { status: 404 });
+        }
 
         const benchmark = await prisma.benchmark.upsert({
             where: {
@@ -76,7 +90,7 @@ export async function POST(
     }
 }
 
-// DELETE: 프로젝트의 모든 벤치마크 리셋
+// DELETE: 프로젝트의 벤치마크 리셋 또는 특정 경쟁사 열 삭제
 export async function DELETE(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -87,12 +101,23 @@ export async function DELETE(
         const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
         if (accessResult instanceof NextResponse) return accessResult;
 
+        const deleteScope = resolveBenchmarkDeleteScope(request.nextUrl.searchParams);
+        if (deleteScope.mode === 'invalid') {
+            return NextResponse.json({ error: deleteScope.error }, { status: 400 });
+        }
+
         const deleteResult = await prisma.benchmark.deleteMany({
-            where: { projectId },
+            where: deleteScope.mode === 'company'
+                ? { projectId, company: deleteScope.company }
+                : { projectId },
         });
 
-        log.info('벤치마크 리셋 완료', { projectId, removed: deleteResult.count });
-        return NextResponse.json({ success: true, removed: deleteResult.count });
+        log.info(deleteScope.mode === 'company' ? '경쟁사 벤치마크 삭제 완료' : '벤치마크 리셋 완료', {
+            projectId,
+            company: deleteScope.company ?? '',
+            removed: deleteResult.count,
+        });
+        return NextResponse.json({ success: true, removed: deleteResult.count, company: deleteScope.company });
     } catch (error: unknown) {
         log.error('벤치마크 리셋 실패', error);
         return NextResponse.json({ error: '벤치마크 리셋 실패' }, { status: 500 });

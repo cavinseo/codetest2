@@ -2,11 +2,11 @@
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
-import { KANO_ANSWER_SCORE } from '@/lib/constants';
+import { countProjectResponses, countUniqueProjectRespondents } from '@/lib/kano-analysis-stats';
 import {
     aggregateKanoResponses,
     calculateBetterWorse,
-    getTimkoCategory,
+    getWeightedTimkoCategory,
     getSatisfactionQuadrant,
 } from '@/lib/kano-algorithm';
 
@@ -24,12 +24,23 @@ export async function GET(
         if (accessResult instanceof NextResponse) return accessResult;
 
         const projectResponses = await prisma.kanoResponse.findMany({
-            where: { projectId },
+            where: {
+                projectId,
+                project: { id: projectId },
+                requirement: { projectId },
+                invitation: { projectId },
+            },
         });
+        const requirements = await prisma.customerRequirement.findMany({
+            where: { projectId },
+            select: { id: true, kanoWeight: true },
+        });
+        const requirementWeights = new Map(requirements.map((req: any) => [req.id, req.kanoWeight]));
 
         if (projectResponses.length === 0) {
             return NextResponse.json({
                 totalResponses: 0,
+                uniqueRespondents: 0,
                 requirements: [],
             });
         }
@@ -48,7 +59,8 @@ export async function GET(
 
             const aggregated = aggregateKanoResponses(mappedResponses);
             const { better, worse } = calculateBetterWorse(aggregated);
-            const timkoCategory = getTimkoCategory(better);
+            const kanoWeight = requirementWeights.get(reqId) ?? null;
+            const timkoCategory = getWeightedTimkoCategory(kanoWeight);
             const quadrant = getSatisfactionQuadrant(better, worse);
 
             return {
@@ -57,6 +69,7 @@ export async function GET(
                 aggregated,
                 better: Math.round(better * 100) / 100,
                 worse: Math.round(worse * 100) / 100,
+                kanoWeight,
                 timkoCategory,
                 quadrant,
             };
@@ -65,12 +78,44 @@ export async function GET(
         results.sort((a, b) => b.better - a.better);
 
         return NextResponse.json({
-            totalResponses: projectResponses.length,
-            uniqueRespondents: new Set(projectResponses.map((r: any) => r.invitationId)).size,
+            totalResponses: countProjectResponses(projectResponses),
+            uniqueRespondents: countUniqueProjectRespondents(projectResponses),
             requirements: results,
         });
     } catch (error: unknown) {
         log.error('Kano 遺꾩꽍 ?ㅻ쪟', error);
         return NextResponse.json({ error: 'Kano 遺꾩꽍 ?ㅽ뙣' }, { status: 500 });
+    }
+}
+
+export async function PATCH(
+    request: NextRequest,
+    props: { params: Promise<{ id: string }> }
+) {
+    const params = await props.params;
+    try {
+        const projectId = params.id;
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
+        if (accessResult instanceof NextResponse) return accessResult;
+
+        const body = await request.json();
+        const updates = Array.isArray(body.weights) ? body.weights : [];
+
+        await prisma.$transaction(
+            updates.map((item: any) => {
+                const weight = item.kanoWeight === null || item.kanoWeight === ''
+                    ? null
+                    : Number(item.kanoWeight);
+                return prisma.customerRequirement.updateMany({
+                    where: { id: String(item.requirementId), projectId },
+                    data: { kanoWeight: Number.isFinite(weight) ? weight : null },
+                });
+            })
+        );
+
+        return NextResponse.json({ success: true, count: updates.length });
+    } catch (error: unknown) {
+        log.error('Kano 가중치 저장 오류', error);
+        return NextResponse.json({ error: 'Kano 가중치 저장 실패' }, { status: 500 });
     }
 }

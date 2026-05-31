@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
 interface Requirement {
@@ -33,11 +34,7 @@ export default function SurveyPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
 
-    useEffect(() => {
-        loadSurvey();
-    }, [token]);
-
-    const loadSurvey = async () => {
+    const loadSurvey = useCallback(async () => {
         try {
             const response = await fetch(`/api/survey/${token}`);
             if (!response.ok) {
@@ -50,7 +47,11 @@ export default function SurveyPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [token]);
+
+    useEffect(() => {
+        loadSurvey();
+    }, [loadSurvey]);
 
     const handleAnswer = (type: 'functional' | 'dysfunctional', value: KanoAnswer) => {
         const reqId = surveyData?.requirements[currentIndex].id;
@@ -126,8 +127,8 @@ export default function SurveyPage() {
     const answerOptions: { value: KanoAnswer; label: string; emoji: string }[] = [
         { value: 'LIKE', label: '마음에 든다', emoji: '😍' },
         { value: 'EXPECT', label: '당연하다', emoji: '😊' },
-        { value: 'NEUTRAL', label: '아무런느낌이 없다.', emoji: '😐' },
-        { value: 'TOLERATE', label: '하는수 없다.', emoji: '😕' },
+        { value: 'NEUTRAL', label: '아무런느낌이 없다', emoji: '😐' },
+        { value: 'TOLERATE', label: '하는수 없다', emoji: '😕' },
         { value: 'DISLIKE', label: '마음에 안든다', emoji: '😠' },
     ];
 
@@ -146,9 +147,9 @@ export default function SurveyPage() {
                     <div className="text-6xl mb-4">⚠️</div>
                     <h2 className="text-2xl font-bold text-white mb-4">설문을 찾을 수 없습니다</h2>
                     <p className="text-gray-400 mb-6">{error || '유효하지 않은 링크입니다.'}</p>
-                    <a href="/" className="btn-primary inline-block">
+                    <Link href="/" className="btn-primary inline-block">
                         홈으로 이동
-                    </a>
+                    </Link>
                 </div>
             </div>
         );

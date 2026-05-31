@@ -141,14 +141,22 @@ export function getTimkoCategory(better: number): TimkoCategory {
     return '무관심';
 }
 
+export function getWeightedTimkoCategory(weight: number | null | undefined): TimkoCategory | null {
+    if (weight === null || weight === undefined || Number.isNaN(weight)) return null;
+    if (weight >= 4.2) return '매력';
+    if (weight >= 3.2) return '일원';
+    if (weight >= 2.2) return '당연';
+    return '무관심';
+}
+
 /**
  * 만족계수 그래프용 사분면 결정
  */
 export type SatisfactionQuadrant =
-    | 'ATTRACTIVE' // 매력적 (Better 높음, |Worse| 낮음)
-    | 'ONE_DIMENSIONAL' // 일원적 (Better 높음, |Worse| 높음)
-    | 'MUST_BE' // 당연적 (Better 낮음, |Worse| 높음)
-    | 'INDIFFERENT'; // 무관심 (Better 낮음, |Worse| 낮음)
+    | 'ATTRACTIVE' // 1사분면: Better 높음, |Worse| 낮음
+    | 'ONE_DIMENSIONAL' // 2사분면: Better 높음, |Worse| 높음
+    | 'MUST_BE' // 3사분면: Better 낮음, |Worse| 높음
+    | 'INDIFFERENT'; // 4사분면: Better 낮음, |Worse| 낮음
 
 export function getSatisfactionQuadrant(
     better: number,
