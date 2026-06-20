@@ -23,6 +23,24 @@ export async function POST(
             );
         }
 
+        // 최소 하나의 데이터 배열이 있어야 import 허용 (빈 payload로 전체 삭제 방지)
+        const hasAnyData = [
+            importData.customerRequirements,
+            importData.technicalCharacteristics,
+            importData.specFunctions,
+            importData.productAttributes,
+            importData.attributeFitnesses,
+            importData.qfdRelationships,
+            importData.kanoResponses,
+        ].some(arr => Array.isArray(arr) && arr.length > 0);
+
+        if (!hasAnyData) {
+            return NextResponse.json(
+                { error: '가져올 데이터가 없습니다.' },
+                { status: 400 }
+            );
+        }
+
         const project = await prisma.project.findUnique({
             where: { id: projectId },
         });
@@ -37,7 +55,7 @@ export async function POST(
         // 해당 프로젝트의 기존 데이터를 삭제하고 새 데이터로 교체(트랜잭션)
         await prisma.$transaction(async (tx: any) => {
             // 삭제 순서 주의: 프로젝트는 유지하고 하위 데이터만 명시적으로 삭제
-            // ?ш린?쒕뒗 project ?먯껜???좎??섍퀬 ?섏쐞 而щ젆?섎쭔 援먯껜
+            // 여기서는 project 자체는 유지하고 하위 컬렉션만 교체합니다.
             await tx.specFunction.deleteMany({ where: { projectId } });
             await tx.productAttribute.deleteMany({ where: { projectId } });
             await tx.attributeFitness.deleteMany({ where: { projectId } });

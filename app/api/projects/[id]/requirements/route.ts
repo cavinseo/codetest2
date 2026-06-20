@@ -19,7 +19,7 @@ const bulkRequirementsSchema = z.object({
             kanoWeight: z.number().optional().nullable(),
             order: z.number(),
         })
-    ),
+    ).min(1, '요구사항이 비어 있습니다. 전체 삭제가 필요하면 deleteAll 파라미터를 사용하세요.'),
 });
 
 // GET: 요구사항 조회
@@ -58,7 +58,7 @@ export async function GET(
     }
 }
 
-// POST: 요구사항 저장(일괄 교체)
+// POST: 요구사항 저장
 export async function POST(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -72,24 +72,41 @@ export async function POST(
         const { requirements } = bulkRequirementsSchema.parse(body);
 
         await prisma.$transaction(async (tx) => {
-            // 해당 프로젝트의 기존 요구사항 삭제(Prisma API 사용)
+            const submittedIds = requirements
+                .map((req) => req.id)
+                .filter((id): id is string => Boolean(id));
+
             await tx.customerRequirement.deleteMany({
-                where: { projectId },
+                where: submittedIds.length > 0
+                    ? { projectId, id: { notIn: submittedIds } }
+                    : { projectId },
             });
 
-            if (requirements.length > 0) {
-                await tx.customerRequirement.createMany({
-                    data: requirements.map((req) => ({
+            for (const req of requirements) {
+                const data = {
+                    category: req.category,
+                    subcategory: req.subcategory ?? null,
+                    requirement: req.requirement,
+                    kanoPositiveQ: req.kanoPositiveQ ?? null,
+                    kanoNegativeQ: req.kanoNegativeQ ?? null,
+                    kanoWeight: req.kanoWeight ?? null,
+                    order: req.order,
+                };
+
+                if (req.id) {
+                    const updated = await tx.customerRequirement.updateMany({
+                        where: { id: req.id, projectId },
+                        data,
+                    });
+                    if (updated.count > 0) continue;
+                }
+
+                await tx.customerRequirement.create({
+                    data: {
                         id: req.id || generateId('spec'),
                         projectId,
-                        category: req.category,
-                        subcategory: req.subcategory ?? null,
-                        requirement: req.requirement,
-                        kanoPositiveQ: req.kanoPositiveQ ?? null,
-                        kanoNegativeQ: req.kanoNegativeQ ?? null,
-                        kanoWeight: req.kanoWeight ?? null,
-                        order: req.order,
-                    })),
+                        ...data,
+                    },
                 });
             }
         });
@@ -106,7 +123,7 @@ export async function POST(
             return NextResponse.json({ error: error.errors[0].message, details: error.errors }, { status: 400 });
         }
 
-        // Prisma ?먮윭 ?곸꽭 ?뺣낫 濡쒓렇
+        // Prisma 오류 상세 정보 로그
         log.error('요구사항 저장 오류 (Prisma/DB)', {
             message: error.message,
             code: error.code,

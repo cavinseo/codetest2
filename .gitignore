@@ -38,6 +38,7 @@ yarn-error.log*
 # Local development databases can contain private test/business data.
 prisma/dev.db
 prisma/dev.db-*
+prisma/dev.db.before-restore-*
 *.sqlite
 *.sqlite3
 
@@ -52,3 +53,17 @@ next-env.d.ts
 temp_files/
 analyze_excel.py
 excel_analysis.json
+devdb-*.tmp
+
+# Tool directories (not project source)
+.bkit/
+.claude/
+
+# Development artifact files (should not be committed)
+dev-log.txt
+migration_log.txt
+project_id.txt
+kano_analysis.json
+tsc_output.txt
+tsc_errors.log
+tsc_final*.log

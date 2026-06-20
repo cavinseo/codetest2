@@ -25,7 +25,8 @@ export async function requireAdmin(request: NextRequest): Promise<SessionUser | 
     if (authResult instanceof NextResponse) return authResult;
 
     if (isAdminEmail(authResult.email)) return authResult;
-    if (process.env.NODE_ENV !== 'production' && !process.env.ADMIN_EMAILS) return authResult;
+    // 로컬 개발용 우회: ALLOW_DEV_ADMIN=true 를 명시해야만 활성화 (암묵적 허용 금지)
+    if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_ADMIN === 'true') return authResult;
 
     return NextResponse.json({ error: 'Admin access required.' }, { status: 403 });
 }
