@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useParams } from 'next/navigation';
 import KanoManager from '@/components/project/KanoManager';
@@ -21,7 +21,7 @@ export default function KanoSurveyPage() {
                             </Link>
                             <div className="w-px h-6 bg-gray-700" />
                             <div>
-                                <h1 className="text-xl font-display font-bold text-white">Kano 설문 관리</h1>
+                                <h1 className="text-xl font-display font-bold text-white">[WS-6] Kano 설문 관리</h1>
                                 <p className="text-xs text-gray-500 mt-0.5">고객에게 설문을 보내고 응답을 수집하세요</p>
                             </div>
                         </div>

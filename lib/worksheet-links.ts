@@ -20,6 +20,8 @@ export interface ImprovementLinkInput {
     id: string;
     type: string;
     content?: string | null;
+    improvementRate?: string | null;
+    devProportion?: string | null;
     priority?: string | null;
     order?: number | null;
 }
@@ -70,10 +72,11 @@ export function buildImprovementSuggestionsFromQfd(requirements: QfdRequirementL
     return [...requirements]
         .filter((req) => req.requirement?.trim())
         .sort((a, b) => {
-            const byAbsoluteImportance = (b.absoluteImportance ?? 0) - (a.absoluteImportance ?? 0);
-            if (byAbsoluteImportance !== 0) return byAbsoluteImportance;
-            return (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER);
+            const byRank = (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER);
+            if (byRank !== 0) return byRank;
+            return (b.absoluteImportance ?? 0) - (a.absoluteImportance ?? 0);
         })
+        .slice(0, 5)
         .map((req, order) => ({
             id: `qfd_${req.requirementId}`,
             customerNeed: req.requirement,
@@ -91,7 +94,8 @@ export function buildTargetSpecSuggestions({
     technicalCharacteristics: TechnicalCharacteristicLinkInput[];
 }): TargetSpecSuggestion[] {
     const features = improvements
-        .filter((item) => item.type === 'feature' && item.content?.trim())
+        .filter((item) => !(item.priority?.trim() && !item.improvementRate?.trim() && !item.devProportion?.trim()))
+        .filter((item) => item.type === 'feature' && (item.improvementRate?.trim() || item.content?.trim()))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     if (features.length === 0) return [];
@@ -101,11 +105,11 @@ export function buildTargetSpecSuggestions({
         return {
             id: `target_${feature.id}`,
             category: '개선기능',
-            subCategory: feature.content?.trim() ?? '',
+            subCategory: feature.improvementRate?.trim() || feature.content?.trim() || '',
             specItem: tech?.name ?? '',
             unit: tech?.unit ?? '',
             targetValue: tech?.targetValue ?? '',
-            note: feature.priority ? `우선순위 ${feature.priority}` : '',
+            note: feature.content?.trim() ?? '',
             order,
         };
     });

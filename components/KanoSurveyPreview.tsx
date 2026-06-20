@@ -19,17 +19,17 @@ interface KanoSurveyPreviewProps {
 }
 
 const answerOptions = [
-    { value: 'LIKE', label: '마음에 든다', emoji: '😍' },
-    { value: 'EXPECT', label: '당연하다', emoji: '😊' },
-    { value: 'NEUTRAL', label: '아무런느낌이 없다', emoji: '😐' },
-    { value: 'TOLERATE', label: '하는수 없다', emoji: '😕' },
-    { value: 'DISLIKE', label: '마음에 안든다', emoji: '😠' },
+    { value: 'LIKE', label: '마음에 든다' },
+    { value: 'EXPECT', label: '당연하다' },
+    { value: 'NEUTRAL', label: '아무런느낌이 없다' },
+    { value: 'TOLERATE', label: '하는수 없다' },
+    { value: 'DISLIKE', label: '마음에 안든다' },
 ];
 
 export default function KanoSurveyPreview({ projectName, requirements, onClose }: KanoSurveyPreviewProps) {
     return (
-        <div className="fixed inset-0 bg-black/70 flex items-start justify-center overflow-y-auto z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full my-8">
+        <div className="kano-survey-preview fixed inset-0 bg-black/70 flex items-start justify-center overflow-y-auto z-50 p-4">
+            <div className="kano-survey-preview-paper bg-white rounded-xl shadow-2xl max-w-[64.4rem] w-full my-8">
                 {/* 폼 헤더 */}
                 <div className="bg-[#673ab7] h-3 rounded-t-xl" />
                 <div className="p-8 border-b border-gray-200">
@@ -102,7 +102,7 @@ export default function KanoSurveyPreview({ projectName, requirements, onClose }
                                                 <label key={option.value} className="flex flex-col items-center gap-2 cursor-pointer group/opt hover:bg-gray-50 p-2 rounded-lg transition-colors">
                                                     <input type="radio" name={`func_${req.id}`} disabled className="w-4 h-4 text-purple-600" />
                                                     <span className="text-[11px] text-gray-500 text-center">
-                                                        {option.emoji}<br/><span className="font-medium">{option.label}</span>
+                                                        <span className="font-medium">{option.label}</span>
                                                     </span>
                                                 </label>
                                             ))}
@@ -121,7 +121,7 @@ export default function KanoSurveyPreview({ projectName, requirements, onClose }
                                                 <label key={option.value} className="flex flex-col items-center gap-2 cursor-pointer group/opt hover:bg-gray-50 p-2 rounded-lg transition-colors">
                                                     <input type="radio" name={`dysfunc_${req.id}`} disabled className="w-4 h-4 text-purple-600" />
                                                     <span className="text-[11px] text-gray-500 text-center">
-                                                        {option.emoji}<br/><span className="font-medium">{option.label}</span>
+                                                        <span className="font-medium">{option.label}</span>
                                                     </span>
                                                 </label>
                                             ))}
@@ -145,7 +145,13 @@ export default function KanoSurveyPreview({ projectName, requirements, onClose }
                 </div>
 
                 {/* 하단 제어바 */}
-                <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 p-4 rounded-b-xl flex justify-end z-10">
+                <div className="kano-survey-preview-controls sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 p-4 rounded-b-xl flex justify-end gap-3 z-10">
+                    <button
+                        onClick={() => window.print()}
+                        className="bg-[#673ab7] text-white px-6 py-2.5 rounded-lg font-bold hover:bg-[#5e35a6] transition-colors"
+                    >
+                        PDF 출력
+                    </button>
                     <button
                         onClick={onClose}
                         className="bg-gray-100 text-gray-700 px-6 py-2.5 rounded-lg font-bold hover:bg-gray-200 transition-colors"
@@ -154,6 +160,42 @@ export default function KanoSurveyPreview({ projectName, requirements, onClose }
                     </button>
                 </div>
             </div>
+            <style jsx global>{`
+                @media print {
+                    body {
+                        background: #ffffff !important;
+                    }
+
+                    body * {
+                        visibility: hidden !important;
+                    }
+
+                    .kano-survey-preview,
+                    .kano-survey-preview * {
+                        visibility: visible !important;
+                    }
+
+                    .kano-survey-preview {
+                        position: static !important;
+                        display: block !important;
+                        overflow: visible !important;
+                        background: #ffffff !important;
+                        padding: 0 !important;
+                    }
+
+                    .kano-survey-preview-paper {
+                        width: 100% !important;
+                        max-width: none !important;
+                        margin: 0 !important;
+                        border-radius: 0 !important;
+                        box-shadow: none !important;
+                    }
+
+                    .kano-survey-preview-controls {
+                        display: none !important;
+                    }
+                }
+            `}</style>
         </div>
     );
 }

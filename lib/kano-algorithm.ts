@@ -170,6 +170,38 @@ export function getSatisfactionQuadrant(
     return 'INDIFFERENT';
 }
 
+function verticalRadialBandFromCenter(better: number): number {
+    const band = Math.ceil(((better - 0.5) * 10) - Number.EPSILON) - 1;
+    return Math.max(0, Math.min(4, band));
+}
+
+function horizontalAttractiveBandFromCenter(worse: number): number {
+    const band = Math.floor(((0.5 - Math.abs(worse)) * 10) + Number.EPSILON);
+    return Math.max(0, Math.min(4, band));
+}
+
+function horizontalOneDimensionalBandFromCenter(worse: number): number {
+    const band = Math.ceil(((Math.abs(worse) - 0.5) * 10) - Number.EPSILON) - 1;
+    return Math.max(0, Math.min(4, band));
+}
+
+export function calculateSatisfactionGraphWeight(better: number, worse: number): number {
+    const quadrant = getSatisfactionQuadrant(better, worse);
+
+    if (quadrant === 'MUST_BE') return 3;
+    if (quadrant === 'INDIFFERENT') return 2;
+
+    const verticalBand = verticalRadialBandFromCenter(better);
+
+    if (quadrant === 'ATTRACTIVE') {
+        const band = Math.min(verticalBand, horizontalAttractiveBandFromCenter(worse));
+        return Math.round((4.2 + (band * 0.2)) * 10) / 10;
+    }
+
+    const band = Math.min(verticalBand, horizontalOneDimensionalBandFromCenter(worse));
+    return Math.round((3.2 + (band * 0.2)) * 10) / 10;
+}
+
 /**
  * 개선 우선순위 점수 계산
  * Better 계수가 높을수록 우선순위가 높음

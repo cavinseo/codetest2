@@ -28,7 +28,7 @@ export async function POST(
         const token = getGoogleToken('default');
         if (!token) {
             return NextResponse.json(
-                { error: 'Google ?몄쬆???꾩슂?⑸땲?? 癒쇱? Google 怨꾩젙???곌껐?섏꽭??', needsAuth: true },
+                { error: 'Google 인증이 필요합니다. 먼저 Google 계정을 연결하세요.', needsAuth: true },
                 { status: 401 }
             );
         }
@@ -49,7 +49,7 @@ export async function POST(
         const body = await request.json().catch(() => ({}));
         const projectName = body.projectName || `프로젝트 ${projectId}`;
 
-        // Google Form ?앹꽦
+        // Google Form 생성
         const result = await createKanoForm(token.accessToken, projectName, requirements.map((r: any) => ({
             ...r,
             subcategory: r.subcategory ?? undefined
@@ -65,7 +65,7 @@ export async function POST(
     } catch (error: any) {
         log.error('Google Form creation error', error);
         return NextResponse.json(
-            { error: `Google Form ?앹꽦 ?ㅽ뙣: ${error.message}` },
+            { error: `Google Form 생성 실패: ${error.message}` },
             { status: 500 }
         );
     }

@@ -56,6 +56,8 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
     const deleteRow = (id: string) => {
         setAssets(assets.filter(a => a.id !== id));
     };
+    const getUniqueValues = (field: 'category' | 'content', type?: AssetItem['type']) =>
+        Array.from(new Set(assets.filter((asset) => !type || asset.type === type).map((asset) => (asset[field] || '').trim()).filter(Boolean)));
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -84,7 +86,7 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
     return (
         <div className="space-y-8">
             <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-white">핵심자산 및 보완자산 도출표</h2>
+                <h2 className="text-xl font-bold text-white">[WS-15] 핵심자산 및 보완자산 도출표</h2>
                 <button
                     onClick={handleSave}
                     disabled={isSaving}
@@ -115,11 +117,15 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
                                 <td className="p-0">
                                     <input
                                         type="text"
+                                        list={`core-asset-content-${a.id}`}
                                         value={a.content || ''}
                                         onChange={(e) => updateRow(a.id, 'content', e.target.value)}
                                         className="w-full bg-transparent px-4 py-2 text-white outline-none"
                                         placeholder="핵심자산 입력"
                                     />
+                                    <datalist id={`core-asset-content-${a.id}`}>
+                                        {getUniqueValues('content', 'CORE').map((value) => <option key={value} value={value} />)}
+                                    </datalist>
                                 </td>
                                 <td className="px-4 py-2">
                                     <button onClick={() => deleteRow(a.id)} className="text-rose-500 hover:text-rose-400">삭제</button>
@@ -150,20 +156,28 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
                                 <td className="p-0 border-r border-white/5">
                                     <input
                                         type="text"
+                                        list={`comp-asset-category-${a.id}`}
                                         value={a.category || ''}
                                         onChange={(e) => updateRow(a.id, 'category', e.target.value)}
                                         className="w-full bg-transparent px-4 py-2 text-white outline-none"
                                         placeholder="필요 항목"
                                     />
+                                    <datalist id={`comp-asset-category-${a.id}`}>
+                                        {getUniqueValues('category', 'COMPLEMENTARY').map((value) => <option key={value} value={value} />)}
+                                    </datalist>
                                 </td>
                                 <td className="p-0">
                                     <input
                                         type="text"
+                                        list={`comp-asset-content-${a.id}`}
                                         value={a.content || ''}
                                         onChange={(e) => updateRow(a.id, 'content', e.target.value)}
                                         className="w-full bg-transparent px-4 py-2 text-white outline-none"
                                         placeholder="해결방안"
                                     />
+                                    <datalist id={`comp-asset-content-${a.id}`}>
+                                        {getUniqueValues('content', 'COMPLEMENTARY').map((value) => <option key={value} value={value} />)}
+                                    </datalist>
                                 </td>
                                 <td className="px-4 py-2">
                                     <button onClick={() => deleteRow(a.id)} className="text-rose-500 hover:text-rose-400">삭제</button>

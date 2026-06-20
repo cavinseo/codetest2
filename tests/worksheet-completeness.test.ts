@@ -69,6 +69,7 @@ describe('worksheet completeness', () => {
         expect(result.percent).toBe(100);
         expect(result.requiredComplete).toBe(true);
         expect(result.blockers).toEqual([]);
+        expect(result.items.find((item) => item.key === 'funding')?.worksheetKey).toBe('funding-source');
     });
 
     it('keeps optional worksheets from blocking report readiness', () => {

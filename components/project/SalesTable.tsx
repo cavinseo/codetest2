@@ -73,6 +73,15 @@ export default function SalesTable({ projectId, onSaved }: Props) {
         };
     }, [rows]);
 
+    const salesOptions = useMemo(() => {
+        const uniqueValues = (values: string[]) => Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+        const allRows = [...rowsByPeriod.Y, ...rowsByPeriod.Y_PLUS_1];
+        return {
+            customers: uniqueValues(allRows.map((row) => row.customer)),
+            competitors: uniqueValues(allRows.map((row) => row.competitor)),
+        };
+    }, [rowsByPeriod]);
+
     const showToast = (msg: string) => {
         if (toastTimer.current) clearTimeout(toastTimer.current);
         setToast(msg);
@@ -224,7 +233,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
 
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-display font-bold text-white">자사매출추정표</h2>
+                    <h2 className="text-xl font-display font-bold text-white">[WS-1] 자사매출추정표</h2>
                     <p className="mt-1 text-sm text-gray-500">현재(Y)와 미래(Y+1차) 매출표를 각각 독립적으로 작성합니다. (단위: 백만원)</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -260,7 +269,6 @@ export default function SalesTable({ projectId, onSaved }: Props) {
             {PERIODS.map((period) => {
                 const periodRows = rowsByPeriod[period.key];
                 const totalAmount = periodRows.reduce((sum, row) => sum + (row.amount || 0), 0);
-
                 return (
                     <section key={period.key} className="card overflow-x-auto p-0">
                         <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
@@ -286,13 +294,13 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                                     <tr key={row.id} className="group border-b border-white/[0.04] hover:bg-white/[0.02]">
                                         <td className="border border-white/[0.06] p-2 text-center text-sm text-gray-600">{idx + 1}</td>
                                         <td className="border border-white/[0.06] p-0">
-                                            <input type="text" value={row.customer} onChange={(e) => updateRow(row.id, 'customer', e.target.value)} className="w-full border-none bg-transparent p-2.5 text-sm text-white outline-none placeholder-gray-700 focus:ring-1 focus:ring-primary-500/50" placeholder="매출처명" />
+                                            <input type="text" value={row.customer} onChange={(e) => updateRow(row.id, 'customer', e.target.value)} list="sales-customers" className="w-full border-none bg-transparent p-2.5 text-sm text-white outline-none placeholder-gray-700 focus:ring-1 focus:ring-primary-500/50" placeholder="매출처명" />
                                         </td>
                                         <td className="border border-white/[0.06] p-0">
                                             <input type="text" inputMode="numeric" value={row.amount ? formatAmount(row.amount) : ''} onChange={(e) => updateRow(row.id, 'amount', parseAmount(e.target.value))} className={`w-full border-none bg-transparent p-2.5 text-right font-mono text-sm ${period.accent} outline-none placeholder-gray-700 focus:ring-1 ${period.focus}`} placeholder="0" />
                                         </td>
                                         <td className="border border-white/[0.06] p-0">
-                                            <input type="text" value={row.competitor} onChange={(e) => updateRow(row.id, 'competitor', e.target.value)} className="w-full border-none bg-transparent p-2.5 text-sm text-white outline-none placeholder-gray-700 focus:ring-1 focus:ring-primary-500/50" placeholder="경쟁사명" />
+                                            <input type="text" value={row.competitor} onChange={(e) => updateRow(row.id, 'competitor', e.target.value)} list="sales-competitors" className="w-full border-none bg-transparent p-2.5 text-sm text-white outline-none placeholder-gray-700 focus:ring-1 focus:ring-primary-500/50" placeholder="경쟁사명" />
                                         </td>
                                         <td className="border border-white/[0.06] p-2 text-center">
                                             <button onClick={() => deleteRow(row.id)} className="mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-gray-700 opacity-0 transition-colors hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100">
@@ -310,6 +318,16 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                                 </tr>
                             </tbody>
                         </table>
+                        <datalist id="sales-customers">
+                            {salesOptions.customers.map((customer) => (
+                                <option key={customer} value={customer} />
+                            ))}
+                        </datalist>
+                        <datalist id="sales-competitors">
+                            {salesOptions.competitors.map((competitor) => (
+                                <option key={competitor} value={competitor} />
+                            ))}
+                        </datalist>
                     </section>
                 );
             })}

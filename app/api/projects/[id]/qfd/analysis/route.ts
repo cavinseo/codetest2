@@ -15,9 +15,7 @@ import {
 
 const log = createLogger('api/qfd/analysis');
 
-
-
-// GET: QFD 醫낇빀 遺꾩꽍 (Kano 媛以묒튂 ?곕룞)
+// GET: QFD 종합 분석 (Kano 가중치 연동)
 export async function GET(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -47,7 +45,10 @@ export async function GET(
             const kanoCategory = counts.total > 0
                 ? counts.dominantCategory
                 : (reqResponses[0]?.kanoCategory as KanoCategory | undefined) ?? 'I';
-            const importance = calculateSatisfactionGraphWeight(better, worse);
+            const savedKanoWeight = Number(req.kanoWeight);
+            const hasSavedKanoWeight = Number.isFinite(savedKanoWeight) && savedKanoWeight > 0;
+            const autoKanoWeight = counts.total > 0 ? calculateSatisfactionGraphWeight(better, worse) : 0;
+            const importance = hasSavedKanoWeight ? savedKanoWeight : autoKanoWeight;
 
             return {
                 id: req.id,
@@ -93,7 +94,7 @@ export async function GET(
             totalTechnicals: techs.length,
         });
     } catch (error: unknown) {
-        log.error('QFD 遺꾩꽍 ?ㅻ쪟', error);
-        return NextResponse.json({ error: 'QFD 遺꾩꽍 ?ㅽ뙣' }, { status: 500 });
+        log.error('QFD 분석 오류', error);
+        return NextResponse.json({ error: 'QFD 분석 실패' }, { status: 500 });
     }
 }

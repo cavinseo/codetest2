@@ -120,6 +120,22 @@ describe('workbook importer', () => {
         expect(result.records.customerRequirements.map((item) => item.order)).toEqual([0, 1, 2]);
     });
 
+    it('accepts customer requirement worksheet aliases for page uploads', () => {
+        const parsed = workbook([
+            sheet('고객요구사항관리', [
+                ['고객요구사항 관리'],
+                ['번호', '항목', '1차 그룹', '2차 그룹'],
+                [1, 'Fast setup', 'Usability', 'Onboarding'],
+            ]),
+        ]);
+
+        const result = parseWorkbookImport(parsed, { sheetNames: ['고객요구사항도출표'] });
+
+        expect(result.errors).toEqual([]);
+        expect(result.counts.customerRequirements).toBe(1);
+        expect(result.selectedSheets).toEqual(['고객요구사항관리']);
+    });
+
     it('imports only selected worksheets when sheet names are provided', () => {
         const parsed = workbook([
             sheet('자사매출추정표', [
@@ -137,6 +153,68 @@ describe('workbook importer', () => {
         expect(result.counts.salesEstimates).toBe(0);
         expect(result.counts.productAttributes).toBe(1);
         expect(result.selectedSheets).toEqual(['제품속성표']);
+    });
+
+    it('accepts product attribute worksheet aliases for page uploads', () => {
+        const parsed = workbook([
+            sheet('제품속성서', [
+                ['제품명', '고객명', '세분시장', '고객 니즈', '제공혜택', '제품속성', '기술 역량'],
+                ['Product A', 'Customer A', 'SMB', 'Fast setup', 'Time saving', 'Easy onboarding', 'Automation'],
+            ]),
+        ]);
+
+        const result = parseWorkbookImport(parsed, { sheetNames: ['제품속성표'] });
+
+        expect(result.errors).toEqual([]);
+        expect(result.counts.productAttributes).toBe(1);
+        expect(result.selectedSheets).toEqual(['제품속성서']);
+    });
+
+    it('imports WS-11 feature list columns exactly as the worksheet provides them', () => {
+        const parsed = workbook([
+            sheet('개선포인트도출', [
+                ['개선포인트기반 개선 기능/성능 List'],
+                ['순위', '개선포인트 우선순위 (고객니즈)', '추가 기능', '성능향상'],
+                [1, '빠르게 작업하고 싶다', '자동 추천', '응답시간 1초 단축'],
+                [2, '실수를 줄이고 싶다', '검증 알림', '오류율 20% 감소'],
+            ]),
+        ]);
+
+        const result = parseWorkbookImport(parsed, { sheetNames: ['개선포인트도출'] });
+
+        expect(result.records.improvementItems).toEqual([
+            {
+                type: 'feature',
+                content: '빠르게 작업하고 싶다',
+                improvementRate: '자동 추천',
+                devProportion: '응답시간 1초 단축',
+                priority: null,
+                order: 0,
+            },
+            {
+                type: 'feature',
+                content: '실수를 줄이고 싶다',
+                improvementRate: '검증 알림',
+                devProportion: '오류율 20% 감소',
+                priority: null,
+                order: 1,
+            },
+        ]);
+    });
+
+    it('does not import empty WS-11 feature template rows as zero-valued customer needs', () => {
+        const parsed = workbook([
+            sheet('개선포인트도출', [
+                ['개선포인트기반 개선 기능/성능 List'],
+                ['순위', '개선포인트 우선순위 (고객니즈)', '추가 기능', '성능향상'],
+                [1, 0, '', ''],
+                [2, 0, '', ''],
+            ]),
+        ]);
+
+        const result = parseWorkbookImport(parsed, { sheetNames: ['개선포인트도출'] });
+
+        expect(result.records.improvementItems).toEqual([]);
     });
 
     it('reports missing selected worksheets and keeps available sheets unchanged', () => {

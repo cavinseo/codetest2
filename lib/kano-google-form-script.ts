@@ -20,25 +20,22 @@ function escapeScriptString(value: string): string {
     return JSON.stringify(value);
 }
 
-function questionTitle(requirement: KanoFormScriptRequirement, type: 'positive' | 'negative'): string {
+function questionTitle(requirement: KanoFormScriptRequirement, index: number, type: 'positive' | 'negative'): string {
     const topic = getKanoTopic(requirement.requirement);
-    const categoryLabel = requirement.category
-        ? `[${requirement.category}${requirement.subcategory ? ` > ${requirement.subcategory}` : ''}] `
-        : '';
-    const prefix = type === 'positive' ? '👍 [긍정]' : '👎 [부정]';
-    return `${prefix} ${categoryLabel}${topic}`;
+    const questionNumber = type === 'positive' ? 1 : 2;
+    return `[${index + 1}-${questionNumber}] ${topic}`;
 }
 
 export function buildKanoGoogleFormScript(
     requirements: KanoFormScriptRequirement[],
     projectName = 'Kano 설문'
 ): string {
-    const payload = requirements.map((requirement) => {
+    const payload = requirements.map((requirement, index) => {
         const topic = getKanoTopic(requirement.requirement);
         return {
-            positiveTitle: questionTitle(requirement, 'positive'),
+            positiveTitle: questionTitle(requirement, index, 'positive'),
             positiveDescription: requirement.kanoPositiveQ || `만약 "${topic}"(이)라면 어떻게 느끼시겠습니까?`,
-            negativeTitle: questionTitle(requirement, 'negative'),
+            negativeTitle: questionTitle(requirement, index, 'negative'),
             negativeDescription: requirement.kanoNegativeQ || `만약 "${topic}"(이)가 아니라면 어떻게 느끼시겠습니까?`,
         };
     });

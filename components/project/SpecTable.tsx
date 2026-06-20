@@ -40,9 +40,23 @@ interface GroupedSpecRow extends FlatSpecRow {
     subRowSpan: number;
 }
 
+type SpecAiWizardStep = 'guide' | 'questions' | 'review' | 'fast';
+
+interface SpecAiIssue {
+    severity: 'info' | 'warning' | 'error';
+    message: string;
+    specId?: string;
+}
+
+interface SpecAiRecommendation {
+    type: 'qfd' | 'targetSpec';
+    label: string;
+    reason: string;
+}
+
 export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const router = useRouter();
-    const templateDownloadUrl = `/api/projects/${projectId}/import/template`;
+    const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=spec`;
     const [project, setProject] = useState<ProjectData | null>(null);
     const [rows, setRows] = useState<FlatSpecRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -52,7 +66,25 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const [activeMode, setActiveMode] = useState<'manual' | 'auto'>('manual');
     const [showAiDetailPopup, setShowAiDetailPopup] = useState(false);
     const [aiDetailInput, setAiDetailInput] = useState('');
+    const [aiWizardStep, setAiWizardStep] = useState<SpecAiWizardStep>('guide');
+    const [aiQuestionInput, setAiQuestionInput] = useState({
+        desiredFunctions: '',
+    });
+    const [aiFastRows, setAiFastRows] = useState<FlatSpecRow[]>([]);
+    const [aiDraftSpecs, setAiDraftSpecs] = useState<SpecFunction[]>([]);
+    const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set());
+    const [aiIssues, setAiIssues] = useState<SpecAiIssue[]>([]);
+    const [aiRecommendations, setAiRecommendations] = useState<SpecAiRecommendation[]>([]);
+    const [aiContextSummary, setAiContextSummary] = useState<{
+        keywords?: string[];
+        customerNeedCount?: number;
+        productAttributeCount?: number;
+        existingSpecCount?: number;
+        qfdTechnicalCount?: number;
+        targetSpecCount?: number;
+    } | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const excelInputRef = useRef<HTMLInputElement | null>(null);
@@ -205,6 +237,14 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         return Array.from(new Set(rows.map(row => row.sub.trim()).filter(Boolean)));
     }, [rows]);
 
+    const detailOptions = useMemo(() => {
+        return Array.from(new Set(rows.map(row => row.detail.trim()).filter(Boolean)));
+    }, [rows]);
+
+    const technologyOptions = useMemo(() => {
+        return Array.from(new Set(rows.map(row => row.technology.trim()).filter(Boolean)));
+    }, [rows]);
+
     const groupedRows = useMemo<GroupedSpecRow[]>(() => {
         return rows.map((row, index) => {
             const core = row.core.trim();
@@ -238,27 +278,59 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         });
     }, [rows]);
 
-    const handleSpecExcelUpload = async (file: File | null) => {
+    const aiGroupedRows = useMemo<GroupedSpecRow[]>(() => {
+        return aiFastRows.map((row, index) => {
+            const core = row.core.trim();
+            const sub = row.sub.trim();
+            const previous = aiFastRows[index - 1];
+            const isFirstCore = !core || !previous || previous.core.trim() !== core;
+            const isFirstSub = !sub || !previous || previous.core.trim() !== core || previous.sub.trim() !== sub;
+
+            let coreRowSpan = 0;
+            if (isFirstCore) {
+                coreRowSpan = 1;
+                while (index + coreRowSpan < aiFastRows.length && core && aiFastRows[index + coreRowSpan].core.trim() === core) {
+                    coreRowSpan++;
+                }
+            }
+
+            let subRowSpan = 0;
+            if (isFirstSub) {
+                subRowSpan = 1;
+                while (
+                    index + subRowSpan < aiFastRows.length &&
+                    sub &&
+                    aiFastRows[index + subRowSpan].core.trim() === core &&
+                    aiFastRows[index + subRowSpan].sub.trim() === sub
+                ) {
+                    subRowSpan++;
+                }
+            }
+
+            return { ...row, coreRowSpan, subRowSpan };
+        });
+    }, [aiFastRows]);
+
+    const aiDraftRows = useMemo(() => buildRowsFromSpecs(aiDraftSpecs), [aiDraftSpecs, buildRowsFromSpecs]);
+
+    const handleSpecExcelUpload = (file: File | null) => {
         if (!file) return;
         const fileName = file.name.toLowerCase();
         if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
             showToast('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', 'error');
+            if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }
 
-        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 데이터를 지우고 새롭게 업로드', '1');
-        if (uploadPolicy === null) return;
-        const shouldReplace = uploadPolicy.trim() === '2';
-        if (!shouldReplace && uploadPolicy.trim() !== '1') {
-            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
-            return;
-        }
+        setPendingExcelFile(file);
+    };
 
+    const uploadSpecExcelFile = async (file: File, writePolicy: 'append' | 'replace') => {
         setIsUploadingExcel(true);
         try {
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('writePolicy', shouldReplace ? 'replace' : 'append');
+            formData.append('writePolicy', writePolicy);
             const res = await fetch(`/api/projects/${projectId}/spec/upload-excel`, {
                 method: 'POST',
                 body: formData,
@@ -281,57 +353,164 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
             showToast(error instanceof Error ? error.message : '엑셀 업로드에 실패했습니다.', 'error');
         } finally {
             setIsUploadingExcel(false);
+            setPendingExcelFile(null);
             if (excelInputRef.current) excelInputRef.current.value = '';
         }
     };
 
     const handleAutoGenerate = async () => {
         const additionalDescription = aiDetailInput.trim();
-        if (!additionalDescription) {
-            showToast('제품이나 아이디어에 대한 상세 정보를 입력하세요.', 'error');
+        const desiredFunctions = aiQuestionInput.desiredFunctions.trim();
+        if (!additionalDescription || !desiredFunctions) {
+            showToast('세부설명과 원하는 기능을 모두 입력하세요.', 'error');
             return;
         }
 
+        setAiDraftSpecs([]);
+        setSelectedDraftIds(new Set());
+        setAiIssues([]);
+        setAiRecommendations([]);
+        setAiContextSummary(null);
         setIsGenerating(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/spec/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ additionalDescription }),
+                body: JSON.stringify({
+                    mode: 'draft',
+                    additionalDescription,
+                    structuredInput: {
+                        productService: project?.name || '',
+                        currentFunctions: desiredFunctions,
+                    },
+                }),
             });
             if (res.ok) {
                 const data = await res.json();
                 const loadedSpecs: SpecFunction[] = data.specFunctions || [];
-                if (loadedSpecs.length > 0) {
-                    const saveRes = await fetch(`/api/projects/${projectId}/spec`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ specFunctions: loadedSpecs }),
-                    });
-                    if (!saveRes.ok) {
-                        const errorData = await saveRes.json().catch(() => null);
-                        throw new Error(errorData?.error || 'Generated specs could not be saved.');
-                    }
-                }
-                const newRows = buildRowsFromSpecs(loadedSpecs);
-                setRows(newRows);
-                setActiveMode('manual');
-                setShowAiDetailPopup(false);
-                showToast(`스펙이 자동 생성되었습니다 (${newRows.length}행)`, 'info');
+                setAiDraftSpecs(loadedSpecs);
+                setAiFastRows(buildRowsFromSpecs(loadedSpecs));
+                setSelectedDraftIds(new Set(loadedSpecs.map((spec) => spec.id)));
+                setAiIssues(data.issues || []);
+                setAiRecommendations(data.recommendations || []);
+                setAiContextSummary(data.contextSummary || null);
+                setAiWizardStep('fast');
+                showToast('FAST 결과표 초안을 만들었습니다. 수정 후 확정하세요.', 'info');
             } else {
-                showToast('자동 생성에 실패했습니다.', 'error');
+                showToast('FAST 결과표 생성에 실패했습니다.', 'error');
             }
         } catch (error) {
-            console.error('자동 생성 실패:', error);
-            showToast('자동 생성에 실패했습니다.', 'error');
+            console.error('FAST 결과표 생성 실패:', error);
+            showToast('FAST 결과표 생성에 실패했습니다.', 'error');
         } finally {
             setIsGenerating(false);
         }
     };
 
     const openAiDetailPopup = () => {
+        setAiWizardStep('guide');
         setAiDetailInput(prev => prev || project?.detailedDescription || project?.description || '');
+        setAiQuestionInput({
+            desiredFunctions: '',
+        });
+        setAiFastRows([]);
         setShowAiDetailPopup(true);
+    };
+
+    const toggleDraftSpec = (id: string) => {
+        setSelectedDraftIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const getSelectedDraftSpecs = () => {
+        const selected = new Set(selectedDraftIds);
+        const byId = new Map(aiDraftSpecs.map((spec) => [spec.id, spec]));
+        for (const spec of aiDraftSpecs) {
+            if (!selected.has(spec.id)) continue;
+            let parentId = spec.parentId;
+            while (parentId) {
+                selected.add(parentId);
+                parentId = byId.get(parentId)?.parentId;
+            }
+        }
+        return aiDraftSpecs.filter((spec) => selected.has(spec.id));
+    };
+
+    const applySelectedDraft = () => {
+        if (aiFastRows.length === 0) {
+            showToast('반영할 FAST 양식 행이 없습니다.', 'error');
+            return;
+        }
+
+        setRows(aiFastRows);
+        setActiveMode('manual');
+        setShowAiDetailPopup(false);
+        showToast(`FAST 양식 ${aiFastRows.length}행을 표에 반영했습니다. 저장 버튼을 눌러 확정하세요.`, 'success');
+    };
+
+    const updateAiFastRow = (id: string, field: keyof FlatSpecRow, value: string) => {
+        setAiFastRows(prev => prev.map(row => row.id === id ? { ...row, [field]: value } : row));
+    };
+
+    const updateAiFastCoreGroup = (index: number, value: string) => {
+        const currentCore = aiFastRows[index]?.core.trim();
+        if (!currentCore) {
+            updateAiFastRow(aiFastRows[index].id, 'core', value);
+            return;
+        }
+
+        let start = index;
+        while (start > 0 && aiFastRows[start - 1].core.trim() === currentCore) start--;
+        let end = index;
+        while (end + 1 < aiFastRows.length && aiFastRows[end + 1].core.trim() === currentCore) end++;
+
+        setAiFastRows(prev => prev.map((row, rowIndex) => (
+            rowIndex >= start && rowIndex <= end ? { ...row, core: value } : row
+        )));
+    };
+
+    const updateAiFastSubGroup = (index: number, value: string) => {
+        const currentCore = aiFastRows[index]?.core.trim();
+        const currentSub = aiFastRows[index]?.sub.trim();
+        if (!currentSub) {
+            updateAiFastRow(aiFastRows[index].id, 'sub', value);
+            return;
+        }
+
+        let start = index;
+        while (
+            start > 0 &&
+            aiFastRows[start - 1].core.trim() === currentCore &&
+            aiFastRows[start - 1].sub.trim() === currentSub
+        ) start--;
+        let end = index;
+        while (
+            end + 1 < aiFastRows.length &&
+            aiFastRows[end + 1].core.trim() === currentCore &&
+            aiFastRows[end + 1].sub.trim() === currentSub
+        ) end++;
+
+        setAiFastRows(prev => prev.map((row, rowIndex) => (
+            rowIndex >= start && rowIndex <= end ? { ...row, sub: value } : row
+        )));
+    };
+
+    const deleteAiFastRow = (id: string) => {
+        setAiFastRows(prev => prev.filter(row => row.id !== id));
+    };
+
+    const addAiFastRow = () => {
+        setAiFastRows(prev => [...prev, {
+            id: Math.random().toString(36).slice(2),
+            core: '',
+            sub: '',
+            detail: '',
+            technology: '',
+        }]);
     };
 
     const serializeSpecs = (): SpecFunction[] => {
@@ -485,14 +664,55 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                     <span className="text-sm font-medium">{toast.message}</span>
                 </div>
             )}
+            {pendingExcelFile && (
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h3 className="text-sm font-semibold text-emerald-100">엑셀 양식 업로드</h3>
+                            <p className="mt-1 text-xs text-emerald-200/70">
+                                {pendingExcelFile.name} 파일을 AS-IS 스펙표로 반영할 방식을 선택하세요.
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => uploadSpecExcelFile(pendingExcelFile, 'append')}
+                                disabled={isUploadingExcel}
+                                className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"
+                            >
+                                {isUploadingExcel ? '업로드 중...' : '기존 데이터에 추가'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => uploadSpecExcelFile(pendingExcelFile, 'replace')}
+                                disabled={isUploadingExcel}
+                                className="px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-sm font-semibold text-white disabled:opacity-50"
+                            >
+                                기존 데이터 지우고 업로드
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPendingExcelFile(null);
+                                    if (excelInputRef.current) excelInputRef.current.value = '';
+                                }}
+                                disabled={isUploadingExcel}
+                                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white disabled:opacity-50"
+                            >
+                                취소
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {showAiDetailPopup && (
                 <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 px-4">
-                    <div className="w-full max-w-2xl rounded-xl border border-white/10 bg-gray-950 shadow-2xl">
+                    <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-xl border border-white/10 bg-gray-950 shadow-2xl">
                         <div className="flex items-start justify-between border-b border-white/10 px-6 py-5">
                             <div>
-                                <h3 className="text-lg font-semibold text-white">AI 자동생성 상세 정보</h3>
+                                <h3 className="text-lg font-semibold text-white">WS-2 FAST 작성 지원</h3>
                                 <p className="mt-1 text-sm text-gray-400">
-                                    제품이나 아이디어의 고객, 사용 상황, 주요 기능, 차별점, 제약 조건을 구체적으로 입력하세요.
+                                    세부설명과 원하는 기능을 바탕으로 FAST 결과표를 만들고, 확정된 내용만 본 페이지 표에 반영합니다.
                                 </p>
                             </div>
                             <button
@@ -507,17 +727,163 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                 </svg>
                             </button>
                         </div>
-                        <div className="space-y-4 px-6 py-5">
-                            <textarea
-                                value={aiDetailInput}
-                                onChange={e => setAiDetailInput(e.target.value)}
-                                disabled={isGenerating}
-                                className="min-h-[220px] w-full resize-y rounded-lg border border-gray-700 bg-gray-900 p-4 text-sm leading-6 text-white outline-none transition-colors placeholder:text-gray-600 focus:border-accent-500 focus:ring-1 focus:ring-accent-500 disabled:opacity-60"
-                                placeholder="예: 누구를 위한 제품인지, 해결하려는 문제, 사용 흐름, 반드시 포함할 기능, 적용 기술, 운영/제조 제약, 경쟁 제품과 차별점 등을 입력하세요."
-                            />
-                            <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-3 text-xs leading-5 text-blue-200">
-                                입력한 내용은 이번 AS-IS 스펙 자동생성에만 사용되며, 생성 결과가 기존 스펙을 덮어씁니다.
+                        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+                            <div className="grid grid-cols-4 gap-2 text-xs">
+                                {[
+                                    ['guide', '1. 안내'],
+                                    ['questions', '2. 입력'],
+                                    ['review', '3. 검토'],
+                                    ['fast', '4. FAST 결과표'],
+                                ].map(([step, label]) => (
+                                    <div key={step} className={`rounded-md px-3 py-2 text-center font-semibold ${aiWizardStep === step ? 'bg-accent-600 text-white' : 'bg-white/[0.04] text-gray-500'}`}>
+                                        {label}
+                                    </div>
+                                ))}
                             </div>
+
+                            {aiWizardStep === 'guide' && (
+                                <div className="space-y-4">
+                                    <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4 text-sm leading-6 text-blue-100">
+                                        <p className="font-semibold text-white">작성에 필요한 내용 안내.</p>
+                                        <p className="mt-2">프로젝트명, 프로젝트 설명, 기존 WS-2 항목은 자동으로 참고합니다. 추가로는 세부설명과 원하는 기능만 입력하면 FAST 결과표를 핵심기술, 세부기술, 세세부기술, 적용기술 순서로 제시합니다.</p>
+                                    </div>
+                                    <div className="grid gap-3 md:grid-cols-3">
+                                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                                            <p className="text-xs text-gray-500">제품/서비스</p>
+                                            <p className="mt-1 text-sm text-white">{project?.name || '미입력'}</p>
+                                        </div>
+                                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                                            <p className="text-xs text-gray-500">프로젝트 설명</p>
+                                            <p className="mt-1 line-clamp-3 text-sm text-white">{project?.description || '미입력'}</p>
+                                        </div>
+                                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                                            <p className="text-xs text-gray-500">기존 WS-2 행</p>
+                                            <p className="mt-1 text-sm text-white">{rows.length}행</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {aiWizardStep === 'questions' && (
+                                <div className="space-y-4">
+                                    <label className="block">
+                                        <span className="mb-1 block text-xs font-medium text-gray-400">세부설명</span>
+                                        <textarea
+                                            value={aiDetailInput}
+                                            onChange={e => setAiDetailInput(e.target.value)}
+                                            disabled={isGenerating}
+                                            className="min-h-[160px] w-full resize-y rounded-lg border border-gray-700 bg-gray-900 p-4 text-sm leading-6 text-white outline-none focus:border-accent-500 disabled:opacity-60"
+                                            placeholder="아이템의 배경, 사용 상황, 고객 문제, 현재 보유한 정보나 기술, 반드시 고려해야 할 제약을 입력하세요."
+                                        />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-xs font-medium text-gray-400">원하는 기능</span>
+                                        <textarea
+                                            value={aiQuestionInput.desiredFunctions}
+                                            onChange={(event) => setAiQuestionInput({ desiredFunctions: event.target.value })}
+                                            disabled={isGenerating}
+                                            className="min-h-[120px] w-full resize-y rounded-lg border border-gray-700 bg-gray-900 p-4 text-sm leading-6 text-white outline-none focus:border-accent-500 disabled:opacity-60"
+                                            placeholder="예: 고객 문의 자동 분류, 전문가 추천, 결과 리포트 생성처럼 원하는 기능을 줄바꿈 또는 쉼표로 입력하세요."
+                                        />
+                                    </label>
+                                    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-gray-400">
+                                        기본 아이템 정보는 프로젝트와 기존 워크시트에서 불러오며, 위 두 항목은 FAST 결과표를 구체화하는 데만 사용됩니다.
+                                    </div>
+                                </div>
+                            )}
+
+                            {aiWizardStep === 'review' && (
+                                <div className="space-y-3">
+                                    {[
+                                        ['세부설명', aiDetailInput || '미입력'],
+                                        ['원하는 기능', aiQuestionInput.desiredFunctions || '미입력'],
+                                    ].map(([label, value]) => (
+                                        <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                                            <p className="text-xs font-semibold text-gray-500">{label}</p>
+                                            <p className="mt-1 whitespace-pre-line text-sm text-white">{value}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {aiWizardStep === 'fast' && (
+                                <div className="space-y-4">
+                                    {aiContextSummary && (
+                                        <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs leading-5 text-cyan-100">
+                                            <div>참고 데이터: 제품속성 {aiContextSummary.productAttributeCount ?? 0}개, 고객요구 {aiContextSummary.customerNeedCount ?? 0}개, 기존스펙 {aiContextSummary.existingSpecCount ?? 0}개</div>
+                                            {aiContextSummary.keywords?.length ? <div className="mt-1">키워드: {aiContextSummary.keywords.join(', ')}</div> : null}
+                                        </div>
+                                    )}
+                                    {aiIssues.length > 0 && (
+                                        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100">
+                                            {aiIssues.slice(0, 4).map((issue, index) => <p key={index}>- {issue.message}</p>)}
+                                        </div>
+                                    )}
+                                    <div className="overflow-auto rounded-lg border border-white/10">
+                                        <table className="w-full min-w-[900px] border-collapse text-xs">
+                                            <thead className="bg-gray-900">
+                                                <tr>
+                                                    <th className="border border-white/10 p-2 text-left">핵심기술</th>
+                                                    <th className="border border-white/10 p-2 text-left">세부기술</th>
+                                                    <th className="border border-white/10 p-2 text-left">세세부기술</th>
+                                                    <th className="border border-white/10 p-2 text-left">적용기술</th>
+                                                    <th className="border border-white/10 p-2 w-[56px]" />
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {aiGroupedRows.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={5} className="border border-white/10 p-6 text-center text-gray-500">생성된 FAST 결과표가 없습니다.</td>
+                                                    </tr>
+                                                ) : aiGroupedRows.map((row, index) => (
+                                                    <tr key={row.id}>
+                                                        {row.coreRowSpan > 0 && (
+                                                            <td className="border border-white/10 p-0 align-top bg-blue-950/10" rowSpan={row.coreRowSpan}>
+                                                                <input
+                                                                    type="text"
+                                                                    value={row.core}
+                                                                    onChange={(event) => updateAiFastCoreGroup(index, event.target.value)}
+                                                                    className="w-full bg-transparent px-3 py-2 text-blue-100 outline-none focus:bg-white/[0.04]"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        {row.subRowSpan > 0 && (
+                                                            <td className="border border-white/10 p-0 align-top bg-purple-950/10" rowSpan={row.subRowSpan}>
+                                                                <input
+                                                                    type="text"
+                                                                    value={row.sub}
+                                                                    onChange={(event) => updateAiFastSubGroup(index, event.target.value)}
+                                                                    className="w-full bg-transparent px-3 py-2 text-purple-100 outline-none focus:bg-white/[0.04]"
+                                                                />
+                                                            </td>
+                                                        )}
+                                                        <td className="border border-white/10 p-0">
+                                                            <input
+                                                                type="text"
+                                                                value={row.detail}
+                                                                onChange={(event) => updateAiFastRow(row.id, 'detail', event.target.value)}
+                                                                className="w-full bg-transparent px-3 py-2 text-emerald-100 outline-none focus:bg-white/[0.04]"
+                                                            />
+                                                        </td>
+                                                        <td className="border border-white/10 p-0">
+                                                            <input
+                                                                type="text"
+                                                                value={row.technology}
+                                                                onChange={(event) => updateAiFastRow(row.id, 'technology', event.target.value)}
+                                                                className="w-full bg-transparent px-3 py-2 text-amber-100 outline-none focus:bg-white/[0.04]"
+                                                            />
+                                                        </td>
+                                                        <td className="border border-white/10 p-2 text-center">
+                                                            <button type="button" onClick={() => deleteAiFastRow(row.id)} className="text-rose-400 hover:text-rose-300">삭제</button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button type="button" onClick={addAiFastRow} className="btn-secondary text-sm">행 추가</button>
+                                </div>
+                            )}
                         </div>
                         <div className="flex items-center justify-end gap-2 border-t border-white/10 px-6 py-4">
                             <button
@@ -528,21 +894,35 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                             >
                                 취소
                             </button>
-                            <button
-                                type="button"
-                                onClick={handleAutoGenerate}
-                                disabled={isGenerating || !aiDetailInput.trim()}
-                                className="btn-primary inline-flex items-center gap-2 disabled:opacity-50"
-                            >
-                                {isGenerating ? '생성 중...' : 'AI 자동생성 실행'}
-                            </button>
+                            {aiWizardStep === 'guide' && (
+                                <button type="button" onClick={() => setAiWizardStep('questions')} className="btn-primary">입력 시작</button>
+                            )}
+                            {aiWizardStep === 'questions' && (
+                                <button type="button" onClick={() => setAiWizardStep('review')} className="btn-primary">입력 내용 검토</button>
+                            )}
+                            {aiWizardStep === 'review' && (
+                                <>
+                                    <button type="button" onClick={() => setAiWizardStep('questions')} className="rounded-lg px-4 py-2 text-sm text-gray-300 hover:bg-white/5">입력 수정</button>
+                                    <button type="button" onClick={handleAutoGenerate} disabled={isGenerating} className="btn-primary inline-flex items-center gap-2 disabled:opacity-50">
+                                        {isGenerating ? '생성 중...' : 'FAST 결과표 제시'}
+                                    </button>
+                                </>
+                            )}
+                            {aiWizardStep === 'fast' && (
+                                <>
+                                    <button type="button" onClick={() => setAiWizardStep('questions')} className="rounded-lg px-4 py-2 text-sm text-gray-300 hover:bg-white/5">입력 수정</button>
+                                    <button type="button" onClick={applySelectedDraft} disabled={isGenerating || aiFastRows.length === 0} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
+                                        확정 후 표에 반영
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
             )}
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h2 className="text-xl font-display font-bold text-white">AS-IS 스펙표</h2>
+                    <h2 className="text-xl font-display font-bold text-white">[WS-2] AS-IS 스펙표</h2>
                     <p className="text-sm text-gray-400 mt-1">{project?.name || '기능 스펙 정의'}</p>
                 </div>
 
@@ -644,7 +1024,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                             : 'text-gray-400 hover:text-white'
                             }`}
                     >
-                        AI 자동 생성
+                        AI 에이전트
                     </button>
                 </div>
             </div>
@@ -655,14 +1035,14 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                         <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-accent-500/20 to-primary-500/20 border border-accent-500/20 flex items-center justify-center mb-6">
                             <svg className="w-8 h-8 text-accent-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                         </div>
-                        <h2 className="text-xl font-display font-bold text-white mb-3">AI 기반 스펙 자동 생성</h2>
+                        <h2 className="text-xl font-display font-bold text-white mb-3">AI 에이전트</h2>
                         <p className="text-gray-400 mb-8 text-sm">
-                            프로젝트 정보를 분석하여 FAST 분석 기반의 기능 구조를 자동으로 생성합니다.
+                            프로젝트 정보와 기존 워크시트 데이터를 분석해 AS-IS 스펙 초안을 생성합니다.
                         </p>
                         {rows.length > 0 && rows.some(r => r.core) && (
                             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 mb-6 mx-auto max-w-sm">
                                 <p className="text-amber-300 text-xs">
-                                    ⚠️ 기존 스펙이 있습니다. 자동 생성 시 덮어쓰기됩니다.
+                                    기존 스펙이 있습니다. 보완 생성 또는 기술특성 추천 모드로 초안을 검토할 수 있습니다.
                                 </p>
                             </div>
                         )}
@@ -671,7 +1051,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                             disabled={isGenerating}
                             className="btn-primary inline-flex items-center gap-2"
                         >
-                            {isGenerating ? '생성 중...' : '스펙 자동 생성 (덮어쓰기)'}
+                            {isGenerating ? '생성 중...' : 'AI 에이전트 열기'}
                         </button>
                     </div>
                 )
@@ -685,14 +1065,24 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                 <option key={option} value={option} />
                             ))}
                         </datalist>
+                        <datalist id={`detail-options-${projectId}`}>
+                            {detailOptions.map(option => (
+                                <option key={option} value={option} />
+                            ))}
+                        </datalist>
+                        <datalist id={`technology-options-${projectId}`}>
+                            {technologyOptions.map(option => (
+                                <option key={option} value={option} />
+                            ))}
+                        </datalist>
                         <table className="w-full border-collapse text-sm table-fixed">
                             <thead>
                                 <tr className="bg-gray-800">
                                     <th className="border border-gray-700 p-2 text-gray-300 font-medium text-center w-[50px]">No</th>
-                                    <th className="border border-gray-700 p-2 text-blue-400 font-medium text-center">핵심기능 (Core)</th>
-                                    <th className="border border-gray-700 p-2 text-purple-400 font-medium text-center">세부기능 (Sub)</th>
-                                    <th className="border border-gray-700 p-2 text-emerald-400 font-medium text-center">세세부기능 (Detail)</th>
-                                    <th className="border border-gray-700 p-2 text-amber-400 font-medium text-center">적용 기술</th>
+                                    <th className="border border-gray-700 p-2 text-blue-400 font-medium text-center">핵심기술</th>
+                                    <th className="border border-gray-700 p-2 text-purple-400 font-medium text-center">세부기술</th>
+                                    <th className="border border-gray-700 p-2 text-emerald-400 font-medium text-center">세세부기술</th>
+                                    <th className="border border-gray-700 p-2 text-amber-400 font-medium text-center">적용기술</th>
                                     <th className="border border-gray-700 p-2 text-gray-500 font-medium text-center w-[116px]"></th>
                                 </tr>
                             </thead>
@@ -744,6 +1134,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                             <td className="border border-gray-700 p-0">
                                                 <input
                                                     type="text"
+                                                    list={`detail-options-${projectId}`}
                                                     value={row.detail}
                                                     onChange={e => updateRow(row.id, 'detail', e.target.value)}
                                                     className="w-full h-full p-2 bg-transparent text-emerald-100 outline-none focus:bg-gray-800 focus:ring-1 focus:ring-emerald-500/50 transition-colors"
@@ -753,6 +1144,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                             <td className="border border-gray-700 p-0">
                                                 <input
                                                     type="text"
+                                                    list={`technology-options-${projectId}`}
                                                     value={row.technology}
                                                     onChange={e => updateRow(row.id, 'technology', e.target.value)}
                                                     className="w-full h-full p-2 bg-transparent text-amber-100 outline-none focus:bg-gray-800 focus:ring-1 focus:ring-amber-500/50 transition-colors"

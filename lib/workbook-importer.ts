@@ -153,6 +153,11 @@ function cell(row: unknown[] | undefined, col: number): string {
     return text(row?.[col]);
 }
 
+function nonZeroCell(row: unknown[] | undefined, col: number): string {
+    const value = cell(row, col);
+    return value === '0' ? '' : value;
+}
+
 function findHeader(sheet: ParsedSheet, keywords: string[]): { rowIndex: number; columns: number[] } | null {
     const normalizedKeywords = keywords.map(normalize);
     for (let rowIndex = 0; rowIndex < sheet.data.length; rowIndex++) {
@@ -179,6 +184,31 @@ function matchesDefinition(sheetName: string, definition: SheetDefinition): bool
     return definition.aliases.some((alias) => normalizedName.includes(normalize(alias)));
 }
 
+function getRequestedSheetAliases(requestedName: string): string[] {
+    const normalizedName = normalize(requestedName);
+    const matchingDefinition = SHEET_DEFINITIONS.find((definition) =>
+        matchesDefinition(requestedName, definition)
+    );
+
+    if (matchingDefinition) return [requestedName, matchingDefinition.displayName, ...matchingDefinition.aliases];
+    if (normalizedName.includes('제품속성')) return [requestedName, '제품속성표', '제품속성서', '제품속성'];
+    if (normalizedName.includes('고객요구사항')) return [requestedName, '고객요구사항도출표', '고객요구사항', '요구사항도출'];
+    if (normalizedName.includes('asis') || normalizedName.includes('스펙')) return [requestedName, 'AS-IS스펙표', 'AS-IS 스펙표', 'ASIS스펙', '스펙표'];
+    return [requestedName];
+}
+
+function matchesRequestedSheet(sheetName: string, requestedName: string): boolean {
+    const normalizedSheetName = normalize(sheetName);
+    return getRequestedSheetAliases(requestedName).some((alias) => {
+        const normalizedAlias = normalize(alias);
+        return (
+            normalizedSheetName === normalizedAlias ||
+            normalizedSheetName.includes(normalizedAlias) ||
+            normalizedAlias.includes(normalizedSheetName)
+        );
+    });
+}
+
 function resolveSheetKey(sheetName: string): SheetKey | null {
     return SHEET_DEFINITIONS.find((definition) => matchesDefinition(sheetName, definition))?.key ?? null;
 }
@@ -195,8 +225,7 @@ function selectSheets(parsedData: ParsedExcelData, options: WorkbookImportOption
     const selected: ParsedSheet[] = [];
     const errors: string[] = [];
     for (const requestedName of requested) {
-        const exact = parsedData.sheets.find((sheet) => normalize(sheet.name) === normalize(requestedName));
-        const byAlias = exact ?? parsedData.sheets.find((sheet) => normalize(sheet.name).includes(normalize(requestedName)) || normalize(requestedName).includes(normalize(sheet.name)));
+        const byAlias = parsedData.sheets.find((sheet) => matchesRequestedSheet(sheet.name, requestedName));
         if (byAlias) selected.push(byAlias);
         else errors.push(`요청한 워크시트 "${requestedName}"를 찾을 수 없습니다.`);
     }
@@ -340,7 +369,9 @@ function parseImprovements(sheet: ParsedSheet) {
         const contentCol = findColumn(headerRow, ['고객니즈']);
         const rateCol = findColumn(headerRow, ['향상율', '개선율']);
         const proportionCol = findColumn(headerRow, ['비중']);
-        for (let rowIndex = firstHeader.rowIndex + 1; rowIndex < sheet.data.length; rowIndex++) {
+        const isFeatureListHeader = findColumn(headerRow, ['추가 기능', '추가기능']) >= 0
+            || findColumn(headerRow, ['성능향상', '성능 향상']) >= 0;
+        for (let rowIndex = firstHeader.rowIndex + 1; !isFeatureListHeader && rowIndex < sheet.data.length; rowIndex++) {
             const row = sheet.data[rowIndex];
             const content = cell(row, contentCol);
             if (!content) continue;
@@ -351,6 +382,28 @@ function parseImprovements(sheet: ParsedSheet) {
                 devProportion: proportionCol >= 0 ? cell(row, proportionCol) || null : null,
                 priority: priorityCol >= 0 ? cell(row, priorityCol) || null : null,
                 order: records.length,
+            });
+        }
+    }
+    const featureHeader = findHeader(sheet, ['개선포인트', '추가 기능', '성능향상']);
+    if (featureHeader) {
+        const headerRow = sheet.data[featureHeader.rowIndex];
+        const needCol = findColumn(headerRow, ['개선포인트']);
+        const addedFeatureCol = findColumn(headerRow, ['추가 기능', '추가기능']);
+        const performanceCol = findColumn(headerRow, ['성능향상', '성능 향상']);
+        for (let rowIndex = featureHeader.rowIndex + 1; rowIndex < sheet.data.length; rowIndex++) {
+            const row = sheet.data[rowIndex];
+            const customerNeed = nonZeroCell(row, needCol);
+            const addedFeature = nonZeroCell(row, addedFeatureCol);
+            const performanceImprovement = nonZeroCell(row, performanceCol);
+            if (!customerNeed && !addedFeature && !performanceImprovement) continue;
+            records.push({
+                type: 'feature',
+                content: customerNeed || null,
+                improvementRate: addedFeature || null,
+                devProportion: performanceImprovement || null,
+                priority: null,
+                order: records.filter((record) => record.type === 'feature').length,
             });
         }
     }

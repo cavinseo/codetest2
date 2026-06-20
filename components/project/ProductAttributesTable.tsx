@@ -60,7 +60,7 @@ function SpecSheetTable({
 }: {
     specFunctions: SpecFunction[];
     field: 'attribute' | 'techCapability';
-    onPick: (value: string, technology: string) => void;
+    onPick: (value: string, technology: string, options?: { autoFillTech?: boolean }) => void;
 }) {
     const flatRows = buildFlatRows(specFunctions, field);
 
@@ -104,11 +104,16 @@ function SpecSheetTable({
                         const clickValue = field === 'attribute'
                             ? (row.detail || row.sub || row.core)
                             : (row.technology || row.detail || row.sub || row.core);
+                        const clickTechnology = field === 'attribute' && row.detail
+                            ? row.technology
+                            : field === 'techCapability'
+                                ? row.technology
+                                : '';
 
                         return (
                             <tr
                                 key={idx}
-                                onClick={() => onPick(clickValue, row.technology)}
+                                onClick={() => onPick(clickValue, clickTechnology, { autoFillTech: Boolean(clickTechnology) })}
                                 className={`border-b border-white/[0.04] cursor-pointer transition-colors
                                     ${isHighlighted
                                         ? 'hover:bg-cyan-500/10'
@@ -135,7 +140,13 @@ function SpecSheetTable({
                                 {subSpan > 0 && (
                                     <td
                                         rowSpan={subSpan}
-                                        className="border border-white/[0.06] px-3 py-2 text-purple-200 text-sm align-middle"
+                                        onClick={(event) => {
+                                            if (field !== 'attribute' || !row.sub) return;
+                                            event.stopPropagation();
+                                            onPick(row.sub, '', { autoFillTech: false });
+                                        }}
+                                        className={`border border-white/[0.06] px-3 py-2 text-purple-200 text-sm align-middle ${field === 'attribute' && row.sub ? 'cursor-pointer hover:bg-cyan-500/10 hover:text-cyan-100' : ''}`}
+                                        title={field === 'attribute' && row.sub ? `세부기능 '${row.sub}'을 제품속성으로 선택` : undefined}
                                     >
                                         {row.sub}
                                     </td>
@@ -166,17 +177,18 @@ function SpecSheetTable({
 // 메인 컴포넌트
 // ─────────────────────────────────────────
 export default function ProductAttributesTable({ projectId, onSaved }: ProductAttributesTableProps) {
-    const templateDownloadUrl = `/api/projects/${projectId}/import/template`;
+    const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=attributes`;
     const [rows, setRows] = useState<ProductAttributeRow[]>([]);
     const [specFunctions, setSpecFunctions] = useState<SpecFunction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [showSpecPicker, setShowSpecPicker] = useState<{ rowId: string; field: 'attribute' } | null>(null);
+    const [showSpecPicker, setShowSpecPicker] = useState<{ rowId: string; field: 'attribute' | 'techCapability' } | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [productName, setProductName] = useState('');
     const [importedFields, setImportedFields] = useState<Set<string>>(new Set());
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const excelInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -342,23 +354,20 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         const fileName = file.name.toLowerCase();
         if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
             showToast('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', 'error');
+            if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }
 
-        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 데이터를 지우고 새롭게 업로드', '1');
-        if (uploadPolicy === null) return;
-        const shouldReplace = uploadPolicy.trim() === '2';
-        if (!shouldReplace && uploadPolicy.trim() !== '1') {
-            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
-            return;
-        }
+        setPendingExcelFile(file);
+    };
 
+    const uploadExcelFile = async (file: File, writePolicy: 'append' | 'replace') => {
         setIsUploadingExcel(true);
         try {
             const formData = new FormData();
             formData.append('file', file);
             formData.append('action', 'apply');
-            formData.append('writePolicy', shouldReplace ? 'replace' : 'append');
+            formData.append('writePolicy', writePolicy);
             formData.append('sheetNames', '제품속성표');
 
             const res = await fetch(`/api/projects/${projectId}/import`, {
@@ -382,6 +391,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             showToast(error instanceof Error ? error.message : '제품속성표 엑셀 업로드에 실패했습니다.', 'error');
         } finally {
             setIsUploadingExcel(false);
+            setPendingExcelFile(null);
             if (excelInputRef.current) excelInputRef.current.value = '';
         }
     };
@@ -398,7 +408,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         }
     };
 
-    const getUniqueValues = (field: 'marketSegment' | 'customerNeed' | 'benefit') => {
+    const getUniqueValues = (field: 'marketSegment' | 'customerName' | 'customerNeed' | 'benefit' | 'attribute' | 'techCapability') => {
         return [...new Set(rows.map(r => r[field]).filter(Boolean))];
     };
 
@@ -426,14 +436,28 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const findRelatedTech = (specName: string, pickedTechnology = ''): string =>
         resolveRelatedTechnology(specFunctions, specName, pickedTechnology);
 
-    const applySpecPick = (value: string, pickedTechnology = '') => {
+    const applySpecPick = (value: string, pickedTechnology = '', options: { autoFillTech?: boolean } = {}) => {
         if (!showSpecPicker) return;
-        const { rowId } = showSpecPicker;
-        const relatedTech = findRelatedTech(value, pickedTechnology);
+        const { rowId, field } = showSpecPicker;
+        if (field === 'techCapability') {
+            setRows(prev => prev.map(r => r.id === rowId ? {
+                ...r,
+                techCapability: pickedTechnology || value,
+            } : r));
+            setImportedFields(prev => {
+                const next = new Set(prev);
+                next.add(`${rowId}_techCapability`);
+                return next;
+            });
+            setShowSpecPicker(null);
+            return;
+        }
+
+        const relatedTech = options.autoFillTech === false ? '' : findRelatedTech(value, pickedTechnology);
         setRows(prev => prev.map(r => r.id === rowId ? {
             ...r,
             attribute: value,
-            techCapability: relatedTech,
+            ...(relatedTech ? { techCapability: relatedTech } : {}),
         } : r));
         setImportedFields(prev => {
             const next = new Set(prev);
@@ -509,7 +533,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             {/* 헤더 + 컨트롤 */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-display font-bold text-white">제품속성서</h2>
+                    <h2 className="text-xl font-display font-bold text-white">[WS-3] 제품속성서</h2>
                     <p className="text-sm text-gray-500 mt-1">세분시장별로 여러 고객명, 고객 니즈, 제공혜택, 제품속성, 기술역량을 행 단위로 정의합니다</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -561,6 +585,48 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     </button>
                 </div>
             </div>
+
+            {pendingExcelFile && (
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h3 className="text-sm font-semibold text-emerald-100">엑셀 양식 업로드</h3>
+                            <p className="mt-1 text-xs text-emerald-200/70">
+                                {pendingExcelFile.name} 파일을 제품속성표로 반영할 방식을 선택하세요.
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => uploadExcelFile(pendingExcelFile, 'append')}
+                                disabled={isUploadingExcel}
+                                className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"
+                            >
+                                {isUploadingExcel ? '업로드 중...' : '기존 데이터에 추가'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => uploadExcelFile(pendingExcelFile, 'replace')}
+                                disabled={isUploadingExcel}
+                                className="px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-sm font-semibold text-white disabled:opacity-50"
+                            >
+                                기존 데이터 지우고 업로드
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPendingExcelFile(null);
+                                    if (excelInputRef.current) excelInputRef.current.value = '';
+                                }}
+                                disabled={isUploadingExcel}
+                                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white disabled:opacity-50"
+                            >
+                                취소
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* 리셋 확인 배너 */}
             {showResetConfirm && (
@@ -636,7 +702,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                 </th>
                                 <th className="px-3 py-3 text-left text-xs min-w-[170px]">
                                     <div className="text-amber-400 font-semibold">기술 역량</div>
-                                    <div className="text-[10px] text-gray-600 font-normal mt-0.5">제품속성 선택 시 자동 입력</div>
+                                    <div className="text-[10px] text-gray-600 font-normal mt-0.5">직접 입력 또는 스펙에서 선택</div>
                                 </th>
                                 <th className="px-3 py-3 text-gray-600 font-medium text-center text-xs w-[72px]"></th>
                             </tr>
@@ -688,11 +754,15 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                             <div className="flex h-full min-h-[44px] flex-col">
                                                 <input
                                                     type="text"
+                                                    list={`customer_name_list_${row.id}`}
                                                     value={row.customerName}
                                                     onChange={(e) => updateCustomerNameGroup(idx, e.target.value)}
                                                     className="w-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
                                                     placeholder="입력"
                                                 />
+                                                <datalist id={`customer_name_list_${row.id}`}>
+                                                    {getUniqueValues('customerName').map((v, i) => <option key={i} value={v} />)}
+                                                </datalist>
                                                 <div className="flex items-center justify-between gap-2 px-3 pb-2">
                                                     <span className="text-[10px] text-gray-600 whitespace-nowrap">
                                                         {customerNameRowSpan > 1 ? `${customerNameRowSpan}개 니즈` : '1개 니즈'}
@@ -744,11 +814,15 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                     <td className="p-0 bg-cyan-500/[0.04] relative">
                                         <input
                                             type="text"
+                                            list={`attribute_list_${row.id}`}
                                             value={row.attribute}
                                             onChange={(e) => handleManualInput(row.id, 'attribute', e.target.value)}
                                             className={`w-full px-3 pr-8 py-2.5 bg-transparent text-sm outline-none focus:bg-cyan-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-cyan-500/30 transition-colors ${isImported(row.id, 'attribute') ? 'text-cyan-300' : 'text-gray-300'}`}
                                             placeholder="입력"
                                         />
+                                        <datalist id={`attribute_list_${row.id}`}>
+                                            {getUniqueValues('attribute').map((v, i) => <option key={i} value={v} />)}
+                                        </datalist>
                                         <button
                                             type="button"
                                             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSpecPicker({ rowId: row.id, field: 'attribute' }); }}
@@ -765,11 +839,25 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                     <td className="p-0 bg-amber-500/[0.04] relative">
                                         <input
                                             type="text"
+                                            list={`tech_capability_list_${row.id}`}
                                             value={row.techCapability}
                                             onChange={(e) => handleManualInput(row.id, 'techCapability', e.target.value)}
-                                            className={`w-full px-3 py-2.5 bg-transparent text-sm outline-none focus:bg-amber-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-amber-500/30 transition-colors ${isImported(row.id, 'techCapability') ? 'text-amber-300' : 'text-gray-300'}`}
+                                            className={`w-full px-3 pr-8 py-2.5 bg-transparent text-sm outline-none focus:bg-amber-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-amber-500/30 transition-colors ${isImported(row.id, 'techCapability') ? 'text-amber-300' : 'text-gray-300'}`}
                                             placeholder="입력"
                                         />
+                                        <datalist id={`tech_capability_list_${row.id}`}>
+                                            {getUniqueValues('techCapability').map((v, i) => <option key={i} value={v} />)}
+                                        </datalist>
+                                        <button
+                                            type="button"
+                                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSpecPicker({ rowId: row.id, field: 'techCapability' }); }}
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-amber-500 hover:text-amber-300 hover:bg-amber-500/20 rounded transition-colors cursor-pointer z-10"
+                                            title="AS-IS 스펙에서 기술역량 선택"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                            </svg>
+                                        </button>
                                     </td>
 
                                     {/* 삭제 */}
@@ -826,7 +914,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                     AS-IS 스펙표에서 가져오기
                                 </h3>
                                 <p className="text-xs text-gray-500 mt-0.5">
-                                    행을 클릭하면 제품속성과 해당 적용기술이 함께 입력됩니다
+                                    {showSpecPicker.field === 'attribute'
+                                        ? '세세부기능 행을 클릭하면 적용기술이 함께 입력되고, 세부기능 셀을 클릭하면 제품속성만 입력됩니다'
+                                        : '행을 클릭하면 기술역량 칸에 적용기술이 입력됩니다'}
                                 </p>
                             </div>
                             <button

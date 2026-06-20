@@ -22,8 +22,57 @@ export interface AttributeGroupingRowLike {
     customerName: string;
 }
 
+export interface AttributeNameRowLike {
+    attribute?: string | null;
+    name?: string | null;
+}
+
+export interface AttributeMarketCustomerRowLike {
+    marketSegment?: string | null;
+    customerName?: string | null;
+}
+
 function uniqueJoined(values: string[]) {
     return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).join(', ');
+}
+
+function normalizeAttributeName(value: string) {
+    return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+export function dedupeByAttributeName<T extends AttributeNameRowLike>(rows: T[]): T[] {
+    const seen = new Set<string>();
+    const deduped: T[] = [];
+
+    for (const row of rows) {
+        const rawName = row.attribute ?? row.name ?? '';
+        const normalizedName = normalizeAttributeName(rawName);
+        if (!normalizedName || seen.has(normalizedName)) continue;
+        seen.add(normalizedName);
+        deduped.push(row);
+    }
+
+    return deduped;
+}
+
+export function buildCustomerNamesByMarketSegment(rows: AttributeMarketCustomerRowLike[]): Record<string, string[]> {
+    const grouped: Record<string, string[]> = {};
+    const seenBySegment: Record<string, Set<string>> = {};
+
+    for (const row of rows) {
+        const marketSegment = row.marketSegment?.trim();
+        const customerName = row.customerName?.trim();
+        if (!marketSegment || !customerName) continue;
+
+        grouped[marketSegment] ??= [];
+        seenBySegment[marketSegment] ??= new Set<string>();
+        if (seenBySegment[marketSegment].has(customerName)) continue;
+
+        seenBySegment[marketSegment].add(customerName);
+        grouped[marketSegment].push(customerName);
+    }
+
+    return grouped;
 }
 
 function detailTechnology(detail: AttributeSpecFunctionLike, fallbackTechnology = '') {

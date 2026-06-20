@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useRef, useState, KeyboardEvent } from 'react';
 import Link from 'next/link';
@@ -318,7 +318,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             {/* 헤더 */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-display font-bold text-white">고객 요구사항 관리</h2>
+                    <h2 className="text-xl font-display font-bold text-white">[WS-5] 고객 요구사항 관리</h2>
                     <p className="text-sm text-gray-500 mt-1">Kano 설문의 기반이 되는 고객 요구사항 · 항목을 클릭하면 바로 수정할 수 있습니다</p>
                 </div>
                 <div className="flex items-center gap-2">

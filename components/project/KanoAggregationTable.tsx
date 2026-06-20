@@ -19,6 +19,7 @@ interface AnalysisResult {
     worse: number;
     kanoWeight?: number | null;
     timkoCategory?: string | null;
+    quadrant?: string | null;
 }
 
 interface KanoAggregationTableProps {
@@ -133,7 +134,7 @@ export default function KanoAggregationTable({ analysis, projectId, onWeightsSav
                                 const timkoLabel = item.timkoCategory ?? '가중치 입력';
 
                                 return (
-                                    <tr key={item.requirementId} className="border-t border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+                                    <tr key={item.requirementId} className="border-t border-white/[0.04] transition-colors hover:bg-white/[0.02]">
                                         <td className="px-4 py-3 text-left text-white font-medium border-r border-white/5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[250px]">
                                             {item.requirementName || `요구사항 ${idx + 1}`}
                                         </td>
@@ -155,7 +156,7 @@ export default function KanoAggregationTable({ analysis, projectId, onWeightsSav
                                                 defaultValue={item.kanoWeight ?? ''}
                                                 onBlur={(event) => saveWeight(item.requirementId, event.currentTarget.value)}
                                                 disabled={!projectId}
-                                                className="w-20 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-center text-cyan-200 outline-none transition-colors focus:border-cyan-400/70 disabled:opacity-60"
+                                                className="w-20 rounded-md border border-white/10 bg-cyan-400/[0.08] px-2 py-1 text-center font-mono font-bold text-cyan-100 outline-none transition-colors focus:border-cyan-400/70 disabled:opacity-60"
                                                 placeholder="입력"
                                             />
                                         </td>

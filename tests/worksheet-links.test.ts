@@ -46,10 +46,31 @@ describe('worksheet links', () => {
         ]);
     });
 
+    it('limits improvement suggestions to QFD top five requirements', () => {
+        const suggestions = buildImprovementSuggestionsFromQfd(
+            Array.from({ length: 6 }, (_, index) => ({
+                requirementId: `r-${index + 1}`,
+                requirement: `Need ${index + 1}`,
+                improvementRate: index + 1,
+                absoluteImportance: index + 1,
+                qualityImportancePercent: (index + 1) * 10,
+            }))
+        );
+
+        expect(suggestions).toHaveLength(5);
+        expect(suggestions.map((suggestion) => suggestion.customerNeed)).toEqual([
+            'Need 6',
+            'Need 5',
+            'Need 4',
+            'Need 3',
+            'Need 2',
+        ]);
+    });
+
     it('links improvement features and technical characteristics to target spec suggestions', () => {
         const suggestions = buildTargetSpecSuggestions({
             improvements: [
-                { id: 'feature-1', type: 'feature', content: 'Improve response speed', priority: '1', order: 0 },
+                { id: 'feature-1', type: 'feature', content: 'High need', improvementRate: 'Improve response speed', devProportion: 'Faster response', order: 0 },
             ],
             technicalCharacteristics: [
                 { id: 'tech-1', name: 'Response time', unit: 'ms', targetValue: '< 100' },
@@ -64,10 +85,23 @@ describe('worksheet links', () => {
                 specItem: 'Response time',
                 unit: 'ms',
                 targetValue: '< 100',
-                note: '우선순위 1',
+                note: 'High need',
                 order: 0,
             },
         ]);
+    });
+
+    it('ignores legacy WS-11 feature rows that only have the removed priority field', () => {
+        const suggestions = buildTargetSpecSuggestions({
+            improvements: [
+                { id: 'legacy-1', type: 'feature', content: 'Broken legacy feature', priority: '1', order: 0 },
+            ],
+            technicalCharacteristics: [
+                { id: 'tech-1', name: 'Response time', unit: 'ms', targetValue: '< 100' },
+            ],
+        });
+
+        expect(suggestions).toEqual([]);
     });
 
     it('links sales estimates to the funding revenue row', () => {

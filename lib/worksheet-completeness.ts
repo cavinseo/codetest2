@@ -210,7 +210,7 @@ const WORKSHEET_RULES: WorksheetRule[] = [
         key: 'funding',
         title: '자금계획',
         required: false,
-        worksheetKey: 'funding',
+        worksheetKey: 'funding-source',
         expectedUnits: 2,
         getCompletedUnits: ({ counts }) => [
             counts.fundingPlans > 0,

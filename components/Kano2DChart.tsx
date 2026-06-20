@@ -19,14 +19,22 @@ const quadrantColors = {
     indifferent: '#6b7280',
 };
 
+const quadrantLabels = [
+    ['1사분면: 매력적 품질', quadrantColors.attractive],
+    ['2사분면: 일원적 품질', quadrantColors.oneDimensional],
+    ['3사분면: 당연적 품질', quadrantColors.mustBe],
+    ['4사분면: 무관심 품질', quadrantColors.indifferent],
+] as const;
+
+const chartFont = '"Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", "Segoe UI", sans-serif';
 const width = 600;
-const height = 600;
+const height = 680;
 const padding = 60;
 const plotWidth = width - 2 * padding;
 const plotHeight = height - 2 * padding;
 
 export default function Kano2DChart({ requirements }: Kano2DChartProps) {
-    // SVG ?ш린
+    // SVG 축 레이블.
     const xAxisTicks = [
         '-1.0\n~-0.91',
         '-0.9\n~-0.81',
@@ -52,7 +60,7 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
         '0.1\n~0.0',
     ];
 
-    // ?붽뎄?ы빆???꾩튂 怨꾩궛 (?쒖? TIMKO ?묒? ?뚯씪 ?뺤떇 湲곗?)
+    // Better-Worse 값을 사분면 위치와 색상으로 변환.
     const points = useMemo(() => {
         return requirements.map((req) => {
             const normalizedWorse = Math.min(1, Math.max(0, req.worse + 1));
@@ -81,11 +89,12 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
             <svg
                 width={width}
                 height={height}
+                fontFamily={chartFont}
                 className="bg-gray-800/30 rounded-lg border border-white/10"
             >
-                {/* ?щ텇硫?諛곌꼍 */}
+                {/* 사분면 배경 */}
                 <g opacity="0.1">
-                    {/* 臾닿???(醫뚰븯) */}
+                    {/* 당연적 품질 */}
                     <rect
                         x={padding}
                         y={height / 2}
@@ -93,7 +102,7 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                         height={plotHeight / 2}
                         fill={quadrantColors.mustBe}
                     />
-                    {/* ?뱀뿰??(?고븯) */}
+                    {/* 무관심 품질 */}
                     <rect
                         x={width / 2}
                         y={height / 2}
@@ -101,7 +110,7 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                         height={plotHeight / 2}
                         fill={quadrantColors.indifferent}
                     />
-                    {/* 留ㅻ젰??(醫뚯긽) */}
+                    {/* 일원적 품질 */}
                     <rect
                         x={padding}
                         y={padding}
@@ -109,7 +118,7 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                         height={plotHeight / 2}
                         fill={quadrantColors.oneDimensional}
                     />
-                    {/* ?쇱썝??(?곗긽) */}
+                    {/* 매력적 품질 */}
                     <rect
                         x={width / 2}
                         y={padding}
@@ -119,15 +128,15 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                     />
                 </g>
 
-                {/* 異?*/}
+                {/* 축 */}
                 <g stroke="#4b5563" strokeWidth="2">
-                    {/* X異?*/}
+                    {/* X축 */}
                     <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} />
-                    {/* Y異?*/}
+                    {/* Y축 */}
                     <line x1={padding} y1={padding} x2={padding} y2={height - padding} />
                 </g>
 
-                {/* 以묒떖 異?(0.5 湲곗?) */}
+                {/* 중앙 기준선 (0.5 기준) */}
                 <g stroke="#6b7280" strokeWidth="1" strokeDasharray="4">
                     <line x1={width / 2} y1={padding} x2={width / 2} y2={height - padding} />
                     <line x1={padding} y1={height / 2} x2={width - padding} y2={height / 2} />
@@ -149,9 +158,9 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                         const x = padding + ((idx + 0.5) * plotWidth) / 10;
                         const [top, bottom] = label.split('\n');
                         return (
-                            <text key={label} x={x} y={height - padding + 18} textAnchor="middle">
+                            <text key={label} x={x} y={height - padding + 14} textAnchor="middle">
                                 <tspan x={x}>{top}</tspan>
-                                <tspan x={x} dy="12">{bottom}</tspan>
+                                <tspan x={x} dy="11">{bottom}</tspan>
                             </text>
                         );
                     })}
@@ -167,9 +176,10 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                     })}
                 </g>
 
-                {/* 異??덉씠釉?*/}
-                <text x={width / 2} y={height - 20} textAnchor="middle" fill="#9ca3af" fontSize="12" fontWeight="bold">
-                    遺덈쭔議깃퀎??                </text>
+                {/* 축 라벨 */}
+                <text x={width / 2} y={height - 16} textAnchor="middle" fill="#9ca3af" fontSize="12" fontWeight="bold">
+                    불만족 계수
+                </text>
                 <text
                     x={20}
                     y={height / 2}
@@ -179,50 +189,39 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                     fontWeight="bold"
                     transform={`rotate(-90, 20, ${height / 2})`}
                 >
-                    留뚯”怨꾩닔
+                    만족 계수
                 </text>
 
-                {/* ?щ텇硫??쇰꺼 */}
+                {/* 사분면 라벨 */}
                 <text x={width - padding - 110} y={padding + 20} fill={quadrantColors.attractive} fontSize="12" fontWeight="bold" opacity="0.9">
-                    1?щ텇硫?留ㅻ젰?덉쭏
+                    1사분면: 매력적 품질
                 </text>
                 <text x={padding + 20} y={padding + 20} fill={quadrantColors.oneDimensional} fontSize="12" fontWeight="bold" opacity="0.9">
-                    2?щ텇硫??쇱썝???덉쭏
+                    2사분면: 일원적 품질
                 </text>
                 <text x={padding + 20} y={height - padding - 15} fill={quadrantColors.mustBe} fontSize="12" fontWeight="bold" opacity="0.9">
-                    3?щ텇硫??뱀뿰?덉쭏
+                    3사분면: 당연적 품질
                 </text>
                 <text x={width - padding - 110} y={height - padding - 15} fill={quadrantColors.indifferent} fontSize="12" fontWeight="bold" opacity="0.9">
-                    4?щ텇硫?臾닿??ы뭹吏?                </text>
+                    4사분면: 무관심 품질
+                </text>
 
-                {/* ?곗씠????李띻린 諛?援먯감??Crosshairs) */}
+                {/* 데이터 포인트 */}
                 {points.map((p, idx) => (
                     <g key={p.id}>
-                        {/* 援먯감??(媛濡쒖꽭濡?異뺤쑝濡??덈궡?? */}
-
-                        {/* ?곗씠???ъ씤????*/}
                         <circle cx={p.x} cy={p.y} r="8" fill={p.color} stroke="#fff" strokeWidth="2" className="cursor-pointer hover:r-10 transition-all">
-                            <title>{p.name} (留뚯”怨꾩닔: {p.better.toFixed(2)}, 遺덈쭔議깃퀎?? {p.worse.toFixed(2)})</title>
+                            <title>{p.name} (만족 계수: {p.better.toFixed(2)}, 불만족 계수: {p.worse.toFixed(2)})</title>
                         </circle>
                         <text x={p.x} y={p.y + 3} textAnchor="middle" fill="#fff" fontSize="9" fontWeight="bold" className="pointer-events-none">
                             {idx + 1}
                         </text>
-
-                        {/* ???덉쓽 ?レ옄 ?쒓린 */}
-
-                        {/* ???놁뿉 ?ㅼ젣 怨꾩닔 ?띿뒪???쒖떆 */}
                     </g>
                 ))}
             </svg>
 
-            {/* 踰붾? */}
+            {/* 범례 */}
             <div className="mt-4 flex flex-wrap gap-3 text-xs">
-                {[
-                    ['1?щ텇硫?留ㅻ젰?덉쭏', quadrantColors.attractive],
-                    ['2?щ텇硫??쇱썝???덉쭏', quadrantColors.oneDimensional],
-                    ['3?щ텇硫??뱀뿰?덉쭏', quadrantColors.mustBe],
-                    ['4?щ텇硫?臾닿??ы뭹吏?', quadrantColors.indifferent],
-                ].map(([label, color]) => (
+                {quadrantLabels.map(([label, color]) => (
                     <div key={label} className="flex items-center gap-1.5">
                         <div
                             className="w-3 h-3 rounded-full border-2 border-white"

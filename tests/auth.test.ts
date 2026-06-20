@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { encodeSessionCookie, getSessionUser, requireAuth, type SessionUser } from '../lib/auth';
+import { POST as logout } from '../app/api/auth/logout/route';
 
 function requestWithSessionCookie(cookieValue?: string): NextRequest {
     return new NextRequest('http://localhost/test', {
@@ -60,5 +61,17 @@ describe('auth session cookies', () => {
 
         expect(result).toBeInstanceOf(NextResponse);
         expect((result as NextResponse).status).toBe(401);
+    });
+
+    it('expires the session cookie on logout', async () => {
+        const response = await logout();
+        const setCookie = response.headers.get('set-cookie');
+
+        expect(response.status).toBe(200);
+        expect(setCookie).toContain('session=');
+        expect(setCookie).toContain('Max-Age=0');
+        expect(setCookie).toContain('Path=/');
+        expect(setCookie).toContain('HttpOnly');
+        expect(setCookie).toContain('SameSite=strict');
     });
 });

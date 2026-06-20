@@ -1,5 +1,7 @@
 export type QfdRelationshipStrength = 'STRONG' | 'MEDIUM' | 'WEAK' | 'NONE' | string;
 
+export { calculateSatisfactionGraphWeight } from './kano-algorithm';
+
 export interface QfdRequirementInput {
     id: string;
     category: string;
@@ -89,14 +91,6 @@ export function excelRankDescending(values: number[]): Array<number | null> {
         if (value <= 0 || !Number.isFinite(value)) return null;
         return values.filter((candidate) => candidate > value).length + 1;
     });
-}
-
-export function calculateSatisfactionGraphWeight(better: number, worse: number): number {
-    const absWorse = Math.abs(worse);
-    if (better <= 0.5 && absWorse <= 0.5) return 2;
-    if (better >= 0.5 && absWorse <= 0.5) return 5;
-    if (better <= 0.5 && absWorse >= 0.5) return 3;
-    return 4;
 }
 
 function getBenchmarkScore(benchmarks: QfdBenchmarkInput[], requirementId: string, company: string): number {

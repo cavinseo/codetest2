@@ -20,6 +20,7 @@ export default function DashboardPage() {
     const [newProjectDesc, setNewProjectDesc] = useState('');
     const [newProjectDetailDesc, setNewProjectDetailDesc] = useState('');
     const [newProjectFile, setNewProjectFile] = useState<File | null>(null);
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
 
     // 마운트 시 프로젝트 목록 로드
     useEffect(() => {
@@ -80,6 +81,19 @@ export default function DashboardPage() {
         }
     };
 
+    const handleLogout = async () => {
+        setIsLoggingOut(true);
+        try {
+            const response = await fetch('/api/auth/logout', { method: 'POST' });
+            if (!response.ok) throw new Error('로그아웃 실패');
+            window.location.href = '/login';
+        } catch (error) {
+            console.error(error);
+            alert('로그아웃에 실패했습니다.');
+            setIsLoggingOut(false);
+        }
+    };
+
     const getRoleBadge = (role: string) => {
         const map: Record<string, { cls: string; label: string }> = {
             OWNER: { cls: 'badge-purple', label: '소유자' },
@@ -127,7 +141,13 @@ export default function DashboardPage() {
                                 </div>
                                 <span className="text-sm text-gray-300 hidden sm:block">사용자</span>
                             </div>
-                            <button className="btn-ghost text-sm text-gray-500">로그아웃</button>
+                            <button
+                                onClick={handleLogout}
+                                disabled={isLoggingOut}
+                                className="btn-ghost text-sm text-gray-500 disabled:opacity-50"
+                            >
+                                {isLoggingOut ? '로그아웃 중...' : '로그아웃'}
+                            </button>
                         </div>
                     </div>
                 </div>

@@ -23,7 +23,7 @@ export async function GET(
             orderBy: { respondedAt: 'desc' },
         });
 
-        // ?ъ슜???대찓?? 蹂꾨줈 ?묐떟 蹂묓빀
+        // 사용자 이메일별로 응답을 병합합니다.
         const respondentMap = new Map<string, any>();
         
         allResponses.forEach((res) => {

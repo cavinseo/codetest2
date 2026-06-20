@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useParams } from 'next/navigation';
 import RequirementsTable from '@/components/project/RequirementsTable';
@@ -22,7 +22,7 @@ export default function RequirementsPage() {
                                 프로젝트 홈
                             </Link>
                             <div className="w-px h-6 bg-white/10" />
-                            <h1 className="text-xl font-display font-bold text-white">고객 요구사항 관리</h1>
+                            <h1 className="text-xl font-display font-bold text-white">[WS-5] 고객 요구사항 관리</h1>
                         </div>
                     </div>
                 </div>

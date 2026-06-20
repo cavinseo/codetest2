@@ -73,6 +73,8 @@ interface QFDMatrixProps {
 
 type DisplayTechnical = TechnicalChar & { isPlaceholder?: boolean };
 type ToastType = 'success' | 'error';
+type VisibleTechnicalColumn = { tech: DisplayTechnical; index: number };
+type PendingBenchmarkScores = Record<string, number>;
 
 const SCORE_OPTIONS = [0, 1, 2, 3, 4, 5];
 const MIN_WORKSHEET_TECH_COLUMNS = 15;
@@ -106,6 +108,32 @@ function getCompetitorLabel(company: string) {
     return company === DEFAULT_COMPETITOR_COMPANY ? DEFAULT_COMPETITOR_LABEL : company;
 }
 
+function benchmarkKey(requirementId: string, company: string) {
+    return `${requirementId}::${company}`;
+}
+
+function getRequirementGroupRowSpan(
+    requirements: Requirement[],
+    startIndex: number,
+    field: 'category' | 'subcategory',
+) {
+    const startRequirement = requirements[startIndex];
+    if (!startRequirement) return 1;
+
+    const category = startRequirement.category || '';
+    const subcategory = startRequirement.subcategory || '';
+    let span = 1;
+
+    for (let index = startIndex + 1; index < requirements.length; index += 1) {
+        const requirement = requirements[index];
+        if ((requirement.category || '') !== category) break;
+        if (field === 'subcategory' && (requirement.subcategory || '') !== subcategory) break;
+        span += 1;
+    }
+
+    return span;
+}
+
 export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [technicalChars, setTechnicalChars] = useState<TechnicalChar[]>([]);
@@ -114,6 +142,8 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const [reqAnalysis, setReqAnalysis] = useState<RequirementAnalysis[]>([]);
     const [techAnalysis, setTechAnalysis] = useState<TechnicalAnalysis[]>([]);
     const [benchmarksData, setBenchmarksData] = useState<Benchmark[]>([]);
+    const [pendingBenchmarks, setPendingBenchmarks] = useState<PendingBenchmarkScores>({});
+    const [isSavingBenchmarks, setIsSavingBenchmarks] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [showAddTechModal, setShowAddTechModal] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -122,6 +152,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const [extraCompetitors, setExtraCompetitors] = useState<string[]>([]);
     const [isAddingCompetitor, setIsAddingCompetitor] = useState(false);
     const [selectedCoreByGroup, setSelectedCoreByGroup] = useState<Record<number, string>>({});
+    const [collapsedTechnicalGroups, setCollapsedTechnicalGroups] = useState<Record<number, boolean>>({});
     const [removingCompetitor, setRemovingCompetitor] = useState<string | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [dataError, setDataError] = useState<string | null>(null);
@@ -137,6 +168,22 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         const uniqueCompanies = Array.from(new Set(companies));
         return uniqueCompanies.length > 0 ? uniqueCompanies : [DEFAULT_COMPETITOR_COMPANY];
     }, [benchmarksData, extraCompetitors]);
+    const competitorNameOptions = useMemo(
+        () => Array.from(new Set(competitorColumns.map((company) => getCompetitorLabel(company)).filter(Boolean))),
+        [competitorColumns]
+    );
+    const technicalNameOptions = useMemo(
+        () => Array.from(new Set(technicalChars.map((tech) => tech.name.trim()).filter(Boolean))),
+        [technicalChars]
+    );
+    const technicalUnitOptions = useMemo(
+        () => Array.from(new Set(technicalChars.map((tech) => (tech.unit || '').trim()).filter(Boolean))),
+        [technicalChars]
+    );
+    const technicalTargetValueOptions = useMemo(
+        () => Array.from(new Set(technicalChars.map((tech) => (tech.targetValue || '').trim()).filter(Boolean))),
+        [technicalChars]
+    );
 
     const benchmarkColumnCount = 1 + competitorColumns.length;
     const rightSideColumnSpan = 8 + competitorColumns.length;
@@ -264,7 +311,45 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         showToast('QFD 기술특성을 저장했습니다.');
     };
 
-    const setBenchmark = async (requirementId: string, company: string, score: number) => {
+    const setBenchmark = (requirementId: string, company: string, score: number) => {
+        setPendingBenchmarks((items) => ({
+            ...items,
+            [benchmarkKey(requirementId, company)]: score,
+        }));
+    };
+
+    const saveBenchmarks = async () => {
+        const entries = Object.entries(pendingBenchmarks);
+        if (entries.length === 0) {
+            showToast('저장할 비교 점수가 없습니다.', 'error');
+            return;
+        }
+
+        setIsSavingBenchmarks(true);
+        try {
+            const responses = await Promise.all(entries.map(([key, score]) => {
+                const [requirementId, company] = key.split('::');
+                return fetch(`/api/projects/${projectId}/qfd/benchmarks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ requirementId, company, score }),
+                });
+            }));
+
+            if (responses.some((response) => !response.ok)) {
+                showToast('비교 점수를 저장하지 못했습니다.', 'error');
+                return;
+            }
+
+            setPendingBenchmarks({});
+            await loadData();
+            showToast('중요도 및 경쟁 비교 점수를 저장했습니다.');
+        } finally {
+            setIsSavingBenchmarks(false);
+        }
+    };
+
+    const saveBenchmarkImmediately = async (requirementId: string, company: string, score: number) => {
         const res = await fetch(`/api/projects/${projectId}/qfd/benchmarks`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -346,6 +431,9 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
 
             setExtraCompetitors((items) => items.filter((item) => item !== company));
             setBenchmarksData((items) => items.filter((item) => item.company !== company));
+            setPendingBenchmarks((items) => Object.fromEntries(
+                Object.entries(items).filter(([key]) => !key.endsWith(`::${company}`))
+            ));
             await loadData();
             showToast(`${label} 열을 삭제했습니다.`);
         } finally {
@@ -368,6 +456,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
             fetch(`/api/projects/${projectId}/qfd/benchmarks`, { method: 'DELETE' }),
         ]);
 
+        setPendingBenchmarks({});
         setShowResetConfirm(false);
         await loadData();
         showToast('QFD 매트릭스를 초기화했습니다.');
@@ -376,13 +465,16 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const getRelationship = (requirementId: string, technicalCharId: string): Relationship['strength'] =>
         relationships.find((item) => item.requirementId === requirementId && item.technicalCharId === technicalCharId)?.strength || 'NONE';
 
-    const getBenchmark = (requirementId: string, company: string) =>
-        benchmarksData.find((item) => item.requirementId === requirementId && item.company === company)?.score || 0;
+    const getBenchmark = (requirementId: string, company: string) => {
+        const key = benchmarkKey(requirementId, company);
+        if (key in pendingBenchmarks) return pendingBenchmarks[key];
+        return benchmarksData.find((item) => item.requirementId === requirementId && item.company === company)?.score || 0;
+    };
 
     const getReqAnalysis = (requirementId: string) => reqAnalysis.find((item) => item.requirementId === requirementId);
     const getTechAnalysis = (technicalCharId: string) => techAnalysis.find((item) => item.technicalCharId === technicalCharId);
 
-    const displayTechnicalCols: DisplayTechnical[] = [
+    const displayTechnicalCols = useMemo<DisplayTechnical[]>(() => [
         ...technicalChars.map((tech) => ({ ...tech, isPlaceholder: false })),
         ...Array.from({ length: Math.max(0, MIN_WORKSHEET_TECH_COLUMNS - technicalChars.length) }, (_, index) => ({
             id: `placeholder-${index}`,
@@ -391,17 +483,52 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
             targetValue: '',
             isPlaceholder: true,
         })),
-    ];
+    ], [technicalChars]);
 
     const totalWeight = reqAnalysis.reduce((sum, row) => sum + (row.weight || 0), 0);
     const totalAbsoluteImportance = reqAnalysis.reduce((sum, row) => sum + (row.absoluteImportance || 0), 0);
+    const pendingBenchmarkCount = Object.keys(pendingBenchmarks).length;
     const connectedRequirementCount = requirements.filter((requirement) => reqAnalysis.some((row) => row.requirementId === requirement.id)).length;
     const hasRequirements = requirements.length > 0;
     const specFooterRows = buildQfdSpecFooterRows(competitorColumns, getCompetitorLabel);
     const specBlockRowSpan = specFooterRows.filter((row) => row.kind !== 'target').length;
     const coreOptions = useMemo(() => getQfdCoreOptions(specFunctions), [specFunctions]);
     const allSubOptions = useMemo(() => getQfdSubOptions(specFunctions), [specFunctions]);
-    const technicalGroups = chunkTechnicalIndexes(displayTechnicalCols.length, 3);
+    const technicalGroups = useMemo(() => chunkTechnicalIndexes(displayTechnicalCols.length, 3), [displayTechnicalCols.length]);
+    const visibleTechnicalColumns = useMemo<VisibleTechnicalColumn[]>(() => {
+        const columns: VisibleTechnicalColumn[] = [];
+
+        technicalGroups.forEach((group) => {
+            if (collapsedTechnicalGroups[group.groupIndex]) return;
+
+            Array.from({ length: group.size }, (_, offset) => {
+                const index = group.start + offset;
+                columns.push({ tech: displayTechnicalCols[index], index });
+            });
+        });
+
+        return columns;
+    }, [collapsedTechnicalGroups, displayTechnicalCols, technicalGroups]);
+    const visibleTechnicalGroups = useMemo(
+        () => technicalGroups.filter((group) => !collapsedTechnicalGroups[group.groupIndex]),
+        [collapsedTechnicalGroups, technicalGroups]
+    );
+    const hiddenTechnicalGroups = useMemo(
+        () => technicalGroups.filter((group) => collapsedTechnicalGroups[group.groupIndex]),
+        [collapsedTechnicalGroups, technicalGroups]
+    );
+
+    const collapseAllTechnicalGroups = () => {
+        setCollapsedTechnicalGroups(
+            technicalGroups.reduce<Record<number, boolean>>((items, group) => {
+                items[group.groupIndex] = true;
+                return items;
+            }, {})
+        );
+    };
+    const expandAllTechnicalGroups = () => {
+        setCollapsedTechnicalGroups({});
+    };
 
     const getCoreForTechnicalGroup = (groupIndex: number) => {
         if (selectedCoreByGroup[groupIndex]) return selectedCoreByGroup[groupIndex];
@@ -434,6 +561,26 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
 
     return (
         <div className="relative space-y-6">
+            <datalist id={`qfd-competitor-options-${projectId}`}>
+                {competitorNameOptions.map((option) => (
+                    <option key={option} value={option} />
+                ))}
+            </datalist>
+            <datalist id={`qfd-technical-name-options-${projectId}`}>
+                {technicalNameOptions.map((option) => (
+                    <option key={option} value={option} />
+                ))}
+            </datalist>
+            <datalist id={`qfd-technical-unit-options-${projectId}`}>
+                {technicalUnitOptions.map((option) => (
+                    <option key={option} value={option} />
+                ))}
+            </datalist>
+            <datalist id={`qfd-technical-target-options-${projectId}`}>
+                {technicalTargetValueOptions.map((option) => (
+                    <option key={option} value={option} />
+                ))}
+            </datalist>
             {toast && (
                 <div className={`fixed right-6 top-6 z-[100] flex items-center gap-3 rounded-xl border px-5 py-3 shadow-2xl animate-fade-in ${
                     toast.type === 'success'
@@ -454,7 +601,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                 </svg>
                             </span>
                             <div>
-                                <h2 className="text-xl font-display font-bold text-white">QFD</h2>
+                                <h2 className="text-xl font-display font-bold text-white">[WS-9] QFD</h2>
                                 <p className="mt-1 text-sm text-gray-400">
                                     고객요구사항도출표의 항목을 자동으로 불러와 관계 매트릭스, 중요도, 경쟁 비교, 기획품질을 계산합니다.
                                 </p>
@@ -465,6 +612,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
                             <input
                                 type="text"
+                                list={`qfd-competitor-options-${projectId}`}
                                 value={newCompetitorName}
                                 onChange={(event) => setNewCompetitorName(event.target.value)}
                                 onKeyDown={(event) => {
@@ -480,6 +628,13 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         </div>
                         <button onClick={loadData} className="btn-secondary text-sm">
                             새로고침
+                        </button>
+                        <button
+                            onClick={saveBenchmarks}
+                            disabled={isSavingBenchmarks || pendingBenchmarkCount === 0}
+                            className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {isSavingBenchmarks ? '저장 중...' : `비교 점수 저장${pendingBenchmarkCount > 0 ? ` (${pendingBenchmarkCount})` : ''}`}
                         </button>
                         <button onClick={() => setShowAddTechModal(true)} className="btn-secondary text-sm">
                             + 기술특성
@@ -537,12 +692,38 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         <h3 className="font-display text-lg font-bold text-white">QFD 매트릭스</h3>
                         <p className="mt-0.5 text-xs text-gray-500">요구사항 행은 고객요구사항도출표 저장 순서를 그대로 따릅니다.</p>
                     </div>
-                    <div className="hidden items-center gap-3 text-xs text-gray-400 md:flex">
+                    <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-400">
+                        <button
+                            type="button"
+                            onClick={visibleTechnicalGroups.length > 0 ? collapseAllTechnicalGroups : expandAllTechnicalGroups}
+                            className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-3 py-1.5 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
+                        >
+                            {visibleTechnicalGroups.length > 0 ? '기술특성 전체 접기' : '기술특성 전체 펼치기'}
+                        </button>
+                        <div className="hidden items-center gap-3 md:flex">
                         {RELATIONSHIP_OPTIONS.slice(1).map((option) => (
                             <span key={option.value} className={option.className}>{option.label}={option.score}</span>
                         ))}
+                        </div>
                     </div>
                 </div>
+
+                {hiddenTechnicalGroups.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.08] bg-indigo-500/[0.04] px-4 py-2 text-xs">
+                        <span className="font-semibold text-indigo-100">기술특성 영역이 접혀 있습니다.</span>
+                        <button
+                            type="button"
+                            onClick={expandAllTechnicalGroups}
+                            className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-2 py-1 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
+                            title="기술특성 전체 펼치기"
+                        >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12h16M13 5l7 7-7 7M4 5l7 7-7 7" />
+                            </svg>
+                            전체 펼치기
+                        </button>
+                    </div>
+                )}
 
                 <div className="overflow-x-auto">
                     <table className="min-w-max w-full border-collapse text-[11px] text-gray-200">
@@ -550,7 +731,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                             <col className="w-[190px]" />
                             <col className="w-[190px]" />
                             <col className="w-[330px]" />
-                            {displayTechnicalCols.map((col) => <col key={`col-${col.id}`} className="w-[88px]" />)}
+                            {visibleTechnicalColumns.map(({ tech }) => <col key={`col-${tech.id}`} className="w-[88px]" />)}
                             <col className="w-[80px]" />
                             <col className="w-[88px]" />
                             <col className="w-[74px]" />
@@ -564,14 +745,14 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         <thead>
                             <tr>
                                 <th className="border border-white/[0.08] bg-cyan-500/15 px-2 py-2 text-center font-bold text-cyan-100" colSpan={3}>고객요구사항</th>
-                                {technicalGroups.map((group) => {
+                                {visibleTechnicalGroups.map((group) => {
                                     const coreId = getCoreForTechnicalGroup(group.groupIndex);
                                     return (
                                         <th key={`core-group-${group.groupIndex}`} className="border border-white/[0.08] bg-indigo-500/15 px-1 py-2 text-center font-bold text-indigo-100" colSpan={group.size}>
                                             <select
                                                 value={coreId}
                                                 onChange={(event) => setSelectedCoreByGroup((items) => ({ ...items, [group.groupIndex]: event.target.value }))}
-                                                className="h-8 w-full rounded-md border border-indigo-200/20 bg-slate-950/80 px-1 text-center text-[11px] font-bold text-indigo-50 outline-none focus:border-indigo-300"
+                                                className="h-8 min-w-0 flex-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-1 text-center text-[11px] font-bold text-indigo-50 outline-none focus:border-indigo-300"
                                                 title="핵심기능 선택"
                                             >
                                                 <option value="">핵심기능</option>
@@ -589,7 +770,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                 <th className="border border-white/[0.08] bg-cyan-500/10 px-2 py-2 text-center font-semibold text-blue-200">2차 그룹</th>
                                 <th className="border border-white/[0.08] bg-cyan-500/10 px-2 py-2 text-center font-semibold text-red-200">1차 그룹</th>
                                 <th className="border border-white/[0.08] bg-cyan-500/10 px-2 py-2 text-center font-semibold text-white">항목</th>
-                                {displayTechnicalCols.map((tech, index) => (
+                                {visibleTechnicalColumns.map(({ tech, index }) => (
                                     <th key={tech.id} className="h-[104px] border border-white/[0.08] bg-indigo-500/10 p-1 text-center align-bottom font-semibold">
                                         <div className="flex h-full flex-col justify-end gap-1">
                                             <span className="text-[10px] font-semibold text-indigo-200/70">세부기능</span>
@@ -640,16 +821,40 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                             </tr>
                         </thead>
                         <tbody>
-                            {requirements.map((requirement) => {
+                            {requirements.map((requirement, requirementIndex) => {
                                 const analysis = getReqAnalysis(requirement.id);
                                 const selfScore = getBenchmark(requirement.id, SELF_COMPANY);
+                                const previousRequirement = requirements[requirementIndex - 1];
+                                const isFirstCategoryRow = !previousRequirement || previousRequirement.category !== requirement.category;
+                                const isFirstSubcategoryRow = isFirstCategoryRow || (previousRequirement?.subcategory || '') !== (requirement.subcategory || '');
+                                const rowDividerClass = requirementIndex > 0
+                                    ? isFirstCategoryRow
+                                        ? 'border-t-2 border-t-red-300/70'
+                                        : isFirstSubcategoryRow
+                                            ? 'border-t-2 border-t-blue-300/60'
+                                            : ''
+                                    : '';
 
                                 return (
                                     <tr key={requirement.id} className="h-[32px] transition-colors hover:bg-white/[0.03]">
-                                        <td className="border border-white/[0.08] bg-blue-500/[0.08] px-2 py-1 text-center text-blue-200">{requirement.subcategory || ''}</td>
-                                        <td className="border border-white/[0.08] bg-red-500/[0.08] px-2 py-1 text-center text-red-200">{requirement.category || ''}</td>
-                                        <td className="border border-white/[0.08] bg-white/[0.03] px-2 py-1 font-medium text-white">{requirement.requirement}</td>
-                                        {displayTechnicalCols.map((tech) => {
+                                        {isFirstSubcategoryRow && (
+                                            <td
+                                                rowSpan={getRequirementGroupRowSpan(requirements, requirementIndex, 'subcategory')}
+                                                className="border border-white/[0.08] bg-blue-500/[0.08] px-2 py-1 text-center align-middle text-blue-200"
+                                            >
+                                                {requirement.subcategory || ''}
+                                            </td>
+                                        )}
+                                        {isFirstCategoryRow && (
+                                            <td
+                                                rowSpan={getRequirementGroupRowSpan(requirements, requirementIndex, 'category')}
+                                                className="border border-white/[0.08] bg-red-500/[0.08] px-2 py-1 text-center align-middle text-red-200"
+                                            >
+                                                {requirement.category || ''}
+                                            </td>
+                                        )}
+                                        <td className={`border border-white/[0.08] bg-white/[0.03] px-2 py-1 font-medium text-white ${rowDividerClass}`}>{requirement.requirement}</td>
+                                        {visibleTechnicalColumns.map(({ tech }) => {
                                             if (tech.isPlaceholder) {
                                                 return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.015]" />;
                                             }
@@ -701,7 +906,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         <tfoot>
                             <tr className="h-[32px]">
                                 <td colSpan={3} className="border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-center font-bold text-gray-200">품질중요도</td>
-                                {displayTechnicalCols.map((tech) => {
+                                {visibleTechnicalColumns.map(({ tech }) => {
                                     if (tech.isPlaceholder) return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.015]" />;
                                     const analysis = getTechAnalysis(tech.id);
                                     return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.04] p-1 text-center font-bold text-cyan-200">{analysis?.totalScore?.toFixed(2) || '0'}</td>;
@@ -715,7 +920,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                             </tr>
                             <tr className="h-[32px]">
                                 <td colSpan={3} className="border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-right font-bold text-gray-200">RANK</td>
-                                {displayTechnicalCols.map((tech) => {
+                                {visibleTechnicalColumns.map(({ tech }) => {
                                     if (tech.isPlaceholder) return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.015]" />;
                                     const analysis = getTechAnalysis(tech.id);
                                     return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.04] p-1 text-center font-bold text-yellow-200">{analysis?.rank || '-'}</td>;
@@ -739,7 +944,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                             {row.rowLabel}
                                         </td>
                                     )}
-                                    {displayTechnicalCols.map((tech) => {
+                                    {visibleTechnicalColumns.map(({ tech }) => {
                                         const value = tech.isPlaceholder
                                             ? ''
                                             : row.kind === 'unit'
@@ -819,6 +1024,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                 <label className="mb-1.5 block text-sm font-medium text-gray-300">기술특성 이름 *</label>
                                 <input
                                     type="text"
+                                    list={`qfd-technical-name-options-${projectId}`}
                                     value={newTech.name}
                                     onChange={(event) => setNewTech({ ...newTech, name: event.target.value })}
                                     className="input w-full"
@@ -830,6 +1036,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                 <label className="mb-1.5 block text-sm font-medium text-gray-300">측정단위</label>
                                 <input
                                     type="text"
+                                    list={`qfd-technical-unit-options-${projectId}`}
                                     value={newTech.unit}
                                     onChange={(event) => setNewTech({ ...newTech, unit: event.target.value })}
                                     className="input w-full"
@@ -840,6 +1047,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                 <label className="mb-1.5 block text-sm font-medium text-gray-300">설계 목표치</label>
                                 <input
                                     type="text"
+                                    list={`qfd-technical-target-options-${projectId}`}
                                     value={newTech.targetValue}
                                     onChange={(event) => setNewTech({ ...newTech, targetValue: event.target.value })}
                                     onKeyDown={(event) => {

@@ -20,7 +20,7 @@ export default function QFDPage() {
                             프로젝트
                         </Link>
                         <div className="h-6 w-px bg-white/10" />
-                        <h1 className="text-xl font-display font-bold text-white">QFD</h1>
+                        <h1 className="text-xl font-display font-bold text-white">[WS-9] QFD</h1>
                     </div>
                 </div>
             </header>

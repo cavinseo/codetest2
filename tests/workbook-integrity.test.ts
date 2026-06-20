@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import XLSX from 'xlsx';
+import { writeSingleImportTemplateSheetBuffer } from '../lib/import-template-workbook';
+
+const workbookPath = path.join(process.cwd(), 'public', 'asset', '워크시트.xlsx');
 
 describe('worksheet workbook integrity', () => {
     it('keeps the bundled workbook available as the upload template', () => {
-        const workbookPath = path.join(process.cwd(), 'public', 'asset', '워크시트.xlsx');
         const workbookStats = statSync(workbookPath);
         const workbook = XLSX.readFile(workbookPath);
 
@@ -17,7 +19,6 @@ describe('worksheet workbook integrity', () => {
     });
 
     it('does not contain broken #REF! formulas in the bundled worksheet', () => {
-        const workbookPath = path.join(process.cwd(), 'public', 'asset', '워크시트.xlsx');
         const workbook = XLSX.readFile(workbookPath, { cellFormula: true });
         const brokenFormulaCells: Array<{ sheet: string; address: string; formula: string }> = [];
 
@@ -33,5 +34,17 @@ describe('worksheet workbook integrity', () => {
         }
 
         expect(brokenFormulaCells).toEqual([]);
+    });
+
+    it.each([
+        ['spec', 'AS-IS스펙표'],
+        ['attributes', '제품속성표'],
+        ['requirements', '고객요구사항도출표'],
+    ] as const)('can build a %s only upload template', (sheet, expectedSheetName) => {
+        const source = readFileSync(workbookPath);
+        const buffer = writeSingleImportTemplateSheetBuffer(source, sheet);
+        const workbook = XLSX.read(buffer, { type: 'buffer' });
+
+        expect(workbook.SheetNames).toEqual([expectedSheetName]);
     });
 });

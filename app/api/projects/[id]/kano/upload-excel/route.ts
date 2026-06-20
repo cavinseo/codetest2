@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { classifyKanoResponse, type KanoAnswer } from '@/lib/kano-algorithm';
-import { parseGoogleFormsResponseSheet, parseKanoTemplateResponseSheet } from '@/lib/kano-upload-parser';
+import { parseGoogleFormsResponseSheet, parseKanoTemplateResponseSheet, parseWorksheetMatrixSheet } from '@/lib/kano-upload-parser';
 
 type ParsedAnswer = {
     respondentEmail: string;
@@ -130,8 +130,8 @@ function pickKanoUploadSheet(workbook: XLSX.WorkBook, format: string): string | 
 
 function parseByUploadFormat(sheet: XLSX.WorkSheet, requirementCount: number, format: string): ParsedAnswer[] {
     const parsers = format === 'googleForms'
-        ? [parseGoogleFormsResponseSheet, parseKanoTemplateResponseSheet, parseTabularResponses, parseWorksheetMatrix]
-        : [parseKanoTemplateResponseSheet, parseWorksheetMatrix, parseTabularResponses, parseGoogleFormsResponseSheet];
+        ? [parseGoogleFormsResponseSheet, parseKanoTemplateResponseSheet, parseTabularResponses, parseWorksheetMatrixSheet]
+        : [parseKanoTemplateResponseSheet, parseWorksheetMatrixSheet, parseTabularResponses, parseGoogleFormsResponseSheet];
 
     for (const parser of parsers) {
         const answers = parser(sheet, requirementCount);

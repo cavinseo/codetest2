@@ -33,6 +33,30 @@ function parseWritePolicy(rawValue: FormDataEntryValue | null): WorkbookWritePol
     return rawValue === 'append' ? 'append' : 'replace';
 }
 
+function normalizeSheetName(name: string) {
+    return name.toLowerCase().replace(/[\s_\-()[\]{}]/g, '');
+}
+
+function getRequestedSheetAliases(requestedName: string) {
+    const normalized = normalizeSheetName(requestedName);
+    if (normalized.includes('제품속성')) return ['제품속성표', '제품속성서', '제품속성'];
+    if (normalized.includes('고객요구사항')) return ['고객요구사항도출표', '고객요구사항', '요구사항도출'];
+    if (normalized.includes('asis') || normalized.includes('as-is') || normalized.includes('스펙')) return ['AS-IS스펙표', 'AS-IS 스펙표', 'ASIS스펙', '스펙표'];
+    return [requestedName];
+}
+
+function matchesRequestedSheetName(sheetName: string, requestedName: string) {
+    const normalizedSheetName = normalizeSheetName(sheetName);
+    return getRequestedSheetAliases(requestedName).some((alias) => {
+        const normalizedAlias = normalizeSheetName(alias);
+        return (
+            normalizedSheetName === normalizedAlias ||
+            normalizedSheetName.includes(normalizedAlias) ||
+            normalizedAlias.includes(normalizedSheetName)
+        );
+    });
+}
+
 function countNonEmptyCells(sheet: ParsedSheet) {
     return sheet.data.reduce((total, row) => {
         return total + row.filter((value) => value !== null && value !== undefined && `${value}`.trim() !== '').length;
@@ -61,7 +85,7 @@ function selectSheets(parsedData: ParsedExcelData, requestedSheetNames: string[]
     const selectedSheets = requestedSheetNames
         .map((requestedName) => {
             const sheet = parsedData.sheets.find(
-                (item) => item.name.toLowerCase() === requestedName.toLowerCase()
+                (item) => matchesRequestedSheetName(item.name, requestedName)
             );
             if (!sheet) missingSheets.push(requestedName);
             return sheet;
@@ -69,6 +93,13 @@ function selectSheets(parsedData: ParsedExcelData, requestedSheetNames: string[]
         .filter((sheet): sheet is ParsedSheet => Boolean(sheet));
 
     return { selectedSheets, missingSheets };
+}
+
+function selectedSheetsInclude(selectedSheets: string[], keywords: string[]) {
+    return selectedSheets.some((sheetName) => {
+        const normalizedSheetName = normalizeSheetName(sheetName);
+        return keywords.some((keyword) => normalizedSheetName.includes(normalizeSheetName(keyword)));
+    });
 }
 
 async function applyImportedRecords(
@@ -94,7 +125,10 @@ async function applyImportedRecords(
                 await tx.techCorrelation.deleteMany({ where: { projectId } });
                 await tx.technicalCharacteristic.deleteMany({ where: { projectId } });
             }
-            if (records.improvementItems.length > 0) await tx.improvementItem.deleteMany({ where: { projectId } });
+            if (
+                records.improvementItems.length > 0
+                || selectedSheetsInclude(metadata.selectedSheets, ['개선포인트도출', '개선포인트'])
+            ) await tx.improvementItem.deleteMany({ where: { projectId } });
             if (records.targetSpecs.length > 0) await tx.targetSpec.deleteMany({ where: { projectId } });
             if (records.techRoadmaps.length > 0) await tx.techRoadmap.deleteMany({ where: { projectId } });
             if (records.assetItems.length > 0) await tx.assetItem.deleteMany({ where: { projectId } });

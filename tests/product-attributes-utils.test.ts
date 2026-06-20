@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+    buildCustomerNamesByMarketSegment,
     buildSpecPickerRows,
+    dedupeByAttributeName,
     getCustomerNameSpan,
     getMarketSegmentSpan,
     resolveRelatedTechnology,
@@ -77,5 +79,32 @@ describe('product attribute technology linking', () => {
         expect(getCustomerNameSpan(rows, 1)).toBe(0);
         expect(getCustomerNameSpan(rows, 2)).toBe(1);
         expect(getCustomerNameSpan(rows, 3)).toBe(1);
+    });
+
+    it('builds customer names by market segment for WS-4 sub segments', () => {
+        const rows = [
+            { marketSegment: '구매자시장', customerName: '1020 팬덤 소비자' },
+            { marketSegment: '구매자시장', customerName: '1020 팬덤 소비자' },
+            { marketSegment: '구매자시장', customerName: '창작 의뢰자' },
+            { marketSegment: '작가시장', customerName: '프리랜서 작가' },
+            { marketSegment: '작가시장', customerName: '' },
+            { marketSegment: '', customerName: '미분류 고객' },
+        ];
+
+        expect(buildCustomerNamesByMarketSegment(rows)).toEqual({
+            구매자시장: ['1020 팬덤 소비자', '창작 의뢰자'],
+            작가시장: ['프리랜서 작가'],
+        });
+    });
+
+    it('keeps only the first row for duplicate product attributes', () => {
+        const rows = [
+            { id: 'a1', attribute: 'Fast setup', order: 0 },
+            { id: 'a2', attribute: ' fast   setup ', order: 1 },
+            { id: 'a3', attribute: 'Secure login', order: 2 },
+            { id: 'a4', attribute: '', order: 3 },
+        ];
+
+        expect(dedupeByAttributeName(rows).map((row) => row.id)).toEqual(['a1', 'a3']);
     });
 });

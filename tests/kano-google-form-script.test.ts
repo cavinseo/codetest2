@@ -15,8 +15,10 @@ describe('Kano Google Forms script', () => {
 
         expect(script).toContain('function createKanoForm()');
         expect(script).toContain('FormApp.create("Kano 설문 조사 - 테스트 프로젝트")');
-        expect(script).toContain('"👍 [긍정] [배송 > 속도] 빠른 주문 완료"');
-        expect(script).toContain('"👎 [부정] [배송 > 속도] 빠른 주문 완료"');
+        expect(script).toContain('"[1-1] 빠른 주문 완료"');
+        expect(script).toContain('"[1-2] 빠른 주문 완료"');
+        expect(script).not.toContain('[긍정]');
+        expect(script).not.toContain('[부정]');
         expect(script).toContain('"마음에 든다"');
         expect(script).toContain('"당연하다"');
         expect(script).toContain('"아무런느낌이 없다"');

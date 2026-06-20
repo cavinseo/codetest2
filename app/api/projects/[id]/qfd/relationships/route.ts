@@ -13,7 +13,7 @@ const relationshipSchema = z.object({
     strength: z.enum(['STRONG', 'MEDIUM', 'WEAK', 'NONE']),
 });
 
-// GET: 愿怨?議고쉶
+// GET: 관계 조회
 export async function GET(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -29,8 +29,8 @@ export async function GET(
 
         return NextResponse.json({ relationships: projectRels });
     } catch (error: unknown) {
-        log.error('愿怨?議고쉶 ?ㅽ뙣', error);
-        return NextResponse.json({ error: '愿怨?議고쉶 ?ㅽ뙣' }, { status: 500 });
+        log.error('관계 조회 실패', error);
+        return NextResponse.json({ error: '관계 조회 실패' }, { status: 500 });
     }
 }
 

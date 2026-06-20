@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -18,7 +18,6 @@ import TechTreeTable from '@/components/project/TechTreeTable';
 import AssetsTable from '@/components/project/AssetsTable';
 import FundingTable from '@/components/project/FundingTable';
 import KanoSatisfactionGraph from '@/components/project/KanoSatisfactionGraph';
-import KanoTimkoTable from '@/components/project/KanoTimkoTable';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import { useRouter } from 'next/navigation';
 
@@ -205,23 +204,22 @@ export default function ProjectDetailPage() {
 
     const tabs = [
         { id: 'overview', name: '개요', icon: iconSvg('M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z') },
-        { id: 'sales', name: '자사매출추정표', icon: iconSvg('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z') },
-        { id: 'spec', name: 'AS-IS스펙표', icon: iconSvg('M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z') },
-        { id: 'attributes', name: '제품속성표', icon: iconSvg('M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z') },
-        { id: 'fitness', name: '제품속성적합도', icon: iconSvg('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z') },
-        { id: 'requirements', name: '고객요구사항도출표', icon: iconSvg('M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2') },
-        { id: 'kano', name: 'KANO질문지', icon: iconSvg('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z') },
-        { id: 'kano-aggregation', name: 'kano분석 집계표', icon: iconSvg('M4 6h16M4 10h16M4 14h16M4 18h16') },
-        { id: 'kano-timko', name: 'TIMKO/만족계수 그래프', icon: iconSvg('M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10') },
-        { id: 'qfd', name: 'QFD', icon: iconSvg('M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1') },
-        { id: 'tech-tree', name: '기능기술체계도', icon: iconSvg('M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z') },
-        { id: 'improvements', name: '개선포인트도출', icon: iconSvg('M13 10V3L4 14h7v7l9-11h-7z') },
-        { id: 'target-spec', name: '최종목표스펙도출', icon: iconSvg('M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z') },
-        { id: 'tech-roadmap', name: '향후목표고객LIST', icon: iconSvg('M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7') },
-        { id: 'dev-plan', name: '개발계획', icon: iconSvg('M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z') },
-        { id: 'assets', name: '핵심자산과 보완자산표', icon: iconSvg('M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4') },
-        { id: 'funding-plan', name: '자금소요계획표', icon: iconSvg('M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z') },
-        { id: 'funding-source', name: '자금조달계획표', icon: iconSvg('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 10v-1') },
+        { id: 'sales', name: '[WS-1] 자사매출추정표', icon: iconSvg('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z') },
+        { id: 'spec', name: '[WS-2] AS-IS 스펙표', icon: iconSvg('M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z') },
+        { id: 'attributes', name: '[WS-3] 제품속성서', icon: iconSvg('M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z') },
+        { id: 'fitness', name: '[WS-4] 제품속성적합도', icon: iconSvg('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z') },
+        { id: 'requirements', name: '[WS-5] 고객요구사항도출표', icon: iconSvg('M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2') },
+        { id: 'kano', name: '[WS-6] KANO 질문지', icon: iconSvg('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z') },
+        { id: 'kano-aggregation', name: '[WS-7] TIMKO/만족계수 그래프', icon: iconSvg('M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10') },
+        { id: 'qfd', name: '[WS-9] QFD', icon: iconSvg('M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1') },
+        { id: 'tech-tree', name: '[WS-10] 기능기술체계도', icon: iconSvg('M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z') },
+        { id: 'improvements', name: '[WS-11] 개선포인트도출', icon: iconSvg('M13 10V3L4 14h7v7l9-11h-7z') },
+        { id: 'target-spec', name: '[WS-12] 최종목표스펙도출', icon: iconSvg('M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z') },
+        { id: 'tech-roadmap', name: '[WS-13] 향후목표고객LIST', icon: iconSvg('M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7') },
+        { id: 'dev-plan', name: '[WS-14] 개발계획서', icon: iconSvg('M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z') },
+        { id: 'assets', name: '[WS-15] 핵심자산 및 보완자산 도출표', icon: iconSvg('M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4') },
+        { id: 'funding-plan', name: '[WS-16] 자금소요계획표', icon: iconSvg('M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z') },
+        { id: 'funding-source', name: '[WS-17] 자금조달계획표', icon: iconSvg('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 10v-1') },
         { id: 'import', name: '가져오기', icon: iconSvg('M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4') },
     ];
 
@@ -292,29 +290,9 @@ export default function ProjectDetailPage() {
         'dev-plan': <DevPlanTable projectId={projectId} />,
         'tech-tree': <TechTreeTable projectId={projectId} />,
         'assets': <AssetsTable projectId={projectId} />,
-        'funding-plan': <FundingTable projectId={projectId} />,
-        'funding-source': <FundingTable projectId={projectId} />,
+        'funding-plan': <FundingTable projectId={projectId} mode="plan" />,
+        'funding-source': <FundingTable projectId={projectId} mode="source" />,
         'kano-aggregation': kanoAnalysis ? (
-            <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                    <h2 className="text-2xl font-display font-bold text-white">Kano 분석 집계표</h2>
-                </div>
-                <KanoAggregationTable
-                    projectId={projectId}
-                    onWeightsSaved={async () => {
-                        const res = await fetch(`/api/projects/${projectId}/kano/analysis`);
-                        if (res.ok) setKanoAnalysis(await res.json());
-                    }}
-                    analysis={kanoAnalysis.requirements.map((r: any) => ({
-                        ...r,
-                        requirementName: kanoRequirements.find((req: any) => req.id === r.requirementId)?.requirement
-                    }))}
-                />
-            </div>
-        ) : (
-            <div className="card text-center py-20 text-gray-500">Kano 분석 데이터가 없습니다.</div>
-        ),
-        'kano-timko': kanoAnalysis ? (
             <div className="space-y-6">
                 <div className="flex items-center justify-between">
                     <h2 className="text-2xl font-display font-bold text-white">TIMKO/만족계수 그래프</h2>
@@ -328,7 +306,14 @@ export default function ProjectDetailPage() {
                     return (
                         <>
                             <KanoSatisfactionGraph analysis={analysis} />
-                            <KanoTimkoTable analysis={analysis} />
+                            <KanoAggregationTable
+                                projectId={projectId}
+                                onWeightsSaved={async () => {
+                                    const res = await fetch(`/api/projects/${projectId}/kano/analysis`);
+                                    if (res.ok) setKanoAnalysis(await res.json());
+                                }}
+                                analysis={analysis}
+                            />
                         </>
                     );
                 })()}

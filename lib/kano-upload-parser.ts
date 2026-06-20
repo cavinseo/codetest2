@@ -173,3 +173,72 @@ export function parseKanoTemplateResponseSheet(
     const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
     return parseKanoTemplateResponseRows(rows, requirementCount);
 }
+
+function selectedMatrixAnswer(row: unknown[], startCol: number): KanoAnswer | null {
+    for (let offset = 0; offset < 5; offset++) {
+        const value = row[startCol + offset];
+        const text = String(value ?? '').trim().toLowerCase();
+        if (value === 1 || value === '1' || value === true || text === 'x' || text === '✓' || text === '○' || text === '●') {
+            return (offset + 1) as KanoAnswer;
+        }
+    }
+    return null;
+}
+
+function isWorksheetMatrixStart(rows: unknown[][], col: number): boolean {
+    const respondentNo = String((rows[0] || [])[col] ?? '').trim();
+    const firstChoiceHeader = String((rows[1] || [])[col] ?? '').trim();
+    return Boolean(respondentNo && firstChoiceHeader);
+}
+
+function findWorksheetMatrixStartColumns(rows: unknown[][]): number[] {
+    const headerRow = rows[0] || [];
+    const starts: number[] = [];
+
+    for (let col = 0; col < headerRow.length; col++) {
+        if (isWorksheetMatrixStart(rows, col)) {
+            starts.push(col);
+        }
+    }
+
+    return starts;
+}
+
+export function parseWorksheetMatrixRows(
+    rows: unknown[][],
+    requirementCount: number
+): ParsedKanoUploadAnswer[] {
+    const parsed: ParsedKanoUploadAnswer[] = [];
+    const startColumns = findWorksheetMatrixStartColumns(rows);
+
+    startColumns.forEach((startCol, respondentIndex) => {
+        const respondentNo = String((rows[0] || [])[startCol] ?? '').trim();
+        const respondentEmail = `excel-respondent-${respondentNo || respondentIndex + 1}@import.local`;
+
+        for (let reqIndex = 0; reqIndex < requirementCount; reqIndex++) {
+            const positiveRow = rows[2 + reqIndex * 2] || [];
+            const negativeRow = rows[3 + reqIndex * 2] || [];
+            const positiveAnswer = selectedMatrixAnswer(positiveRow, startCol);
+            const negativeAnswer = selectedMatrixAnswer(negativeRow, startCol);
+
+            if (positiveAnswer && negativeAnswer) {
+                parsed.push({
+                    respondentEmail,
+                    requirementIndex: reqIndex,
+                    positiveAnswer,
+                    negativeAnswer,
+                });
+            }
+        }
+    });
+
+    return parsed;
+}
+
+export function parseWorksheetMatrixSheet(
+    sheet: XLSX.WorkSheet,
+    requirementCount: number
+): ParsedKanoUploadAnswer[] {
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+    return parseWorksheetMatrixRows(rows, requirementCount);
+}

@@ -114,7 +114,7 @@ export async function DELETE(
         log.info('제품 속성 리셋', { projectId, removed: deleteResult.count });
         return NextResponse.json({ success: true, removed: deleteResult.count });
     } catch (error: unknown) {
-        log.error('由ъ뀑 ?ㅽ뙣', error);
-        return NextResponse.json({ error: '由ъ뀑 ?ㅽ뙣' }, { status: 500 });
+        log.error('제품 속성 리셋 실패', error);
+        return NextResponse.json({ error: '제품 속성 리셋 실패' }, { status: 500 });
     }
 }

@@ -3,11 +3,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { dedupeByAttributeName } from '@/lib/product-attributes-utils';
 
 interface ProductAttribute {
     id: string;
     projectId: string;
-    name: string;
+    name?: string;
+    attribute?: string;
     definition?: string;
     unit?: string;
     targetValue?: string;
@@ -140,7 +142,10 @@ export default function AttributeFitnessPage() {
 
                 if (attrRes.ok) {
                     const data = await attrRes.json();
-                    setAttributes(data.attributes || []);
+                    const loadedAttributes: ProductAttribute[] = (data.attributes || [])
+                        .filter((attr: ProductAttribute) => (attr.attribute ?? attr.name ?? '').trim())
+                        .sort((a: ProductAttribute, b: ProductAttribute) => a.order - b.order);
+                    setAttributes(dedupeByAttributeName(loadedAttributes));
                 }
 
                 if (fitRes.ok) {
@@ -247,7 +252,7 @@ export default function AttributeFitnessPage() {
                             </Link>
                             <div className="w-px h-6 bg-white/10" />
                             <div>
-                                <h1 className="text-xl font-display font-bold text-white">제품 속성 적합도</h1>
+                                <h1 className="text-xl font-display font-bold text-white">[WS-4] 제품 속성 적합도</h1>
                                 <p className="text-xs text-gray-500 mt-0.5">중요도·현수준·목표수준을 슬라이더로 설정하세요 (1–10점)</p>
                             </div>
                         </div>
@@ -345,6 +350,7 @@ export default function AttributeFitnessPage() {
                 ) : (
                     <div className="space-y-3">
                         {attributes.map((attr, idx) => {
+                            const attributeName = attr.attribute ?? attr.name ?? '';
                             const fitness = fitnessMap[attr.id] || {
                                 id: '',
                                 projectId,
@@ -367,7 +373,7 @@ export default function AttributeFitnessPage() {
                                                     </span>
                                                 )}
                                             </div>
-                                            <p className="text-sm font-semibold text-white leading-snug">{attr.name}</p>
+                                            <p className="text-sm font-semibold text-white leading-snug">{attributeName}</p>
                                             {attr.definition && (
                                                 <p className="text-[11px] text-gray-600 mt-1 leading-snug">{attr.definition}</p>
                                             )}

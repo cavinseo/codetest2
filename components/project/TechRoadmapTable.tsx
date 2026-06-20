@@ -63,6 +63,8 @@ export default function TechRoadmapTable({ projectId }: Props) {
     };
 
     const deleteRow = (id: string) => setRows(rows.filter((row) => row.id !== id));
+    const getUniqueValues = (field: keyof Pick<FutureCustomerRow, 'category' | 'techItem' | 'currentLevel' | 'targetLevel'>) =>
+        Array.from(new Set(rows.map((row) => String(row[field] ?? '').trim()).filter(Boolean)));
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -108,14 +110,20 @@ export default function TechRoadmapTable({ projectId }: Props) {
         }
     };
 
-    const input = (value: string, onChange: (value: string) => void, placeholder: string) => (
-        <input
-            type="text"
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            className="w-full bg-transparent px-3 py-2 text-sm text-white outline-none focus:bg-white/5 placeholder-gray-700"
-            placeholder={placeholder}
-        />
+    const input = (value: string, onChange: (value: string) => void, placeholder: string, optionsId: string, options: string[]) => (
+        <>
+            <input
+                type="text"
+                list={optionsId}
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                className="w-full bg-transparent px-3 py-2 text-sm text-white outline-none focus:bg-white/5 placeholder-gray-700"
+                placeholder={placeholder}
+            />
+            <datalist id={optionsId}>
+                {options.map((option) => <option key={option} value={option} />)}
+            </datalist>
+        </>
     );
 
     if (isLoading) {
@@ -132,7 +140,7 @@ export default function TechRoadmapTable({ projectId }: Props) {
 
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-display font-bold text-white">KS-QFD를 활용한 제품/서비스의 개선 방향성</h2>
+                    <h2 className="text-xl font-display font-bold text-white">[WS-13] KS-QFD를 활용한 제품/서비스의 개선 방향성</h2>
                     <p className="text-sm text-gray-500 mt-1">향후목표고객LIST 워크시트의 5열 구조를 그대로 사용합니다.</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -166,10 +174,10 @@ export default function TechRoadmapTable({ projectId }: Props) {
                         ) : rows.map((row, idx) => (
                             <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] group">
                                 <td className="border border-white/[0.06] p-2 text-center text-gray-500">{idx + 1}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.category, (value) => updateRow(row.id, 'category', value), '개선 방향')}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.techItem, (value) => updateRow(row.id, 'techItem', value), '개선기능 및 성능향상')}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.currentLevel, (value) => updateRow(row.id, 'currentLevel', value), '구현가능성')}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.targetLevel, (value) => updateRow(row.id, 'targetLevel', value), '목표 고객')}</td>
+                                <td className="border border-white/[0.06] p-0">{input(row.category, (value) => updateRow(row.id, 'category', value), '개선 방향', `roadmap-category-${row.id}`, getUniqueValues('category'))}</td>
+                                <td className="border border-white/[0.06] p-0">{input(row.techItem, (value) => updateRow(row.id, 'techItem', value), '개선기능 및 성능향상', `roadmap-tech-${row.id}`, getUniqueValues('techItem'))}</td>
+                                <td className="border border-white/[0.06] p-0">{input(row.currentLevel, (value) => updateRow(row.id, 'currentLevel', value), '구현가능성', `roadmap-current-${row.id}`, getUniqueValues('currentLevel'))}</td>
+                                <td className="border border-white/[0.06] p-0">{input(row.targetLevel, (value) => updateRow(row.id, 'targetLevel', value), '목표 고객', `roadmap-target-${row.id}`, getUniqueValues('targetLevel'))}</td>
                                 <td className="border border-white/[0.06] p-2 text-center">
                                     <button onClick={() => deleteRow(row.id)} className="text-rose-500 hover:text-rose-400 text-xs opacity-0 group-hover:opacity-100">삭제</button>
                                 </td>

@@ -23,7 +23,7 @@ export default function AttributesPage() {
                             </Link>
                             <div className="h-6 w-px bg-gray-700" />
                             <div>
-                                <h1 className="text-2xl font-bold text-white">📋 제품속성서</h1>
+                                <h1 className="text-2xl font-bold text-white">📋 [WS-3] 제품속성서</h1>
                                 <p className="text-sm text-gray-400 mt-1">
                                     세분시장별 고객 니즈와 제공 혜택, 제품속성 및 기술역량을 정의합니다
                                 </p>

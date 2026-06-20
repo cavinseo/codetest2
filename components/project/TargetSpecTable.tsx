@@ -70,6 +70,8 @@ export default function TargetSpecTable({ projectId }: Props) {
     };
 
     const deleteRow = (id: string) => setRows(rows.filter((row) => row.id !== id));
+    const getUniqueValues = (field: keyof Pick<TargetSpecRow, 'category' | 'subCategory' | 'specItem' | 'unit' | 'targetValue' | 'note'>) =>
+        Array.from(new Set(rows.map((row) => String(row[field] ?? '').trim()).filter(Boolean)));
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -114,14 +116,20 @@ export default function TargetSpecTable({ projectId }: Props) {
         }
     };
 
-    const input = (value: string, onChange: (value: string) => void, placeholder: string) => (
-        <input
-            type="text"
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            className="w-full bg-transparent px-3 py-2 text-sm text-white outline-none focus:bg-white/5 placeholder-gray-700"
-            placeholder={placeholder}
-        />
+    const input = (value: string, onChange: (value: string) => void, placeholder: string, optionsId: string, options: string[]) => (
+        <>
+            <input
+                type="text"
+                list={optionsId}
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                className="w-full bg-transparent px-3 py-2 text-sm text-white outline-none focus:bg-white/5 placeholder-gray-700"
+                placeholder={placeholder}
+            />
+            <datalist id={optionsId}>
+                {options.map((option) => <option key={option} value={option} />)}
+            </datalist>
+        </>
     );
 
     if (isLoading) {
@@ -138,7 +146,7 @@ export default function TargetSpecTable({ projectId }: Props) {
 
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-display font-bold text-white">최종 제품/서비스 제공 스펙 List</h2>
+                    <h2 className="text-xl font-display font-bold text-white">[WS-12] 최종 제품/서비스 제공 스펙 List</h2>
                     <p className="text-sm text-gray-500 mt-1">워크시트의 최종목표스펙도출 형식에 맞춰 작성합니다.</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -172,12 +180,12 @@ export default function TargetSpecTable({ projectId }: Props) {
                             </tr>
                         ) : rows.map((row) => (
                             <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] group">
-                                <td className="border border-white/[0.06] p-0">{input(row.category, (value) => updateRow(row.id, 'category', value), '스펙분류')}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.subCategory, (value) => updateRow(row.id, 'subCategory', value), '세부항목')}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.specItem, (value) => updateRow(row.id, 'specItem', value), '기술적 특성')}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.unit, (value) => updateRow(row.id, 'unit', value), '단위')}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.targetValue, (value) => updateRow(row.id, 'targetValue', value), '목표치')}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.note, (value) => updateRow(row.id, 'note', value), '개선여부')}</td>
+                                <td className="border border-white/[0.06] p-0">{input(row.category, (value) => updateRow(row.id, 'category', value), '스펙분류', `target-category-${row.id}`, getUniqueValues('category'))}</td>
+                                <td className="border border-white/[0.06] p-0">{input(row.subCategory, (value) => updateRow(row.id, 'subCategory', value), '세부항목', `target-sub-${row.id}`, getUniqueValues('subCategory'))}</td>
+                                <td className="border border-white/[0.06] p-0">{input(row.specItem, (value) => updateRow(row.id, 'specItem', value), '기술적 특성', `target-spec-${row.id}`, getUniqueValues('specItem'))}</td>
+                                <td className="border border-white/[0.06] p-0">{input(row.unit, (value) => updateRow(row.id, 'unit', value), '단위', `target-unit-${row.id}`, getUniqueValues('unit'))}</td>
+                                <td className="border border-white/[0.06] p-0">{input(row.targetValue, (value) => updateRow(row.id, 'targetValue', value), '목표치', `target-value-${row.id}`, getUniqueValues('targetValue'))}</td>
+                                <td className="border border-white/[0.06] p-0">{input(row.note, (value) => updateRow(row.id, 'note', value), '개선여부', `target-note-${row.id}`, getUniqueValues('note'))}</td>
                                 <td className="border border-white/[0.06] p-2 text-center">
                                     <button onClick={() => deleteRow(row.id)} className="text-rose-500 hover:text-rose-400 text-xs opacity-0 group-hover:opacity-100">삭제</button>
                                 </td>

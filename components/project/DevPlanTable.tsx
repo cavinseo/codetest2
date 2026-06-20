@@ -43,6 +43,7 @@ export default function DevPlanTable({ projectId }: Props) {
     const addRow = () => setRows(prev => [...prev, { id: `new_${Date.now()}`, phase: '', task: '', description: '', start: '', end: '', owner: '', status: '미시작', order: prev.length }]);
     const updateRow = (id: string, field: keyof DevPlanRow, val: string) => setRows(rows.map(r => r.id === id ? { ...r, [field]: val } : r));
     const deleteRow = (id: string) => setRows(rows.filter(r => r.id !== id));
+    const getUniqueValues = (field: 'phase' | 'task' | 'owner') => Array.from(new Set(rows.map(row => row[field].trim()).filter(Boolean)));
 
     const save = async (data: typeof rows) => {
         const res = await fetch(`/api/projects/${projectId}/dev-plan`, {
@@ -66,7 +67,7 @@ export default function DevPlanTable({ projectId }: Props) {
         <div className="space-y-4 relative">
             {toast && <div className="fixed top-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border bg-emerald-900/90 border-emerald-500/40 text-emerald-200 animate-fade-in"><svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg><span className="text-sm font-medium">{toast}</span></div>}
             <div className="flex items-center justify-between">
-                <div><h2 className="text-xl font-display font-bold text-white">개발계획서</h2><p className="text-sm text-gray-500 mt-1">단계별 개발 일정 및 담당 계획</p></div>
+                <div><h2 className="text-xl font-display font-bold text-white">[WS-14] 개발계획서</h2><p className="text-sm text-gray-500 mt-1">단계별 개발 일정 및 담당 계획</p></div>
                 <div className="flex items-center gap-2">
                     <button onClick={addRow} className="btn-secondary text-sm flex items-center gap-1.5"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>행 추가</button>
                     <button onClick={handleSave} disabled={isSaving} className="btn-primary text-sm flex items-center gap-1.5"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>{isSaving ? '저장 중...' : '저장'}</button>
@@ -102,12 +103,21 @@ export default function DevPlanTable({ projectId }: Props) {
                         ) : rows.map((row, idx) => (
                             <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] group">
                                 <td className="border border-white/[0.06] p-2 text-center text-gray-600">{idx + 1}</td>
-                                <td className="border border-white/[0.06] p-0"><input type="text" value={row.phase} onChange={e => updateRow(row.id, 'phase', e.target.value)} className="w-full p-2 bg-transparent text-white text-xs text-center font-semibold border-none outline-none focus:ring-1 focus:ring-primary-500/50 placeholder-gray-700" placeholder="1단계" /></td>
-                                <td className="border border-white/[0.06] p-0"><input type="text" value={row.task} onChange={e => updateRow(row.id, 'task', e.target.value)} className="w-full p-2 bg-transparent text-white text-xs border-none outline-none focus:ring-1 focus:ring-primary-500/50 placeholder-gray-700" placeholder="과제명" /></td>
+                                <td className="border border-white/[0.06] p-0">
+                                    <input type="text" list={`dev-phase-${row.id}`} value={row.phase} onChange={e => updateRow(row.id, 'phase', e.target.value)} className="w-full p-2 bg-transparent text-white text-xs text-center font-semibold border-none outline-none focus:ring-1 focus:ring-primary-500/50 placeholder-gray-700" placeholder="1단계" />
+                                    <datalist id={`dev-phase-${row.id}`}>{getUniqueValues('phase').map((value) => <option key={value} value={value} />)}</datalist>
+                                </td>
+                                <td className="border border-white/[0.06] p-0">
+                                    <input type="text" list={`dev-task-${row.id}`} value={row.task} onChange={e => updateRow(row.id, 'task', e.target.value)} className="w-full p-2 bg-transparent text-white text-xs border-none outline-none focus:ring-1 focus:ring-primary-500/50 placeholder-gray-700" placeholder="과제명" />
+                                    <datalist id={`dev-task-${row.id}`}>{getUniqueValues('task').map((value) => <option key={value} value={value} />)}</datalist>
+                                </td>
                                 <td className="border border-white/[0.06] p-0"><textarea value={row.description} onChange={e => updateRow(row.id, 'description', e.target.value)} className="w-full p-2 bg-transparent text-gray-300 text-xs border-none outline-none focus:ring-1 focus:ring-primary-500/50 resize-none placeholder-gray-700" placeholder="상세 내용" rows={2} /></td>
                                 <td className="border border-white/[0.06] p-0 bg-cyan-900/[0.04]"><input type="date" value={row.start} onChange={e => updateRow(row.id, 'start', e.target.value)} className="w-full p-2 bg-transparent text-cyan-300 text-xs border-none outline-none focus:ring-1 focus:ring-cyan-500/50" /></td>
                                 <td className="border border-white/[0.06] p-0 bg-cyan-900/[0.04]"><input type="date" value={row.end} onChange={e => updateRow(row.id, 'end', e.target.value)} className="w-full p-2 bg-transparent text-cyan-300 text-xs border-none outline-none focus:ring-1 focus:ring-cyan-500/50" /></td>
-                                <td className="border border-white/[0.06] p-0"><input type="text" value={row.owner} onChange={e => updateRow(row.id, 'owner', e.target.value)} className="w-full p-2 bg-transparent text-white text-xs text-center border-none outline-none focus:ring-1 focus:ring-primary-500/50 placeholder-gray-700" placeholder="담당자" /></td>
+                                <td className="border border-white/[0.06] p-0">
+                                    <input type="text" list={`dev-owner-${row.id}`} value={row.owner} onChange={e => updateRow(row.id, 'owner', e.target.value)} className="w-full p-2 bg-transparent text-white text-xs text-center border-none outline-none focus:ring-1 focus:ring-primary-500/50 placeholder-gray-700" placeholder="담당자" />
+                                    <datalist id={`dev-owner-${row.id}`}>{getUniqueValues('owner').map((value) => <option key={value} value={value} />)}</datalist>
+                                </td>
                                 <td className="border border-white/[0.06] p-0 text-center"><select value={row.status} onChange={e => updateRow(row.id, 'status', e.target.value)} className={`w-full p-2 bg-transparent text-xs border-none outline-none cursor-pointer font-semibold ${STATUS_COLORS[row.status] || 'text-gray-400'}`}><option value="미시작">미시작</option><option value="진행중">진행중</option><option value="완료">완료</option><option value="지연">지연</option></select></td>
                                 <td className="border border-white/[0.06] p-2 text-center"><button onClick={() => deleteRow(row.id)} className="w-6 h-6 rounded flex items-center justify-center text-gray-700 hover:text-rose-400 hover:bg-rose-500/10 transition-colors mx-auto opacity-0 group-hover:opacity-100"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button></td>
                             </tr>

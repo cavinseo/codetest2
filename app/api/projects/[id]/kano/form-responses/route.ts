@@ -32,7 +32,7 @@ export async function POST(
         const token = getGoogleToken('default');
         if (!token) {
             return NextResponse.json(
-                { error: 'Google ?몄쬆???꾩슂?⑸땲??', needsAuth: true },
+                { error: 'Google 인증이 필요합니다.', needsAuth: true },
                 { status: 401 }
             );
         }
@@ -42,7 +42,7 @@ export async function POST(
 
         if (!formId) {
             return NextResponse.json(
-                { error: 'formId媛 ?꾩슂?⑸땲??' },
+                { error: 'formId가 필요합니다.' },
                 { status: 400 }
             );
         }
@@ -81,7 +81,7 @@ export async function POST(
                     email: systemEmail,
                     token: `system_${generateId('inv')}`,
                     invitedBy: 'system', // 시스템 응답은 현재 사용자 ID가 필요하지 않음
-                    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365), // 1??
+                    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365), // 1년
                 }
             });
         }
@@ -118,7 +118,7 @@ export async function POST(
             });
         }
 
-        log.info('Kano ?묐떟 媛?몄삤湲??깃났', { projectId, responseCount: responses.length, importedCount });
+        log.info('Kano 응답 가져오기 성공', { projectId, responseCount: responses.length, importedCount });
 
         return NextResponse.json({
             success: true,
@@ -129,7 +129,7 @@ export async function POST(
     } catch (error: any) {
         log.error('Form responses import error:', error);
         return NextResponse.json(
-            { error: `?묐떟 媛?몄삤湲??ㅽ뙣: ${error.message}` },
+            { error: `응답 가져오기 실패: ${error.message}` },
             { status: 500 }
         );
     }

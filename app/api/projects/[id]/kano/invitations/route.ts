@@ -5,7 +5,7 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api/kano/invitations');
 
-// GET: 珥덈? ?댁뿭 議고쉶
+// GET: 초대 내역 조회
 export async function GET(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -30,9 +30,9 @@ export async function GET(
             })),
         });
     } catch (error: unknown) {
-        log.error('珥덈? ?댁뿭 議고쉶 ?ㅽ뙣', error);
+        log.error('초대 내역 조회 실패', error);
         return NextResponse.json(
-            { error: '珥덈? ?댁뿭 議고쉶 ?ㅽ뙣' },
+            { error: '초대 내역 조회 실패' },
             { status: 500 }
         );
     }

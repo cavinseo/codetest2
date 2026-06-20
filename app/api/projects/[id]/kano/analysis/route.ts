@@ -6,13 +6,14 @@ import { countProjectResponses, countUniqueProjectRespondents } from '@/lib/kano
 import {
     aggregateKanoResponses,
     calculateBetterWorse,
+    calculateSatisfactionGraphWeight,
     getWeightedTimkoCategory,
     getSatisfactionQuadrant,
 } from '@/lib/kano-algorithm';
 
 const log = createLogger('api/kano/analysis');
 
-// GET: Kano 遺꾩꽍 寃곌낵 議고쉶
+// GET: Kano 분석 결과 조회
 export async function GET(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -33,9 +34,11 @@ export async function GET(
         });
         const requirements = await prisma.customerRequirement.findMany({
             where: { projectId },
-            select: { id: true, kanoWeight: true },
+            select: { id: true, kanoWeight: true, order: true },
+            orderBy: { order: 'asc' },
         });
         const requirementWeights = new Map(requirements.map((req: any) => [req.id, req.kanoWeight]));
+        const requirementOrder = new Map(requirements.map((req: any, index: number) => [req.id, req.order ?? index]));
 
         if (projectResponses.length === 0) {
             return NextResponse.json({
@@ -59,9 +62,11 @@ export async function GET(
 
             const aggregated = aggregateKanoResponses(mappedResponses);
             const { better, worse } = calculateBetterWorse(aggregated);
-            const kanoWeight = requirementWeights.get(reqId) ?? null;
-            const timkoCategory = getWeightedTimkoCategory(kanoWeight);
+            const autoKanoWeight = calculateSatisfactionGraphWeight(better, worse);
+            const savedKanoWeight = requirementWeights.get(reqId);
             const quadrant = getSatisfactionQuadrant(better, worse);
+            const kanoWeight = savedKanoWeight ?? autoKanoWeight;
+            const timkoCategory = getWeightedTimkoCategory(kanoWeight);
 
             return {
                 requirementId: reqId,
@@ -70,12 +75,17 @@ export async function GET(
                 better: Math.round(better * 100) / 100,
                 worse: Math.round(worse * 100) / 100,
                 kanoWeight,
+                autoKanoWeight,
                 timkoCategory,
                 quadrant,
             };
         });
 
-        results.sort((a, b) => b.better - a.better);
+        results.sort((a, b) => {
+            const aOrder = requirementOrder.get(a.requirementId) ?? Number.MAX_SAFE_INTEGER;
+            const bOrder = requirementOrder.get(b.requirementId) ?? Number.MAX_SAFE_INTEGER;
+            return aOrder - bOrder;
+        });
 
         return NextResponse.json({
             totalResponses: countProjectResponses(projectResponses),
@@ -83,8 +93,8 @@ export async function GET(
             requirements: results,
         });
     } catch (error: unknown) {
-        log.error('Kano 遺꾩꽍 ?ㅻ쪟', error);
-        return NextResponse.json({ error: 'Kano 遺꾩꽍 ?ㅽ뙣' }, { status: 500 });
+        log.error('Kano 분석 오류', error);
+        return NextResponse.json({ error: 'Kano 분석 실패' }, { status: 500 });
     }
 }
 

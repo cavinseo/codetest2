@@ -13,7 +13,7 @@ const inviteSchema = z.object({
     email: z.string().email('Valid email is required.'),
 });
 
-// POST: Kano ?ㅻЦ 珥덈?
+// POST: Kano 질문지 초대
 export async function POST(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -48,7 +48,7 @@ export async function POST(
         if (existing) {
             return NextResponse.json(
                 {
-                    error: '???대찓?쇰줈 ?대? ?ㅻЦ 珥덈?媛 諛쒖넚?섏뿀?듬땲??',
+                    error: '이미 해당 이메일로 질문지 초대가 발송되었습니다.',
                     invitation: existing,
                 },
                 { status: 400 }
@@ -74,7 +74,7 @@ export async function POST(
         const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
         const surveyLink = `${baseUrl}/survey/${token}`;
 
-        // ?대찓??諛쒖넚
+        // 이메일 발송
         const emailSent = await sendSurveyInvitation(email, surveyLink, project.name);
 
         log.info('Kano 질문지 초대 생성 및 발송 완료', {
@@ -101,9 +101,9 @@ export async function POST(
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }
-        log.error('Kano 珥덈? ?ㅻ쪟', error);
+        log.error('Kano 초대 오류', error);
         return NextResponse.json(
-            { error: 'Kano ?ㅻЦ 珥덈? ?ㅽ뙣' },
+            { error: 'Kano 질문지 초대 실패' },
             { status: 500 }
         );
     }

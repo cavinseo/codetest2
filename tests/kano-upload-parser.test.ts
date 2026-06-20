@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { parseGoogleFormsResponseRows, parseKanoTemplateResponseSheet } from '../lib/kano-upload-parser';
+import { parseGoogleFormsResponseRows, parseKanoTemplateResponseSheet, parseWorksheetMatrixRows } from '../lib/kano-upload-parser';
 import { writeKanoUploadTemplateBuffer } from '../lib/kano-upload-template';
 
 describe('Kano Google Forms upload parser', () => {
@@ -59,6 +59,48 @@ describe('Kano Google Forms upload parser', () => {
                 requirementIndex: 1,
                 positiveAnswer: 2,
                 negativeAnswer: 4,
+            },
+        ]);
+    });
+
+    it('reads worksheet KANO matrix answers from the workbook answer block start column', () => {
+        const rows: unknown[][] = [
+            ['', '', '', 1, '', '', '', '', '', '', '', '', '', '', '', 2],
+            ['', '', '', '(1)마음에 든다', '(2)당연하다', '(3)아무런 느낌이 없다', '(4)하는수 없다.', '(5)마음에 안든다', '', '', '', '', '', '', '', '(1)마음에 든다', '(2)당연하다', '(3)아무런 느낌이 없다', '(4)하는수 없다.', '(5)마음에 안든다', '(6)기타'],
+            [1, 0, '긍정적 질문', 1, '', '', '', '', '', '', '', '', '', '', '', '', 1],
+            ['', '', '부정적 질문', '', '', '', '', 1, '', '', '', '', '', '', '', '', '', '', 1],
+        ];
+
+        expect(parseWorksheetMatrixRows(rows, 1)).toEqual([
+            {
+                respondentEmail: 'excel-respondent-1@import.local',
+                requirementIndex: 0,
+                positiveAnswer: 1,
+                negativeAnswer: 5,
+            },
+            {
+                respondentEmail: 'excel-respondent-2@import.local',
+                requirementIndex: 0,
+                positiveAnswer: 2,
+                negativeAnswer: 4,
+            },
+        ]);
+    });
+
+    it('reads worksheet KANO matrix answers marked with circles', () => {
+        const rows: unknown[][] = [
+            ['', '', '', 1],
+            ['', '', '', '(1)마음에 든다', '(2)당연하다', '(3)아무런 느낌이 없다', '(4)하는수 없다.', '(5)마음에 안든다'],
+            [1, 0, '긍정적 질문', '○'],
+            ['', '', '부정적 질문', '', '', '', '', '○'],
+        ];
+
+        expect(parseWorksheetMatrixRows(rows, 1)).toEqual([
+            {
+                respondentEmail: 'excel-respondent-1@import.local',
+                requirementIndex: 0,
+                positiveAnswer: 1,
+                negativeAnswer: 5,
             },
         ]);
     });

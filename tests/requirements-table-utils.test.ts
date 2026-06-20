@@ -31,4 +31,25 @@ describe('requirements table view helpers', () => {
         expect(rows.map((_, index) => shouldShowPrimaryGroup(rows, index))).toEqual([true, false, false, true]);
         expect(rows.map((_, index) => shouldShowSecondaryGroup(rows, index))).toEqual([true, false, true, true]);
     });
+
+    it('shows the secondary group again when the primary group changes', () => {
+        const rows = [
+            { category: 'primary one', subcategory: 'focus work', order: 0 },
+            { category: 'primary two', subcategory: 'focus work', order: 1 },
+            { category: 'primary two', subcategory: 'different work', order: 2 },
+        ];
+
+        expect(rows.map((_, index) => shouldShowSecondaryGroup(rows, index))).toEqual([true, true, true]);
+    });
+
+    it('treats consecutive secondary groups with surrounding spaces as the same label', () => {
+        const rows = [
+            { category: '1차 그룹', subcategory: '2차 그룹', order: 0 },
+            { category: '1차 그룹 ', subcategory: ' 2차 그룹 ', order: 1 },
+            { category: '1차 그룹', subcategory: '다른 2차 그룹', order: 2 },
+        ];
+
+        expect(rows.map((_, index) => shouldShowPrimaryGroup(rows, index))).toEqual([true, false, false]);
+        expect(rows.map((_, index) => shouldShowSecondaryGroup(rows, index))).toEqual([true, false, true]);
+    });
 });

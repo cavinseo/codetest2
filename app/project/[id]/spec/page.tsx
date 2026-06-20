@@ -22,7 +22,7 @@ export default function SpecPage() {
                                 프로젝트 홈
                             </Link>
                             <div className="w-px h-6 bg-white/10" />
-                            <h1 className="text-xl font-display font-bold text-white">AS-IS 스펙표 작성</h1>
+                            <h1 className="text-xl font-display font-bold text-white">[WS-2] AS-IS 스펙표 작성</h1>
                         </div>
                     </div>
                 </div>

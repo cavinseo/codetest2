@@ -1,9 +1,95 @@
 {
   "version": "2.0",
-  "lastUpdated": "2026-02-28T17:42:59.800Z",
-  "activeFeatures": [],
-  "primaryFeature": null,
-  "features": {},
+  "lastUpdated": "2026-06-20T06:20:56.732Z",
+  "activeFeatures": [
+    "spec",
+    "requirements",
+    "import-json",
+    "google",
+    "callback",
+    "codetest2"
+  ],
+  "primaryFeature": "spec",
+  "features": {
+    "spec": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-06-20T06:15:24.751Z",
+        "lastUpdated": "2026-06-20T06:15:24.751Z"
+      },
+      "lastFile": "E:\\Dropbox\\codetest2\\app\\api\\projects\\[id]\\spec\\route.ts"
+    },
+    "requirements": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-06-20T06:15:34.045Z",
+        "lastUpdated": "2026-06-20T06:15:34.045Z"
+      },
+      "lastFile": "E:\\Dropbox\\codetest2\\app\\api\\projects\\[id]\\requirements\\route.ts"
+    },
+    "import-json": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-06-20T06:15:41.910Z",
+        "lastUpdated": "2026-06-20T06:15:41.910Z"
+      },
+      "lastFile": "E:\\Dropbox\\codetest2\\app\\api\\projects\\[id]\\import-json\\route.ts"
+    },
+    "google": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-06-20T06:20:06.626Z",
+        "lastUpdated": "2026-06-20T06:20:06.626Z"
+      },
+      "lastFile": "E:\\Dropbox\\codetest2\\app\\api\\auth\\google\\route.ts"
+    },
+    "callback": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-06-20T06:20:21.105Z",
+        "lastUpdated": "2026-06-20T06:20:21.105Z"
+      },
+      "lastFile": "E:\\Dropbox\\codetest2\\app\\api\\auth\\google\\callback\\route.ts"
+    },
+    "codetest2": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-06-20T06:20:56.732Z",
+        "lastUpdated": "2026-06-20T06:20:56.732Z"
+      },
+      "lastFile": "E:\\Dropbox\\codetest2\\lib\\authorization.ts"
+    }
+  },
   "pipeline": {
     "currentPhase": 1,
     "level": "Dynamic",
@@ -12,7 +98,44 @@
   "session": {
     "startedAt": "2026-02-28T17:42:59.800Z",
     "onboardingCompleted": false,
-    "lastActivity": "2026-02-28T17:42:59.800Z"
+    "lastActivity": "2026-06-20T06:20:56.732Z"
   },
-  "history": []
+  "history": [
+    {
+      "timestamp": "2026-06-20T06:15:24.751Z",
+      "feature": "spec",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-06-20T06:15:34.045Z",
+      "feature": "requirements",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-06-20T06:15:41.910Z",
+      "feature": "import-json",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-06-20T06:20:06.627Z",
+      "feature": "google",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-06-20T06:20:21.105Z",
+      "feature": "callback",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-06-20T06:20:56.732Z",
+      "feature": "codetest2",
+      "phase": "do",
+      "action": "updated"
+    }
+  ]
 }

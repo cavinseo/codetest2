@@ -3,6 +3,7 @@ import {
     aggregateKanoResponses,
     calculateBetterWorse,
     calculatePriorityScore,
+    calculateSatisfactionGraphWeight,
     classifyKanoResponse,
     getSatisfactionQuadrant,
     getWeightedTimkoCategory,
@@ -105,6 +106,20 @@ describe('kano algorithm', () => {
         expect(getSatisfactionQuadrant(0.7, -0.7)).toBe('ONE_DIMENSIONAL');
         expect(getSatisfactionQuadrant(0.2, -0.7)).toBe('MUST_BE');
         expect(getSatisfactionQuadrant(0.2, -0.2)).toBe('INDIFFERENT');
+    });
+
+    it('assigns satisfaction graph weights from radial Better-Worse positions', () => {
+        expect(calculateSatisfactionGraphWeight(0.5, -0.2)).toBe(4.2);
+        expect(calculateSatisfactionGraphWeight(0.6, -0.1)).toBe(4.2);
+        expect(calculateSatisfactionGraphWeight(0.68, -0.16)).toBe(4.4);
+        expect(calculateSatisfactionGraphWeight(0.79, -0.16)).toBe(4.6);
+        expect(calculateSatisfactionGraphWeight(0.8, -0.3)).toBe(4.6);
+        expect(calculateSatisfactionGraphWeight(0.75, -0.35)).toBe(4.4);
+        expect(calculateSatisfactionGraphWeight(0.4, -0.25)).toBe(2);
+        expect(calculateSatisfactionGraphWeight(0.49, -0.49)).toBe(2);
+        expect(calculateSatisfactionGraphWeight(0, 0)).toBe(2);
+        expect(calculateSatisfactionGraphWeight(0.4, -0.7)).toBe(3);
+        expect(calculateSatisfactionGraphWeight(0.8, -0.8)).toBe(3.6);
     });
 
     it('maps worksheet TIMKO weights into quality results', () => {

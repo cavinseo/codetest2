@@ -8,14 +8,20 @@ export function sortRequirementsByWorksheetOrder<T extends RequirementGroupingRo
     return [...rows].sort((a, b) => a.order - b.order);
 }
 
+function normalizeGroupValue(value: string): string {
+    return value.trim();
+}
+
 export function shouldShowPrimaryGroup(rows: RequirementGroupingRowLike[], index: number): boolean {
     const row = rows[index];
     const previous = rows[index - 1];
-    return !previous || previous.category !== row.category;
+    return !previous || normalizeGroupValue(previous.category) !== normalizeGroupValue(row.category);
 }
 
 export function shouldShowSecondaryGroup(rows: RequirementGroupingRowLike[], index: number): boolean {
     const row = rows[index];
     const previous = rows[index - 1];
-    return !previous || previous.category !== row.category || previous.subcategory !== row.subcategory;
+    return !previous
+        || normalizeGroupValue(previous.category) !== normalizeGroupValue(row.category)
+        || normalizeGroupValue(previous.subcategory) !== normalizeGroupValue(row.subcategory);
 }

@@ -1,6 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+    buildCustomerNamesByMarketSegment,
+    dedupeByAttributeName,
+} from '@/lib/product-attributes-utils';
 
 // ──────────────────────────────────
 // 타입 정의
@@ -10,6 +14,7 @@ interface ProductAttribute {
     attribute?: string;
     techCapability?: string;
     marketSegment?: string;
+    customerName?: string;
     customerNeed?: string;
     benefit?: string;
     order: number;
@@ -56,6 +61,42 @@ const PRIORITY_COUNT_COLOR: Record<string, string> = {
 };
 
 interface Props { projectId: string; }
+
+function createSubSegmentsFromCustomerNames(customerNames: string[], fallbackPrefix: string): SubSegment[] {
+    if (customerNames.length > 0) {
+        return customerNames.map((name, index) => ({
+            id: `sub_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 5)}`,
+            name,
+        }));
+    }
+
+    return [
+        { id: `sub_${Date.now()}_${fallbackPrefix}_a`, name: '세분화1' },
+        { id: `sub_${Date.now()}_${fallbackPrefix}_b`, name: '세분화2' },
+    ];
+}
+
+function mergeCustomerNamesIntoSubSegments(market: Market, customerNames: string[]): Market {
+    if (customerNames.length === 0) return market;
+
+    const existingNames = new Set(market.subSegments.map((subSegment) => subSegment.name.trim()).filter(Boolean));
+    const missingSubSegments = customerNames
+        .filter((customerName) => !existingNames.has(customerName))
+        .map((customerName, index) => ({
+            id: `sub_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 5)}`,
+            name: customerName,
+        }));
+
+    if (missingSubSegments.length === 0) return market;
+    return { ...market, subSegments: [...market.subSegments, ...missingSubSegments] };
+}
+
+function getMarketNameTextSize(name: string) {
+    const length = name.trim().length;
+    if (length >= 14) return 'text-[11px]';
+    if (length >= 9) return 'text-xs';
+    return 'text-sm';
+}
 
 // ──────────────────────────────────
 // 셀 컴포넌트 (클릭 순환)
@@ -112,11 +153,13 @@ export default function FitnessWrapper({ projectId }: Props) {
             const loadedAttrs: ProductAttribute[] = (attrData.attributes || [])
                 .filter((a: ProductAttribute) => a.attribute?.trim())
                 .sort((a: ProductAttribute, b: ProductAttribute) => a.order - b.order);
-            setAttrs(loadedAttrs);
+            const uniqueAttrs = dedupeByAttributeName(loadedAttrs);
+            setAttrs(uniqueAttrs);
 
-            // 세분시장 자동 수집 (제품속성서에서)
+            // 세분시장과 세분화명을 제품속성서에서 자동 수집
             const segmentSet = new Set<string>();
             loadedAttrs.forEach(a => { if (a.marketSegment?.trim()) segmentSet.add(a.marketSegment.trim()); });
+            const customerNamesBySegment = buildCustomerNamesByMarketSegment(loadedAttrs);
 
             // 저장된 피트니스 데이터 로드 (DB)
             const fitnessRes = await fetch(`/api/projects/${projectId}/fitness-matrix`);
@@ -137,18 +180,17 @@ export default function FitnessWrapper({ projectId }: Props) {
             }
 
             if (savedData) {
-                // 기존 저장 데이터와 세분시장 병합
+                // 기존 저장 데이터와 세분시장/고객명 세분화 병합
                 const existingMarketNames = new Set(savedData.markets.map(m => m.name));
-                const newMarkets = [...savedData.markets];
+                const newMarkets = savedData.markets.map((market) =>
+                    mergeCustomerNamesIntoSubSegments(market, customerNamesBySegment[market.name] || [])
+                );
                 segmentSet.forEach(seg => {
                     if (!existingMarketNames.has(seg)) {
                         newMarkets.push({
                             id: `mkt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                             name: seg,
-                            subSegments: [
-                                { id: `sub_${Date.now()}_a`, name: '세분화1' },
-                                { id: `sub_${Date.now()}_b`, name: '세분화2' },
-                            ],
+                            subSegments: createSubSegmentsFromCustomerNames(customerNamesBySegment[seg] || [], seg),
                         });
                     }
                 });
@@ -163,10 +205,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                     newMarkets.push({
                         id: `mkt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                         name: seg,
-                        subSegments: [
-                            { id: `sub_${Date.now()}_a`, name: '세분화1' },
-                            { id: `sub_${Date.now()}_b`, name: '세분화2' },
-                        ],
+                        subSegments: createSubSegmentsFromCustomerNames(customerNamesBySegment[seg] || [], seg),
                     });
                 });
                 // 세분시장이 없으면 기본 예시 하나
@@ -232,6 +271,19 @@ export default function FitnessWrapper({ projectId }: Props) {
                 subSegments: m.subSegments.filter(s => s.id !== subId),
             }
         ));
+    };
+
+    // ── 시장 삭제 ──
+    const removeMarket = (mktId: string) => {
+        setMarkets(prev => prev.length <= 1 ? prev : prev.filter(m => m.id !== mktId));
+        setMatrix(prev => {
+            const next: MatrixData = {};
+            Object.entries(prev).forEach(([attrId, marketValues]) => {
+                const { [mktId]: _removed, ...remainingMarkets } = marketValues;
+                next[attrId] = remainingMarkets;
+            });
+            return next;
+        });
     };
 
     // ── 세분화명 변경 ──
@@ -386,6 +438,8 @@ export default function FitnessWrapper({ projectId }: Props) {
 
     // ── 총 열 수 계산 (세분화 추가 버튼 열 포함)
     const totalSubCols = markets.reduce((s, m) => s + m.subSegments.length + 1, 0);
+    const marketOptions = useMemo(() => Array.from(new Set(markets.map((market) => market.name.trim()).filter(Boolean))), [markets]);
+    const subSegmentOptions = useMemo(() => Array.from(new Set(markets.flatMap((market) => market.subSegments.map((subSegment) => subSegment.name.trim())).filter(Boolean))), [markets]);
 
     if (isLoading) {
         return (
@@ -411,6 +465,16 @@ export default function FitnessWrapper({ projectId }: Props) {
 
     return (
         <div className="space-y-4 relative">
+            <datalist id={`fitness-market-options-${projectId}`}>
+                {marketOptions.map((option) => (
+                    <option key={option} value={option} />
+                ))}
+            </datalist>
+            <datalist id={`fitness-sub-segment-options-${projectId}`}>
+                {subSegmentOptions.map((option) => (
+                    <option key={option} value={option} />
+                ))}
+            </datalist>
             {/* 토스트 */}
             {toast && (
                 <div className={`fixed top-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border animate-fade-in ${toast.type === 'success' ? 'bg-emerald-900/90 border-emerald-500/40 text-emerald-200' : 'bg-red-900/90 border-red-500/40 text-red-200'}`}>
@@ -424,7 +488,7 @@ export default function FitnessWrapper({ projectId }: Props) {
             {/* 헤더 */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-display font-bold text-white">제품 속성 적합도</h2>
+                    <h2 className="text-xl font-display font-bold text-white">[WS-4] 제품 속성 적합도</h2>
                     <p className="text-sm text-gray-500 mt-0.5">셀 클릭으로 우선순위 입력 · 우클릭으로 초기화</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -465,15 +529,29 @@ export default function FitnessWrapper({ projectId }: Props) {
                                 <th
                                     key={mkt.id}
                                     colSpan={mkt.subSegments.length + 1}
-                                    className="border border-gray-600/60 px-3 py-1.5 text-center"
+                                    className="border border-gray-600/60 px-3 py-1.5 text-center group"
                                 >
-                                    <input
-                                        type="text"
-                                        value={mkt.name}
-                                        onChange={e => renameMarket(mkt.id, e.target.value)}
-                                        className="text-center bg-transparent text-white font-semibold outline-none focus:bg-white/10 rounded px-2 py-0.5 w-full text-sm"
-                                        placeholder="시장명"
-                                    />
+                                    <div className="flex items-center justify-center gap-1">
+                                        <input
+                                            type="text"
+                                            list={`fitness-market-options-${projectId}`}
+                                            value={mkt.name}
+                                            onChange={e => renameMarket(mkt.id, e.target.value)}
+                                            className={`text-center bg-transparent text-white font-semibold outline-none focus:bg-white/10 rounded px-1.5 py-0.5 min-w-0 flex-1 ${getMarketNameTextSize(mkt.name)}`}
+                                            placeholder="시장명"
+                                        />
+                                        {markets.length > 1 && (
+                                            <button
+                                                onClick={() => removeMarket(mkt.id)}
+                                                className="opacity-0 group-hover:opacity-100 text-rose-500/70 hover:text-rose-400 transition-all flex-shrink-0"
+                                                title="시장 삭제"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        )}
+                                    </div>
                                 </th>
                             ))}
                         </tr>
@@ -489,6 +567,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                             <div className="flex items-center justify-center gap-1">
                                                 <input
                                                     type="text"
+                                                    list={`fitness-sub-segment-options-${projectId}`}
                                                     value={sub.name}
                                                     onChange={e => renameSubSegment(mkt.id, sub.id, e.target.value)}
                                                     className="text-center bg-transparent text-gray-400 outline-none w-[70px] text-xs focus:text-white focus:bg-white/10 rounded px-1"
@@ -531,12 +610,9 @@ export default function FitnessWrapper({ projectId }: Props) {
                         {/* 속성 행 */}
                         {attrs.map((attr, idx) => (
                             <tr key={attr.id} className={`transition-colors hover:bg-white/[0.02] ${idx % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-900/20'}`}>
-                                <td className="border border-gray-700/50 px-3 py-2 text-white font-medium">
-                                    <div className="max-w-[200px]">
-                                        <div className="truncate">{attr.attribute}</div>
-                                        {attr.techCapability && (
-                                            <div className="text-gray-500 text-[10px] truncate mt-0.5">{attr.techCapability}</div>
-                                        )}
+                                <td className="border border-gray-700/50 px-3 py-2 text-white font-medium min-w-[240px]">
+                                    <div className="max-w-[340px]">
+                                        <div className="whitespace-normal break-keep leading-snug">{attr.attribute}</div>
                                     </div>
                                 </td>
                                 {markets.map(mkt => (
