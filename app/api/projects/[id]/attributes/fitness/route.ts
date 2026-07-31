@@ -1,8 +1,10 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
+import { fitnessBodySchema } from '@/lib/bulk-save-schemas';
 
 const log = createLogger('api/attributes/fitness');
 
@@ -60,8 +62,7 @@ export async function POST(
             );
         }
 
-        const body = await request.json();
-        const newFitnesses = body.fitnesses || [];
+        const { fitnesses: newFitnesses } = fitnessBodySchema.parse(await request.json());
 
         const updatedFitnesses = await prisma.$transaction(async (tx: any) => {
             await tx.attributeFitness.deleteMany({
@@ -90,6 +91,9 @@ export async function POST(
             message: '적합도 데이터가 저장되었습니다',
         });
     } catch (error: unknown) {
+        if (error instanceof z.ZodError) {
+            return NextResponse.json({ error: '유효하지 않은 적합도 데이터입니다.' }, { status: 400 });
+        }
         log.error('적합도 데이터 저장 실패', error);
         return NextResponse.json(
             { error: '적합도 데이터 저장 실패' },

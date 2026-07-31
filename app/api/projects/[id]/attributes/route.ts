@@ -1,7 +1,9 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
+import { attributesBodySchema } from '@/lib/bulk-save-schemas';
 
 const log = createLogger('api/attributes');
 
@@ -60,8 +62,7 @@ export async function POST(
             );
         }
 
-        const body = await request.json();
-        const newAttributes = body.attributes || [];
+        const { attributes: newAttributes } = attributesBodySchema.parse(await request.json());
 
         const updatedAttrs = await prisma.$transaction(async (tx: any) => {
             await tx.productAttribute.deleteMany({
@@ -90,6 +91,9 @@ export async function POST(
             message: '제품 속성이 저장되었습니다',
         });
     } catch (error: unknown) {
+        if (error instanceof z.ZodError) {
+            return NextResponse.json({ error: '유효하지 않은 제품 속성 데이터입니다.' }, { status: 400 });
+        }
         log.error('제품 속성 저장 실패', error);
         return NextResponse.json(
             { error: '제품 속성 저장 실패' },
