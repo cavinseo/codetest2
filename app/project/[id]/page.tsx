@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import ProductAttributesTable from '@/components/project/ProductAttributesTable';
@@ -19,6 +19,11 @@ import AssetsTable from '@/components/project/AssetsTable';
 import FundingTable from '@/components/project/FundingTable';
 import KanoSatisfactionGraph from '@/components/project/KanoSatisfactionGraph';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
+import {
+    getBusinessPlanFileValidationError,
+    parseBusinessPlanFile,
+    readAndSerializeBusinessPlanFile,
+} from '@/lib/business-plan-file';
 import { useRouter } from 'next/navigation';
 
 interface ProjectData {
@@ -67,7 +72,10 @@ export default function ProjectDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isOverviewEditing, setIsOverviewEditing] = useState(false);
     const [isOverviewSaving, setIsOverviewSaving] = useState(false);
+    const [isOverviewFileReading, setIsOverviewFileReading] = useState(false);
+    const [isOverviewFileDirty, setIsOverviewFileDirty] = useState(false);
     const [overviewError, setOverviewError] = useState('');
+    const overviewFileSelectionRef = useRef(0);
     const [overviewForm, setOverviewForm] = useState({
         name: '',
         description: '',
@@ -100,7 +108,7 @@ export default function ProjectDetailPage() {
                             businessPlanFile: overviewData.project.businessPlanFile || '',
                             createdAt: overviewData.project.createdAt,
                             memberCount: current?.memberCount ?? 1,
-                            role: current?.role ?? 'OWNER',
+                            role: overviewData.project.role || current?.role || 'COACH',
                         }));
                     }
                 }
@@ -151,10 +159,23 @@ export default function ProjectDetailPage() {
             detailedDescription: project.detailedDescription || '',
             businessPlanFile: project.businessPlanFile || '',
         });
+        setIsOverviewFileDirty(false);
     }, [project]);
+
+    const projectBusinessPlanFile = useMemo(
+        () => parseBusinessPlanFile(project?.businessPlanFile),
+        [project?.businessPlanFile]
+    );
+    const formBusinessPlanFile = useMemo(
+        () => parseBusinessPlanFile(overviewForm.businessPlanFile),
+        [overviewForm.businessPlanFile]
+    );
 
     const handleOverviewCancel = () => {
         if (!project) return;
+        overviewFileSelectionRef.current += 1;
+        setIsOverviewFileReading(false);
+        setIsOverviewFileDirty(false);
         setOverviewForm({
             name: project.name || '',
             description: project.description || '',
@@ -163,6 +184,41 @@ export default function ProjectDetailPage() {
         });
         setOverviewError('');
         setIsOverviewEditing(false);
+    };
+
+    const handleOverviewFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+
+        const validationError = getBusinessPlanFileValidationError(file);
+        if (validationError) {
+            setOverviewError(validationError);
+            return;
+        }
+
+        const selectionVersion = ++overviewFileSelectionRef.current;
+        setOverviewError('');
+        setIsOverviewFileReading(true);
+        try {
+            const businessPlanFile = await readAndSerializeBusinessPlanFile(file);
+            if (selectionVersion !== overviewFileSelectionRef.current) return;
+            setOverviewForm((current) => ({ ...current, businessPlanFile }));
+            setIsOverviewFileDirty(true);
+        } catch (error) {
+            if (selectionVersion !== overviewFileSelectionRef.current) return;
+            setOverviewError(error instanceof Error ? error.message : '사업계획 파일을 읽지 못했습니다.');
+        } finally {
+            if (selectionVersion === overviewFileSelectionRef.current) setIsOverviewFileReading(false);
+        }
+    };
+
+    const handleOverviewFileRemove = () => {
+        overviewFileSelectionRef.current += 1;
+        setIsOverviewFileReading(false);
+        setIsOverviewFileDirty(true);
+        setOverviewError('');
+        setOverviewForm((current) => ({ ...current, businessPlanFile: '' }));
     };
 
     const handleOverviewSave = async () => {
@@ -175,10 +231,16 @@ export default function ProjectDetailPage() {
 
         setIsOverviewSaving(true);
         try {
+            const payload = {
+                name: overviewForm.name,
+                description: overviewForm.description,
+                detailedDescription: overviewForm.detailedDescription,
+                ...(isOverviewFileDirty ? { businessPlanFile: overviewForm.businessPlanFile } : {}),
+            };
             const res = await fetch(`/api/projects/${projectId}/overview`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(overviewForm),
+                body: JSON.stringify(payload),
             });
             const data = await res.json().catch(() => null);
             if (!res.ok) {
@@ -190,8 +252,9 @@ export default function ProjectDetailPage() {
                 name: data.project.name,
                 description: data.project.description || '',
                 detailedDescription: data.project.detailedDescription || '',
-                businessPlanFile: data.project.businessPlanFile || '',
+                businessPlanFile: isOverviewFileDirty ? overviewForm.businessPlanFile : project.businessPlanFile || '',
             });
+            setIsOverviewFileDirty(false);
             setIsOverviewEditing(false);
         } catch (error) {
             setOverviewError(error instanceof Error ? error.message : '제품개요 저장에 실패했습니다.');
@@ -378,6 +441,9 @@ export default function ProjectDetailPage() {
         );
     }
 
+    const canEditOverview = ['OWNER', 'EDITOR', 'ADMIN'].includes(project.role);
+    const displayedBusinessPlanFile = isOverviewEditing ? formBusinessPlanFile : projectBusinessPlanFile;
+
     return (
         <div className="min-h-screen bg-surface-900 bg-grid relative">
             <div className="bg-orb w-[400px] h-[400px] bg-primary-600/50 top-[-200px] right-[10%] opacity-10" />
@@ -443,12 +509,14 @@ export default function ProjectDetailPage() {
                                     {isOverviewEditing ? (
                                         <>
                                             <button type="button" onClick={handleOverviewCancel} disabled={isOverviewSaving} className="btn-secondary text-xs">취소</button>
-                                            <button type="button" onClick={handleOverviewSave} disabled={isOverviewSaving} className="btn-primary text-xs">
-                                                {isOverviewSaving ? '저장 중...' : '저장'}
+                                            <button type="button" onClick={handleOverviewSave} disabled={isOverviewSaving || isOverviewFileReading} className="btn-primary text-xs">
+                                                {isOverviewSaving ? '저장 중...' : isOverviewFileReading ? '파일 읽는 중...' : '저장'}
                                             </button>
                                         </>
                                     ) : (
-                                        <button type="button" onClick={() => setIsOverviewEditing(true)} className="btn-secondary text-xs">수정</button>
+                                        canEditOverview && (
+                                            <button type="button" onClick={() => { setOverviewError(''); setIsOverviewEditing(true); }} className="btn-secondary text-xs">수정</button>
+                                        )
                                     )}
                                 </div>
                             </div>
@@ -476,15 +544,68 @@ export default function ProjectDetailPage() {
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
                                     <p className="text-xs text-gray-500 mb-2">사업계획 파일</p>
                                     {isOverviewEditing ? (
-                                        <input
-                                            type="text"
-                                            value={overviewForm.businessPlanFile}
-                                            onChange={(event) => setOverviewForm({ ...overviewForm, businessPlanFile: event.target.value })}
-                                            className="w-full rounded-md border border-white/[0.08] bg-gray-950 px-3 py-2 text-sm text-white outline-none focus:border-primary-500"
-                                            placeholder="파일명 또는 경로"
-                                        />
+                                        <div className="space-y-3">
+                                            <div className="min-w-0 text-sm text-white">
+                                                {displayedBusinessPlanFile ? (
+                                                    displayedBusinessPlanFile.dataUrl ? (
+                                                        <a
+                                                            href={displayedBusinessPlanFile.dataUrl}
+                                                            download={displayedBusinessPlanFile.fileName}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-primary-300 hover:text-primary-200 underline break-all"
+                                                        >
+                                                            {displayedBusinessPlanFile.fileName} 열기
+                                                        </a>
+                                                    ) : (
+                                                        <span className="break-all">{displayedBusinessPlanFile.displayValue}</span>
+                                                    )
+                                                ) : (
+                                                    <span className="text-gray-500">등록된 파일 없음</span>
+                                                )}
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <label className="btn-secondary cursor-pointer text-xs">
+                                                    {displayedBusinessPlanFile ? '파일 교체' : '파일 선택'}
+                                                    <input
+                                                        type="file"
+                                                        accept=".pdf,.doc,.docx,.txt"
+                                                        className="hidden"
+                                                        onChange={handleOverviewFileSelect}
+                                                        disabled={isOverviewSaving || isOverviewFileReading}
+                                                    />
+                                                </label>
+                                                {displayedBusinessPlanFile && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleOverviewFileRemove}
+                                                        disabled={isOverviewSaving}
+                                                        className="text-xs text-rose-300 hover:text-rose-200 disabled:opacity-50"
+                                                    >
+                                                        삭제
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-gray-500">PDF, DOC, DOCX, TXT · 최대 10MB</p>
+                                        </div>
                                     ) : (
-                                        <p className="text-sm text-white break-all">{project.businessPlanFile || '등록된 파일 없음'}</p>
+                                        displayedBusinessPlanFile ? (
+                                            displayedBusinessPlanFile.dataUrl ? (
+                                                <a
+                                                    href={displayedBusinessPlanFile.dataUrl}
+                                                    download={displayedBusinessPlanFile.fileName}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-sm text-primary-300 hover:text-primary-200 underline break-all"
+                                                >
+                                                    {displayedBusinessPlanFile.fileName} 열기
+                                                </a>
+                                            ) : (
+                                                <p className="text-sm text-white break-all">{displayedBusinessPlanFile.displayValue}</p>
+                                            )
+                                        ) : (
+                                            <p className="text-sm text-gray-500">등록된 파일 없음</p>
+                                        )
                                     )}
                                 </div>
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
@@ -598,7 +719,7 @@ export default function ProjectDetailPage() {
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
                                     <p className="text-xs text-gray-500 mb-2">사업계획 파일</p>
                                     <p className="text-sm text-white break-all">
-                                        {project.businessPlanFile || '등록된 파일 없음'}
+                                        {projectBusinessPlanFile?.displayValue || '등록된 파일 없음'}
                                     </p>
                                 </div>
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">

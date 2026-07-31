@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import {
+    getBusinessPlanFileValidationError,
+    readAndSerializeBusinessPlanFile,
+} from '@/lib/business-plan-file';
 
 interface Project {
     id: string;
@@ -20,6 +24,7 @@ export default function DashboardPage() {
     const [newProjectDesc, setNewProjectDesc] = useState('');
     const [newProjectDetailDesc, setNewProjectDetailDesc] = useState('');
     const [newProjectFile, setNewProjectFile] = useState<File | null>(null);
+    const [newProjectError, setNewProjectError] = useState('');
     const [isLoggingOut, setIsLoggingOut] = useState(false);
 
     // 마운트 시 프로젝트 목록 로드
@@ -44,15 +49,12 @@ export default function DashboardPage() {
 
     const handleCreateProject = async (e: React.FormEvent) => {
         e.preventDefault();
+        setNewProjectError('');
         setIsLoading(true);
         try {
             let businessPlanFile: string | undefined;
             if (newProjectFile) {
-                const reader = new FileReader();
-                businessPlanFile = await new Promise<string>((resolve) => {
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.readAsDataURL(newProjectFile);
-                });
+                businessPlanFile = await readAndSerializeBusinessPlanFile(newProjectFile);
             }
 
             const response = await fetch('/api/projects', {
@@ -65,8 +67,8 @@ export default function DashboardPage() {
                     businessPlanFile,
                 }),
             });
-            if (!response.ok) throw new Error('프로젝트 생성 실패');
-            const data = await response.json();
+            const data = await response.json().catch(() => null);
+            if (!response.ok) throw new Error(data?.error || '프로젝트 생성에 실패했습니다.');
             setProjects([...projects, data.project]);
             setShowNewProjectModal(false);
             setNewProjectName('');
@@ -75,7 +77,7 @@ export default function DashboardPage() {
             setNewProjectFile(null);
         } catch (error) {
             console.error(error);
-            alert('프로젝트 생성에 실패했습니다.');
+            setNewProjectError(error instanceof Error ? error.message : '프로젝트 생성에 실패했습니다.');
         } finally {
             setIsLoading(false);
         }
@@ -274,6 +276,11 @@ export default function DashboardPage() {
                         </div>
 
                         <form onSubmit={handleCreateProject} className="space-y-5">
+                            {newProjectError && (
+                                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                                    {newProjectError}
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-sm font-medium text-gray-400 mb-2">
                                     프로젝트 이름 <span className="text-primary-400">*</span>
@@ -343,14 +350,22 @@ export default function DashboardPage() {
                                         <label className="flex flex-col items-center cursor-pointer">
                                             <svg className="w-8 h-8 text-gray-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
                                             <span className="text-xs text-gray-400">클릭하여 파일 선택</span>
-                                            <span className="text-[10px] text-gray-600 mt-1">PDF, DOCX, TXT (최대 10MB)</span>
+                                            <span className="text-[10px] text-gray-600 mt-1">PDF, DOC, DOCX, TXT (최대 10MB)</span>
                                             <input
                                                 type="file"
                                                 accept=".pdf,.docx,.doc,.txt"
                                                 className="hidden"
                                                 onChange={(e) => {
                                                     const file = e.target.files?.[0];
-                                                    if (file) setNewProjectFile(file);
+                                                    if (!file) return;
+                                                    const validationError = getBusinessPlanFileValidationError(file);
+                                                    if (validationError) {
+                                                        setNewProjectError(validationError);
+                                                        e.target.value = '';
+                                                        return;
+                                                    }
+                                                    setNewProjectError('');
+                                                    setNewProjectFile(file);
                                                 }}
                                             />
                                         </label>
@@ -367,6 +382,7 @@ export default function DashboardPage() {
                                         setNewProjectDesc('');
                                         setNewProjectDetailDesc('');
                                         setNewProjectFile(null);
+                                        setNewProjectError('');
                                     }}
                                     className="flex-1 btn-secondary py-3"
                                 >

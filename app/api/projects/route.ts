@@ -4,6 +4,10 @@ import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
 import { requireAuth } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
+import {
+    BusinessPlanFileValidationError,
+    validateBusinessPlanFileStorageValue,
+} from '@/lib/business-plan-file';
 
 const log = createLogger('api/projects');
 
@@ -11,7 +15,7 @@ const createProjectSchema = z.object({
     name: z.string().min(1, '프로젝트 이름을 입력하세요'),
     description: z.string().optional(),
     detailedDescription: z.string().optional(),
-    businessPlanFile: z.string().optional(),
+    businessPlanFile: z.string().nullable().optional(),
 });
 
 // ─── GET: 프로젝트 목록 조회 ──────────────────────────────────────────
@@ -30,7 +34,14 @@ export async function GET(request: NextRequest) {
                     { members: { some: { userId: userId } } },
                 ],
             },
-            include: {
+            select: {
+                id: true,
+                name: true,
+                description: true,
+                detailedDescription: true,
+                ownerId: true,
+                createdAt: true,
+                updatedAt: true,
                 members: {
                     where: { userId: userId },
                     select: { role: true },
@@ -47,7 +58,6 @@ export async function GET(request: NextRequest) {
                 name: p.name,
                 description: p.description,
                 detailedDescription: p.detailedDescription,
-                businessPlanFile: p.businessPlanFile,
                 createdAt: p.createdAt.toISOString(),
                 updatedAt: p.updatedAt.toISOString(),
                 memberCount: p._count.members + 1, // 소유자 포함
@@ -71,6 +81,7 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const { name, description, detailedDescription, businessPlanFile } =
             createProjectSchema.parse(body);
+        const validatedBusinessPlanFile = validateBusinessPlanFileStorageValue(businessPlanFile);
 
         const newProject = await prisma.project.create({
             data: {
@@ -78,7 +89,7 @@ export async function POST(request: NextRequest) {
                 name,
                 description,
                 detailedDescription,
-                businessPlanFile,
+                businessPlanFile: validatedBusinessPlanFile,
                 ownerId: userId,
             },
         });
@@ -91,7 +102,6 @@ export async function POST(request: NextRequest) {
                 name: newProject.name,
                 description: newProject.description,
                 detailedDescription: newProject.detailedDescription,
-                businessPlanFile: newProject.businessPlanFile,
                 createdAt: newProject.createdAt.toISOString(),
                 updatedAt: newProject.updatedAt.toISOString(),
                 memberCount: 1,
@@ -99,8 +109,9 @@ export async function POST(request: NextRequest) {
             },
         });
     } catch (error: unknown) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
+        if (error instanceof z.ZodError || error instanceof BusinessPlanFileValidationError) {
+            const message = error instanceof z.ZodError ? error.errors[0].message : error.message;
+            return NextResponse.json({ error: message }, { status: 400 });
         }
         log.error('프로젝트 생성 오류', error);
         return NextResponse.json({ error: '프로젝트 생성 실패' }, { status: 500 });

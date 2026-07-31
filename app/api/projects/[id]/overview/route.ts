@@ -4,6 +4,10 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { calculateWorksheetCompleteness } from '@/lib/worksheet-completeness';
+import {
+    BusinessPlanFileValidationError,
+    validateBusinessPlanFileStorageValue,
+} from '@/lib/business-plan-file';
 
 const log = createLogger('api/project/overview');
 
@@ -11,7 +15,7 @@ const updateOverviewSchema = z.object({
     name: z.string().min(1, '프로젝트명을 입력하세요.'),
     description: z.string().optional(),
     detailedDescription: z.string().optional(),
-    businessPlanFile: z.string().optional(),
+    businessPlanFile: z.string().nullable().optional(),
 });
 
 export async function GET(
@@ -109,6 +113,7 @@ export async function GET(
         return NextResponse.json({
             project: {
                 ...project,
+                role: accessResult.role,
                 createdAt: project.createdAt.toISOString(),
                 updatedAt: project.updatedAt.toISOString(),
             },
@@ -132,6 +137,9 @@ export async function PATCH(
 
         const body = await request.json();
         const data = updateOverviewSchema.parse(body);
+        const businessPlanFile = data.businessPlanFile === undefined
+            ? undefined
+            : validateBusinessPlanFileStorageValue(data.businessPlanFile);
 
         const project = await prisma.project.update({
             where: { id: projectId },
@@ -139,7 +147,7 @@ export async function PATCH(
                 name: data.name.trim(),
                 description: data.description?.trim() || null,
                 detailedDescription: data.detailedDescription?.trim() || null,
-                businessPlanFile: data.businessPlanFile?.trim() || null,
+                ...(businessPlanFile !== undefined ? { businessPlanFile } : {}),
             },
         });
 
@@ -149,14 +157,14 @@ export async function PATCH(
                 name: project.name,
                 description: project.description,
                 detailedDescription: project.detailedDescription,
-                businessPlanFile: project.businessPlanFile,
                 createdAt: project.createdAt.toISOString(),
                 updatedAt: project.updatedAt.toISOString(),
             },
         });
     } catch (error: unknown) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
+        if (error instanceof z.ZodError || error instanceof BusinessPlanFileValidationError) {
+            const message = error instanceof z.ZodError ? error.errors[0].message : error.message;
+            return NextResponse.json({ error: message }, { status: 400 });
         }
         log.error('Project overview update failed', error);
         return NextResponse.json({ error: 'Project overview update failed.' }, { status: 500 });
