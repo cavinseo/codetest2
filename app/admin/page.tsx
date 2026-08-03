@@ -357,7 +357,7 @@ export default function AdminModePage() {
                                         </div>
                                         <div className="space-y-3">
                                             {[
-                                                { label: '저장소', value: 'SQLite (Prisma)', status: 'badge-emerald' },
+                                                { label: '저장소', value: 'PostgreSQL (Prisma)', status: 'badge-emerald' },
                                                 { label: '버전', value: 'v1.0.0', status: 'badge-primary' },
                                                 { label: '환경', value: '개발 모드', status: 'badge-purple' },
                                                 { label: '상태', value: '정상 작동', status: 'badge-emerald' },

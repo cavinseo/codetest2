@@ -22,6 +22,8 @@ npm install
 
 Prepare the local database:
 
+Copy `.env.example` to `.env` and fill in your local PostgreSQL password in `DATABASE_URL`. The `kano_qfd` database itself must already exist on your PostgreSQL server — `npx prisma migrate deploy` does not create it. If the database doesn't exist yet, run `npx prisma migrate dev` once instead, which creates it and applies migrations; after that, `npx prisma migrate deploy` can be used for subsequent runs.
+
 ```bash
 npx prisma migrate deploy
 npx prisma generate
