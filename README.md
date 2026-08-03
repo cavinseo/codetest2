@@ -1,13 +1,13 @@
 # Kano QFD Web App
 
-Kano survey, customer requirements, QFD worksheets, sales estimates, funding plans, and related product planning data are managed in a Next.js application backed by Prisma and SQLite for local development.
+Kano survey, customer requirements, QFD worksheets, sales estimates, funding plans, and related product planning data are managed in a Next.js application backed by Prisma and PostgreSQL.
 
 ## Tech Stack
 
 - Next.js 15
 - React 19
 - Prisma 6
-- SQLite for local development
+- PostgreSQL 16
 - Vitest
 - ESLint
 - Tailwind CSS
@@ -54,7 +54,7 @@ npx prisma migrate status
 
 ## Local Data Handling
 
-`prisma/dev.db` is a local-only development database. It can contain private test data, business ideas, customer requirements, survey responses, or imported workbook contents.
+`prisma/dev.db` is the pre-migration local SQLite database. It is no longer used by the app but still contains private test data, so it stays untracked. It can contain private test data, business ideas, customer requirements, survey responses, or imported workbook contents.
 
 Do not commit local database files. The repository ignores:
 
