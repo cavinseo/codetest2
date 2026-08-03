@@ -14,6 +14,9 @@ export async function GET(request: NextRequest) {
     try {
         const projects = await prisma.project.findMany({
             include: {
+                owner: {
+                    select: { email: true, name: true },
+                },
                 _count: {
                     select: {
                         requirements: true,
@@ -30,6 +33,8 @@ export async function GET(request: NextRequest) {
             name: p.name,
             description: p.description,
             ownerId: p.ownerId,
+            ownerEmail: p.owner?.email ?? null,
+            ownerName: p.owner?.name ?? null,
             createdAt: p.createdAt.toISOString(),
             updatedAt: p.updatedAt.toISOString(),
             reqCount: p._count.requirements,

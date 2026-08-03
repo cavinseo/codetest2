@@ -38,8 +38,8 @@ function decodeSignedSessionCookie(cookieValue: string): Partial<SessionUser> | 
     return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Partial<SessionUser>;
 }
 
-export function getSessionUser(request: NextRequest): SessionUser | null {
-    const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+/** 쿠키 값 자체로 세션을 해석한다. 서버 컴포넌트에서 next/headers 의 cookies() 와 함께 쓴다. */
+export function getSessionUserFromCookieValue(cookieValue: string | undefined): SessionUser | null {
     if (!cookieValue) return null;
 
     try {
@@ -54,6 +54,10 @@ export function getSessionUser(request: NextRequest): SessionUser | null {
     } catch {
         return null;
     }
+}
+
+export function getSessionUser(request: NextRequest): SessionUser | null {
+    return getSessionUserFromCookieValue(request.cookies.get(SESSION_COOKIE_NAME)?.value);
 }
 
 export function requireAuth(request: NextRequest): SessionUser | NextResponse {

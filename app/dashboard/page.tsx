@@ -117,19 +117,20 @@ export default function DashboardPage() {
             {/* Header */}
             <header className="relative z-10 glass border-b border-white/[0.06] rounded-none">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-y-3">
+                        <Link href="/" className="flex items-center gap-3 rounded-xl transition-opacity hover:opacity-80" title="메인 화면으로 이동">
                             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white text-sm font-bold">
                                 K
                             </div>
                             <div>
                                 <h1 className="text-lg font-display font-bold text-white leading-tight">
-                                    Kano & QFD
+                                    Kano &amp; QFD
                                 </h1>
                                 <p className="text-xs text-gray-500">프로젝트 대시보드</p>
                             </div>
-                        </div>
-                        <div className="flex items-center gap-3">
+                        </Link>
+                        {/* 오른쪽 상단에 고정된 ThemeToggle 이 이 영역을 덮으므로 그만큼 여백을 확보한다 */}
+                        <div className="flex items-center gap-3 sm:mr-44">
                             <Link href="/settings" className="btn-ghost text-sm">
                                 🔗 서비스 설정
                             </Link>
@@ -146,9 +147,9 @@ export default function DashboardPage() {
                             <button
                                 onClick={handleLogout}
                                 disabled={isLoggingOut}
-                                className="btn-ghost text-sm text-gray-500 disabled:opacity-50"
+                                className="btn-ghost text-sm text-gray-300 disabled:opacity-50"
                             >
-                                {isLoggingOut ? '로그아웃 중...' : '로그아웃'}
+                                {isLoggingOut ? '로그아웃 중...' : '🚪 로그아웃'}
                             </button>
                         </div>
                     </div>

@@ -1,6 +1,16 @@
 import Link from 'next/link';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { getSessionUserFromCookieValue } from '@/lib/auth';
+import { SESSION_COOKIE_NAME } from '@/lib/constants';
 
-export default function HomePage() {
+export default async function HomePage() {
+    // 로그인한 사용자의 메인 화면은 프로젝트 대시보드다. 아래 소개 화면은 비로그인 방문자에게만 보여준다.
+    const cookieStore = await cookies();
+    if (getSessionUserFromCookieValue(cookieStore.get(SESSION_COOKIE_NAME)?.value)) {
+        redirect('/dashboard');
+    }
+
     return (
         <div className="min-h-screen bg-surface-900 bg-grid relative overflow-hidden">
             {/* Animated Background Orbs */}

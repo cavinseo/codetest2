@@ -21,6 +21,8 @@ interface Project {
     ownerId: string;
     createdAt: string;
     updatedAt: string;
+    ownerEmail: string | null;
+    ownerName: string | null;
     reqCount: number;
     responseCount: number;
     memberCount: number;
@@ -50,6 +52,7 @@ export default function AdminModePage() {
     const [searchProject, setSearchProject] = useState('');
     const [confirmDelete, setConfirmDelete] = useState<{ type: 'user' | 'project'; id: string; name: string } | null>(null);
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+    const [accessDenied, setAccessDenied] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -60,10 +63,13 @@ export default function AdminModePage() {
                 fetch('/api/admin/projects'),
             ]);
 
-            // 403 권한 체크
+            // 미로그인은 관리자 로그인창으로, 로그인은 했지만 권한이 없으면 안내 화면으로 보낸다.
+            if (statsRes.status === 401) {
+                router.replace('/admin/login');
+                return;
+            }
             if (statsRes.status === 403) {
-                alert('관리자 권한이 필요합니다.');
-                router.push('/dashboard');
+                setAccessDenied(true);
                 return;
             }
 
@@ -116,9 +122,14 @@ export default function AdminModePage() {
     const filteredUsers = users.filter(
         (u) => u.name.toLowerCase().includes(searchUser.toLowerCase()) || u.email.toLowerCase().includes(searchUser.toLowerCase())
     );
-    const filteredProjects = projects.filter(
-        (p) => p.name.toLowerCase().includes(searchProject.toLowerCase())
-    );
+    const filteredProjects = projects.filter((p) => {
+        const q = searchProject.toLowerCase();
+        return (
+            p.name.toLowerCase().includes(q) ||
+            (p.ownerEmail ?? '').toLowerCase().includes(q) ||
+            (p.ownerName ?? '').toLowerCase().includes(q)
+        );
+    });
 
     const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
         {
@@ -150,6 +161,33 @@ export default function AdminModePage() {
         R: { label: 'Reverse', color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20' },
         Q: { label: 'Question', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
     };
+
+    if (accessDenied) {
+        return (
+            <div className="min-h-screen bg-surface-900 bg-grid relative flex items-center justify-center px-4">
+                <div className="bg-orb w-[500px] h-[500px] bg-rose-500/40 top-[-150px] right-[-100px] opacity-10" />
+                <div className="glass-strong relative z-10 w-full max-w-md p-8 text-center animate-fade-in">
+                    <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/10 text-3xl">
+                        🔒
+                    </div>
+                    <h1 className="mb-2 text-2xl font-display font-bold text-white">관리자 권한이 없습니다</h1>
+                    <p className="mb-8 text-sm leading-relaxed text-gray-400">
+                        지금 로그인한 계정은 관리자로 지정되어 있지 않습니다.
+                        <br />
+                        관리자 계정으로 다시 로그인하거나 일반 화면으로 돌아가세요.
+                    </p>
+                    <div className="flex flex-col gap-3">
+                        <Link href="/admin/login" className="btn-primary py-3 text-sm font-semibold">
+                            관리자 계정으로 로그인
+                        </Link>
+                        <Link href="/dashboard" className="btn-secondary py-3 text-sm">
+                            일반 화면으로 돌아가기
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-surface-900 bg-grid relative">
@@ -489,7 +527,7 @@ export default function AdminModePage() {
                                         <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                         <input
                                             type="text"
-                                            placeholder="프로젝트 이름 검색..."
+                                            placeholder="프로젝트 이름 또는 소유자 검색..."
                                             value={searchProject}
                                             onChange={(e) => setSearchProject(e.target.value)}
                                             className="input pl-10 w-full"
@@ -523,6 +561,15 @@ export default function AdminModePage() {
                                                             {project.description && (
                                                                 <p className="text-xs text-gray-500 mt-0.5 truncate">{project.description}</p>
                                                             )}
+                                                            <div className="mt-1.5 flex items-center gap-1.5">
+                                                                <span className="inline-flex items-center gap-1 rounded-md border border-primary-500/20 bg-primary-500/10 px-2 py-0.5 text-[11px] text-primary-300">
+                                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                                                    소유자 {project.ownerName || '이름 없음'}
+                                                                </span>
+                                                                <span className="truncate text-[11px] text-gray-500">
+                                                                    {project.ownerEmail || '계정 정보 없음'}
+                                                                </span>
+                                                            </div>
                                                             <div className="flex items-center gap-4 mt-2 flex-wrap">
                                                                 <span className="text-[11px] text-gray-600 flex items-center gap-1">
                                                                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
