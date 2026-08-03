@@ -11,11 +11,14 @@ jobs:
     name: Lint / Type check / Test / Build
     runs-on: ubuntu-latest
 
+    # 실제로 접속하지 않는 더미 값이다. prisma generate 는 URL 이 해석되기만 하면 되고,
+    # 테스트는 Prisma 를 mock 하며 빌드 시점에는 쿼리를 실행하지 않는다.
     env:
       NODE_ENV: test
       SESSION_SECRET: ci-dummy-secret-32-chars-minimum!
       ALLOW_DEV_ADMIN: "false"
-      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      POSTGRES_PRISMA_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      POSTGRES_URL_NON_POOLING: postgresql://ci:ci@localhost:5432/ci?schema=public
 
     steps:
       - uses: actions/checkout@v4
