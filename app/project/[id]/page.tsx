@@ -113,11 +113,13 @@ export default function ProjectDetailPage() {
                     }
                 }
 
-                // 요구사항 수
+                // 요구사항 수 (Kano 요구사항 명칭에도 재사용)
+                let requirements: any[] = [];
                 const reqRes = await fetch(`/api/projects/${projectId}/requirements`);
                 if (reqRes.ok) {
                     const reqData = await reqRes.json();
-                    setReqCount(reqData.requirements?.length || 0);
+                    requirements = reqData.requirements || [];
+                    setReqCount(requirements.length);
                 }
 
                 // Kano 분석 데이터
@@ -126,13 +128,7 @@ export default function ProjectDetailPage() {
                     const kanoAnalysisData = await kanoAnalysisRes.json();
                     setKanoAnalysis(kanoAnalysisData);
                     setKanoCount(kanoAnalysisData.totalResponses || 0);
-
-                    // Kano 요구사항 명칭을 위해 요구사항 목록도 가져옴
-                    const kanoReqRes = await fetch(`/api/projects/${projectId}/requirements`);
-                    if (kanoReqRes.ok) {
-                        const kanoReqData = await kanoReqRes.json();
-                        setKanoRequirements(kanoReqData.requirements || []);
-                    }
+                    setKanoRequirements(requirements);
                 }
 
                 // 스펙 수

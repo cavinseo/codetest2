@@ -130,16 +130,9 @@ export function calculateBetterWorse(counts: KanoCategoryCount): BetterWorseCoef
 }
 
 /**
- * TIMKO 카테고리 결정 (Better 기반)
+ * TIMKO 카테고리 결정 (가중치 기반)
  */
 export type TimkoCategory = '매력' | '일원' | '당연' | '무관심';
-
-export function getTimkoCategory(better: number): TimkoCategory {
-    if (better >= 0.7) return '매력';
-    if (better >= 0.5) return '일원';
-    if (better >= 0.3) return '당연';
-    return '무관심';
-}
 
 export function getWeightedTimkoCategory(weight: number | null | undefined): TimkoCategory | null {
     if (weight === null || weight === undefined || Number.isNaN(weight)) return null;

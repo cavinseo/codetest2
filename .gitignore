@@ -13,20 +13,21 @@ build
 dist
 .vercel
 
-# Production
+# Logs, PIDs, temporary artifacts
 *.log
 *.pid
 *.seed
 *.pid.lock
+*.tsbuildinfo
+temp_files/
+devdb-*.tmp
+dev-log.txt
+tsc_output.txt
 
 # Misc
 .DS_Store
 *.pem
-
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+next-env.d.ts
 
 # Local env files
 .env
@@ -39,31 +40,13 @@ yarn-error.log*
 prisma/dev.db
 prisma/dev.db-*
 prisma/dev.db.before-restore-*
+prisma/backup/
 *.sqlite
 *.sqlite3
 
-# Vercel
-.vercel
-
-# TypeScript
-*.tsbuildinfo
-next-env.d.ts
-
-# Temporary files
-temp_files/
-analyze_excel.py
-excel_analysis.json
-devdb-*.tmp
-
-# Tool directories (not project source)
+# Tool state directories (not project source)
 .bkit/
 .claude/
-
-# Development artifact files (should not be committed)
-dev-log.txt
-migration_log.txt
-project_id.txt
-kano_analysis.json
-tsc_output.txt
-tsc_errors.log
-tsc_final*.log
+testsprite_tests/
+docs/.pdca-status.json
+docs/.bkit-memory.json
