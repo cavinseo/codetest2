@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -309,17 +309,6 @@ model MigrationHistory {
 
   @@index([projectId])
   @@map("migration_histories")
-}
-
-model AnalyticsInsight {
-  id           String   @id @default(cuid())
-  insightType  String
-  category     String?
-  data         String
-  projectCount Int
-  lastUpdated  DateTime @default(now())
-
-  @@map("analytics_insights")
 }
 
 // ─────────────────────────────────────────
