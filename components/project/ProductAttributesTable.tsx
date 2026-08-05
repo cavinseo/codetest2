@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     buildSpecPickerRows,
+    getBenefitSpan,
     getCustomerNameSpan,
+    getCustomerNeedSpan,
     getMarketSegmentSpan,
     resolveRelatedTechnology,
 } from '@/lib/product-attributes-utils';
@@ -181,7 +183,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const [rows, setRows] = useState<ProductAttributeRow[]>([]);
     const [specFunctions, setSpecFunctions] = useState<SpecFunction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [showSpecPicker, setShowSpecPicker] = useState<{ rowId: string; field: 'attribute' | 'techCapability' } | null>(null);
+    // 기술 역량은 행별이 아니라 표 전체에 하나만 두고, 저장 시 모든 행에 같은 값을 기록한다.
+    const [techCapability, setTechCapability] = useState('');
+    const [showSpecPicker, setShowSpecPicker] = useState<{ rowId: string | null; field: 'attribute' | 'techCapability' } | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [productName, setProductName] = useState('');
@@ -233,6 +237,11 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 if (loadedAttrs.length > 0 && loadedAttrs[0].productName) {
                     setProductName(loadedAttrs[0].productName);
                 }
+                // 행마다 저장돼 있던 기존 값 중 처음 발견되는 값을 공용 기술 역량으로 끌어올린다.
+                const firstTech = loadedAttrs.find((a: any) => a.techCapability?.trim())?.techCapability;
+                if (firstTech) {
+                    setTechCapability(firstTech);
+                }
             }
 
             let loadedSpecs: SpecFunction[] = [];
@@ -244,14 +253,10 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
 
             if (loadedAttrs.length > 0 && loadedSpecs.length > 0) {
                 const specNames = new Set(loadedSpecs.map(f => f.name));
-                const specTechs = new Set(loadedSpecs.filter(f => f.technology).map(f => f.technology!));
                 const autoImported = new Set<string>();
                 loadedAttrs.forEach((a: any) => {
                     if (a.attribute && specNames.has(a.attribute)) {
                         autoImported.add(`${a.id}_attribute`);
-                    }
-                    if (a.techCapability && (specTechs.has(a.techCapability) || specNames.has(a.techCapability))) {
-                        autoImported.add(`${a.id}_techCapability`);
                     }
                 });
                 setImportedFields(autoImported);
@@ -331,6 +336,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     attributes: rows.map((r, i) => ({
                         ...r,
                         productName: productName,
+                        techCapability: techCapability,
                         order: i,
                     })),
                 }),
@@ -400,6 +406,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         try {
             await fetch(`/api/projects/${projectId}/attributes`, { method: 'DELETE' });
             setRows([]);
+            setTechCapability('');
             setShowResetConfirm(false);
             showToast('초기화되었습니다.', 'success');
         } catch (error) {
@@ -420,6 +427,15 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         return getCustomerNameSpan(rows, index);
     };
 
+    // 세분시장 안에서 값이 같은 고객 니즈/제공혜택은 한 칸으로 묶어 보여준다.
+    const getCustomerNeedRowSpan = (index: number) => {
+        return getCustomerNeedSpan(rows, index);
+    };
+
+    const getBenefitRowSpan = (index: number) => {
+        return getBenefitSpan(rows, index);
+    };
+
     const updateMarketSegmentGroup = (startIndex: number, value: string) => {
         const span = getMarketSegmentRowSpan(startIndex);
         const targetIds = new Set(rows.slice(startIndex, startIndex + span).map(r => r.id));
@@ -432,6 +448,19 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         setRows(rows.map(r => targetIds.has(r.id) ? { ...r, customerName: value } : r));
     };
 
+    // 병합된 칸을 수정하면 묶여 있던 행 전체에 같은 값을 적용한다.
+    const updateCustomerNeedGroup = (startIndex: number, value: string) => {
+        const span = getCustomerNeedRowSpan(startIndex);
+        const targetIds = new Set(rows.slice(startIndex, startIndex + Math.max(span, 1)).map(r => r.id));
+        setRows(rows.map(r => targetIds.has(r.id) ? { ...r, customerNeed: value } : r));
+    };
+
+    const updateBenefitGroup = (startIndex: number, value: string) => {
+        const span = getBenefitRowSpan(startIndex);
+        const targetIds = new Set(rows.slice(startIndex, startIndex + Math.max(span, 1)).map(r => r.id));
+        setRows(rows.map(r => targetIds.has(r.id) ? { ...r, benefit: value } : r));
+    };
+
     // 선택한 스펙 항목에 연결된 기술역량 자동 조회
     const findRelatedTech = (specName: string, pickedTechnology = ''): string =>
         resolveRelatedTechnology(specFunctions, specName, pickedTechnology);
@@ -439,52 +468,53 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const applySpecPick = (value: string, pickedTechnology = '', options: { autoFillTech?: boolean } = {}) => {
         if (!showSpecPicker) return;
         const { rowId, field } = showSpecPicker;
+        // 기술 역량은 공용 필드이므로 행이 아니라 한 칸에 줄 단위로 덧붙인다.
         if (field === 'techCapability') {
-            setRows(prev => prev.map(r => r.id === rowId ? {
-                ...r,
-                techCapability: pickedTechnology || value,
-            } : r));
-            setImportedFields(prev => {
-                const next = new Set(prev);
-                next.add(`${rowId}_techCapability`);
-                return next;
-            });
+            appendTechCapability(pickedTechnology || value);
+            setShowSpecPicker(null);
+            return;
+        }
+
+        if (!rowId) {
             setShowSpecPicker(null);
             return;
         }
 
         const relatedTech = options.autoFillTech === false ? '' : findRelatedTech(value, pickedTechnology);
-        setRows(prev => prev.map(r => r.id === rowId ? {
-            ...r,
-            attribute: value,
-            ...(relatedTech ? { techCapability: relatedTech } : {}),
-        } : r));
+        setRows(prev => prev.map(r => r.id === rowId ? { ...r, attribute: value } : r));
         setImportedFields(prev => {
             const next = new Set(prev);
             next.add(`${rowId}_attribute`);
-            if (relatedTech) next.add(`${rowId}_techCapability`);
             return next;
         });
         if (relatedTech) {
-            showToast(`기술역량 자동 입력: ${relatedTech}`, 'success');
+            appendTechCapability(relatedTech);
+            showToast(`기술역량에 추가: ${relatedTech}`, 'success');
         }
         setShowSpecPicker(null);
+    };
+
+    // 공용 기술 역량 칸에 값을 한 줄씩 추가한다. 이미 있는 항목은 중복으로 넣지 않는다.
+    const appendTechCapability = (value: string) => {
+        const trimmed = value.trim();
+        if (!trimmed) return;
+        setTechCapability(prev => {
+            const lines = prev.split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.includes(trimmed)) return prev;
+            return [...lines, trimmed].join('\n');
+        });
     };
 
     const handleManualInput = (rowId: string, field: 'attribute' | 'techCapability', value: string) => {
         if (field === 'attribute') {
             const relatedTech = findRelatedTech(value);
-            setRows(rows.map(r => r.id === rowId ? {
-                ...r,
-                attribute: value,
-                ...(relatedTech && !r.techCapability.trim() ? { techCapability: relatedTech } : {}),
-            } : r));
+            setRows(rows.map(r => r.id === rowId ? { ...r, attribute: value } : r));
             setImportedFields(prev => {
                 const next = new Set(prev);
                 next.delete(`${rowId}_attribute`);
-                if (relatedTech) next.add(`${rowId}_techCapability`);
                 return next;
             });
+            if (relatedTech) appendTechCapability(relatedTech);
             return;
         }
 
@@ -700,10 +730,6 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                     <div className="text-cyan-400 font-semibold">제품속성</div>
                                     <div className="text-[10px] text-gray-600 font-normal mt-0.5">📥 스펙에서 가져오기</div>
                                 </th>
-                                <th className="px-3 py-3 text-left text-xs min-w-[170px]">
-                                    <div className="text-amber-400 font-semibold">기술 역량</div>
-                                    <div className="text-[10px] text-gray-600 font-normal mt-0.5">직접 입력 또는 스펙에서 선택</div>
-                                </th>
                                 <th className="px-3 py-3 text-gray-600 font-medium text-center text-xs w-[72px]"></th>
                             </tr>
                         </thead>
@@ -711,6 +737,8 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                             {rows.map((row, idx) => {
                                 const marketSegmentRowSpan = getMarketSegmentRowSpan(idx);
                                 const customerNameRowSpan = getCustomerNameRowSpan(idx);
+                                const customerNeedRowSpan = getCustomerNeedRowSpan(idx);
+                                const benefitRowSpan = getBenefitRowSpan(idx);
 
                                 return (
                                 <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] group transition-colors">
@@ -780,35 +808,39 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                         </td>
                                     )}
 
-                                    {/* 고객 니즈 */}
-                                    <td className="p-0">
-                                        <input
-                                            type="text"
-                                            list={`cn_list_${row.id}`}
-                                            value={row.customerNeed}
-                                            onChange={(e) => updateRow(row.id, 'customerNeed', e.target.value)}
-                                            className="w-full h-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                            placeholder="입력"
-                                        />
-                                        <datalist id={`cn_list_${row.id}`}>
-                                            {getUniqueValues('customerNeed').map((v, i) => <option key={i} value={v} />)}
-                                        </datalist>
-                                    </td>
+                                    {/* 고객 니즈 - 같은 세분시장에서 값이 같으면 병합 */}
+                                    {customerNeedRowSpan > 0 && (
+                                        <td rowSpan={customerNeedRowSpan} className="p-0 align-top">
+                                            <input
+                                                type="text"
+                                                list={`cn_list_${row.id}`}
+                                                value={row.customerNeed}
+                                                onChange={(e) => updateCustomerNeedGroup(idx, e.target.value)}
+                                                className="w-full h-full min-h-[44px] px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
+                                                placeholder="입력"
+                                            />
+                                            <datalist id={`cn_list_${row.id}`}>
+                                                {getUniqueValues('customerNeed').map((v, i) => <option key={i} value={v} />)}
+                                            </datalist>
+                                        </td>
+                                    )}
 
-                                    {/* 제공혜택 */}
-                                    <td className="p-0">
-                                        <input
-                                            type="text"
-                                            list={`bn_list_${row.id}`}
-                                            value={row.benefit}
-                                            onChange={(e) => updateRow(row.id, 'benefit', e.target.value)}
-                                            className="w-full h-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                            placeholder="입력"
-                                        />
-                                        <datalist id={`bn_list_${row.id}`}>
-                                            {getUniqueValues('benefit').map((v, i) => <option key={i} value={v} />)}
-                                        </datalist>
-                                    </td>
+                                    {/* 제공혜택 - 같은 세분시장에서 값이 같으면 병합 */}
+                                    {benefitRowSpan > 0 && (
+                                        <td rowSpan={benefitRowSpan} className="p-0 align-top">
+                                            <input
+                                                type="text"
+                                                list={`bn_list_${row.id}`}
+                                                value={row.benefit}
+                                                onChange={(e) => updateBenefitGroup(idx, e.target.value)}
+                                                className="w-full h-full min-h-[44px] px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
+                                                placeholder="입력"
+                                            />
+                                            <datalist id={`bn_list_${row.id}`}>
+                                                {getUniqueValues('benefit').map((v, i) => <option key={i} value={v} />)}
+                                            </datalist>
+                                        </td>
+                                    )}
 
                                     {/* 제품속성 */}
                                     <td className="p-0 bg-cyan-500/[0.04] relative">
@@ -828,31 +860,6 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSpecPicker({ rowId: row.id, field: 'attribute' }); }}
                                             className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-cyan-500 hover:text-cyan-300 hover:bg-cyan-500/20 rounded transition-colors cursor-pointer z-10"
                                             title="AS-IS 스펙에서 가져오기"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                            </svg>
-                                        </button>
-                                    </td>
-
-                                    {/* 기술 역량 */}
-                                    <td className="p-0 bg-amber-500/[0.04] relative">
-                                        <input
-                                            type="text"
-                                            list={`tech_capability_list_${row.id}`}
-                                            value={row.techCapability}
-                                            onChange={(e) => handleManualInput(row.id, 'techCapability', e.target.value)}
-                                            className={`w-full px-3 pr-8 py-2.5 bg-transparent text-sm outline-none focus:bg-amber-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-amber-500/30 transition-colors ${isImported(row.id, 'techCapability') ? 'text-amber-300' : 'text-gray-300'}`}
-                                            placeholder="입력"
-                                        />
-                                        <datalist id={`tech_capability_list_${row.id}`}>
-                                            {getUniqueValues('techCapability').map((v, i) => <option key={i} value={v} />)}
-                                        </datalist>
-                                        <button
-                                            type="button"
-                                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSpecPicker({ rowId: row.id, field: 'techCapability' }); }}
-                                            className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-amber-500 hover:text-amber-300 hover:bg-amber-500/20 rounded transition-colors cursor-pointer z-10"
-                                            title="AS-IS 스펙에서 기술역량 선택"
                                         >
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -898,6 +905,41 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     </button>
                 </div>
             )}
+
+            {/* 기술 역량 - 엑셀 병합 셀처럼 표 전체에 하나만 입력한다 */}
+            <div className="card p-0 overflow-hidden">
+                <div className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-500/[0.06] border-b border-white/[0.06]">
+                    <div>
+                        <h3 className="text-amber-400 font-semibold text-sm flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            기술 역량
+                        </h3>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                            제품속성 전체에 공통으로 적용됩니다. 여러 개면 줄을 나눠 입력하세요.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setShowSpecPicker({ rowId: null, field: 'techCapability' })}
+                        className="btn-ghost text-xs flex items-center gap-1.5 flex-shrink-0 text-amber-400 hover:text-amber-300"
+                        title="AS-IS 스펙표에서 기술역량을 골라 추가합니다."
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        스펙에서 추가
+                    </button>
+                </div>
+                <textarea
+                    value={techCapability}
+                    onChange={(e) => setTechCapability(e.target.value)}
+                    rows={6}
+                    className="w-full px-4 py-3 bg-transparent text-sm text-gray-200 outline-none resize-y focus:bg-amber-500/[0.04] transition-colors leading-relaxed"
+                    placeholder={'예)\n· 데이터 통합 계층: 조직-회원-활동 이력 연계\n· 실시간 알림 파이프라인'}
+                />
+            </div>
 
             {/* AS-IS 스펙 선택 모달 - 엑셀 워크시트 표 형식 */}
             {showSpecPicker && (

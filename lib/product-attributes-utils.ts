@@ -22,6 +22,12 @@ export interface AttributeGroupingRowLike {
     customerName: string;
 }
 
+export interface AttributeSegmentValueRowLike {
+    marketSegment: string;
+    customerNeed: string;
+    benefit: string;
+}
+
 export interface AttributeNameRowLike {
     attribute?: string | null;
     name?: string | null;
@@ -181,6 +187,41 @@ export function getMarketSegmentSpan(rows: AttributeGroupingRowLike[], index: nu
         count++;
     }
     return count;
+}
+
+// 같은 세분시장 안에서 값이 연속으로 같으면 첫 행만 남기고 병합한다.
+// 고객명이 달라도 값이 같으면 하나로 표기한다.
+function getSegmentScopedSpan(
+    rows: AttributeSegmentValueRowLike[],
+    index: number,
+    field: 'customerNeed' | 'benefit'
+): number {
+    const current = rows[index];
+    if (!current) return 1;
+
+    const segment = current.marketSegment.trim();
+    const value = current[field].trim();
+    if (!value) return 1;
+
+    const previous = rows[index - 1];
+    if (index > 0 && previous.marketSegment.trim() === segment && previous[field].trim() === value) {
+        return 0;
+    }
+
+    let count = 1;
+    for (let i = index + 1; i < rows.length; i++) {
+        if (rows[i].marketSegment.trim() !== segment || rows[i][field].trim() !== value) break;
+        count++;
+    }
+    return count;
+}
+
+export function getCustomerNeedSpan(rows: AttributeSegmentValueRowLike[], index: number): number {
+    return getSegmentScopedSpan(rows, index, 'customerNeed');
+}
+
+export function getBenefitSpan(rows: AttributeSegmentValueRowLike[], index: number): number {
+    return getSegmentScopedSpan(rows, index, 'benefit');
 }
 
 export function getCustomerNameSpan(rows: AttributeGroupingRowLike[], index: number): number {
