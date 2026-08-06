@@ -1,6 +1,7 @@
 // OpenAI 호환 엔드포인트(Ollama, LM Studio, 헤르메스, 클라우드 API)를 하나의 클라이언트로 다룬다.
 // 응답은 자유 텍스트가 아니라 JSON 스키마로 강제하고 Zod 로 검증한다. 검증에 실패하면 1회 교정 재시도한다.
 import type { z } from 'zod';
+import { extractModelIds, nativeTagsUrl, pickModel } from './endpoint-discovery';
 import {
     attributeDraftResultSchema,
     mentorQuestionsResultSchema,
@@ -15,12 +16,20 @@ import {
 export interface OpenAiCompatibleConfig {
     id: AiProviderId;
     label: string;
-    baseUrl: string;
-    model: string;
+    // 후보 주소를 순서대로 두드려 실제로 응답하는 곳을 쓴다. 설정값이 맨 앞에 온다.
+    baseUrls: string[];
+    model?: string;
+    // 모델 이름을 특정하지 않았을 때 목록에서 고를 힌트 (예: 'hermes')
+    modelHint?: string;
     apiKey?: string;
     // 로컬 엔진은 localhost 계열만 허용해 SSRF 를 막는다. 클라우드 API 만 원격 호스트를 연다.
     allowRemoteHost?: boolean;
     timeoutMs?: number;
+}
+
+interface ResolvedEndpoint {
+    baseUrl: string;
+    model: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -79,11 +88,71 @@ const ATTRIBUTE_DRAFT_SPEC = `{
 
 export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): AiProvider {
     const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    let resolved: ResolvedEndpoint | null = null;
 
     const headers = (): Record<string, string> => ({
         'Content-Type': 'application/json',
         ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
     });
+
+    // 후보 주소를 차례로 확인해 살아 있는 엔드포인트와 쓸 모델을 정한다. 한 번 찾으면 캐시한다.
+    async function resolveEndpoint(): Promise<ResolvedEndpoint | null> {
+        if (resolved) return resolved;
+
+        for (const baseUrl of config.baseUrls) {
+            let url: URL;
+            try {
+                url = assertAllowedBaseUrl(baseUrl, config.allowRemoteHost);
+            } catch {
+                continue; // 허용되지 않는 주소는 건너뛴다.
+            }
+            void url;
+
+            const modelIds = await probeModels(baseUrl);
+            if (modelIds === null) continue;
+
+            const model = pickModel(modelIds, config.model, config.modelHint);
+            if (!model) continue;
+
+            resolved = { baseUrl, model };
+            return resolved;
+        }
+
+        return null;
+    }
+
+    // 모델 목록을 못 읽으면 null, 읽으면 모델 id 배열(빈 배열 포함)을 돌려준다.
+    async function probeModels(baseUrl: string): Promise<string[] | null> {
+        const probeTimeout = Math.min(timeoutMs, 5_000);
+
+        try {
+            const response = await fetchWithTimeout(
+                joinUrl(baseUrl, 'models'),
+                { method: 'GET', headers: headers() },
+                probeTimeout
+            );
+            if (response.ok) {
+                return extractModelIds(await response.json().catch(() => null));
+            }
+        } catch {
+            // OpenAI 호환 경로가 없을 수 있으므로 네이티브 경로로 한 번 더 시도한다.
+        }
+
+        try {
+            const response = await fetchWithTimeout(
+                nativeTagsUrl(baseUrl),
+                { method: 'GET', headers: headers() },
+                probeTimeout
+            );
+            if (response.ok) {
+                return extractModelIds(await response.json().catch(() => null));
+            }
+        } catch {
+            return null;
+        }
+
+        return null;
+    }
 
     // 입력 타입을 unknown 으로 고정해야 T 가 스키마의 출력 타입(기본값이 채워진 형태)으로 잡힌다.
     async function complete<T>(
@@ -91,8 +160,12 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
         userPrompt: string,
         schema: z.ZodType<T, z.ZodTypeDef, unknown>
     ): Promise<T> {
-        assertAllowedBaseUrl(config.baseUrl, config.allowRemoteHost);
-        const url = joinUrl(config.baseUrl, 'chat/completions');
+        const endpoint = await resolveEndpoint();
+        if (!endpoint) {
+            throw new AiProviderError(`${config.label} 엔드포인트를 찾지 못했습니다.`);
+        }
+
+        const url = joinUrl(endpoint.baseUrl, 'chat/completions');
         const messages = [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
@@ -108,7 +181,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
                     method: 'POST',
                     headers: headers(),
                     body: JSON.stringify({
-                        model: config.model,
+                        model: endpoint.model,
                         temperature: 0.2,
                         response_format: { type: 'json_object' },
                         messages: attempt === 0
@@ -157,13 +230,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
 
         async isAvailable() {
             try {
-                assertAllowedBaseUrl(config.baseUrl, config.allowRemoteHost);
-                const response = await fetchWithTimeout(
-                    joinUrl(config.baseUrl, 'models'),
-                    { method: 'GET', headers: headers() },
-                    Math.min(timeoutMs, 5_000)
-                );
-                return response.ok;
+                return (await resolveEndpoint()) !== null;
             } catch {
                 return false;
             }
