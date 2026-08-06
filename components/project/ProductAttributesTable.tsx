@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import AttributeMentorWizard from './AttributeMentorWizard';
+import type { MentorAppliedRow } from '@/lib/attribute-mentor-utils';
 import {
     buildSpecPickerRows,
     getBenefitSpan,
@@ -192,6 +194,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const [importedFields, setImportedFields] = useState<Set<string>>(new Set());
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [showMentor, setShowMentor] = useState(false);
     const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const excelInputRef = useRef<HTMLInputElement | null>(null);
@@ -528,6 +531,37 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
 
     const isImported = (rowId: string, field: string) => importedFields.has(`${rowId}_${field}`);
 
+    // 멘토링 결과는 기존 행을 지우지 않고 뒤에 덧붙인다. 저장은 사용자가 직접 누른다.
+    const applyMentorResult = (mentorRows: MentorAppliedRow[], technologies: string[]) => {
+        const startOrder = rows.length;
+        const appended = mentorRows.map((row, index) => createRow(startOrder + index, {
+            marketSegment: row.marketSegment,
+            customerName: row.customerName,
+            customerNeed: row.customerNeed,
+            benefit: row.benefit,
+            attribute: row.attribute,
+        }));
+
+        setRows([...rows, ...appended].map((r, order) => ({ ...r, order })));
+
+        // 스펙에서 가져온 속성은 표에서 색으로 구분되도록 표시해 둔다.
+        const specNames = new Set(specFunctions.map((spec) => spec.name));
+        setImportedFields((prev) => {
+            const next = new Set(prev);
+            for (const row of appended) {
+                if (row.attribute && specNames.has(row.attribute)) next.add(`${row.id}_attribute`);
+            }
+            return next;
+        });
+
+        for (const technology of technologies) {
+            appendTechCapability(technology);
+        }
+
+        setShowMentor(false);
+        showToast(`멘토링 결과 ${appended.length}개 행을 표에 추가했습니다. 저장을 눌러 반영하세요.`, 'success');
+    };
+
     if (isLoading) {
         return (
             <div className="flex items-center justify-center p-16">
@@ -567,6 +601,16 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     <p className="text-sm text-gray-500 mt-1">세분시장별로 여러 고객명, 고객 니즈, 제공혜택, 제품속성, 기술역량을 행 단위로 정의합니다</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setShowMentor(true)}
+                        className="btn-secondary text-sm flex items-center gap-1.5 border-accent-500/30 text-accent-300 hover:bg-accent-500/10"
+                        title="질문에 답하면 세분시장·고객·니즈 초안을 만들고, WS-2 기능과 적용기술을 연결해 줍니다."
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        AI 멘토링
+                    </button>
                     <a
                         href={templateDownloadUrl}
                         className="btn-secondary text-sm flex items-center gap-1.5"
@@ -940,6 +984,17 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     placeholder={'예)\n· 데이터 통합 계층: 조직-회원-활동 이력 연계\n· 실시간 알림 파이프라인'}
                 />
             </div>
+
+            {/* AI 멘토링 위저드 */}
+            {showMentor && (
+                <AttributeMentorWizard
+                    projectId={projectId}
+                    specFunctions={specFunctions}
+                    onApply={applyMentorResult}
+                    onClose={() => setShowMentor(false)}
+                    onNotify={showToast}
+                />
+            )}
 
             {/* AS-IS 스펙 선택 모달 - 엑셀 워크시트 표 형식 */}
             {showSpecPicker && (
