@@ -14,6 +14,16 @@ export interface ServiceSettings {
         pass: string;
         configured: boolean;
     };
+    ai?: AiSettings;
+}
+
+// AI 엔진 설정. 환경 변수를 기본값으로 두고, 실행 중에 화면에서 바꿀 수 있다.
+export interface AiSettings {
+    provider: 'rule' | 'local' | 'hermes' | 'api';
+    localBaseUrl: string;
+    localModel: string;
+    hermesBaseUrl: string;
+    hermesModel: string;
 }
 
 interface GlobalSettingsStore {
@@ -43,7 +53,18 @@ if (!g.__service_settings) {
             pass: '',
             configured: false,
         },
+        ai: {
+            provider: parseAiProvider(process.env.AI_PROVIDER),
+            localBaseUrl: process.env.AI_LOCAL_BASE_URL || 'http://localhost:11434/v1',
+            localModel: process.env.AI_LOCAL_MODEL || 'qwen2.5:7b',
+            hermesBaseUrl: process.env.HERMES_BASE_URL || 'http://localhost:8080/v1',
+            hermesModel: process.env.HERMES_MODEL || 'hermes',
+        },
     };
+}
+
+function parseAiProvider(value: string | undefined): AiSettings['provider'] {
+    return value === 'local' || value === 'hermes' || value === 'api' ? value : 'rule';
 }
 
 if (!g.__google_tokens) {
@@ -76,6 +97,24 @@ export function isSmtpConfigured(): boolean {
 
 export function isGoogleConfigured(): boolean {
     return serviceSettings.google.configured;
+}
+
+export function getAiSettings(): AiSettings {
+    if (!serviceSettings.ai) {
+        serviceSettings.ai = {
+            provider: parseAiProvider(process.env.AI_PROVIDER),
+            localBaseUrl: process.env.AI_LOCAL_BASE_URL || 'http://localhost:11434/v1',
+            localModel: process.env.AI_LOCAL_MODEL || 'qwen2.5:7b',
+            hermesBaseUrl: process.env.HERMES_BASE_URL || 'http://localhost:8080/v1',
+            hermesModel: process.env.HERMES_MODEL || 'hermes',
+        };
+    }
+    return serviceSettings.ai;
+}
+
+export function updateAiSettings(patch: Partial<AiSettings>) {
+    const current = getAiSettings();
+    serviceSettings.ai = { ...current, ...patch };
 }
 
 export function setGoogleToken(userId: string, token: GoogleToken) {

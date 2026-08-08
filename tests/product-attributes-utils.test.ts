@@ -3,7 +3,9 @@ import {
     buildCustomerNamesByMarketSegment,
     buildSpecPickerRows,
     dedupeByAttributeName,
+    getBenefitSpan,
     getCustomerNameSpan,
+    getCustomerNeedSpan,
     getMarketSegmentSpan,
     resolveRelatedTechnology,
 } from '../lib/product-attributes-utils';
@@ -79,6 +81,50 @@ describe('product attribute technology linking', () => {
         expect(getCustomerNameSpan(rows, 1)).toBe(0);
         expect(getCustomerNameSpan(rows, 2)).toBe(1);
         expect(getCustomerNameSpan(rows, 3)).toBe(1);
+    });
+
+    it('merges identical customer needs and benefits inside one market segment', () => {
+        const rows = [
+            { marketSegment: '소규모 동호회', customerNeed: '명단 통합', benefit: '운영 시간 절감' },
+            { marketSegment: '소규모 동호회', customerNeed: '명단 통합', benefit: '운영 시간 절감' },
+            { marketSegment: '소규모 동호회', customerNeed: '명단 통합', benefit: '운영 시간 절감' },
+        ];
+
+        expect(getCustomerNeedSpan(rows, 0)).toBe(3);
+        expect(getCustomerNeedSpan(rows, 1)).toBe(0);
+        expect(getCustomerNeedSpan(rows, 2)).toBe(0);
+        expect(getBenefitSpan(rows, 0)).toBe(3);
+        expect(getBenefitSpan(rows, 1)).toBe(0);
+    });
+
+    it('does not merge the same value across different market segments', () => {
+        const rows = [
+            { marketSegment: '소규모 동호회', customerNeed: '명단 통합', benefit: '운영 시간 절감' },
+            { marketSegment: '중대형 동호회', customerNeed: '명단 통합', benefit: '운영 시간 절감' },
+        ];
+
+        expect(getCustomerNeedSpan(rows, 0)).toBe(1);
+        expect(getCustomerNeedSpan(rows, 1)).toBe(1);
+        expect(getBenefitSpan(rows, 0)).toBe(1);
+        expect(getBenefitSpan(rows, 1)).toBe(1);
+    });
+
+    it('keeps empty and non-adjacent values as their own cells', () => {
+        const rows = [
+            { marketSegment: '소규모 동호회', customerNeed: '', benefit: '' },
+            { marketSegment: '소규모 동호회', customerNeed: '', benefit: '' },
+            { marketSegment: '소규모 동호회', customerNeed: '회비 관리', benefit: '번아웃 완화' },
+            { marketSegment: '소규모 동호회', customerNeed: '명단 통합', benefit: '운영 시간 절감' },
+            { marketSegment: '소규모 동호회', customerNeed: '회비 관리', benefit: '번아웃 완화' },
+        ];
+
+        expect(getCustomerNeedSpan(rows, 0)).toBe(1);
+        expect(getCustomerNeedSpan(rows, 1)).toBe(1);
+        expect(getCustomerNeedSpan(rows, 2)).toBe(1);
+        expect(getCustomerNeedSpan(rows, 3)).toBe(1);
+        expect(getCustomerNeedSpan(rows, 4)).toBe(1);
+        expect(getBenefitSpan(rows, 2)).toBe(1);
+        expect(getBenefitSpan(rows, 4)).toBe(1);
     });
 
     it('builds customer names by market segment for WS-4 sub segments', () => {
