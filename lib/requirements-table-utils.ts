@@ -1,6 +1,7 @@
 export interface RequirementGroupingRowLike {
-    category: string;
-    subcategory: string;
+    // 엑셀 업로드로 들어온 행은 2차 분류가 비어 있으면 null 로 저장되므로 빈 값도 받아야 한다.
+    category: string | null | undefined;
+    subcategory: string | null | undefined;
     order: number;
 }
 
@@ -8,8 +9,8 @@ export function sortRequirementsByWorksheetOrder<T extends RequirementGroupingRo
     return [...rows].sort((a, b) => a.order - b.order);
 }
 
-function normalizeGroupValue(value: string): string {
-    return value.trim();
+function normalizeGroupValue(value: string | null | undefined): string {
+    return value?.trim() ?? '';
 }
 
 export function shouldShowPrimaryGroup(rows: RequirementGroupingRowLike[], index: number): boolean {

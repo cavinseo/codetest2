@@ -42,6 +42,19 @@ describe('requirements table view helpers', () => {
         expect(rows.map((_, index) => shouldShowSecondaryGroup(rows, index))).toEqual([true, true, true]);
     });
 
+    // 엑셀 업로드 시 2차 분류 칸이 비면 importer 가 subcategory 를 null 로 저장한다.
+    it('handles null and undefined group values coming from an excel import', () => {
+        const rows = [
+            { category: '미분류', subcategory: null, order: 0 },
+            { category: '미분류', subcategory: null, order: 1 },
+            { category: '미분류', subcategory: '2차 그룹', order: 2 },
+            { category: '미분류', subcategory: undefined, order: 3 },
+        ];
+
+        expect(rows.map((_, index) => shouldShowPrimaryGroup(rows, index))).toEqual([true, false, false, false]);
+        expect(rows.map((_, index) => shouldShowSecondaryGroup(rows, index))).toEqual([true, false, true, true]);
+    });
+
     it('treats consecutive secondary groups with surrounding spaces as the same label', () => {
         const rows = [
             { category: '1차 그룹', subcategory: '2차 그룹', order: 0 },
