@@ -45,7 +45,7 @@ function useCategoryColor(categories: string[]) {
 }
 
 export default function RequirementsTable({ projectId }: RequirementsTableProps) {
-    const templateDownloadUrl = `/api/projects/${projectId}/import/template`;
+    const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=requirements`;
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
