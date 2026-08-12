@@ -139,7 +139,14 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             const res = await fetch(`/api/projects/${projectId}/requirements`);
             if (res.ok) {
                 const data = await res.json();
-                setRequirements(data.requirements || []);
+                // 엑셀 업로드로 들어온 행은 2차 분류가 비어 있으면 null 이므로 빈 문자열로 맞춰 둔다.
+                setRequirements((data.requirements || []).map((row: Partial<Requirement>) => ({
+                    id: row.id ?? '',
+                    category: row.category ?? '',
+                    subcategory: row.subcategory ?? '',
+                    requirement: row.requirement ?? '',
+                    order: row.order ?? 0,
+                })));
             }
         } catch (e) {
             console.error('요구사항 로딩 실패:', e);
