@@ -678,151 +678,106 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 </h2>
                             </div>
 
-                            {!googleConfigured && (
-                                <div className="bg-blue-500/[0.08] border border-blue-500/20 rounded-xl p-4">
-                                    <p className="text-blue-300 text-sm mb-3">
-                                        Google Forms로 Kano 설문지를 자동 생성하려면 먼저 Google OAuth를 설정하세요.
-                                    </p>
-                                    <Link href="/settings" className="btn-secondary text-sm inline-flex items-center gap-2">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                        </svg>
-                                        서비스 설정으로 이동
-                                    </Link>
-                                </div>
-                            )}
+                            <p className="text-sm text-gray-500 -mt-2 mb-4">
+                                Google Forms로 설문지를 만들고 응답을 수집합니다
+                            </p>
                                 <div className="space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                                        <button
-                                            onClick={() => setShowPreview(true)}
-                                            className="p-4 bg-white/[0.03] border border-white/[0.08] hover:bg-white/[0.06] hover:border-white/[0.12] rounded-xl transition-all text-left group"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center mb-3 group-hover:bg-white/[0.10] transition-colors">
-                                                <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                </svg>
+                                    {/* 3단계 진행 흐름 */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        {/* 1단계: 미리보기 */}
+                                        <div className="p-4 bg-white/[0.03] border border-white/[0.08] rounded-xl flex flex-col">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="w-5 h-5 rounded-full bg-emerald-500/15 text-emerald-300 text-[11px] font-bold flex items-center justify-center">1</span>
+                                                <span className="text-[11px] text-emerald-400">준비됨</span>
                                             </div>
-                                            <h3 className="text-white text-sm font-semibold">설문 미리보기</h3>
-                                            <p className="text-xs text-gray-500 mt-1">생성될 설문지 양식을 미리 확인합니다</p>
-                                        </button>
-
-                                        <button
-                                            onClick={handleCreateGoogleForm}
-                                            disabled={isCreatingForm}
-                                            className="p-4 bg-blue-500/[0.08] border border-blue-500/20 hover:bg-blue-500/[0.14] hover:border-blue-500/30 rounded-xl transition-all text-left group disabled:opacity-50"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-blue-500/15 flex items-center justify-center mb-3">
-                                                {isCreatingForm ? (
-                                                    <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                                                ) : (
-                                                    <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-                                                    </svg>
-                                                )}
-                                            </div>
-                                            <h3 className="text-blue-300 text-sm font-semibold">{isCreatingForm ? '생성 중...' : 'Google Forms 생성'}</h3>
-                                            <p className="text-xs text-gray-500 mt-1">{requirements.length}개 질문 세트의 설문지를 자동 생성합니다</p>
-                                        </button>
-
-                                        <a
-                                            href={kanoFormScriptUrl}
-                                            className="p-4 bg-indigo-500/[0.08] border border-indigo-500/20 hover:bg-indigo-500/[0.14] hover:border-indigo-500/30 rounded-xl transition-all text-left group"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-indigo-500/15 flex items-center justify-center mb-3">
-                                                <svg className="w-4 h-4 text-indigo-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3M5 11h14M7 21h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2zm4-6l-2 2 2 2m2-4l2 2-2 2" />
-                                                </svg>
-                                            </div>
-                                            <h3 className="text-indigo-200 text-sm font-semibold">생성 스크립트</h3>
-                                            <p className="text-xs text-gray-500 mt-1">Google Apps Script 파일을 다운로드합니다</p>
-                                        </a>
-
-                                        <button
-                                            onClick={handleImportResponses}
-                                            disabled={isImporting || !createdFormId}
-                                            className="p-4 bg-emerald-500/[0.08] border border-emerald-500/20 hover:bg-emerald-500/[0.14] hover:border-emerald-500/30 rounded-xl transition-all text-left group disabled:opacity-50"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center mb-3">
-                                                {isImporting ? (
-                                                    <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                                                ) : (
-                                                    <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                                    </svg>
-                                                )}
-                                            </div>
-                                            <h3 className="text-emerald-300 text-sm font-semibold">{isImporting ? '가져오는 중...' : '응답 가져오기'}</h3>
-                                            <p className="text-xs text-gray-500 mt-1">{createdFormId ? 'Google Forms 응답을 가져옵니다' : '먼저 설문지를 생성하세요'}</p>
-                                        </button>
-
-                                        <div className="p-4 bg-amber-500/[0.08] border border-amber-500/20 rounded-xl text-left">
-                                            <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center mb-3">
-                                                {isUploadingExcel ? (
-                                                    <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-                                                ) : (
-                                                    <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 16V4m0 12l-4-4m4 4l4-4M4 20h16" />
-                                                    </svg>
-                                                )}
-                                            </div>
-                                            <h3 className="text-amber-300 text-sm font-semibold">엑셀 응답 업로드</h3>
-                                            <p className="text-xs text-gray-500 mt-1 mb-3">KANO질문지 결과 파일을 업로드합니다</p>
-                                            <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg border border-amber-500/20 bg-black/10 p-1">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setExcelUploadFormat('template')}
-                                                    className={`rounded-md px-2 py-1.5 text-[11px] font-semibold transition-colors ${excelUploadFormat === 'template'
-                                                        ? 'bg-amber-500/20 text-amber-100'
-                                                        : 'text-gray-400 hover:bg-white/[0.05] hover:text-gray-200'
-                                                        }`}
-                                                >
-                                                    전용 양식
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setExcelUploadFormat('googleForms')}
-                                                    className={`rounded-md px-2 py-1.5 text-[11px] font-semibold transition-colors ${excelUploadFormat === 'googleForms'
-                                                        ? 'bg-amber-500/20 text-amber-100'
-                                                        : 'text-gray-400 hover:bg-white/[0.05] hover:text-gray-200'
-                                                        }`}
-                                                >
-                                                    Google Forms
-                                                </button>
-                                            </div>
-                                            {requirements.length > 0 ? (
-                                                <a
-                                                    href={`${kanoUploadTemplateUrl}?format=${excelUploadFormat}`}
-                                                    className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-500/20"
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
-                                                    </svg>
-                                                    {excelUploadFormat === 'googleForms' ? 'Google Forms 양식 다운로드' : '업로드 양식 다운로드'}
-                                                </a>
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    disabled
-                                                    className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-xs font-semibold text-gray-600"
-                                                >
-                                                    업로드 양식 다운로드
-                                                </button>
-                                            )}
-                                            <input
-                                                ref={excelInputRef}
-                                                type="file"
-                                                accept=".xlsx,.xls"
-                                                onChange={(event) => setExcelFile(event.target.files?.[0] ?? null)}
-                                                className="block w-full text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-200 hover:file:bg-amber-500/25"
-                                            />
+                                            <h3 className="text-white text-sm font-semibold mb-3">미리보기</h3>
                                             <button
-                                                onClick={handleUploadExcelResponses}
-                                                disabled={isUploadingExcel || !excelFile}
-                                                className="mt-3 w-full px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:hover:bg-amber-600 text-white text-xs font-semibold transition-colors"
+                                                onClick={() => setShowPreview(true)}
+                                                className="mt-auto w-full px-3 py-2 rounded-lg border border-white/[0.10] bg-white/[0.04] hover:bg-white/[0.08] text-gray-200 text-xs font-semibold transition-colors"
                                             >
-                                                {isUploadingExcel ? '업로드 중...' : '업로드'}
+                                                양식 확인
                                             </button>
                                         </div>
+
+                                        {/* 2단계: 설문지 생성 (Google 연동 필요) */}
+                                        <div className={`p-4 rounded-xl flex flex-col border ${googleConfigured
+                                            ? 'bg-blue-500/[0.08] border-blue-500/20'
+                                            : 'bg-amber-500/[0.06] border-amber-500/25'
+                                            }`}>
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className={`w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${googleConfigured
+                                                    ? 'bg-blue-500/15 text-blue-300'
+                                                    : 'bg-amber-500/15 text-amber-300'
+                                                    }`}>2</span>
+                                                {googleConfigured ? (
+                                                    <span className="text-[11px] text-blue-400">연동됨</span>
+                                                ) : (
+                                                    <span className="text-[11px] text-amber-400 flex items-center gap-1">
+                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                        </svg>
+                                                        설정 필요
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <h3 className="text-white text-sm font-semibold mb-1">설문지 생성</h3>
+                                            <p className="text-xs text-gray-500 mb-3">{requirements.length}개 질문 세트</p>
+                                            {googleConfigured ? (
+                                                <button
+                                                    onClick={handleCreateGoogleForm}
+                                                    disabled={isCreatingForm}
+                                                    className="mt-auto w-full px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 disabled:opacity-50 text-blue-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+                                                >
+                                                    {isCreatingForm && <span className="w-3 h-3 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" />}
+                                                    {isCreatingForm ? '생성 중...' : 'Google Forms 생성'}
+                                                </button>
+                                            ) : (
+                                                <Link
+                                                    href="/settings"
+                                                    className="mt-auto w-full px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+                                                >
+                                                    Google 설정하기
+                                                </Link>
+                                            )}
+                                        </div>
+
+                                        {/* 3단계: 응답 가져오기 */}
+                                        <div className={`p-4 rounded-xl flex flex-col border ${createdFormId
+                                            ? 'bg-emerald-500/[0.08] border-emerald-500/20'
+                                            : 'bg-white/[0.02] border-white/[0.06]'
+                                            }`}>
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className={`w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${createdFormId
+                                                    ? 'bg-emerald-500/15 text-emerald-300'
+                                                    : 'bg-white/[0.06] text-gray-500'
+                                                    }`}>3</span>
+                                                <span className={`text-[11px] ${createdFormId ? 'text-emerald-400' : 'text-gray-500'}`}>
+                                                    {createdFormId ? '수집 가능' : '2단계 후 진행'}
+                                                </span>
+                                            </div>
+                                            <h3 className={`text-sm font-semibold mb-3 ${createdFormId ? 'text-white' : 'text-gray-500'}`}>응답 가져오기</h3>
+                                            <button
+                                                onClick={handleImportResponses}
+                                                disabled={isImporting || !createdFormId}
+                                                className="mt-auto w-full px-3 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 disabled:opacity-40 disabled:hover:bg-emerald-500/15 text-emerald-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+                                            >
+                                                {isImporting && <span className="w-3 h-3 border-2 border-emerald-300 border-t-transparent rounded-full animate-spin" />}
+                                                {isImporting ? '가져오는 중...' : createdFormId ? '응답 가져오기' : '대기 중'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* 보조 수단: Apps Script 직접 실행 */}
+                                    <div className="pt-3 border-t border-white/[0.06]">
+                                        <a
+                                            href={kanoFormScriptUrl}
+                                            className="text-xs text-gray-500 hover:text-gray-300 transition-colors inline-flex items-center gap-1.5"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                                            </svg>
+                                            Apps Script 파일 받기 (Google 연동 없이 수동 생성)
+                                        </a>
                                     </div>
 
                                     {/* 생성된 폼 URL */}
@@ -855,6 +810,59 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                         </div>
                                     )}
                                 </div>
+                        </div>
+                    )}
+
+                    {/* 응답 파일 업로드 - Google 연동과 무관한 독립 경로 */}
+                    {requirements.length > 0 && (
+                        <div className="card">
+                            <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                                <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 16V4m0 12l-4-4m4 4l4-4M4 20h16" />
+                                </svg>
+                                응답 파일로 업로드
+                            </h2>
+                            <p className="text-sm text-gray-500 mt-1 mb-4">
+                                Google 연동 없이 엑셀 파일만으로 응답을 등록합니다
+                            </p>
+
+                            <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
+                                <select
+                                    value={excelUploadFormat}
+                                    onChange={(event) => setExcelUploadFormat(event.target.value as ExcelUploadFormat)}
+                                    className="px-3 py-2 rounded-lg border border-amber-500/25 bg-black/20 text-amber-100 text-xs font-semibold outline-none focus:border-amber-500/50 lg:flex-shrink-0"
+                                >
+                                    <option value="template">전용 양식</option>
+                                    <option value="googleForms">Google Forms 형식</option>
+                                </select>
+
+                                <a
+                                    href={`${kanoUploadTemplateUrl}?format=${excelUploadFormat}`}
+                                    className="px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                                    </svg>
+                                    양식 받기
+                                </a>
+
+                                <input
+                                    ref={excelInputRef}
+                                    type="file"
+                                    accept=".xlsx,.xls"
+                                    onChange={(event) => setExcelFile(event.target.files?.[0] ?? null)}
+                                    className="flex-1 min-w-0 text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-200 hover:file:bg-amber-500/25"
+                                />
+
+                                <button
+                                    onClick={handleUploadExcelResponses}
+                                    disabled={isUploadingExcel || !excelFile}
+                                    className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:hover:bg-amber-600 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
+                                >
+                                    {isUploadingExcel && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                                    {isUploadingExcel ? '업로드 중...' : '업로드'}
+                                </button>
+                            </div>
                         </div>
                     )}
 
