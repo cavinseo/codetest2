@@ -282,6 +282,14 @@ body {
   background-color: #f1f5f9 !important;
 }
 
+/* bg-surface-900/95 처럼 불투명도가 붙은 변형은 위 규칙에 걸리지 않아
+   배경만 어두운 채로 남고 글자는 밝아져 읽을 수 없게 된다. */
+.light [class*="bg-surface-900/"],
+.light [class*="bg-surface-850/"],
+.light [class*="bg-surface-800/"] {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
 .light .bg-gray-900,
 .light .bg-gray-800,
 .light .bg-gray-700 {
@@ -320,6 +328,8 @@ body {
   color: #0f172a !important;
 }
 
+.light .text-gray-100,
+.light .text-gray-200,
 .light .text-gray-300 {
   color: #1e293b !important;
 }
@@ -375,15 +385,30 @@ body {
   color: #be123c !important;
 }
 
+/* 진한 단색 배경 위의 흰 글자만 흰색으로 유지한다.
+   ~= 는 클래스 목록의 정확한 한 단어와만 일치하므로 bg-emerald-500/[0.05] 같은
+   옅은 틴트는 걸리지 않는다. [class*=] 를 쓰면 틴트까지 잡혀 흰 배경에 흰 글자가 된다. */
 .light [class*="bg-gradient-to"][class*="text-white"],
-.light [class*="bg-primary-"][class*="text-white"],
-.light [class*="bg-blue-"][class*="text-white"],
-.light [class*="bg-cyan-"][class*="text-white"],
-.light [class*="bg-emerald-"][class*="text-white"],
-.light [class*="bg-green-"][class*="text-white"],
-.light [class*="bg-rose-"][class*="text-white"],
-.light [class*="bg-red-"][class*="text-white"],
-.light [class*="bg-purple-"][class*="text-white"] {
+.light [class~="bg-primary-600"][class*="text-white"],
+.light [class~="bg-primary-700"][class*="text-white"],
+.light [class~="bg-blue-600"][class*="text-white"],
+.light [class~="bg-blue-700"][class*="text-white"],
+.light [class~="bg-cyan-600"][class*="text-white"],
+.light [class~="bg-cyan-700"][class*="text-white"],
+.light [class~="bg-emerald-600"][class*="text-white"],
+.light [class~="bg-emerald-700"][class*="text-white"],
+.light [class~="bg-green-600"][class*="text-white"],
+.light [class~="bg-green-700"][class*="text-white"],
+.light [class~="bg-teal-600"][class*="text-white"],
+.light [class~="bg-rose-600"][class*="text-white"],
+.light [class~="bg-rose-700"][class*="text-white"],
+.light [class~="bg-red-600"][class*="text-white"],
+.light [class~="bg-red-700"][class*="text-white"],
+.light [class~="bg-purple-600"][class*="text-white"],
+.light [class~="bg-purple-700"][class*="text-white"],
+.light [class~="bg-indigo-600"][class*="text-white"],
+.light [class~="bg-amber-600"][class*="text-white"],
+.light [class~="bg-amber-700"][class*="text-white"] {
   color: #ffffff !important;
 }
 
@@ -501,6 +526,33 @@ body {
 .light .input:hover {
   background-color: #ffffff !important;
   border-color: rgba(99, 102, 241, 0.38) !important;
+}
+
+/* btn-primary 는 @apply text-white 를 쓰는데, Tailwind 가 .light .text-white 오버라이드까지
+   함께 복사해 어두운 글자가 된다. 배경이 진한 인디고 그라디언트이므로 흰 글자를 되돌린다. */
+.light .btn-primary {
+  color: #ffffff !important;
+}
+
+/* 배지는 컴포넌트 클래스로 색을 직접 지정해 유틸리티 오버라이드가 닿지 않는다. */
+.light .badge-primary {
+  color: #3730a3 !important;
+}
+
+.light .badge-purple {
+  color: #6b21a8 !important;
+}
+
+.light .badge-emerald {
+  color: #047857 !important;
+}
+
+.light .badge-amber {
+  color: #92400e !important;
+}
+
+.light .badge-rose {
+  color: #be123c !important;
 }
 
 .light .btn-secondary {
