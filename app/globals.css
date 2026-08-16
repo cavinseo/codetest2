@@ -363,8 +363,17 @@ body {
 .light [class*="text-indigo-"],
 .light [class*="text-blue-"],
 .light [class*="text-cyan-"],
+.light [class*="text-sky-"],
 .light [class*="text-purple-"] {
   color: #3730a3 !important;
+}
+
+/* QFD 매트릭스의 압축 입력 칩은 테마와 무관하게 bg-slate-950 로 항상 어둡게 고정돼 있어
+   그 위의 밝은 인디고/시안 글자는 그대로 둬야 한다. 속성 선택자 2개짜리라 위 규칙보다
+   명시도가 높아 순서와 무관하게 이긴다. */
+.light [class*="bg-slate-950"][class*="text-indigo-"],
+.light [class*="bg-slate-950"][class*="text-cyan-"] {
+  color: #eef2ff !important;
 }
 
 .light [class*="text-emerald-"],
@@ -431,6 +440,9 @@ body {
 .light .bg-blue-500\/15,
 .light .bg-cyan-500\/10,
 .light .bg-cyan-500\/15,
+.light .bg-sky-500\/10,
+.light .bg-sky-500\/15,
+.light .bg-sky-500\/\[0\.07\],
 .light .bg-primary-500\/10,
 .light .bg-primary-500\/15,
 .light .bg-primary-600\/20 {
@@ -606,4 +618,13 @@ body {
 
 .light .modal-overlay {
   background-color: rgba(15, 23, 42, 0.32) !important;
+}
+
+/* ─── Dark mode contrast fixes ─── */
+/* text-gray-600 (#4B5563) is used app-wide as a muted caption color, but against
+   the near-black dark backgrounds (#020617 등) it renders at ~2.35:1 contrast —
+   below readable. Lighten it for dark mode only; light mode already overrides
+   text-gray-600 separately above and is unaffected. */
+.dark .text-gray-600 {
+  color: #7c8698 !important;
 }
