@@ -6,6 +6,12 @@ import {
     getBusinessPlanFileValidationError,
     readAndSerializeBusinessPlanFile,
 } from '@/lib/business-plan-file';
+import {
+    PROJECT_AI_MODES,
+    PROJECT_AI_MODE_DESCRIPTIONS,
+    PROJECT_AI_MODE_LABELS,
+    type ProjectAiMode,
+} from '@/lib/ai/project-ai-mode';
 
 interface Project {
     id: string;
@@ -24,6 +30,8 @@ export default function DashboardPage() {
     const [newProjectDesc, setNewProjectDesc] = useState('');
     const [newProjectDetailDesc, setNewProjectDetailDesc] = useState('');
     const [newProjectFile, setNewProjectFile] = useState<File | null>(null);
+    // 폴백 체인이 받쳐주므로 기본값은 로컬 AI 연결로 둔다.
+    const [newProjectAiMode, setNewProjectAiMode] = useState<ProjectAiMode>('local');
     const [newProjectError, setNewProjectError] = useState('');
     const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -65,6 +73,7 @@ export default function DashboardPage() {
                     description: newProjectDesc,
                     detailedDescription: newProjectDetailDesc || undefined,
                     businessPlanFile,
+                    aiMode: newProjectAiMode,
                 }),
             });
             const data = await response.json().catch(() => null);
@@ -75,6 +84,7 @@ export default function DashboardPage() {
             setNewProjectDesc('');
             setNewProjectDetailDesc('');
             setNewProjectFile(null);
+            setNewProjectAiMode('local');
         } catch (error) {
             console.error(error);
             setNewProjectError(error instanceof Error ? error.message : '프로젝트 생성에 실패했습니다.');
@@ -372,6 +382,41 @@ export default function DashboardPage() {
                                         </label>
                                     )}
                                 </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-400 mb-2">
+                                    AI 에이전트 연결 방식
+                                </label>
+                                <div className="space-y-2">
+                                    {PROJECT_AI_MODES.map((mode) => (
+                                        <label
+                                            key={mode}
+                                            className={`flex cursor-pointer gap-3 rounded-xl border p-3 transition-colors ${newProjectAiMode === mode
+                                                ? 'border-primary-500/30 bg-primary-500/5'
+                                                : 'border-white/[0.08] bg-white/[0.02] hover:border-white/[0.15]'
+                                                }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="new-project-ai-mode"
+                                                value={mode}
+                                                checked={newProjectAiMode === mode}
+                                                onChange={() => setNewProjectAiMode(mode)}
+                                                className="mt-1 flex-shrink-0"
+                                            />
+                                            <span className="min-w-0">
+                                                <span className="block text-sm text-white">{PROJECT_AI_MODE_LABELS[mode]}</span>
+                                                <span className="mt-0.5 block text-xs text-gray-500">
+                                                    {PROJECT_AI_MODE_DESCRIPTIONS[mode]}
+                                                </span>
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
+                                <p className="mt-2 text-[11px] text-gray-600">
+                                    나중에 프로젝트 설정에서 바꿀 수 있습니다.
+                                </p>
                             </div>
 
                             <div className="flex gap-3 pt-2">

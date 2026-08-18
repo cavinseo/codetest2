@@ -32,6 +32,8 @@ model Project {
   updatedAt                DateTime                  @updatedAt
   businessPlanFile         String?
   detailedDescription      String?
+  // AI 에이전트 연결 방식: "rule"(규칙 기반만) | "local"(로컬 LLM 우선, 실패 시 폴백)
+  aiMode                   String                    @default("rule")
   attributeFitnesses       AttributeFitness[]
   benchmarks               Benchmark[]
   requirements             CustomerRequirement[]
