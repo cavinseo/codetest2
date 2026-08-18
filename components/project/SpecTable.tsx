@@ -5,6 +5,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
 import { readBusinessPlanForSpec } from '@/lib/business-plan-sections';
+import { describeAiEngine } from '@/lib/ai/engine-label';
+import {
+    BrowserLocalError,
+    callBrowserLocalLlm,
+    discoverBrowserLocalEndpoint,
+} from '@/lib/ai/browser-local';
 
 interface SpecFunction {
     id: string;
@@ -43,6 +49,33 @@ interface GroupedSpecRow extends FlatSpecRow {
 
 type SpecAiWizardStep = 'guide' | 'questions' | 'review' | 'fast';
 
+// 서버가 로컬 엔진에 못 붙었을 때 내려주는 봉투. 브라우저가 이걸로 자기 PC의 LLM 을 부른다.
+interface BrowserRelayEnvelope {
+    task: string;
+    prompts: { system: string; user: string };
+    candidateBaseUrls: string[];
+    preferredModel?: string;
+}
+
+interface SpecDraftResponse {
+    specFunctions?: SpecFunction[];
+    issues?: SpecAiIssue[];
+    recommendations?: SpecAiRecommendation[];
+    contextSummary?: SpecAiContextSummary | null;
+    provider?: string;
+    degraded?: boolean;
+    browserRelay?: BrowserRelayEnvelope;
+}
+
+interface SpecAiContextSummary {
+    keywords?: string[];
+    customerNeedCount?: number;
+    productAttributeCount?: number;
+    existingSpecCount?: number;
+    qfdTechnicalCount?: number;
+    targetSpecCount?: number;
+}
+
 interface SpecAiIssue {
     severity: 'info' | 'warning' | 'error';
     message: string;
@@ -76,14 +109,12 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set());
     const [aiIssues, setAiIssues] = useState<SpecAiIssue[]>([]);
     const [aiRecommendations, setAiRecommendations] = useState<SpecAiRecommendation[]>([]);
-    const [aiContextSummary, setAiContextSummary] = useState<{
-        keywords?: string[];
-        customerNeedCount?: number;
-        productAttributeCount?: number;
-        existingSpecCount?: number;
-        qfdTechnicalCount?: number;
-        targetSpecCount?: number;
-    } | null>(null);
+    const [aiContextSummary, setAiContextSummary] = useState<SpecAiContextSummary | null>(null);
+    // 어떤 엔진이 이 초안을 만들었는지 결과 화면에 배지로 보여준다.
+    const [aiEngineLabel, setAiEngineLabel] = useState('');
+    // 브라우저 경유 호출은 최대 90초 걸릴 수 있어 진행 상황을 알려주고 취소도 받는다.
+    const [relayStatus, setRelayStatus] = useState('');
+    const relayAbortRef = useRef<AbortController | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -372,6 +403,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         setAiIssues([]);
         setAiRecommendations([]);
         setAiContextSummary(null);
+        setAiEngineLabel('');
         setIsGenerating(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/spec/generate`, {
@@ -386,25 +418,89 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                     },
                 }),
             });
-            if (res.ok) {
-                const data = await res.json();
-                const loadedSpecs: SpecFunction[] = data.specFunctions || [];
-                setAiDraftSpecs(loadedSpecs);
-                setAiFastRows(buildRowsFromSpecs(loadedSpecs));
-                setSelectedDraftIds(new Set(loadedSpecs.map((spec) => spec.id)));
-                setAiIssues(data.issues || []);
-                setAiRecommendations(data.recommendations || []);
-                setAiContextSummary(data.contextSummary || null);
-                setAiWizardStep('fast');
-                showToast('FAST 결과표 초안을 만들었습니다. 수정 후 확정하세요.', 'info');
-            } else {
+            if (!res.ok) {
                 showToast('FAST 결과표 생성에 실패했습니다.', 'error');
+                return;
             }
+
+            const data = await res.json();
+
+            // 서버가 로컬 엔진에 못 붙어 브라우저 경유를 제안했으면, 내 PC의 LLM 을 직접 부른다.
+            // 실패하면 이미 응답에 담겨 온 규칙 기반 결과를 그대로 쓴다.
+            if (data.browserRelay) {
+                const relayed = await tryBrowserRelay(data.browserRelay, additionalDescription);
+                applyDraftResult(relayed ?? data);
+                return;
+            }
+
+            applyDraftResult(data);
         } catch (error) {
             console.error('FAST 결과표 생성 실패:', error);
             showToast('FAST 결과표 생성에 실패했습니다.', 'error');
         } finally {
             setIsGenerating(false);
+            setRelayStatus('');
+        }
+    };
+
+    const applyDraftResult = (data: SpecDraftResponse) => {
+        const loadedSpecs: SpecFunction[] = data.specFunctions || [];
+        setAiDraftSpecs(loadedSpecs);
+        setAiFastRows(buildRowsFromSpecs(loadedSpecs));
+        setSelectedDraftIds(new Set(loadedSpecs.map((spec) => spec.id)));
+        setAiIssues(data.issues || []);
+        setAiRecommendations(data.recommendations || []);
+        setAiContextSummary(data.contextSummary || null);
+        setAiEngineLabel(describeAiEngine(data));
+        setAiWizardStep('fast');
+        showToast('FAST 결과표 초안을 만들었습니다. 수정 후 확정하세요.', 'info');
+    };
+
+    // 성공하면 서버가 검증까지 마친 결과를, 실패하면 null 을 돌려준다.
+    const tryBrowserRelay = async (
+        relay: BrowserRelayEnvelope,
+        additionalDescription: string
+    ): Promise<SpecDraftResponse | null> => {
+        const controller = new AbortController();
+        relayAbortRef.current = controller;
+
+        try {
+            setRelayStatus('내 PC에서 로컬 AI를 찾는 중...');
+            const endpoint = await discoverBrowserLocalEndpoint(
+                relay.candidateBaseUrls,
+                relay.preferredModel,
+                controller.signal
+            );
+            if (!endpoint) {
+                showToast(
+                    '로컬 AI를 찾지 못해 기본 엔진으로 만들었습니다. Ollama·LM Studio 실행 여부와 CORS 설정을 확인하세요.',
+                    'info'
+                );
+                return null;
+            }
+
+            setRelayStatus(`${endpoint.model} 모델로 생성 중... (최대 90초)`);
+            const content = await callBrowserLocalLlm(endpoint, relay.prompts, { signal: controller.signal });
+
+            setRelayStatus('결과를 검증하는 중...');
+            const res = await fetch(`/api/projects/${projectId}/spec/generate/complete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content, additionalDescription }),
+            });
+            if (!res.ok) {
+                showToast('로컬 AI 응답 형식이 맞지 않아 기본 엔진 결과를 사용합니다.', 'info');
+                return null;
+            }
+            return await res.json();
+        } catch (error) {
+            const message = error instanceof BrowserLocalError
+                ? error.message
+                : '로컬 AI 호출에 실패했습니다.';
+            showToast(`${message} 기본 엔진 결과를 사용합니다.`, 'info');
+            return null;
+        } finally {
+            relayAbortRef.current = null;
         }
     };
 
@@ -814,6 +910,18 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                             placeholder="예: 고객 문의 자동 분류, 전문가 추천, 결과 리포트 생성처럼 원하는 기능을 줄바꿈 또는 쉼표로 입력하세요."
                                         />
                                     </label>
+                                    {relayStatus && (
+                                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-2.5">
+                                            <p className="text-xs text-cyan-100">{relayStatus}</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => relayAbortRef.current?.abort()}
+                                                className="flex-shrink-0 rounded-lg px-3 py-1.5 text-xs text-cyan-200 hover:bg-white/10"
+                                            >
+                                                기다리지 않고 기본 엔진 결과 보기
+                                            </button>
+                                        </div>
+                                    )}
                                     <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-gray-400">
                                         기본 아이템 정보는 프로젝트와 기존 워크시트에서 불러오며, 위 두 항목은 FAST 결과표를 구체화하는 데만 사용됩니다.
                                     </div>
@@ -836,6 +944,12 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
 
                             {aiWizardStep === 'fast' && (
                                 <div className="space-y-4">
+                                    {aiEngineLabel && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="badge-primary text-[10px]">{aiEngineLabel}</span>
+                                            <span className="text-xs text-gray-500">이 초안을 만든 엔진</span>
+                                        </div>
+                                    )}
                                     {aiContextSummary && (
                                         <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs leading-5 text-cyan-100">
                                             <div>참고 데이터: 제품속성 {aiContextSummary.productAttributeCount ?? 0}개, 고객요구 {aiContextSummary.customerNeedCount ?? 0}개, 기존스펙 {aiContextSummary.existingSpecCount ?? 0}개</div>

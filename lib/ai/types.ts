@@ -1,8 +1,13 @@
 // AI 작업 계약. UI와 API 라우트는 이 계약만 알고, 실제 엔진이 무엇인지는 모른다.
 import { z } from 'zod';
+import type { SpecAiContext } from '../spec-ai-agent';
 
 export const AI_PROVIDER_IDS = ['rule', 'local', 'hermes', 'api'] as const;
 export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
+
+// 브라우저가 자기 PC의 LLM을 직접 호출한 경우를 화면에 구분해 보여주기 위한 태그.
+// 서버에서 health check 할 수 있는 대상이 아니라 AI_PROVIDER_IDS 에는 넣지 않는다.
+export type AiEngineTag = AiProviderId | 'browser-local';
 
 export const AI_MENTOR_FIELDS = ['marketSegment', 'customerName', 'customerNeed', 'benefit'] as const;
 export type AiMentorField = (typeof AI_MENTOR_FIELDS)[number];
@@ -82,6 +87,39 @@ export interface AttributeDraftInput {
 }
 
 // ─────────────────────────────────────────
+// 작업 3: WS-2 AS-IS 스펙표 FAST 초안
+// ─────────────────────────────────────────
+// LLM 에는 나무 구조만 만들게 하고, id·order 부여와 검증·추천은 서버가 한다.
+// 규칙 기반·서버 LLM·브라우저 LLM 세 경로가 같은 후처리를 거치게 하기 위함이다.
+export const specDraftDetailSchema = z.object({
+    name: z.string().min(1).max(80),
+    technology: z.string().max(80).default(''),
+});
+
+export const specDraftSubSchema = z.object({
+    name: z.string().min(1).max(80),
+    details: z.array(specDraftDetailSchema).min(1).max(6),
+});
+
+export const specDraftCoreSchema = z.object({
+    name: z.string().min(1).max(80),
+    subs: z.array(specDraftSubSchema).min(1).max(6),
+});
+
+export const specDraftTreeSchema = z.object({
+    cores: z.array(specDraftCoreSchema).min(1).max(8),
+});
+
+export type SpecDraftDetail = z.infer<typeof specDraftDetailSchema>;
+export type SpecDraftSub = z.infer<typeof specDraftSubSchema>;
+export type SpecDraftCore = z.infer<typeof specDraftCoreSchema>;
+export type SpecDraftTree = z.infer<typeof specDraftTreeSchema>;
+
+// 규칙 기반 엔진은 요약이 아니라 원본 문맥 전체가 필요하므로 기존 컨텍스트를 그대로 쓴다.
+// 프롬프트 빌더(lib/ai/prompts.ts)가 여기서 필요한 만큼만 뽑아 요약한다.
+export type SpecDraftInput = SpecAiContext;
+
+// ─────────────────────────────────────────
 // 프로바이더 인터페이스
 // ─────────────────────────────────────────
 export interface AiProvider {
@@ -91,6 +129,7 @@ export interface AiProvider {
     isAvailable(): Promise<boolean>;
     mentorQuestions(input: MentorQuestionsInput): Promise<MentorQuestionsResult>;
     attributeDraft(input: AttributeDraftInput): Promise<AttributeDraftResult>;
+    specDraft(input: SpecDraftInput): Promise<SpecDraftTree>;
 }
 
 // 어떤 엔진이 처리했는지, 폴백이 일어났는지 호출자에게 알린다.

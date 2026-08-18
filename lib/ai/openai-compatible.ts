@@ -3,14 +3,22 @@
 import type { z } from 'zod';
 import { extractModelIds, nativeTagsUrl, pickModel } from './endpoint-discovery';
 import {
+    buildAttributeDraftPrompts,
+    buildMentorQuestionsPrompts,
+    buildSpecDraftPrompts,
+} from './prompts';
+import {
     attributeDraftResultSchema,
     mentorQuestionsResultSchema,
+    specDraftTreeSchema,
     type AiProvider,
     type AiProviderId,
     type AttributeDraftInput,
     type AttributeDraftResult,
     type MentorQuestionsInput,
     type MentorQuestionsResult,
+    type SpecDraftInput,
+    type SpecDraftTree,
 } from './types';
 
 export interface OpenAiCompatibleConfig {
@@ -69,22 +77,6 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
         clearTimeout(timer);
     }
 }
-
-const MENTOR_QUESTIONS_SPEC = `{
-  "questions": [
-    { "id": "짧은 영문 슬러그", "field": "marketSegment | customerName | customerNeed | benefit",
-      "question": "한국어 질문", "hint": "한국어 힌트", "examples": ["예시1", "예시2"] }
-  ],
-  "focus": "지금 가장 먼저 채워야 할 항목에 대한 한 문장 안내"
-}`;
-
-const ATTRIBUTE_DRAFT_SPEC = `{
-  "rows": [
-    { "marketSegment": "세분시장", "customerName": "고객명",
-      "customerNeed": "고객 니즈", "benefit": "제공혜택" }
-  ],
-  "issues": [ { "severity": "info | warning | error", "message": "한국어 설명" } ]
-}`;
 
 export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): AiProvider {
     const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -237,41 +229,24 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
         },
 
         async mentorQuestions(input: MentorQuestionsInput): Promise<MentorQuestionsResult> {
-            return complete(
-                `당신은 제품기획 워크시트(WS-3 제품속성서) 작성을 돕는 멘토입니다.
-사용자가 시장세분화, 세분시장별 고객명, 고객 문제를 스스로 구체화하도록 질문을 만드세요.
-반드시 아래 JSON 형식으로만 답하세요.
-${MENTOR_QUESTIONS_SPEC}`,
-                `제품명: ${input.project.name}
-설명: ${input.project.description ?? ''}
-상세: ${input.project.detailedDescription ?? ''}
-이미 입력된 행 수: ${input.existingRows?.length ?? 0}
-이미 입력된 내용 요약: ${summarizeRows(input.existingRows)}`,
-                mentorQuestionsResultSchema
-            );
+            const prompts = buildMentorQuestionsPrompts(input);
+            return complete(prompts.system, prompts.user, mentorQuestionsResultSchema);
         },
 
         async attributeDraft(input: AttributeDraftInput): Promise<AttributeDraftResult> {
-            return complete(
-                `당신은 제품기획 워크시트(WS-3 제품속성서) 작성을 돕는 멘토입니다.
-사용자의 답변을 표의 행으로 정리하세요.
-같은 세분시장 안에서 고객 니즈와 제공혜택이 동일하면 같은 문장을 그대로 반복해 넣으세요(표에서 병합되어 한 번만 표기됩니다).
-반드시 아래 JSON 형식으로만 답하세요.
-${ATTRIBUTE_DRAFT_SPEC}`,
-                `제품명: ${input.project.name}
-설명: ${input.project.description ?? ''}
-세분화 기준: ${input.answers.segmentationBasis ?? ''}
-세분시장: ${input.answers.marketSegments ?? ''}
-세분시장별 고객명: ${input.answers.customerNames ?? ''}
-세분시장별 고객 문제: ${input.answers.customerProblems ?? ''}
-기대 혜택: ${input.answers.expectedBenefits ?? ''}`,
-                attributeDraftResultSchema
-            );
+            const prompts = buildAttributeDraftPrompts(input);
+            return complete(prompts.system, prompts.user, attributeDraftResultSchema);
+        },
+
+        async specDraft(input: SpecDraftInput): Promise<SpecDraftTree> {
+            const prompts = buildSpecDraftPrompts(input);
+            return complete(prompts.system, prompts.user, specDraftTreeSchema);
         },
     };
 }
 
-function safeJsonParse(content: string): unknown {
+// 브라우저 경유 호출에서 돌아온 원문도 같은 방식으로 파싱해야 해서 밖으로 연다.
+export function safeJsonParse(content: string): unknown {
     const direct = tryParse(content);
     if (direct !== undefined) return direct;
 

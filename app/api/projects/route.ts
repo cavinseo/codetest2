@@ -8,6 +8,7 @@ import {
     BusinessPlanFileValidationError,
     validateBusinessPlanFileStorageValue,
 } from '@/lib/business-plan-file';
+import { DEFAULT_PROJECT_AI_MODE, projectAiModeSchema } from '@/lib/ai/project-ai-mode';
 
 const log = createLogger('api/projects');
 
@@ -16,6 +17,7 @@ const createProjectSchema = z.object({
     description: z.string().optional(),
     detailedDescription: z.string().optional(),
     businessPlanFile: z.string().nullable().optional(),
+    aiMode: projectAiModeSchema.optional().default(DEFAULT_PROJECT_AI_MODE),
 });
 
 // ─── GET: 프로젝트 목록 조회 ──────────────────────────────────────────
@@ -79,7 +81,7 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json();
-        const { name, description, detailedDescription, businessPlanFile } =
+        const { name, description, detailedDescription, businessPlanFile, aiMode } =
             createProjectSchema.parse(body);
         const validatedBusinessPlanFile = validateBusinessPlanFileStorageValue(businessPlanFile);
 
@@ -90,6 +92,7 @@ export async function POST(request: NextRequest) {
                 description,
                 detailedDescription,
                 businessPlanFile: validatedBusinessPlanFile,
+                aiMode,
                 ownerId: userId,
             },
         });
@@ -102,6 +105,7 @@ export async function POST(request: NextRequest) {
                 name: newProject.name,
                 description: newProject.description,
                 detailedDescription: newProject.detailedDescription,
+                aiMode: newProject.aiMode,
                 createdAt: newProject.createdAt.toISOString(),
                 updatedAt: newProject.updatedAt.toISOString(),
                 memberCount: 1,

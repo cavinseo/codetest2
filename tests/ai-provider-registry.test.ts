@@ -11,6 +11,9 @@ function stubProvider(id: AiProviderId, overrides: Partial<AiProvider> = {}): Ai
         isAvailable: async () => true,
         mentorQuestions: async () => ({ questions: [], focus: id }),
         attributeDraft: async () => ({ rows: [], issues: [] }),
+        specDraft: async () => ({
+            cores: [{ name: `${id} 핵심`, subs: [{ name: '세부', details: [{ name: '기능', technology: '기술' }] }] }],
+        }),
         ...overrides,
     };
 }
@@ -28,6 +31,20 @@ describe('AI 프로바이더 폴백', () => {
         expect(outcome.provider).toBe('rule');
         expect(outcome.degraded).toBe(false);
         expect(outcome.result.questions.length).toBeGreaterThan(0);
+    });
+
+    it('스펙 초안도 엔진이 죽으면 규칙 기반으로 떨어진다', async () => {
+        const outcome = await runAiTask(
+            (provider) => provider.specDraft({ project: { name: '동호회 관리 솔루션' } }),
+            {
+                requested: 'local',
+                resolveProvider: resolverFor(stubProvider('local', { isAvailable: async () => false })),
+            }
+        );
+
+        expect(outcome.provider).toBe('rule');
+        expect(outcome.degraded).toBe(true);
+        expect(outcome.result.cores.length).toBeGreaterThan(0);
     });
 
     it('연결되는 엔진은 그대로 사용한다', async () => {
