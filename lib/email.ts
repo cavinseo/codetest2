@@ -64,7 +64,7 @@ export async function sendSurveyInvitation(
 
     try {
         await transporter.sendMail({
-            from: `"Kano & QFD" <${serviceSettings.smtp!.user}>`,
+            from: `"KS-QFD" <${serviceSettings.smtp!.user}>`,
             to: email,
             subject: `[Kano 설문] ${projectName} - 설문 참여 요청`,
             html,

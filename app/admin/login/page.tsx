@@ -58,7 +58,7 @@ export default function AdminLoginPage() {
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-rose-500 flex items-center justify-center text-white font-bold group-hover:scale-105 transition-transform">
                             🛡️
                         </div>
-                        <span className="text-xl font-display font-bold text-white">Kano &amp; QFD</span>
+                        <span className="text-xl font-display font-bold text-white">KS-QFD</span>
                     </Link>
                     <h1 className="text-3xl font-display font-bold text-white mb-2">관리자 모드</h1>
                     <p className="text-gray-400">관리자 권한이 있는 계정으로 로그인하세요</p>

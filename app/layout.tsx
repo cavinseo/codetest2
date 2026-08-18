@@ -16,7 +16,7 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-    title: "Kano & QFD — Product Quality Intelligence",
+    title: "KS-QFD — Product Quality Intelligence",
     description: "AI-powered Kano survey analysis and QFD matrix for building products people love",
 };
 

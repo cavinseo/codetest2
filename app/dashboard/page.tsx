@@ -124,7 +124,7 @@ export default function DashboardPage() {
                             </div>
                             <div>
                                 <h1 className="text-lg font-display font-bold text-white leading-tight">
-                                    Kano &amp; QFD
+                                    KS-QFD
                                 </h1>
                                 <p className="text-xs text-gray-500">프로젝트 대시보드</p>
                             </div>
