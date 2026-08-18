@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
 import { readBusinessPlanForSpec } from '@/lib/business-plan-sections';
+import { describeAiEngine } from '@/lib/ai/engine-label';
 
 interface SpecFunction {
     id: string;
@@ -84,6 +85,8 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         qfdTechnicalCount?: number;
         targetSpecCount?: number;
     } | null>(null);
+    // 어떤 엔진이 이 초안을 만들었는지 결과 화면에 배지로 보여준다.
+    const [aiEngineLabel, setAiEngineLabel] = useState('');
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -372,6 +375,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         setAiIssues([]);
         setAiRecommendations([]);
         setAiContextSummary(null);
+        setAiEngineLabel('');
         setIsGenerating(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/spec/generate`, {
@@ -395,6 +399,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                 setAiIssues(data.issues || []);
                 setAiRecommendations(data.recommendations || []);
                 setAiContextSummary(data.contextSummary || null);
+                setAiEngineLabel(describeAiEngine(data));
                 setAiWizardStep('fast');
                 showToast('FAST 결과표 초안을 만들었습니다. 수정 후 확정하세요.', 'info');
             } else {
@@ -836,6 +841,12 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
 
                             {aiWizardStep === 'fast' && (
                                 <div className="space-y-4">
+                                    {aiEngineLabel && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="badge-primary text-[10px]">{aiEngineLabel}</span>
+                                            <span className="text-xs text-gray-500">이 초안을 만든 엔진</span>
+                                        </div>
+                                    )}
                                     {aiContextSummary && (
                                         <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs leading-5 text-cyan-100">
                                             <div>참고 데이터: 제품속성 {aiContextSummary.productAttributeCount ?? 0}개, 고객요구 {aiContextSummary.customerNeedCount ?? 0}개, 기존스펙 {aiContextSummary.existingSpecCount ?? 0}개</div>

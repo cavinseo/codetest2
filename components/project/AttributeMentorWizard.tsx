@@ -10,6 +10,7 @@ import {
     type MentorDraftRow,
 } from '@/lib/attribute-mentor-utils';
 import type { AttributeSpecFunctionLike } from '@/lib/product-attributes-utils';
+import { describeAiEngine } from '@/lib/ai/engine-label';
 
 interface MentorQuestion {
     id: string;
@@ -500,12 +501,5 @@ function previousStep(step: WizardStep): WizardStep {
 }
 
 function describeEngine(data: { provider?: string; degraded?: boolean }): string {
-    const labels: Record<string, string> = {
-        rule: '기본 엔진',
-        local: '로컬 AI',
-        hermes: '헤르메스',
-        api: '클라우드 API',
-    };
-    const label = labels[data.provider ?? 'rule'] ?? '기본 엔진';
-    return data.degraded ? `${label}(폴백)` : label;
+    return describeAiEngine(data);
 }
