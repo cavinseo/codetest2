@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
+import { readBusinessPlanForSpec } from '@/lib/business-plan-sections';
 
 interface SpecFunction {
     id: string;
@@ -407,11 +408,23 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         }
     };
 
+    // 개요에 저장된 사업계획 내용을 FAST 입력칸으로 옮긴다.
+    // 양식으로 채운 경우 핵심 기능 구획이 있어 원하는 기능까지 자동으로 채워진다.
+    const businessPlanForSpec = useMemo(
+        () => readBusinessPlanForSpec(project?.detailedDescription),
+        [project?.detailedDescription]
+    );
+
+    const applyBusinessPlanToWizard = () => {
+        setAiDetailInput(businessPlanForSpec.detailText || project?.description || '');
+        setAiQuestionInput({ desiredFunctions: businessPlanForSpec.desiredFunctions });
+    };
+
     const openAiDetailPopup = () => {
         setAiWizardStep('guide');
-        setAiDetailInput(prev => prev || project?.detailedDescription || project?.description || '');
+        setAiDetailInput(prev => prev || businessPlanForSpec.detailText || project?.description || '');
         setAiQuestionInput({
-            desiredFunctions: '',
+            desiredFunctions: businessPlanForSpec.desiredFunctions,
         });
         setAiFastRows([]);
         setShowAiDetailPopup(true);
@@ -766,6 +779,21 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
 
                             {aiWizardStep === 'questions' && (
                                 <div className="space-y-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-500/25 bg-primary-500/10 px-3 py-2.5">
+                                        <p className="text-xs text-primary-200">
+                                            {businessPlanForSpec.hasSections
+                                                ? '개요의 사업계획 내용(고객 정의 · 고객 문제 · 핵심 기능)을 불러올 수 있습니다.'
+                                                : '개요에 상세 제품개요가 있으면 아래 칸으로 불러올 수 있습니다.'}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={applyBusinessPlanToWizard}
+                                            disabled={isGenerating || !businessPlanForSpec.detailText}
+                                            className="btn-secondary flex-shrink-0 text-xs disabled:opacity-40"
+                                        >
+                                            제품개요 불러오기
+                                        </button>
+                                    </div>
                                     <label className="block">
                                         <span className="mb-1 block text-xs font-medium text-gray-400">세부설명</span>
                                         <textarea

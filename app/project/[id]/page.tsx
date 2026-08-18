@@ -26,6 +26,10 @@ import {
 } from '@/lib/business-plan-file';
 import { useRouter } from 'next/navigation';
 
+function isExcelFileName(fileName: string) {
+    return /\.(xlsx|xls)$/i.test(fileName.trim());
+}
+
 interface ProjectData {
     id: string;
     name: string;
@@ -75,6 +79,8 @@ export default function ProjectDetailPage() {
     const [isOverviewFileReading, setIsOverviewFileReading] = useState(false);
     const [isOverviewFileDirty, setIsOverviewFileDirty] = useState(false);
     const [overviewError, setOverviewError] = useState('');
+    // 사업계획 양식에서 어떤 항목이 자동으로 채워졌는지 알려주는 안내 문구
+    const [overviewAutoFillNotice, setOverviewAutoFillNotice] = useState('');
     const overviewFileSelectionRef = useRef(0);
     const [overviewForm, setOverviewForm] = useState({
         name: '',
@@ -179,6 +185,7 @@ export default function ProjectDetailPage() {
             businessPlanFile: project.businessPlanFile || '',
         });
         setOverviewError('');
+        setOverviewAutoFillNotice('');
         setIsOverviewEditing(false);
     };
 
@@ -195,12 +202,17 @@ export default function ProjectDetailPage() {
 
         const selectionVersion = ++overviewFileSelectionRef.current;
         setOverviewError('');
+        setOverviewAutoFillNotice('');
         setIsOverviewFileReading(true);
         try {
             const businessPlanFile = await readAndSerializeBusinessPlanFile(file);
             if (selectionVersion !== overviewFileSelectionRef.current) return;
             setOverviewForm((current) => ({ ...current, businessPlanFile }));
             setIsOverviewFileDirty(true);
+
+            if (isExcelFileName(file.name)) {
+                await autoFillFromBusinessPlan(file, selectionVersion);
+            }
         } catch (error) {
             if (selectionVersion !== overviewFileSelectionRef.current) return;
             setOverviewError(error instanceof Error ? error.message : '사업계획 파일을 읽지 못했습니다.');
@@ -209,11 +221,55 @@ export default function ProjectDetailPage() {
         }
     };
 
+    // 양식을 읽어 개요 입력칸을 채운다. 첨부 자체는 이미 위에서 반영됐고,
+    // 여기서 실패해도 첨부는 유지한다.
+    const autoFillFromBusinessPlan = async (file: File, selectionVersion: number) => {
+        const body = new FormData();
+        body.append('file', file);
+
+        const res = await fetch(`/api/projects/${projectId}/business-plan/parse`, {
+            method: 'POST',
+            body,
+        });
+        if (selectionVersion !== overviewFileSelectionRef.current) return;
+
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+            setOverviewError(data?.error || '사업계획 양식을 읽지 못했습니다. 첨부는 그대로 유지됩니다.');
+            return;
+        }
+
+        const overview = data?.overview ?? {};
+        const filledLabels: string[] = Array.isArray(data?.filledLabels) ? data.filledLabels : [];
+        if (filledLabels.length === 0) {
+            setOverviewError('양식에서 읽을 수 있는 항목이 없습니다. [내용] 칸에 입력했는지 확인하세요.');
+            return;
+        }
+
+        // 양식에서 비워 둔 항목은 건너뛰어, 기존에 적어 둔 내용을 지우지 않는다.
+        setOverviewForm((current) => ({
+            ...current,
+            name: overview.name?.trim() ? overview.name.trim() : current.name,
+            description: overview.description?.trim() ? overview.description.trim() : current.description,
+            detailedDescription: overview.detailedDescription?.trim()
+                ? overview.detailedDescription.trim()
+                : current.detailedDescription,
+        }));
+        setOverviewAutoFillNotice(
+            `양식에서 ${filledLabels.join(', ')} 항목을 불러왔습니다. 확인 후 저장하세요.`
+        );
+    };
+
+    const handleTemplateDownload = () => {
+        window.location.href = `/api/projects/${projectId}/business-plan/template`;
+    };
+
     const handleOverviewFileRemove = () => {
         overviewFileSelectionRef.current += 1;
         setIsOverviewFileReading(false);
         setIsOverviewFileDirty(true);
         setOverviewError('');
+        setOverviewAutoFillNotice('');
         setOverviewForm((current) => ({ ...current, businessPlanFile: '' }));
     };
 
@@ -523,6 +579,28 @@ export default function ProjectDetailPage() {
                                 </div>
                             )}
 
+                            {overviewAutoFillNotice && (
+                                <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                                    {overviewAutoFillNotice}
+                                </div>
+                            )}
+
+                            {isOverviewEditing && (
+                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-500/25 bg-primary-500/10 px-4 py-3">
+                                    <p className="text-xs text-primary-200">
+                                        엑셀 양식에 프로젝트명 · 간단 설명 · 고객 정의 · 고객 문제 정의 · 핵심 기능을 적어
+                                        올리면 아래 칸이 자동으로 채워집니다.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={handleTemplateDownload}
+                                        className="btn-secondary flex-shrink-0 text-xs"
+                                    >
+                                        양식 다운로드
+                                    </button>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
                                     <p className="text-xs text-gray-500 mb-2">프로젝트명</p>
@@ -565,7 +643,7 @@ export default function ProjectDetailPage() {
                                                     {displayedBusinessPlanFile ? '파일 교체' : '파일 선택'}
                                                     <input
                                                         type="file"
-                                                        accept=".pdf,.doc,.docx,.txt"
+                                                        accept=".pdf,.doc,.docx,.txt,.xlsx,.xls"
                                                         className="hidden"
                                                         onChange={handleOverviewFileSelect}
                                                         disabled={isOverviewSaving || isOverviewFileReading}
@@ -582,7 +660,11 @@ export default function ProjectDetailPage() {
                                                     </button>
                                                 )}
                                             </div>
-                                            <p className="text-xs text-gray-500">PDF, DOC, DOCX, TXT · 최대 10MB</p>
+                                            <p className="text-xs text-gray-500">
+                                                PDF, DOC, DOCX, TXT, XLSX, XLS · 최대 10MB
+                                                <br />
+                                                엑셀 양식을 올리면 개요 칸이 자동으로 채워집니다.
+                                            </p>
                                         </div>
                                     ) : (
                                         displayedBusinessPlanFile ? (

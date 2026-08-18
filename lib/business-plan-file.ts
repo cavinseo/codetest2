@@ -5,12 +5,17 @@ export const BUSINESS_PLAN_FILE_NAME_MAX_LENGTH = 255;
 
 const STORAGE_PREFIX = 'business-plan-file:v1:';
 
+// xlsx/xls 는 개요 자동 입력용 사업계획 양식을 첨부 그대로 보관하려고 허용한다.
 const MIME_BY_EXTENSION: Record<string, string> = {
     pdf: 'application/pdf',
     doc: 'application/msword',
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     txt: 'text/plain',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    xls: 'application/vnd.ms-excel',
 };
+
+const ALLOWED_FILE_TYPES_MESSAGE = 'PDF, DOC, DOCX, TXT, XLSX, XLS 파일만 업로드할 수 있습니다.';
 
 interface StoredBusinessPlanFile {
     version: 1;
@@ -70,7 +75,7 @@ function validateStoredFile(file: StoredBusinessPlanFile) {
         throw new BusinessPlanFileValidationError('사업계획 파일명이 너무 깁니다.');
     }
     if (!expectedMimeType || expectedMimeType !== mimeType) {
-        throw new BusinessPlanFileValidationError('PDF, DOC, DOCX, TXT 파일만 업로드할 수 있습니다.');
+        throw new BusinessPlanFileValidationError(ALLOWED_FILE_TYPES_MESSAGE);
     }
 
     const parsedDataUrl = parseBase64DataUrl(file.dataUrl);
@@ -91,7 +96,7 @@ export function getBusinessPlanFileValidationError(file: Pick<File, 'name' | 'si
     const extension = getExtension(file.name);
     const expectedMimeType = MIME_BY_EXTENSION[extension];
     if (!expectedMimeType || (file.type && file.type.toLowerCase() !== expectedMimeType)) {
-        return 'PDF, DOC, DOCX, TXT 파일만 업로드할 수 있습니다.';
+        return ALLOWED_FILE_TYPES_MESSAGE;
     }
     if (file.size > BUSINESS_PLAN_FILE_MAX_BYTES) {
         return '사업계획 파일은 10MB 이하만 업로드할 수 있습니다.';
@@ -215,13 +220,13 @@ export function validateBusinessPlanFileStorageValue(value: string | null | unde
     if (trimmedValue.startsWith('data:')) {
         const parsedDataUrl = parseBase64DataUrl(trimmedValue);
         if (!parsedDataUrl || !Object.values(MIME_BY_EXTENSION).includes(parsedDataUrl.mimeType)) {
-            throw new BusinessPlanFileValidationError('PDF, DOC, DOCX, TXT 파일만 업로드할 수 있습니다.');
+            throw new BusinessPlanFileValidationError(ALLOWED_FILE_TYPES_MESSAGE);
         }
         if (parsedDataUrl.size > BUSINESS_PLAN_FILE_MAX_BYTES) {
             throw new BusinessPlanFileValidationError('사업계획 파일은 10MB 이하만 업로드할 수 있습니다.');
         }
     } else {
-        throw new BusinessPlanFileValidationError('PDF, DOC, DOCX, TXT 파일만 업로드할 수 있습니다.');
+        throw new BusinessPlanFileValidationError(ALLOWED_FILE_TYPES_MESSAGE);
     }
 
     return trimmedValue;
