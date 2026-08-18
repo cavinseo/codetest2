@@ -425,6 +425,10 @@ body {
   color: #0f172a !important;
 }
 
+.light .focus\:text-white:focus {
+  color: #0f172a !important;
+}
+
 .light .hover\:bg-white\/10:hover,
 .light .hover\:bg-white\/\[0\.02\]:hover,
 .light .hover\:bg-white\/\[0\.06\]:hover {
@@ -588,18 +592,18 @@ body {
 }
 
 .light .nav-tab {
-  color: #9ca3af !important;
+  color: #64748b !important;
 }
 
 .light .nav-tab:hover {
-  color: #ffffff !important;
-  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: #0f172a !important;
+  background-color: rgba(15, 23, 42, 0.06) !important;
 }
 
 .light .nav-tab-active {
-  color: #ffffff !important;
-  background-color: rgba(37, 99, 235, 0.20) !important;
-  border-color: rgba(59, 130, 246, 0.25) !important;
+  color: #3730a3 !important;
+  background-color: rgba(67, 56, 202, 0.12) !important;
+  border-color: rgba(67, 56, 202, 0.25) !important;
 }
 
 .light .divider {
