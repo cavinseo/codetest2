@@ -50,6 +50,7 @@ prisma/backup/
 testsprite_tests/
 docs/.pdca-status.json
 docs/.bkit-memory.json
+docs/.pdca-snapshots/
 
 .vercel
 .env*
