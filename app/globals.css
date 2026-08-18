@@ -440,6 +440,14 @@ body {
   background-color: rgba(15, 23, 42, 0.04) !important;
 }
 
+/* bg-black/20 은 카드 안쪽 패널 배경(WS-4 컨설턴트 진단 pre, WS-6 조회 셀렉트)에 쓰인다.
+   라이트 모드에서 오버라이드가 없으면 어두운 반투명이 그대로 남아, 밝게 바뀐 카드 위에
+   회색 판이 생기고 그 위 글자는 어둡게 뒤집혀 회색 바탕에 검은 글씨가 된다.
+   모달 딤 배경(bg-black/50·60·70)은 라이트 모드에서도 어두워야 하므로 건드리지 않는다. */
+.light .bg-black\/20 {
+  background-color: rgba(15, 23, 42, 0.04) !important;
+}
+
 .light .bg-blue-500\/10,
 .light .bg-blue-500\/15,
 .light .bg-cyan-500\/10,
