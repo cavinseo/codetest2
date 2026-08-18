@@ -290,12 +290,19 @@ body {
   background-color: rgba(255, 255, 255, 0.95) !important;
 }
 
+/* bg-gray-950 은 제품개요 편집 입력창과 WS-2 FAST 팝업 패널에 쓰인다.
+   목록에서 빠져 있으면 배경만 검은 채로 남고 그 위 text-white 는 라이트 규칙에
+   따라 어두워져 검은 바탕에 검은 글씨가 된다.
+   QFD 의 bg-slate-950/80 칩은 의도적으로 항상 어두우며, 아래 규칙은 gray 계열
+   클래스만 정확히 지목하므로 영향을 주지 않는다. */
+.light .bg-gray-950,
 .light .bg-gray-900,
 .light .bg-gray-800,
 .light .bg-gray-700 {
   background-color: #ffffff !important;
 }
 
+.light [class*="bg-gray-950/"],
 .light [class*="bg-gray-900/"],
 .light [class*="bg-gray-800/"],
 .light [class*="bg-gray-700/"] {
