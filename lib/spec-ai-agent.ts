@@ -67,17 +67,19 @@ export interface SpecAiRecommendation {
     reason: string;
 }
 
-interface Detail {
+// LLM 이 만든 나무(lib/ai/types.ts 의 SpecDraftTree)와 같은 모양이라,
+// 규칙 기반 결과와 LLM 결과를 같은 후처리에 태울 수 있다.
+export interface Detail {
     name: string;
     technology: string;
 }
 
-interface Sub {
+export interface Sub {
     name: string;
     details: Detail[];
 }
 
-interface Core {
+export interface Core {
     name: string;
     subs: Sub[];
 }
@@ -108,15 +110,27 @@ const DEFAULT_APPLIED_TECH = [
 
 export function generateSpecAiDraft(mode: SpecAiMode, context: SpecAiContext) {
     const normalizedContext = normalizeContext(context);
-    const generated = generateByMode(mode, normalizedContext);
-    const specFunctions = flattenCores(generated);
-    const issues = validateSpecDraft(specFunctions);
-    const recommendations = buildRecommendations(specFunctions, normalizedContext);
+    return composeFromNormalized(generateByMode(mode, normalizedContext), normalizedContext);
+}
+
+// 규칙 기반 엔진이 만든 나무만 꺼낸다. AI 프로바이더의 rule 구현이 이걸 쓴다.
+export function generateSpecDraftCores(context: SpecAiContext): Core[] {
+    return generateDraftCores(normalizeContext(context));
+}
+
+// 나무를 평탄화하고 검증·추천·요약을 붙인다.
+// 규칙 기반, 서버 LLM, 브라우저 LLM 세 경로가 모두 이 함수를 지나 같은 모양이 된다.
+export function composeSpecDraftFromCores(cores: Core[], context: SpecAiContext) {
+    return composeFromNormalized(cores, normalizeContext(context));
+}
+
+function composeFromNormalized(cores: Core[], normalizedContext: ReturnType<typeof normalizeContext>) {
+    const specFunctions = flattenCores(cores);
 
     return {
         specFunctions,
-        issues,
-        recommendations,
+        issues: validateSpecDraft(specFunctions),
+        recommendations: buildRecommendations(specFunctions, normalizedContext),
         contextSummary: buildContextSummary(normalizedContext),
     };
 }
