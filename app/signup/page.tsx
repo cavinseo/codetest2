@@ -99,7 +99,7 @@ export default function SignupPage() {
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white font-bold group-hover:scale-105 transition-transform">
                             K
                         </div>
-                        <span className="text-xl font-display font-bold text-white">Kano & QFD</span>
+                        <span className="text-xl font-display font-bold text-white">KS-QFD</span>
                     </Link>
                     <h1 className="text-3xl font-display font-bold text-white mb-2">
                         계정 만들기

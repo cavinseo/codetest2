@@ -24,7 +24,7 @@ export default async function HomePage() {
                     <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white text-sm font-bold">
                         K
                     </div>
-                    <span className="text-white font-display font-bold text-lg">Kano & QFD</span>
+                    <span className="text-white font-display font-bold text-lg">KS-QFD</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                     <Link href="/login" className="btn-ghost">
