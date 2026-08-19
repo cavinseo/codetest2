@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-policy';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ interface Stats {
     recentProjects: Array<{ id: string; name: string; createdAt: string }>;
 }
 
-type Tab = 'overview' | 'users' | 'projects';
+type Tab = 'overview' | 'users' | 'projects' | 'password';
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -55,6 +56,13 @@ export default function AdminModePage() {
     const [confirmDelete, setConfirmDelete] = useState<{ type: 'user' | 'project'; id: string; name: string } | null>(null);
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [accessDenied, setAccessDenied] = useState(false);
+    const [passwordForm, setPasswordForm] = useState({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+    });
+    const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -138,6 +146,38 @@ export default function AdminModePage() {
         setConfirmDelete(null);
     };
 
+    const handleChangePassword = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setPasswordMsg(null);
+
+        // 서버에 보내기 전에 같은 규칙으로 한 번 걸러 왕복을 줄인다.
+        const localError = getPasswordChangeError(passwordForm);
+        if (localError) {
+            setPasswordMsg({ type: 'error', msg: localError });
+            return;
+        }
+
+        setIsChangingPassword(true);
+        try {
+            const res = await fetch('/api/admin/password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(passwordForm),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                setPasswordMsg({ type: 'error', msg: data?.error || '비밀번호 변경에 실패했습니다.' });
+                return;
+            }
+            setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+            setPasswordMsg({ type: 'success', msg: data?.message || '비밀번호를 변경했습니다.' });
+        } catch {
+            setPasswordMsg({ type: 'error', msg: '비밀번호 변경에 실패했습니다.' });
+        } finally {
+            setIsChangingPassword(false);
+        }
+    };
+
     const filteredUsers = users.filter(
         (u) => u.name.toLowerCase().includes(searchUser.toLowerCase()) || u.email.toLowerCase().includes(searchUser.toLowerCase())
     );
@@ -162,6 +202,10 @@ export default function AdminModePage() {
         {
             id: 'projects', label: `프로젝트 관리 (${projects.length})`,
             icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>,
+        },
+        {
+            id: 'password', label: '비밀번호 변경',
+            icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>,
         },
     ];
 
@@ -659,6 +703,64 @@ export default function AdminModePage() {
                                         ))}
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {/* ── Password Tab ─────────────────────────────── */}
+                        {tab === 'password' && (
+                            <div className="max-w-md">
+                                <div className="card">
+                                    <h2 className="text-base font-bold text-white mb-1">관리자 비밀번호 변경</h2>
+                                    <p className="text-xs text-gray-500 mb-5">
+                                        지금 로그인한 계정의 비밀번호만 바꿉니다. 변경 후에도 로그인 상태는 유지됩니다.
+                                    </p>
+
+                                    {passwordMsg && (
+                                        <div
+                                            className={`mb-4 rounded-lg border px-4 py-3 text-sm ${passwordMsg.type === 'success'
+                                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                                                : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                                                }`}
+                                            id="admin-password-message"
+                                        >
+                                            {passwordMsg.msg}
+                                        </div>
+                                    )}
+
+                                    <form onSubmit={handleChangePassword} className="space-y-4">
+                                        {([
+                                            { key: 'currentPassword', label: '현재 비밀번호', autoComplete: 'current-password' },
+                                            { key: 'newPassword', label: '새 비밀번호', autoComplete: 'new-password' },
+                                            { key: 'confirmPassword', label: '새 비밀번호 확인', autoComplete: 'new-password' },
+                                        ] as const).map((field) => (
+                                            <label key={field.key} className="block">
+                                                <span className="mb-1.5 block text-sm font-medium text-gray-300">{field.label}</span>
+                                                <input
+                                                    type="password"
+                                                    value={passwordForm[field.key]}
+                                                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                                                    disabled={isChangingPassword}
+                                                    autoComplete={field.autoComplete}
+                                                    className="input w-full"
+                                                    id={`admin-${field.key}`}
+                                                />
+                                            </label>
+                                        ))}
+
+                                        <p className="text-xs text-gray-500">
+                                            새 비밀번호는 최소 {PASSWORD_MIN_LENGTH}자 이상이어야 합니다.
+                                        </p>
+
+                                        <button
+                                            type="submit"
+                                            disabled={isChangingPassword}
+                                            className="btn-primary w-full disabled:opacity-50"
+                                            id="admin-change-password-submit"
+                                        >
+                                            {isChangingPassword ? '변경 중...' : '비밀번호 변경'}
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                         )}
                     </>
