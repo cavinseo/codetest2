@@ -7,7 +7,7 @@
         "check:encoding": "node scripts/check-text-encoding.mjs",
         "pretest": "npm run check:encoding",
         "prebuild": "npm run check:encoding",
-        "build": "next build",
+        "build": "prisma generate && next build",
         "start": "next start",
         "test": "vitest run --pool=threads",
         "lint": "eslint ."
