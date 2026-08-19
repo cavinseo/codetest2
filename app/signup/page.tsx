@@ -59,7 +59,8 @@ export default function SignupPage() {
                 throw new Error(data.error || '회원가입에 실패했습니다.');
             }
 
-            router.push('/login?signup=success');
+            // 가입 직후에는 승인 대기 상태라 바로 로그인할 수 없다. 로그인 화면에서 안내한다.
+            router.push('/login?signup=pending');
         } catch (err: any) {
             setError(err.message);
         } finally {

@@ -10,6 +10,8 @@ interface User {
     id: string;
     name: string;
     email: string;
+    status: 'PENDING' | 'APPROVED';
+    isAdmin: boolean;
     createdAt: string;
     updatedAt: string;
 }
@@ -101,6 +103,23 @@ export default function AdminModePage() {
             showMsg('error', '삭제 실패');
         }
         setConfirmDelete(null);
+    };
+
+    const handleApproval = async (userId: string, action: 'approve' | 'revoke') => {
+        const res = await fetch('/api/admin/users', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, action }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok) {
+            setUsers((prev) => prev.map((u) => (
+                u.id === userId ? { ...u, status: action === 'approve' ? 'APPROVED' : 'PENDING' } : u
+            )));
+            showMsg('success', action === 'approve' ? '가입을 승인했습니다.' : '승인을 취소했습니다.');
+        } else {
+            showMsg('error', data?.error || '승인 상태 변경에 실패했습니다.');
+        }
     };
 
     const handleDeleteProject = async (projectId: string) => {
@@ -476,6 +495,7 @@ export default function AdminModePage() {
                                             <thead>
                                                 <tr className="border-b border-white/[0.06] bg-white/[0.02]">
                                                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">사용자</th>
+                                                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">승인 상태</th>
                                                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">아이디</th>
                                                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">가입일</th>
                                                     <th className="px-5 py-3.5" />
@@ -490,10 +510,20 @@ export default function AdminModePage() {
                                                                     {user.name.charAt(0)}
                                                                 </div>
                                                                 <div>
-                                                                    <p className="text-sm font-medium text-white">{user.name}</p>
+                                                                    <p className="text-sm font-medium text-white">
+                                                                        {user.name}
+                                                                        {user.isAdmin && <span className="ml-2 badge-amber text-[10px]">관리자</span>}
+                                                                    </p>
                                                                     <p className="text-xs text-gray-500">{user.email}</p>
                                                                 </div>
                                                             </div>
+                                                        </td>
+                                                        <td className="px-5 py-4">
+                                                            {user.status === 'APPROVED' ? (
+                                                                <span className="badge-emerald text-[10px]">승인됨</span>
+                                                            ) : (
+                                                                <span className="badge-rose text-[10px]">승인 대기</span>
+                                                            )}
                                                         </td>
                                                         <td className="px-5 py-4 hidden md:table-cell">
                                                             <span className="text-xs font-mono text-gray-600">{user.id}</span>
@@ -502,13 +532,32 @@ export default function AdminModePage() {
                                                             <span className="text-xs text-gray-500">{new Date(user.createdAt).toLocaleDateString('ko-KR')}</span>
                                                         </td>
                                                         <td className="px-5 py-4 text-right">
-                                                            <button
-                                                                onClick={() => setConfirmDelete({ type: 'user', id: user.id, name: user.name })}
-                                                                className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"
-                                                                id={`admin-delete-user-${user.id}`}
-                                                            >
-                                                                삭제
-                                                            </button>
+                                                            <div className="inline-flex items-center gap-2">
+                                                                {user.status === 'PENDING' ? (
+                                                                    <button
+                                                                        onClick={() => handleApproval(user.id, 'approve')}
+                                                                        className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                                                                        id={`admin-approve-user-${user.id}`}
+                                                                    >
+                                                                        승인
+                                                                    </button>
+                                                                ) : !user.isAdmin && (
+                                                                    <button
+                                                                        onClick={() => handleApproval(user.id, 'revoke')}
+                                                                        className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors"
+                                                                        id={`admin-revoke-user-${user.id}`}
+                                                                    >
+                                                                        승인 취소
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => setConfirmDelete({ type: 'user', id: user.id, name: user.name })}
+                                                                    className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"
+                                                                    id={`admin-delete-user-${user.id}`}
+                                                                >
+                                                                    삭제
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))}

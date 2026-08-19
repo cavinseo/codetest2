@@ -39,6 +39,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: INVALID_CREDENTIALS_MSG }, { status: 401 });
         }
 
+        // 비밀번호가 맞아도 관리자가 승인하기 전에는 로그인시키지 않는다.
+        if (user.status !== 'APPROVED') {
+            log.warn('로그인 거부 — 승인 대기 계정', { userId: user.id });
+            return NextResponse.json(
+                { error: '관리자 승인 대기 중인 계정입니다. 승인 후 로그인할 수 있습니다.' },
+                { status: 403 }
+            );
+        }
+
         const sessionPayload = { userId: user.id, email: user.email, name: user.name };
 
         const cookieStore = await cookies();

@@ -9,10 +9,14 @@ vi.mock('../lib/prisma', () => ({
         project: {
             findUnique: vi.fn(),
         },
+        user: {
+            findUnique: vi.fn(),
+        },
     },
 }));
 
 const findProject = vi.mocked(prisma.project.findUnique);
+const findUser = vi.mocked(prisma.user.findUnique);
 
 function requestFor(user: SessionUser, method = 'GET'): NextRequest {
     vi.stubEnv('SESSION_SECRET', 'test-secret');
@@ -124,6 +128,8 @@ describe('authorization helpers', () => {
     it('requires explicit admin email in production', async () => {
         vi.stubEnv('NODE_ENV', 'production');
         vi.stubEnv('ADMIN_EMAILS', 'admin@example.com,ops@example.com');
+        // 환경변수 목록에 없는 계정은 DB isAdmin 플래그도 없다고 가정한다.
+        findUser.mockResolvedValue({ isAdmin: false } as never);
 
         const adminResult = await requireAdmin(
             requestFor({ userId: 'admin_1', email: 'admin@example.com', name: null })
@@ -135,5 +141,30 @@ describe('authorization helpers', () => {
         expect(responseStatus(adminResult)).toBeNull();
         expect(adminResult).toMatchObject({ email: 'admin@example.com' });
         expect(responseStatus(userResult)).toBe(403);
+    });
+
+    it('accepts a DB-flagged admin without an env email entry', async () => {
+        vi.stubEnv('NODE_ENV', 'production');
+        vi.stubEnv('ADMIN_EMAILS', '');
+        findUser.mockResolvedValue({ isAdmin: true } as never);
+
+        const result = await requireAdmin(
+            requestFor({ userId: 'user_admin_seed0001', email: 'admin@ks-qfd.com', name: null })
+        );
+
+        expect(responseStatus(result)).toBeNull();
+        expect(result).toMatchObject({ email: 'admin@ks-qfd.com' });
+    });
+
+    it('rejects a non-admin when the DB row is missing', async () => {
+        vi.stubEnv('NODE_ENV', 'production');
+        vi.stubEnv('ADMIN_EMAILS', '');
+        findUser.mockResolvedValue(null as never);
+
+        const result = await requireAdmin(
+            requestFor({ userId: 'ghost_1', email: 'ghost@example.com', name: null })
+        );
+
+        expect(responseStatus(result)).toBe(403);
     });
 });
