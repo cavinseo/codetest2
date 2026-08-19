@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
     buildCustomerNamesByMarketSegment,
     dedupeByAttributeName,
@@ -558,7 +558,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                         {/* 2행: 세분화 + 추가 버튼 */}
                         <tr className="bg-gray-800/70">
                             {markets.map(mkt => (
-                                <>
+                                <Fragment key={mkt.id}>
                                     {mkt.subSegments.map(sub => (
                                         <th
                                             key={sub.id}
@@ -601,7 +601,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                             </svg>
                                         </button>
                                     </th>
-                                </>
+                                </Fragment>
                             ))}
                         </tr>
                     </thead>
@@ -616,7 +616,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                     </div>
                                 </td>
                                 {markets.map(mkt => (
-                                    <>
+                                    <Fragment key={mkt.id}>
                                         {mkt.subSegments.map(sub => (
                                             <PriorityCell
                                                 key={`${attr.id}-${mkt.id}-${sub.id}`}
@@ -626,7 +626,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                         ))}
                                         {/* 추가 버튼 열 (빈 셀) */}
                                         <td key={`${attr.id}-${mkt.id}-add`} className="border border-gray-700/30 bg-gray-900/10 w-[36px]" />
-                                    </>
+                                    </Fragment>
                                 ))}
                             </tr>
                         ))}
@@ -643,14 +643,14 @@ export default function FitnessWrapper({ projectId }: Props) {
                                 우선순위
                             </td>
                             {markets.map(mkt => (
-                                <>
+                                <Fragment key={mkt.id}>
                                     {mkt.subSegments.map(sub => (
                                         <td key={`${mkt.id}-${sub.id}-hdr`} className="border border-gray-600/60 px-2 py-2 text-center text-gray-500 text-[10px]">
                                             개수
                                         </td>
                                     ))}
                                     <td key={`${mkt.id}-add-hdr`} className="border border-gray-600/60 w-[36px] bg-gray-800/50" />
-                                </>
+                                </Fragment>
                             ))}
                         </tr>
                         {/* H / M / L / L* 집계 행 */}
@@ -660,7 +660,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                     <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${PRIORITY_STYLE[p]}`}>{p}</span>
                                 </td>
                                 {markets.map(mkt => (
-                                    <>
+                                    <Fragment key={mkt.id}>
                                         {mkt.subSegments.map(sub => {
                                             const cnt = countPriority(mkt.id, sub.id, p);
                                             return (
@@ -672,7 +672,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                             );
                                         })}
                                         <td key={`${mkt.id}-${p}-add`} className="border border-gray-700/30 w-[36px] bg-gray-900/10" />
-                                    </>
+                                    </Fragment>
                                 ))}
                             </tr>
                         ))}
@@ -684,7 +684,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                             {(() => {
                                 const rankMap = computeSubRankings();
                                 return markets.map(mkt => (
-                                    <>
+                                    <Fragment key={mkt.id}>
                                         {mkt.subSegments.map(sub => {
                                             const r = rankMap.get(`${mkt.id}-${sub.id}`);
                                             if (!r) return <td key={`${mkt.id}-${sub.id}-rank`} className="border border-indigo-500/20 px-2 py-2 text-center"><span className="text-gray-600 text-xs">—</span></td>;
@@ -704,7 +704,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                             );
                                         })}
                                         <td key={`${mkt.id}-rank-add`} className="border border-indigo-500/20 w-[36px] bg-gray-900/10" />
-                                    </>
+                                    </Fragment>
                                 ));
                             })()}
                         </tr>
