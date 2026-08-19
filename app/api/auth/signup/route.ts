@@ -38,9 +38,12 @@ export async function POST(request: NextRequest) {
             },
         });
 
-        log.info('회원가입 완료', { userId: newUser.id });
+        log.info('회원가입 완료 — 승인 대기', { userId: newUser.id });
         return NextResponse.json({
             success: true,
+            // 스키마 기본값이 PENDING 이라 이 계정은 관리자 승인 전까지 로그인할 수 없다.
+            pendingApproval: true,
+            message: '가입이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.',
             user: { id: newUser.id, name: newUser.name, email: newUser.email },
         });
     } catch (error: unknown) {

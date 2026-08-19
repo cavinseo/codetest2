@@ -44,6 +44,12 @@ export default function DashboardPage() {
         try {
             setIsLoading(true);
             const response = await fetch('/api/projects');
+            // 로그인하지 않은 방문자에게 빈 대시보드와 "새 프로젝트" 버튼을 보여주면
+            // 눌러도 401 로 조용히 실패한다. 곧장 로그인으로 보낸다.
+            if (response.status === 401) {
+                window.location.replace('/login');
+                return;
+            }
             if (response.ok) {
                 const data = await response.json();
                 setProjects(data.projects || []);
@@ -76,6 +82,11 @@ export default function DashboardPage() {
                     aiMode: newProjectAiMode,
                 }),
             });
+            // 작성 중 세션이 만료된 경우에도 오류 문구 대신 로그인으로 보낸다.
+            if (response.status === 401) {
+                window.location.replace('/login');
+                return;
+            }
             const data = await response.json().catch(() => null);
             if (!response.ok) throw new Error(data?.error || '프로젝트 생성에 실패했습니다.');
             setProjects([...projects, data.project]);
