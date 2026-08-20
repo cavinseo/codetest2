@@ -96,13 +96,53 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 });
         }
 
+        // 자기 자신을 지워 관리 화면에서 스스로 잠기는 사고를 막는다.
+        if (userId === adminResult.userId) {
+            return NextResponse.json({ error: '본인 계정은 삭제할 수 없습니다.' }, { status: 400 });
+        }
+
+        // 마지막 관리자를 지우면 승인·관리 기능이 영구히 잠긴다.
+        if (target.isAdmin) {
+            const adminCount = await prisma.user.count({ where: { isAdmin: true } });
+            if (adminCount <= 1) {
+                return NextResponse.json(
+                    { error: '마지막 관리자 계정은 삭제할 수 없습니다.' },
+                    { status: 400 }
+                );
+            }
+        }
+
+        // User 삭제는 Project.ownerId 의 onDelete: Cascade 를 타고 그 사람이 소유한
+        // 프로젝트 전체와 하위 워크시트를 지운다. 그 프로젝트에 참여한 다른 사람의
+        // 작업물까지 함께 사라지므로, 건수를 알려주고 확인을 받는다.
+        const ownedProjects = await prisma.project.count({ where: { ownerId: userId } });
+        if (ownedProjects > 0 && body?.confirmCascade !== true) {
+            return NextResponse.json(
+                {
+                    error: `이 사용자가 소유한 프로젝트 ${ownedProjects}개와 그 안의 모든 워크시트가 함께 삭제됩니다.`
+                        + ' 다른 참여자의 작업물도 사라집니다.',
+                    needsCascadeConfirm: true,
+                    ownedProjects,
+                },
+                { status: 409 }
+            );
+        }
+
         await prisma.user.delete({
             where: { id: userId },
         });
 
-        log.info('사용자 삭제', { userId });
-        return NextResponse.json({ success: true });
+        log.info('사용자 삭제', { userId, ownedProjects });
+        return NextResponse.json({ success: true, ownedProjects });
     } catch (error: unknown) {
+        // 설문을 발송했거나 엑셀을 import 한 이력이 있으면 FK 제약(Restrict)에 걸린다.
+        // 예전에는 이것도 뭉뚱그려 500 이라 원인을 알 수 없었다.
+        if (typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2003') {
+            return NextResponse.json(
+                { error: '이 사용자는 설문 발송·가져오기 이력이 있어 삭제할 수 없습니다. 승인을 취소해 접근만 막아 주세요.' },
+                { status: 409 }
+            );
+        }
         log.error('사용자 삭제 실패', error);
         return NextResponse.json({ error: '사용자 삭제 실패' }, { status: 500 });
     }

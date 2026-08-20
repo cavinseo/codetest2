@@ -98,17 +98,28 @@ export default function AdminModePage() {
         setTimeout(() => setActionMsg(null), 3500);
     };
 
-    const handleDeleteUser = async (userId: string) => {
+    const handleDeleteUser = async (userId: string, confirmCascade = false) => {
         const res = await fetch('/api/admin/users', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId }),
+            body: JSON.stringify({ userId, ...(confirmCascade ? { confirmCascade: true } : {}) }),
         });
+        const data = await res.json().catch(() => null);
+
+        // 소유 프로젝트가 있으면 서버가 409 로 막는다. 실제 건수를 보여주고 한 번 더 받는다.
+        if (res.status === 409 && data?.needsCascadeConfirm) {
+            setConfirmDelete(null);
+            if (window.confirm(`${data.error}\n\n그래도 삭제하시겠습니까?`)) {
+                await handleDeleteUser(userId, true);
+            }
+            return;
+        }
+
         if (res.ok) {
             setUsers((prev) => prev.filter((u) => u.id !== userId));
             showMsg('success', '사용자가 삭제되었습니다.');
         } else {
-            showMsg('error', '삭제 실패');
+            showMsg('error', data?.error || '삭제 실패');
         }
         setConfirmDelete(null);
     };
