@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { isGoogleConfigured, getGoogleToken } from '@/lib/service-settings';
 import { getFormResponses } from '@/lib/google-forms';
 import { prisma } from '@/lib/prisma';

@@ -265,11 +265,3 @@ function tryParse(value: string): unknown {
     }
 }
 
-function summarizeRows(rows: MentorQuestionsInput['existingRows']): string {
-    if (!rows || rows.length === 0) return '없음';
-    return rows
-        .slice(0, 10)
-        .map((row) => [row.marketSegment, row.customerName, row.customerNeed, row.benefit].filter(Boolean).join(' / '))
-        .filter(Boolean)
-        .join(' | ') || '없음';
-}

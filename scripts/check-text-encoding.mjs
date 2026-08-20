@@ -51,6 +51,18 @@ for (const targetDir of TARGET_DIRS) {
 
     for (const file of files) {
         const content = await readFile(file, 'utf8');
+
+        // UTF-8 BOM. 편집기에 따라 조용히 섞여 들어오는데, 파일 선두에 보이지 않는
+        // 문자가 남아 diff 를 지저분하게 만들고 도구에 따라 파싱을 방해한다.
+        if (content.charCodeAt(0) === 0xFEFF) {
+            findings.push({
+                file: path.relative(ROOT, file),
+                line: 1,
+                name: 'UTF-8 BOM',
+                text: '파일 선두에 BOM 이 있습니다.',
+            });
+        }
+
         const lines = content.split(/\r?\n/);
 
         lines.forEach((line, index) => {
