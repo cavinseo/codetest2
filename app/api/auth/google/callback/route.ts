@@ -3,12 +3,19 @@ import { exchangeCodeForToken } from '@/lib/google-auth';
 import { setGoogleToken } from '@/lib/service-settings';
 import { createLogger } from '@/lib/logger';
 import { safeReturnUrl } from '@/lib/safe-return-url';
+import { requireAdmin } from '@/lib/authorization';
 
 const log = createLogger('api/auth/google/callback');
 const OAUTH_NONCE_COOKIE = 'google_oauth_nonce';
 
 // GET: Google OAuth 콜백 처리
 export async function GET(request: NextRequest) {
+    // 이 콜백은 서비스 전역 Google 계정을 바꾼다. nonce 는 CSRF 방어일 뿐,
+    // 공격자가 자기 쿠키와 state 를 함께 만들어 직접 호출하는 것은 막지 못한다.
+    // 시작 라우트와 같은 관리자 게이트를 여기에도 건다.
+    const adminResult = await requireAdmin(request);
+    if (adminResult instanceof NextResponse) return adminResult;
+
     const { searchParams, origin } = new URL(request.url);
     const code = searchParams.get('code');
     const stateStr = searchParams.get('state') || '{}';
