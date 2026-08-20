@@ -3,6 +3,7 @@ import { isGoogleConfigured } from '@/lib/service-settings';
 import { getGoogleAuthUrl } from '@/lib/google-auth';
 import { requireAdmin } from '@/lib/authorization';
 import { safeReturnUrl } from '@/lib/safe-return-url';
+import { issueOAuthNonce } from '@/lib/oauth-nonce';
 
 const OAUTH_NONCE_COOKIE = 'google_oauth_nonce';
 
@@ -24,7 +25,9 @@ export async function GET(request: NextRequest) {
     const returnUrl = safeReturnUrl(rawReturnUrl);
     const projectId = searchParams.get('projectId') || '';
 
-    const nonce = crypto.randomUUID();
+    // 콜백은 google.com 에서 오는 교차 사이트 리디렉트라 세션 쿠키가 실리지 않는다.
+    // 관리자가 시작한 흐름임을 콜백이 확인할 수 있도록 여기서 신원을 서명해 둔다.
+    const nonce = issueOAuthNonce(adminResult.userId);
     const redirectUri = `${origin}/api/auth/google/callback`;
     const state = JSON.stringify({ returnUrl, projectId, nonce });
 

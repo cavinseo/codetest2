@@ -19,7 +19,7 @@ interface SessionPayload extends SessionUser {
     ver: number; // 발급 당시 User.sessionVersion
 }
 
-function getSessionSecret(): string {
+export function getSessionSecret(): string {
     const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET;
     // 환경과 무관하게 시크릿을 요구한다. 예전에는 개발 환경에서 고정 문자열로
     // 폴백해, 그 값을 아는 사람이 아무 세션이나 위조할 수 있었다.
