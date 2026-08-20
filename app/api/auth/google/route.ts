@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isGoogleConfigured } from '@/lib/service-settings';
 import { getGoogleAuthUrl } from '@/lib/google-auth';
 import { requireAdmin } from '@/lib/authorization';
+import { safeReturnUrl } from '@/lib/safe-return-url';
 
 const OAUTH_NONCE_COOKIE = 'google_oauth_nonce';
 
@@ -19,8 +20,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams, origin } = new URL(request.url);
     const rawReturnUrl = searchParams.get('returnUrl') || '/';
-    // 오픈 리디렉트 방지: 내부 경로만 허용
-    const returnUrl = rawReturnUrl.startsWith('/') ? rawReturnUrl : '/';
+    // 오픈 리디렉트 방지: 내부 경로만 허용 (//evil.com 형태 포함)
+    const returnUrl = safeReturnUrl(rawReturnUrl);
     const projectId = searchParams.get('projectId') || '';
 
     const nonce = crypto.randomUUID();

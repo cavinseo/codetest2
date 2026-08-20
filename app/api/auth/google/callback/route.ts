@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { exchangeCodeForToken } from '@/lib/google-auth';
 import { setGoogleToken } from '@/lib/service-settings';
 import { createLogger } from '@/lib/logger';
+import { safeReturnUrl } from '@/lib/safe-return-url';
 
 const log = createLogger('api/auth/google/callback');
 const OAUTH_NONCE_COOKIE = 'google_oauth_nonce';
@@ -34,8 +35,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 오픈 리디렉트 방지: 내부 경로만 허용
-    const rawReturnUrl = state.returnUrl || '/';
-    const returnUrl = rawReturnUrl.startsWith('/') ? rawReturnUrl : '/';
+    const returnUrl = safeReturnUrl(state.returnUrl);
 
     try {
         const redirectUri = `${origin}/api/auth/google/callback`;
