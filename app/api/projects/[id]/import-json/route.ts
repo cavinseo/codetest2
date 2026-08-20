@@ -4,7 +4,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { generateId } from '@/lib/id';
 import { importDeletionPlan, importHasAnyData } from '@/lib/import-json-plan';
-import { importJsonSchema } from '@/lib/import-json-schema';
+import { importJsonSchema, MAX_IMPORT_ROWS } from '@/lib/import-json-schema';
 import {
     countCascadeImpact,
     describeCascadeImpact,
@@ -50,10 +50,12 @@ export async function POST(
         if (!parsed.success) {
             const issue = parsed.error.errors[0];
             const where = issue.path.join('.');
-            return NextResponse.json(
-                { error: `가져오기 형식이 올바르지 않습니다(${where || '최상위'}).` },
-                { status: 400 }
-            );
+            // 'too_big' 은 형식이 아니라 행수 상한 위반이다. 사용자가 형식 문제로
+            // 착각하지 않도록 원인을 구분해서 알려준다.
+            const message = issue.code === 'too_big'
+                ? `가져오기 항목 수가 너무 많습니다(${where || '최상위'}, 최대 ${MAX_IMPORT_ROWS}행).`
+                : `가져오기 형식이 올바르지 않습니다(${where || '최상위'}).`;
+            return NextResponse.json({ error: message }, { status: 400 });
         }
         const importData = parsed.data;
 
@@ -153,8 +155,11 @@ export async function POST(
                         id: specIds.ids[index],
                         projectId,
                         level: s.level,
-                        // 상위 기능도 새 id 를 받았으므로 참조를 새 id 로 잇는다.
-                        parentId: s.parentId ? linkId(specIds.map, s.parentId) : null,
+                        // 상위 기능도 새 id 를 받았으므로 참조를 새 id 로 잇는다. 이 필드는
+                        // 자기참조라서 linkId 의 '못 찾으면 옛 id 유지' 규칙을 쓰면 안 된다 —
+                        // 이 트랜잭션이 기존 SpecFunction 을 전부 지운 뒤라 옛 id 는 반드시
+                        // 죽은 참조가 된다. 못 찾으면 루트로 떨어뜨린다(null).
+                        parentId: s.parentId ? (specIds.map.get(s.parentId) ?? null) : null,
                         name: s.name,
                         technology: s.technology ?? null,
                         order: s.order,

@@ -6,6 +6,7 @@
 // id·projectId·createdAt 이 들어 있다. 그 형태가 그대로 복원되는지도 함께 확인한다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { MAX_IMPORT_ROWS } from '../lib/import-json-schema';
 
 const counts = { kano: 0, benchmark: 0, qfd: 0 };
 
@@ -116,8 +117,8 @@ describe('import-json 가드', () => {
         expect(transaction).not.toHaveBeenCalled();
     });
 
-    it('행이 너무 많으면 400 으로 막는다', async () => {
-        const rows = Array.from({ length: 2001 }, (_, i) => ({
+    it('행이 너무 많으면 400 으로 막고, 형식 문제가 아니라 행수 문제라고 알려준다', async () => {
+        const rows = Array.from({ length: MAX_IMPORT_ROWS + 1 }, (_, i) => ({
             category: 'A',
             requirement: `요구 ${i}`,
             order: i,
@@ -127,8 +128,10 @@ describe('import-json 가드', () => {
             jsonRequest({ version: '1.0-prisma', customerRequirements: rows }),
             params
         );
+        const body = await res.json();
 
         expect(res.status).toBe(400);
+        expect(body.error).toContain(String(MAX_IMPORT_ROWS));
         expect(transaction).not.toHaveBeenCalled();
     });
 
@@ -324,5 +327,76 @@ describe('import-json 가드', () => {
 
         const kanoRows = tx.kanoResponse.createMany.mock.calls[0][0].data;
         expect(kanoRows[0].respondedAt).toBeUndefined();
+    });
+
+    it('customerRequirements 가 없는 payload 는 기존 Kano 응답이 있어도 확인 없이 진행한다', async () => {
+        // countCascadeImpact 는 payload 에 customerRequirements 가 실려 있을 때만
+        // 캐스케이드 영향을 센다. 이 판단이 무조건 true 로 바뀌면(뮤테이션), 관계
+        // 없는 컬렉션만 보내는 요청도 잘못 409 로 막히게 된다.
+        counts.kano = 42;
+
+        const res = await POST(
+            jsonRequest({
+                version: '1.0-prisma',
+                specFunctions: [{ level: '대분류', name: '기능', order: 0 }],
+            }),
+            params
+        );
+
+        expect(res.status).toBe(200);
+        expect(transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('specFunctions 의 parentId 를 새 id 로 다시 잇는다', async () => {
+        const res = await POST(
+            jsonRequest({
+                version: '1.0-prisma',
+                specFunctions: [
+                    { id: 'spec_old_parent', level: '대분류', parentId: null, name: '부모', order: 0 },
+                    { id: 'spec_old_child', level: '중분류', parentId: 'spec_old_parent', name: '자식', order: 1 },
+                ],
+            }),
+            params
+        );
+
+        expect(res.status).toBe(200);
+
+        const specRows = tx.specFunction.createMany.mock.calls[0][0].data;
+        expect(specRows[0].parentId).toBeNull();
+        expect(specRows[1].parentId).toBe(specRows[0].id);
+        expect(specRows[1].parentId).not.toBe('spec_old_parent');
+    });
+
+    it('알 수 없는(더 이상 존재하지 않는) parentId 는 끊어진 참조 대신 루트가 된다', async () => {
+        // importDeletionPlan 이 이 프로젝트의 기존 SpecFunction 을 전부 지운 뒤라,
+        // 이번 payload 에 없는 옛 id 를 그대로 두면 반드시 죽은 참조가 된다.
+        const res = await POST(
+            jsonRequest({
+                version: '1.0-prisma',
+                specFunctions: [
+                    { id: 'spec_old_child', level: '중분류', parentId: 'spec_old_gone', name: '자식', order: 0 },
+                ],
+            }),
+            params
+        );
+
+        expect(res.status).toBe(200);
+
+        const specRows = tx.specFunction.createMany.mock.calls[0][0].data;
+        expect(specRows[0].parentId).toBeNull();
+    });
+
+    it('최상위에 알 수 없는 필드가 있으면 400 으로 막는다', async () => {
+        const res = await POST(
+            jsonRequest({
+                version: '1.0-prisma',
+                unknownTopLevelField: 'evil',
+                specFunctions: [{ level: '대분류', name: '기능', order: 0 }],
+            }),
+            params
+        );
+
+        expect(res.status).toBe(400);
+        expect(transaction).not.toHaveBeenCalled();
     });
 });

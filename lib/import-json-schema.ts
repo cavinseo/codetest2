@@ -11,8 +11,12 @@
 // 값이 있으면 그대로 복원한다.
 import { z } from 'zod';
 
-/** 한 컬렉션에 한 번에 넣을 수 있는 행수 상한. */
-export const MAX_IMPORT_ROWS = 2000;
+// 한 컬렉션에 한 번에 넣을 수 있는 행수 상한.
+//
+// QFD 관계는 |요구사항| x |기술특성| 이라 40 x 50 = 2000 은 흔한 규모의 QFD
+// 하우스이고, 설문 응답은 |요구사항| x |응답자| 라 40 x 60 = 2400 은 흔한 규모의
+// 설문이다. 예전 2000 상한은 이런 정상 백업조차 복원 불가로 만들었다.
+export const MAX_IMPORT_ROWS = 20000;
 
 const rows = <T extends z.ZodTypeAny>(schema: T) => z.array(schema).max(MAX_IMPORT_ROWS);
 
@@ -32,8 +36,9 @@ const requirementRow = z.object({
     kanoWeight: z.number().nullable().optional(),
     order: z.number().int().default(0),
     // CustomerRequirement 에만 createdAt 이 있다. 값이 있으면 그대로 복원하고,
-    // 없으면 컬럼 기본값(now())에 맡긴다.
-    createdAt: z.string().optional(),
+    // 없으면 컬럼 기본값(now())에 맡긴다. new Date() 에 그대로 넘기므로 파싱
+    // 불가능한 문자열은 여기서 걸러야 한다(안 그러면 트랜잭션 중 500 이 된다).
+    createdAt: z.string().datetime().optional(),
 }).strict();
 
 const technicalRow = z.object({
@@ -92,8 +97,9 @@ const kanoRow = z.object({
     negativeAnswer: z.number().int(),
     kanoCategory: z.string(),
     // KanoResponse 의 시각 열 이름은 respondedAt 이다. 실제 응답 시각이라 값이
-    // 있으면 그대로 복원하고, 없으면 컬럼 기본값(now())에 맡긴다.
-    respondedAt: z.string().optional(),
+    // 있으면 그대로 복원하고, 없으면 컬럼 기본값(now())에 맡긴다. new Date() 에
+    // 그대로 넘기므로 파싱 불가능한 문자열은 여기서 걸러야 한다.
+    respondedAt: z.string().datetime().optional(),
 }).strict();
 
 export const importJsonSchema = z.object({
@@ -114,10 +120,11 @@ export const importJsonSchema = z.object({
     attributeFitnesses: rows(fitnessRow).optional(),
     qfdRelationships: rows(qfdRow).optional(),
     kanoResponses: rows(kanoRow).optional(),
-    // 아래 두 컬렉션은 export 가 내보내지만 라우트가 복원하지 않는다. 백업 파일이
-    // 통째로 거부되지 않도록 받아만 두고 버린다.
-    techCorrelations: rows(z.unknown()).optional(),
-    benchmarks: rows(z.unknown()).optional(),
+    // 아래 두 컬렉션은 export 가 내보내지만 라우트가 복원하지 않는다. 라우트가
+    // 버릴 값이라 행수 상한을 걸어도 얻는 것 없이 정상 백업만 거부할 수 있으므로
+    // 상한 없이 받아만 두고 버린다.
+    techCorrelations: z.array(z.unknown()).optional(),
+    benchmarks: z.array(z.unknown()).optional(),
 }).strict();
 
 export type ImportJsonPayload = z.infer<typeof importJsonSchema>;

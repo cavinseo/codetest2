@@ -216,7 +216,7 @@ export default function ProjectSettingsPage() {
         }
     };
 
-    const handleImport = async () => {
+    const handleImport = async (options: { confirmCascade?: boolean } = {}) => {
         if (!importFile) {
             alert('파일을 선택해주세요.');
             return;
@@ -226,18 +226,30 @@ export default function ProjectSettingsPage() {
         try {
             const text = await importFile.text();
             const data = JSON.parse(text);
+            if (options.confirmCascade) {
+                data.confirmCascade = true;
+            }
 
             const response = await fetch(`/api/projects/${projectId}/import-json`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
             });
+            const result = await response.json();
 
-            if (!response.ok) {
-                throw new Error('데이터 가져오기 실패');
+            // 고객요구사항을 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다.
+            // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
+            if (response.status === 409 && result.needsCascadeConfirm) {
+                if (window.confirm(`${result.error}\n\n그래도 계속하시겠습니까?`)) {
+                    await handleImport({ confirmCascade: true });
+                }
+                return;
             }
 
-            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || '데이터 가져오기 실패');
+            }
+
             alert(`데이터를 성공적으로 가져왔습니다!\n${JSON.stringify(result.imported, null, 2)}`);
             setImportFile(null);
 
@@ -495,7 +507,7 @@ export default function ProjectSettingsPage() {
                                             )}
                                         </div>
                                         <button
-                                            onClick={handleImport}
+                                            onClick={() => handleImport()}
                                             disabled={isImporting || !importFile}
                                             className="btn-primary flex items-center gap-2 disabled:opacity-50"
                                         >
