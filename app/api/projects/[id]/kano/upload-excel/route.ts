@@ -45,38 +45,6 @@ function selectedAnswerFromRow(row: unknown[], startCol: number): KanoAnswer | n
     return null;
 }
 
-function parseWorksheetMatrix(sheet: XLSX.WorkSheet, requirementCount: number): ParsedAnswer[] {
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
-    const parsed: ParsedAnswer[] = [];
-    const headerRow = rows[0] || [];
-
-    for (let startCol = 4; startCol < headerRow.length; startCol += 12) {
-        const respondentNo = String(headerRow[startCol] ?? '').trim();
-        const hasAnswerHeader = String((rows[1] || [])[startCol] ?? '').includes('마음에');
-        if (!respondentNo && !hasAnswerHeader) continue;
-
-        const respondentEmail = `excel-respondent-${respondentNo || Math.floor((startCol - 4) / 12) + 1}@import.local`;
-
-        for (let reqIndex = 0; reqIndex < requirementCount; reqIndex++) {
-            const positiveRow = rows[2 + reqIndex * 2] || [];
-            const negativeRow = rows[3 + reqIndex * 2] || [];
-            const positiveAnswer = selectedAnswerFromRow(positiveRow, startCol);
-            const negativeAnswer = selectedAnswerFromRow(negativeRow, startCol);
-
-            if (positiveAnswer && negativeAnswer) {
-                parsed.push({
-                    respondentEmail,
-                    requirementIndex: reqIndex,
-                    positiveAnswer,
-                    negativeAnswer,
-                });
-            }
-        }
-    }
-
-    return parsed;
-}
-
 function parseTabularResponses(sheet: XLSX.WorkSheet, requirementCount: number): ParsedAnswer[] {
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
     const parsed: ParsedAnswer[] = [];

@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
@@ -34,8 +34,17 @@ export async function GET(
             prisma.benchmark.findMany({ where: { projectId } }),
         ]);
 
+        // 요구사항마다 전체 응답을 filter 로 훑으면 O(요구사항 x 응답)이 된다.
+        // 요구사항 30개 x 응답 3,000건이면 요청마다 9만 회 비교였다. 한 번만 묶는다.
+        const responsesByRequirement = new Map<string, typeof responses>();
+        for (const response of responses) {
+            const bucket = responsesByRequirement.get(response.requirementId);
+            if (bucket) bucket.push(response);
+            else responsesByRequirement.set(response.requirementId, [response]);
+        }
+
         const requirementAnalysis = reqs.map((req: any) => {
-            const reqResponses = responses.filter((r: any) => r.requirementId === req.id);
+            const reqResponses = responsesByRequirement.get(req.id) ?? [];
             const responsePairs = reqResponses.map((r: any) => ({
                 positive: r.positiveAnswer as KanoAnswer,
                 negative: r.negativeAnswer as KanoAnswer,
