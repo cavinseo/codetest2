@@ -1,5 +1,8 @@
-// 프로바이더 인스턴스 생성. 설정값을 읽어 그때그때 만들므로 설정 변경이 바로 반영된다.
-import { getAiSettings } from '../service-settings';
+// 프로바이더 인스턴스 생성.
+// 설정은 DB 에 있어 조회가 async 다. 여기서 직접 읽으면 이 함수까지 async 가 되고
+// registry 의 resolveProvider 확장점(테스트에서 프로바이더를 주입하는 곳)까지 번진다.
+// 그래서 async 경계인 runAiTask 쪽에서 한 번 읽어 넘겨준다.
+import type { AiSettings } from '../service-settings';
 import {
     buildCandidateBaseUrls,
     HERMES_BASE_URL_DEFAULTS,
@@ -9,8 +12,7 @@ import { createOpenAiCompatibleProvider } from './openai-compatible';
 import { ruleProvider } from './provider-rule';
 import type { AiProvider, AiProviderId } from './types';
 
-export function createProvider(id: AiProviderId): AiProvider {
-    const settings = getAiSettings();
+export function createProvider(id: AiProviderId, settings: AiSettings): AiProvider {
 
     switch (id) {
         case 'local':

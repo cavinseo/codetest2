@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
         const authResult = await requireAuth(request);
         if (authResult instanceof NextResponse) return authResult;
 
-        const settings = getAiSettings();
+        const settings = await getAiSettings();
         const providers = await getProviderStatuses();
 
         return NextResponse.json({

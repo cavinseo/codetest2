@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const adminResult = await requireAdmin(request);
     if (adminResult instanceof NextResponse) return adminResult;
 
-    if (!isGoogleConfigured()) {
+    if (!(await isGoogleConfigured())) {
         return NextResponse.json(
             { error: 'Google OAuth가 설정되지 않았습니다. 서비스 설정에서 Client ID를 입력하세요.' },
             { status: 400 }
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     const redirectUri = `${origin}/api/auth/google/callback`;
     const state = JSON.stringify({ returnUrl, projectId, nonce });
 
-    const authUrl = getGoogleAuthUrl(redirectUri, state);
+    const authUrl = await getGoogleAuthUrl(redirectUri, state);
 
     const response = NextResponse.redirect(authUrl);
     response.cookies.set(OAUTH_NONCE_COOKIE, nonce, {

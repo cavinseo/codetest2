@@ -54,3 +54,15 @@ docs/.pdca-snapshots/
 
 .vercel
 .env*
+# 예제 파일은 추적한다. 위 .env* 가 이것까지 삼킨다.
+!.env.example
+
+# Dropbox 충돌 사본
+*conflicted copy*
+*의 충돌 사본*
+
+# 개발 중 만든 임시 스크립트/백업
+tmp-*.mjs
+*.backup
+*.backup-*
+.next-old-*

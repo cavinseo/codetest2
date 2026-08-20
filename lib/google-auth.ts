@@ -1,5 +1,5 @@
 // Google OAuth 2.0 인증 모듈
-import { serviceSettings, setGoogleToken, GoogleToken } from './service-settings';
+import { getGoogleSettings, GoogleToken } from './service-settings';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -9,9 +9,10 @@ const SCOPES = [
     'https://www.googleapis.com/auth/forms.responses.readonly',
 ].join(' ');
 
-export function getGoogleAuthUrl(redirectUri: string, state: string): string {
+export async function getGoogleAuthUrl(redirectUri: string, state: string): Promise<string> {
+    const google = await getGoogleSettings();
     const params = new URLSearchParams({
-        client_id: serviceSettings.google.clientId,
+        client_id: google.clientId,
         redirect_uri: redirectUri,
         response_type: 'code',
         scope: SCOPES,
@@ -27,13 +28,14 @@ export async function exchangeCodeForToken(
     code: string,
     redirectUri: string
 ): Promise<GoogleToken> {
+    const google = await getGoogleSettings();
     const response = await fetch(GOOGLE_TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
             code,
-            client_id: serviceSettings.google.clientId,
-            client_secret: serviceSettings.google.clientSecret,
+            client_id: google.clientId,
+            client_secret: google.clientSecret,
             redirect_uri: redirectUri,
             grant_type: 'authorization_code',
         }),
@@ -54,13 +56,14 @@ export async function exchangeCodeForToken(
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<GoogleToken> {
+    const google = await getGoogleSettings();
     const response = await fetch(GOOGLE_TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
             refresh_token: refreshToken,
-            client_id: serviceSettings.google.clientId,
-            client_secret: serviceSettings.google.clientSecret,
+            client_id: google.clientId,
+            client_secret: google.clientSecret,
             grant_type: 'refresh_token',
         }),
     });
