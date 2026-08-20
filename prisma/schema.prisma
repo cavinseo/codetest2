@@ -16,6 +16,12 @@ model User {
   // 가입 직후에는 PENDING. 관리자가 승인해야 로그인할 수 있다.
   status              String                 @default("PENDING")
   isAdmin             Boolean                @default(false)
+  // 시스템 역할: ADMIN | PROGRAM_MANAGER | MENTOR | MENTEE
+  // 프로젝트 단위 역할(ProjectMember.role)과는 별개다. 이쪽은 "이 사람이 무엇을
+  // 할 수 있는가", 저쪽은 "이 프로젝트에서 무엇을 할 수 있는가"를 정한다.
+  role                String                 @default("MENTEE")
+  // 초대 코드로 가입한 계정의 접근 만료 시각. null 이면 만료 없음(관리자 생성 계정).
+  accessExpiresAt     DateTime?
   // 발급된 세션을 한꺼번에 무효화하기 위한 값. 비밀번호 변경이나 승인 취소 때
   // 1 올리면, 그 전에 발급된 쿠키는 전부 거부된다.
   sessionVersion      Int                    @default(0)
@@ -25,6 +31,8 @@ model User {
   migrations          MigrationHistory[]
   projectMemberships  ProjectMember[]
   ownedProjects       Project[]              @relation("ProjectOwner")
+  issuedInviteCodes   InviteCode[]           @relation("InviteIssuer")
+  usedInviteCode      InviteCode?            @relation("InviteRedeemer")
 
   @@map("users")
 }
@@ -461,4 +469,32 @@ model ServiceSetting {
   updatedAt DateTime @updatedAt
 
   @@map("service_settings")
+}
+
+// 멘토·멘티를 초대하기 위한 1회용 코드. 신청 이메일로 발송한다.
+model InviteCode {
+  id String @id @default(cuid())
+  // 이메일로 보내는 값. 조회 키라 유니크하다.
+  code  String @unique
+  // 이 코드를 쓸 수 있는 이메일. 다른 주소로는 가입할 수 없다.
+  email String
+  // 가입 시 부여할 시스템 역할: MENTOR | MENTEE
+  role  String
+  // 코드 자체의 사용 기한
+  expiresAt DateTime
+  // 가입 후 부여할 접근 기간(일). 기본 90일(약 3개월).
+  accessDurationDays Int @default(90)
+
+  issuedById String
+  issuedBy   User   @relation("InviteIssuer", fields: [issuedById], references: [id], onDelete: Cascade)
+
+  usedAt     DateTime?
+  usedById   String?   @unique
+  usedBy     User?     @relation("InviteRedeemer", fields: [usedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([issuedById])
+  @@map("invite_codes")
 }

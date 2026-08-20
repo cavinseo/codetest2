@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from './constants';
+import { isAccessExpired, parseMemberRole, type MemberRole } from './member-roles';
 
 export interface SessionUser {
     userId: string;
@@ -103,6 +104,8 @@ export function getSessionUser(request: NextRequest): SessionUser | null {
 
 export interface AuthenticatedUser extends SessionUser {
     isAdmin: boolean;
+    role: MemberRole;
+    accessExpiresAt: Date | null;
 }
 
 /**
@@ -120,7 +123,10 @@ export async function requireAuth(request: NextRequest): Promise<AuthenticatedUs
 
     const dbUser = await prisma.user.findUnique({
         where: { id: payload.userId },
-        select: { id: true, email: true, name: true, status: true, isAdmin: true, sessionVersion: true },
+        select: {
+            id: true, email: true, name: true, status: true, isAdmin: true,
+            sessionVersion: true, role: true, accessExpiresAt: true,
+        },
     });
 
     if (!dbUser) {
@@ -138,11 +144,21 @@ export async function requireAuth(request: NextRequest): Promise<AuthenticatedUs
             { status: 401 }
         );
     }
+    // 초대 코드로 들어온 계정은 이용 기간이 정해져 있다.
+    if (isAccessExpired(dbUser.accessExpiresAt)) {
+        return NextResponse.json(
+            { error: '이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.' },
+            { status: 403 }
+        );
+    }
 
     return {
         userId: dbUser.id,
         email: dbUser.email,
         name: dbUser.name,
         isAdmin: dbUser.isAdmin,
+        // 저장값이 깨져 있어도 최소 권한으로 떨어뜨린다.
+        role: parseMemberRole(dbUser.role) ?? 'MENTEE',
+        accessExpiresAt: dbUser.accessExpiresAt,
     };
 }
