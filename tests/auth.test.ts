@@ -158,7 +158,7 @@ describe('requireAuth', () => {
 
 describe('로그아웃', () => {
     it('세션 쿠키를 만료시킨다', async () => {
-        const response = await logout();
+        const response = await logout(requestWithSessionCookie());
         const setCookie = response.headers.get('set-cookie');
 
         expect(response.status).toBe(200);
