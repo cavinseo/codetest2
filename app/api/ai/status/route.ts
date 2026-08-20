@@ -8,7 +8,7 @@ const log = createLogger('api/ai/status');
 
 export async function GET(request: NextRequest) {
     try {
-        const authResult = requireAuth(request);
+        const authResult = await requireAuth(request);
         if (authResult instanceof NextResponse) return authResult;
 
         const settings = getAiSettings();

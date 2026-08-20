@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
 import { BCRYPT_ROUNDS } from '@/lib/constants';
 import { createLogger } from '@/lib/logger';
+import { SIGNUP_RATE_LIMIT, clientIpFrom, consumeRateLimit } from '@/lib/rate-limit';
 
 const log = createLogger('api/auth/signup');
 
@@ -18,6 +19,17 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         const { name, email, password } = signupSchema.parse(body);
+
+        // 가입을 무제한 허용하면 승인 대기 큐가 오염되고 DB 행이 소모된다.
+        const rateKey = `signup:${clientIpFrom(request.headers)}`;
+        const limit = consumeRateLimit(rateKey, SIGNUP_RATE_LIMIT);
+        if (!limit.allowed) {
+            log.warn('가입 시도 제한 초과');
+            return NextResponse.json(
+                { error: `가입 시도가 너무 많습니다. ${limit.retryAfterSeconds}초 후 다시 시도하세요.` },
+                { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } }
+            );
+        }
 
         const existingUser = await prisma.user.findUnique({
             where: { email },
