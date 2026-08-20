@@ -4,6 +4,7 @@ import { createKanoForm } from '@/lib/google-forms';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
+import { toErrorResponse } from '@/lib/api-error';
 
 const log = createLogger('api/kano/create-form');
 
@@ -62,11 +63,11 @@ export async function POST(
             editUrl: result.editUrl,
             questionCount: requirements.length,
         });
-    } catch (error: any) {
-        log.error('Google Form creation error', error);
-        return NextResponse.json(
-            { error: `Google Form 생성 실패: ${error.message}` },
-            { status: 500 }
-        );
+    } catch (error: unknown) {
+        return toErrorResponse(error, {
+            log,
+            message: 'Google Form 생성에 실패했습니다.',
+            context: { projectId },
+        });
     }
 }

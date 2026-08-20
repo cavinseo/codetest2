@@ -12,6 +12,10 @@ import {
     describeCascadeImpact,
     hasCascadeImpact,
 } from '@/lib/import-cascade-guard';
+import { createLogger } from '@/lib/logger';
+import { toErrorResponse } from '@/lib/api-error';
+
+const log = createLogger('api/import');
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const PREVIEW_ROW_LIMIT = 8;
@@ -349,12 +353,11 @@ export async function POST(
             parseErrors: parsedData.parseErrors,
         });
     } catch (error: unknown) {
-        console.error('Excel read-only import failed:', error);
-        return NextResponse.json(
-            {
-                error: error instanceof Error ? error.message : '엑셀 파일 분석 중 오류가 발생했습니다.',
-            },
-            { status: 500 }
-        );
+        // projectId 는 try 블록 스코프라 여기서는 params.id 를 쓴다.
+        return toErrorResponse(error, {
+            log,
+            message: '가져오기에 실패했습니다.',
+            context: { projectId: params.id },
+        });
     }
 }

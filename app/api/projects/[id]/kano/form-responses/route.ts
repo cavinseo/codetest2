@@ -6,6 +6,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { classifyKano } from '@/lib/kano';
+import { toErrorResponse } from '@/lib/api-error';
 
 const log = createLogger('api/kano/form-responses');
 
@@ -128,11 +129,11 @@ export async function POST(
             responseCount: responses.length,
             importedCount,
         });
-    } catch (error: any) {
-        log.error('Form responses import error:', error);
-        return NextResponse.json(
-            { error: `응답 가져오기 실패: ${error.message}` },
-            { status: 500 }
-        );
+    } catch (error: unknown) {
+        return toErrorResponse(error, {
+            log,
+            message: '응답 가져오기에 실패했습니다.',
+            context: { projectId },
+        });
     }
 }

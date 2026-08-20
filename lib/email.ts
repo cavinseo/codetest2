@@ -2,6 +2,9 @@
 import nodemailer from 'nodemailer';
 import { getSmtpSettings } from './service-settings';
 import { escapeHtml, sanitizeHeaderValue } from './html-escape';
+import { createLogger } from './logger';
+
+const log = createLogger('lib/email');
 
 export interface EmailOptions {
     to: string;
@@ -45,7 +48,8 @@ export async function sendSurveyInvitation(
     const mailer = await createTransporter();
 
     if (!mailer) {
-        console.log(`📧 [이메일 미설정] ${email}에게 설문 링크: ${surveyLink}`);
+        // 수신자 이메일과 설문 링크(비밀 토큰)는 기록하지 않는다. lib/logger.ts 규칙.
+        log.warn('SMTP 미설정으로 설문 초대 메일을 보내지 못했습니다.');
         return false;
     }
 
@@ -81,10 +85,12 @@ export async function sendSurveyInvitation(
             subject: `[Kano 설문] ${safeSubjectName} - 설문 참여 요청`,
             html,
         });
-        console.log(`✅ 이메일 발송 성공: ${email}`);
+        // 수신자 이메일은 기록하지 않는다. lib/logger.ts 규칙.
+        log.info('설문 초대 메일 발송 성공');
         return true;
     } catch (error) {
-        console.error(`❌ 이메일 발송 실패: ${email}`, error);
+        // 수신자 이메일은 기록하지 않는다. lib/logger.ts 규칙.
+        log.error('설문 초대 메일 발송 실패', error);
         return false;
     }
 }

@@ -34,6 +34,9 @@ export async function POST(
     props: { params: Promise<{ token: string }> }
 ) {
     const { token } = await props.params;
+    // catch 블록에서 상관 정보로 쓰기 위해 try 스코프 밖에 둔다. invitation 자체는
+    // try 안의 const 라 catch 에서 보이지 않는다.
+    let invitationId: string | undefined;
 
     try {
         const body = await request.json();
@@ -47,6 +50,8 @@ export async function POST(
         if (!invitation) {
             return NextResponse.json({ error: '유효하지 않은 설문 링크입니다.' }, { status: 404 });
         }
+
+        invitationId = invitation.id;
 
         // 만료 검증
         if (invitation.expiresAt < new Date()) {
@@ -130,7 +135,8 @@ export async function POST(
         return toErrorResponse(error, {
             log,
             message: '응답 제출에 실패했습니다.',
-            context: { token },
+            // 토큰은 이 설문의 비밀 자격증명이라 기록하지 않는다.
+            context: { invitationId },
         });
     }
 }
