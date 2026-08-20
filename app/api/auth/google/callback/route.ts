@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
         const token = await exchangeCodeForToken(code, redirectUri);
 
         // 서비스 레벨 Google Forms 토큰 저장 (인스턴스당 단일 서비스 계정)
-        setGoogleToken('default', token);
+        await setGoogleToken(token);
 
         const response = NextResponse.redirect(new URL(`${returnUrl}?google_auth=success`, request.url));
         // nonce 쿠키 즉시 만료

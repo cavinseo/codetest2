@@ -22,14 +22,14 @@ export async function POST(
     if (accessResult instanceof NextResponse) return accessResult;
 
     try {
-        if (!isGoogleConfigured()) {
+        if (!(await isGoogleConfigured())) {
             return NextResponse.json(
                 { error: 'Google OAuth가 설정되지 않았습니다.' },
                 { status: 400 }
             );
         }
 
-        const token = getGoogleToken('default');
+        const token = await getGoogleToken();
         if (!token) {
             return NextResponse.json(
                 { error: 'Google 인증이 필요합니다.', needsAuth: true },

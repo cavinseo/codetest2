@@ -128,7 +128,7 @@ export async function POST(
         // 부를 수 있도록 프롬프트를 함께 내려준다. 규칙 기반 결과도 이미 담겨 있어
         // 브라우저 경유가 실패해도 추가 왕복 없이 그대로 쓸 수 있다.
         const shouldOfferRelay = aiMode === 'local' && (serverLocalDisabled || outcome.degraded);
-        const aiSettings = getAiSettings();
+        const aiSettings = await getAiSettings();
 
         return NextResponse.json({
             ...result,

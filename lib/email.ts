@@ -1,6 +1,6 @@
 // 이메일 발송 모듈
 import nodemailer from 'nodemailer';
-import { serviceSettings } from './service-settings';
+import { getSmtpSettings } from './service-settings';
 import { escapeHtml, sanitizeHeaderValue } from './html-escape';
 
 export interface EmailOptions {
@@ -9,21 +9,26 @@ export interface EmailOptions {
     html: string;
 }
 
-function createTransporter() {
-    const smtp = serviceSettings.smtp;
-    if (!smtp || !smtp.configured) {
+async function createTransporter() {
+    // 설정이 DB 로 옮겨져 조회가 async 다.
+    const smtp = await getSmtpSettings();
+    if (!smtp.configured) {
         return null;
     }
 
-    return nodemailer.createTransport({
-        host: smtp.host,
-        port: smtp.port,
-        secure: smtp.port === 465,
-        auth: {
-            user: smtp.user,
-            pass: smtp.pass,
-        },
-    });
+    return {
+        transport: nodemailer.createTransport({
+            host: smtp.host,
+            port: smtp.port,
+            secure: smtp.port === 465,
+            auth: {
+                user: smtp.user,
+                pass: smtp.pass,
+            },
+        }),
+        // 발신자 표시에 쓸 계정. 예전에는 serviceSettings.smtp! 로 다시 꺼내 썼다.
+        from: smtp.user,
+    };
 }
 
 export async function sendSurveyInvitation(
@@ -37,9 +42,9 @@ export async function sendSurveyInvitation(
     const safeProjectName = escapeHtml(projectName);
     // 메일 제목에 개행이 들어가면 헤더 인젝션이 된다.
     const safeSubjectName = sanitizeHeaderValue(projectName);
-    const transporter = createTransporter();
+    const mailer = await createTransporter();
 
-    if (!transporter) {
+    if (!mailer) {
         console.log(`📧 [이메일 미설정] ${email}에게 설문 링크: ${surveyLink}`);
         return false;
     }
@@ -70,8 +75,8 @@ export async function sendSurveyInvitation(
     `;
 
     try {
-        await transporter.sendMail({
-            from: `"KS-QFD" <${serviceSettings.smtp!.user}>`,
+        await mailer.transport.sendMail({
+            from: `"KS-QFD" <${mailer.from}>`,
             to: email,
             subject: `[Kano 설문] ${safeSubjectName} - 설문 참여 요청`,
             html,

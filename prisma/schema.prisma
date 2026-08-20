@@ -451,3 +451,14 @@ model SalesEstimate {
   @@index([projectId])
   @@map("sales_estimates")
 }
+
+// 서비스 전역 설정(Google OAuth, SMTP, AI 엔진).
+// 예전에는 globalThis 메모리에만 있어서 서버리스 콜드스타트마다 사라졌다.
+// 시크릿이 포함되므로 value 는 암호화해서 넣는다(lib/settings-crypto.ts).
+model ServiceSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("service_settings")
+}
