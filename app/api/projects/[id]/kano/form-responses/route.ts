@@ -80,7 +80,9 @@ export async function POST(
                     projectId,
                     email: systemEmail,
                     token: `system_${generateId('inv')}`,
-                    invitedBy: 'system', // 시스템 응답은 현재 사용자 ID가 필요하지 않음
+                    // invitedBy 는 users.id 에 대한 필수 FK 다. 예전에는 'system' 을
+                    // 넣어서 그런 사용자가 없는 모든 프로젝트에서 P2003 으로 실패했다.
+                    invitedBy: accessResult.user.userId,
                     expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365), // 1년
                 }
             });
