@@ -1,0 +1,66 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+    countCascadeImpact,
+    describeCascadeImpact,
+    hasCascadeImpact,
+    EMPTY_CASCADE_IMPACT,
+    type CascadeCounter,
+} from '../lib/import-cascade-guard';
+
+function counterWith(counts: { kano: number; benchmark: number; qfd: number }): CascadeCounter {
+    return {
+        kanoResponse: { count: vi.fn(async () => counts.kano) },
+        benchmark: { count: vi.fn(async () => counts.benchmark) },
+        qFDMatrix: { count: vi.fn(async () => counts.qfd) },
+    };
+}
+
+describe('countCascadeImpact', () => {
+    it('고객요구사항을 덮어쓸 때 함께 지워질 건수를 센다', async () => {
+        const db = counterWith({ kano: 42, benchmark: 3, qfd: 17 });
+
+        const impact = await countCascadeImpact(db, 'project_1', { replacesCustomerRequirements: true });
+
+        expect(impact).toEqual({ kanoResponses: 42, benchmarks: 3, qfdMatrices: 17 });
+        expect(db.kanoResponse.count).toHaveBeenCalledWith({ where: { projectId: 'project_1' } });
+    });
+
+    it('고객요구사항을 건드리지 않으면 세지 않는다', async () => {
+        const db = counterWith({ kano: 42, benchmark: 3, qfd: 17 });
+
+        const impact = await countCascadeImpact(db, 'project_1', { replacesCustomerRequirements: false });
+
+        expect(impact).toEqual(EMPTY_CASCADE_IMPACT);
+        expect(db.kanoResponse.count).not.toHaveBeenCalled();
+    });
+});
+
+describe('hasCascadeImpact', () => {
+    it('하나라도 0 이 아니면 true', () => {
+        expect(hasCascadeImpact({ kanoResponses: 1, benchmarks: 0, qfdMatrices: 0 })).toBe(true);
+        expect(hasCascadeImpact({ kanoResponses: 0, benchmarks: 0, qfdMatrices: 5 })).toBe(true);
+    });
+
+    it('전부 0 이면 false', () => {
+        expect(hasCascadeImpact(EMPTY_CASCADE_IMPACT)).toBe(false);
+    });
+});
+
+describe('describeCascadeImpact', () => {
+    it('0 인 항목은 문구에서 뺀다', () => {
+        const text = describeCascadeImpact({ kanoResponses: 12, benchmarks: 0, qfdMatrices: 4 });
+
+        expect(text).toContain('Kano 설문 응답 12건');
+        expect(text).toContain('QFD 관계 4건');
+        expect(text).not.toContain('벤치마크');
+    });
+
+    it('설문 응답이 복구 불가라는 점을 알린다', () => {
+        expect(describeCascadeImpact({ kanoResponses: 1, benchmarks: 0, qfdMatrices: 0 }))
+            .toContain('다시 모을 수 없습니다');
+    });
+
+    it('영향이 없으면 빈 문자열', () => {
+        expect(describeCascadeImpact(EMPTY_CASCADE_IMPACT)).toBe('');
+    });
+});

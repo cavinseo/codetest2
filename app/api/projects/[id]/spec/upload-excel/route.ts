@@ -253,63 +253,73 @@ function flattenRowsToSpecs(rows: FlatSpecRow[]) {
     return specs;
 }
 
+// 삭제와 재생성을 한 트랜잭션으로 묶는다. 예전에는 deleteMany 가 먼저 커밋된 뒤
+// 개별 create 루프가 돌아, 중간에 하나라도 실패하면 기존 스펙은 이미 사라졌고
+// 새 데이터는 일부만 남았다. 롤백할 방법이 없었다.
+//
+// 부모 id 매핑이 필요해 create 를 순차로 도는 구조는 유지해야 하므로,
+// 행이 많은 파일에서도 트랜잭션이 중간에 끊기지 않도록 timeout 을 늘려 둔다.
+const SPEC_SAVE_TIMEOUT_MS = 20_000;
+
 async function saveSpecs(projectId: string, specs: ParsedSpec[], writePolicy: WritePolicy) {
-    const orderOffset = writePolicy === 'append'
-        ? (await prisma.specFunction.aggregate({
+    return prisma.$transaction(async (tx) => {
+        const orderOffset = writePolicy === 'append'
+            ? (await tx.specFunction.aggregate({
+                where: { projectId },
+                _max: { order: true },
+            }))._max.order ?? -1
+            : -1;
+
+        if (writePolicy === 'replace') {
+            await tx.specFunction.deleteMany({ where: { projectId } });
+        }
+        const idMapping = new Map<string, string>();
+
+        for (const core of specs.filter((item) => item.level === 'CORE')) {
+            const created = await tx.specFunction.create({
+                data: {
+                    projectId,
+                    level: 'CORE',
+                    name: core.name,
+                    technology: core.technology || null,
+                    order: orderOffset + 1 + core.order,
+                },
+            });
+            idMapping.set(core.id, created.id);
+        }
+
+        for (const sub of specs.filter((item) => item.level === 'SUB')) {
+            const created = await tx.specFunction.create({
+                data: {
+                    projectId,
+                    level: 'SUB',
+                    parentId: sub.parentId ? idMapping.get(sub.parentId) ?? null : null,
+                    name: sub.name,
+                    technology: sub.technology || null,
+                    order: orderOffset + 1 + sub.order,
+                },
+            });
+            idMapping.set(sub.id, created.id);
+        }
+
+        for (const detail of specs.filter((item) => item.level === 'DETAIL')) {
+            await tx.specFunction.create({
+                data: {
+                    projectId,
+                    level: 'DETAIL',
+                    parentId: detail.parentId ? idMapping.get(detail.parentId) ?? null : null,
+                    name: detail.name,
+                    technology: detail.technology || null,
+                    order: orderOffset + 1 + detail.order,
+                },
+            });
+        }
+
+        return tx.specFunction.findMany({
             where: { projectId },
-            _max: { order: true },
-        }))._max.order ?? -1
-        : -1;
-
-    if (writePolicy === 'replace') {
-        await prisma.specFunction.deleteMany({ where: { projectId } });
-    }
-    const idMapping = new Map<string, string>();
-
-    for (const core of specs.filter((item) => item.level === 'CORE')) {
-        const created = await prisma.specFunction.create({
-            data: {
-                projectId,
-                level: 'CORE',
-                name: core.name,
-                technology: core.technology || null,
-                order: orderOffset + 1 + core.order,
-            },
+            orderBy: { order: 'asc' },
         });
-        idMapping.set(core.id, created.id);
-    }
-
-    for (const sub of specs.filter((item) => item.level === 'SUB')) {
-        const created = await prisma.specFunction.create({
-            data: {
-                projectId,
-                level: 'SUB',
-                parentId: sub.parentId ? idMapping.get(sub.parentId) ?? null : null,
-                name: sub.name,
-                technology: sub.technology || null,
-                order: orderOffset + 1 + sub.order,
-            },
-        });
-        idMapping.set(sub.id, created.id);
-    }
-
-    for (const detail of specs.filter((item) => item.level === 'DETAIL')) {
-        await prisma.specFunction.create({
-            data: {
-                projectId,
-                level: 'DETAIL',
-                parentId: detail.parentId ? idMapping.get(detail.parentId) ?? null : null,
-                name: detail.name,
-                technology: detail.technology || null,
-                order: orderOffset + 1 + detail.order,
-            },
-        });
-    }
-
-    return prisma.specFunction.findMany({
-        where: { projectId },
-        orderBy: { order: 'asc' },
-    });
+    }, { timeout: SPEC_SAVE_TIMEOUT_MS });
 }
 
 export async function POST(
