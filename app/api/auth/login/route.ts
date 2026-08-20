@@ -3,13 +3,18 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
-import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
+import { BCRYPT_ROUNDS, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
 import { encodeSessionCookie } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
+import { LOGIN_RATE_LIMIT, clientIpFrom, consumeRateLimit, resetRateLimit } from '@/lib/rate-limit';
 
 const log = createLogger('api/auth/login');
 
 const INVALID_CREDENTIALS_MSG = '이메일 또는 비밀번호가 올바르지 않습니다.';
+
+// 존재하지 않는 계정에도 같은 비용의 bcrypt 비교를 태우기 위한 더미 해시.
+// 모듈 로드 시 한 번만 만든다.
+const TIMING_SAFE_DUMMY_HASH = bcrypt.hashSync('timing-safe-dummy-password', BCRYPT_ROUNDS);
 
 const loginSchema = z.object({
     email: z.string().email('유효한 이메일을 입력하세요'),
@@ -21,13 +26,27 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const { email, password } = loginSchema.parse(body);
 
+        // IP 와 이메일을 함께 키로 쓴다. IP 만 쓰면 공유 IP 뒤의 정상 사용자가
+        // 말려들고, 이메일만 쓰면 IP 를 바꿔 가며 계정을 돌려 칠 수 있다.
+        const rateKey = `login:${clientIpFrom(request.headers)}:${email.toLowerCase()}`;
+        const limit = consumeRateLimit(rateKey, LOGIN_RATE_LIMIT);
+        if (!limit.allowed) {
+            log.warn('로그인 시도 제한 초과');
+            return NextResponse.json(
+                { error: `로그인 시도가 너무 많습니다. ${limit.retryAfterSeconds}초 후 다시 시도하세요.` },
+                { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } }
+            );
+        }
+
         const user = await prisma.user.findUnique({
             where: { email },
         });
 
-        // 타이밍 공격 방지: 사용자가 없어도 bcrypt 비교 수행
+        // 타이밍 공격 방지: 사용자가 없어도 bcrypt 비교 수행.
+        // 예전 상수는 48자라 bcryptjs 가 해시 연산 없이 즉시 false 를 반환했고,
+        // 그래서 응답 시간만으로 가입된 이메일을 알아낼 수 있었다. 실제 해시를 쓴다.
         if (!user) {
-            await bcrypt.compare(password, '$2b$10$placeholder.hash.to.prevent.timing.attack');
+            await bcrypt.compare(password, TIMING_SAFE_DUMMY_HASH);
             // PII 보호: 실패 이메일을 로그에 남기지 않음
             log.warn('로그인 실패 — 사용자 없음');
             return NextResponse.json({ error: INVALID_CREDENTIALS_MSG }, { status: 401 });
@@ -51,13 +70,21 @@ export async function POST(request: NextRequest) {
         const sessionPayload = { userId: user.id, email: user.email, name: user.name };
 
         const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE_NAME, encodeSessionCookie(sessionPayload), {
+        // 발급 당시의 sessionVersion 을 서명 안에 넣는다. 이후 비밀번호 변경이나
+        // 승인 취소로 값이 올라가면 이 쿠키는 즉시 거부된다.
+        const cookieValue = encodeSessionCookie(sessionPayload, {
+            sessionVersion: user.sessionVersion,
+        });
+        cookieStore.set(SESSION_COOKIE_NAME, cookieValue, {
             httpOnly: true,
             sameSite: 'strict',
             secure: process.env.NODE_ENV === 'production',
             maxAge: SESSION_MAX_AGE_SECONDS,
             path: '/',
         });
+
+        // 정상 로그인이 확인됐으니 이 조합의 실패 카운터는 비운다.
+        resetRateLimit(rateKey);
 
         log.info('로그인 성공', { userId: user.id });
         return NextResponse.json({

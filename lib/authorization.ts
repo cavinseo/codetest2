@@ -21,18 +21,13 @@ function isAdminEmail(email: string): boolean {
 }
 
 export async function requireAdmin(request: NextRequest): Promise<SessionUser | NextResponse> {
-    const authResult = requireAuth(request);
+    const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
 
-    if (isAdminEmail(authResult.email)) return authResult;
+    // isAdmin 은 requireAuth 가 DB 에서 읽어 온 값이라 플래그 회수가 즉시 반영된다.
+    if (authResult.isAdmin) return authResult;
 
-    // DB 에 isAdmin 으로 표시된 계정(시드된 관리자 등)도 관리자다.
-    // 세션 쿠키가 아니라 DB 를 기준으로 봐야 플래그 회수가 즉시 반영된다.
-    const dbUser = await prisma.user.findUnique({
-        where: { id: authResult.userId },
-        select: { isAdmin: true },
-    });
-    if (dbUser?.isAdmin) return authResult;
+    if (isAdminEmail(authResult.email)) return authResult;
 
     // 로컬 개발용 우회: ALLOW_DEV_ADMIN=true 를 명시해야만 활성화 (암묵적 허용 금지)
     if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_ADMIN === 'true') return authResult;
@@ -45,7 +40,7 @@ export async function requireProjectAccess(
     projectId: string,
     options: { write?: boolean; roles?: ProjectAccessRole[] } = {}
 ): Promise<ProjectAccess | NextResponse> {
-    const authResult = requireAuth(request);
+    const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
 
     const project = await prisma.project.findUnique({

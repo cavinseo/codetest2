@@ -60,9 +60,14 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: '관리자 계정은 승인을 취소할 수 없습니다.' }, { status: 400 });
         }
 
+        // 승인을 취소할 때는 sessionVersion 을 올려 이미 발급된 세션까지 끊는다.
+        // 그러지 않으면 로그인 중인 사용자는 취소 이후에도 계속 쓸 수 있어
+        // 승인 게이트가 사후에 아무 소용이 없다.
         const updated = await prisma.user.update({
             where: { id: userId },
-            data: { status: action === 'approve' ? 'APPROVED' : 'PENDING' },
+            data: action === 'approve'
+                ? { status: 'APPROVED' }
+                : { status: 'PENDING', sessionVersion: { increment: 1 } },
             select: { id: true, email: true, status: true },
         });
 

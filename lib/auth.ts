@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE_NAME } from './constants';
+import { prisma } from './prisma';
+import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from './constants';
 
 export interface SessionUser {
     userId: string;
@@ -8,62 +9,140 @@ export interface SessionUser {
     name: string | null;
 }
 
+// 서명된 쿠키에 실제로 담기는 값.
+// exp 가 없으면 쿠키 문자열이 영구히 유효해지고, ver 가 없으면 발급된 세션을
+// 서버에서 되돌릴 방법이 없다. 둘 다 서명 안에 들어가야 위조가 불가능하다.
+interface SessionPayload extends SessionUser {
+    exp: number; // 만료 시각 (epoch seconds)
+    iat: number; // 발급 시각 (epoch seconds)
+    ver: number; // 발급 당시 User.sessionVersion
+}
+
 function getSessionSecret(): string {
     const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET;
-    if (!secret && process.env.NODE_ENV === 'production') {
-        throw new Error('SESSION_SECRET or NEXTAUTH_SECRET is required in production.');
+    // 환경과 무관하게 시크릿을 요구한다. 예전에는 개발 환경에서 고정 문자열로
+    // 폴백해, 그 값을 아는 사람이 아무 세션이나 위조할 수 있었다.
+    if (!secret) {
+        throw new Error('SESSION_SECRET (또는 NEXTAUTH_SECRET) 환경변수가 필요합니다.');
     }
-    return secret || 'development-session-secret';
+    return secret;
 }
 
 function signPayload(payload: string): string {
     return createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
 }
 
-export function encodeSessionCookie(sessionUser: SessionUser): string {
-    const payload = Buffer.from(JSON.stringify(sessionUser), 'utf8').toString('base64url');
+function nowInSeconds(): number {
+    return Math.floor(Date.now() / 1000);
+}
+
+export function encodeSessionCookie(
+    sessionUser: SessionUser,
+    options: { sessionVersion?: number; maxAgeSeconds?: number } = {}
+): string {
+    const issuedAt = nowInSeconds();
+    const body: SessionPayload = {
+        ...sessionUser,
+        iat: issuedAt,
+        exp: issuedAt + (options.maxAgeSeconds ?? SESSION_MAX_AGE_SECONDS),
+        ver: options.sessionVersion ?? 0,
+    };
+    const payload = Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
     return `${payload}.${signPayload(payload)}`;
 }
 
-function decodeSignedSessionCookie(cookieValue: string): Partial<SessionUser> | null {
+/**
+ * 서명과 만료만 검증한다. DB 는 보지 않는다.
+ * 로그인 여부만 알면 되는 화면(랜딩 페이지 리다이렉트 등)에서 쓴다.
+ */
+export function verifySessionCookie(cookieValue: string | undefined): SessionPayload | null {
+    if (!cookieValue) return null;
+
     const [payload, signature] = cookieValue.split('.');
     if (!payload || !signature) return null;
 
-    const expected = signPayload(payload);
-    const actualBuffer = Buffer.from(signature, 'base64url');
-    const expectedBuffer = Buffer.from(expected, 'base64url');
-    if (actualBuffer.length !== expectedBuffer.length) return null;
-    if (!timingSafeEqual(actualBuffer, expectedBuffer)) return null;
+    try {
+        const expected = signPayload(payload);
+        const actualBuffer = Buffer.from(signature, 'base64url');
+        const expectedBuffer = Buffer.from(expected, 'base64url');
+        if (actualBuffer.length !== expectedBuffer.length) return null;
+        if (!timingSafeEqual(actualBuffer, expectedBuffer)) return null;
 
-    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Partial<SessionUser>;
+        const parsed = JSON.parse(
+            Buffer.from(payload, 'base64url').toString('utf8')
+        ) as Partial<SessionPayload>;
+
+        if (!parsed?.userId || !parsed.email) return null;
+        // exp 가 없는 쿠키는 이 필드가 생기기 전에 발급된 것이다. 영구 유효 쿠키를
+        // 남겨 두지 않기 위해 거부한다(해당 사용자는 다시 로그인하면 된다).
+        if (typeof parsed.exp !== 'number' || parsed.exp <= nowInSeconds()) return null;
+
+        return {
+            userId: parsed.userId,
+            email: parsed.email,
+            name: parsed.name ?? null,
+            exp: parsed.exp,
+            iat: typeof parsed.iat === 'number' ? parsed.iat : 0,
+            ver: typeof parsed.ver === 'number' ? parsed.ver : 0,
+        };
+    } catch {
+        return null;
+    }
 }
 
 /** 쿠키 값 자체로 세션을 해석한다. 서버 컴포넌트에서 next/headers 의 cookies() 와 함께 쓴다. */
 export function getSessionUserFromCookieValue(cookieValue: string | undefined): SessionUser | null {
-    if (!cookieValue) return null;
-
-    try {
-        const parsed =
-            decodeSignedSessionCookie(cookieValue) ??
-            (process.env.NODE_ENV !== 'production'
-                ? (JSON.parse(cookieValue) as Partial<SessionUser>)
-                : null);
-
-        if (!parsed?.userId || !parsed.email) return null;
-        return { userId: parsed.userId, email: parsed.email, name: parsed.name ?? null };
-    } catch {
-        return null;
-    }
+    const payload = verifySessionCookie(cookieValue);
+    if (!payload) return null;
+    return { userId: payload.userId, email: payload.email, name: payload.name };
 }
 
 export function getSessionUser(request: NextRequest): SessionUser | null {
     return getSessionUserFromCookieValue(request.cookies.get(SESSION_COOKIE_NAME)?.value);
 }
 
-export function requireAuth(request: NextRequest): SessionUser | NextResponse {
-    const sessionUser = getSessionUser(request);
-    if (!sessionUser) {
+export interface AuthenticatedUser extends SessionUser {
+    isAdmin: boolean;
+}
+
+/**
+ * 서명·만료를 본 뒤 DB 로 계정 상태까지 확인한다.
+ *
+ * 쿠키만 믿으면 관리자가 승인을 취소하거나 비밀번호를 바꿔도 이미 발급된 세션이
+ * 계속 살아 있다. 승인 게이트가 사후에 아무 소용이 없어지므로, 쓰기 경로가 쓰는
+ * 이 함수는 매 요청 DB 를 확인한다(PK 조회 1회).
+ */
+export async function requireAuth(request: NextRequest): Promise<AuthenticatedUser | NextResponse> {
+    const payload = verifySessionCookie(request.cookies.get(SESSION_COOKIE_NAME)?.value);
+    if (!payload) {
         return NextResponse.json({ error: 'Login required.' }, { status: 401 });
     }
-    return sessionUser;
+
+    const dbUser = await prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: { id: true, email: true, name: true, status: true, isAdmin: true, sessionVersion: true },
+    });
+
+    if (!dbUser) {
+        return NextResponse.json({ error: '세션이 만료되었습니다. 다시 로그인하세요.' }, { status: 401 });
+    }
+    if (dbUser.status !== 'APPROVED') {
+        return NextResponse.json(
+            { error: '관리자 승인 대기 중인 계정입니다.' },
+            { status: 403 }
+        );
+    }
+    if (dbUser.sessionVersion !== payload.ver) {
+        return NextResponse.json(
+            { error: '세션이 만료되었습니다. 다시 로그인하세요.' },
+            { status: 401 }
+        );
+    }
+
+    return {
+        userId: dbUser.id,
+        email: dbUser.email,
+        name: dbUser.name,
+        isAdmin: dbUser.isAdmin,
+    };
 }

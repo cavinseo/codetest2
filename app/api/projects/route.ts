@@ -24,7 +24,7 @@ const createProjectSchema = z.object({
 // 로그인한 사용자의 프로젝트만 반환합니다 (소유 + 멤버로 참여한 것 모두).
 
 export async function GET(request: NextRequest) {
-    const authResult = requireAuth(request);
+    const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
     const { userId } = authResult;
 
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 // ─── POST: 새 프로젝트 생성 ───────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-    const authResult = requireAuth(request);
+    const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
     const { userId } = authResult;
 

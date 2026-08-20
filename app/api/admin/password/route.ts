@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
-import { BCRYPT_ROUNDS } from '@/lib/constants';
+import { BCRYPT_ROUNDS, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
 import { createLogger } from '@/lib/logger';
+import { encodeSessionCookie } from '@/lib/auth';
 import { requireAdmin } from '@/lib/authorization';
 import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-policy';
 
@@ -45,13 +47,39 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: '현재 비밀번호가 올바르지 않습니다.' }, { status: 400 });
         }
 
-        await prisma.user.update({
+        // sessionVersion 을 올려 기존에 발급된 세션을 전부 끊는다.
+        // 비밀번호가 유출돼 바꾸는 상황이라면, 탈취된 쿠키가 계속 살아 있으면 의미가 없다.
+        const updated = await prisma.user.update({
             where: { id: user.id },
-            data: { passwordHash: await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS) },
+            data: {
+                passwordHash: await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS),
+                sessionVersion: { increment: 1 },
+            },
+            select: { id: true, email: true, name: true, sessionVersion: true },
         });
 
+        // 다른 기기의 세션은 끊되, 지금 조작 중인 본인은 새 버전으로 재발급해 유지한다.
+        const cookieStore = await cookies();
+        cookieStore.set(
+            SESSION_COOKIE_NAME,
+            encodeSessionCookie(
+                { userId: updated.id, email: updated.email, name: updated.name },
+                { sessionVersion: updated.sessionVersion }
+            ),
+            {
+                httpOnly: true,
+                sameSite: 'strict',
+                secure: process.env.NODE_ENV === 'production',
+                maxAge: SESSION_MAX_AGE_SECONDS,
+                path: '/',
+            }
+        );
+
         log.info('비밀번호 변경 완료', { userId: user.id });
-        return NextResponse.json({ success: true, message: '비밀번호를 변경했습니다.' });
+        return NextResponse.json({
+            success: true,
+            message: '비밀번호를 변경했습니다. 다른 기기의 로그인은 해제됩니다.',
+        });
     } catch (error: unknown) {
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
