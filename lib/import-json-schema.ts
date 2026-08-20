@@ -6,7 +6,9 @@
 // export 라우트(app/api/projects/[id]/export/route.ts)는 Prisma 행을 통째로
 // 내보내므로 실제 백업 파일에는 행마다 id·projectId 와 시각 열이 들어 있다.
 // .strict() 로 그것까지 거부하면 기존 백업이 전부 복원 불가가 되므로, 받아 주되
-// 저장할 때는 라우트가 무시하고 새 id 와 라우트 자신의 projectId 를 쓴다.
+// 저장할 때는 라우트가 id·projectId 는 무시하고 새 id 와 라우트 자신의 projectId 를
+// 쓴다. createdAt·respondedAt 은 신원·소유권 열이 아니라 실제 설문·기록 시각이므로
+// 값이 있으면 그대로 복원한다.
 import { z } from 'zod';
 
 /** 한 컬렉션에 한 번에 넣을 수 있는 행수 상한. */
@@ -29,7 +31,8 @@ const requirementRow = z.object({
     kanoNegativeQ: z.string().nullable().optional(),
     kanoWeight: z.number().nullable().optional(),
     order: z.number().int().default(0),
-    // CustomerRequirement 에만 createdAt 이 있다. 값은 쓰지 않는다.
+    // CustomerRequirement 에만 createdAt 이 있다. 값이 있으면 그대로 복원하고,
+    // 없으면 컬럼 기본값(now())에 맡긴다.
     createdAt: z.string().optional(),
 }).strict();
 
@@ -88,7 +91,8 @@ const kanoRow = z.object({
     positiveAnswer: z.number().int(),
     negativeAnswer: z.number().int(),
     kanoCategory: z.string(),
-    // KanoResponse 의 시각 열 이름은 respondedAt 이다. 값은 쓰지 않는다.
+    // KanoResponse 의 시각 열 이름은 respondedAt 이다. 실제 응답 시각이라 값이
+    // 있으면 그대로 복원하고, 없으면 컬럼 기본값(now())에 맡긴다.
     respondedAt: z.string().optional(),
 }).strict();
 

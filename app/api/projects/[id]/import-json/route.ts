@@ -117,7 +117,9 @@ export async function POST(
                 await delegates[model].deleteMany({ where: { projectId } });
             }
 
-            // 새 데이터 삽입. id·projectId·시각 열은 클라이언트 값을 쓰지 않는다.
+            // 새 데이터 삽입. id·projectId 는 클라이언트 값을 쓰지 않는다. createdAt·
+            // respondedAt 은 신원·소유권 열이 아니라 실제 기록 시각이므로 값이 있으면
+            // 그대로 복원하고, 없으면 컬럼 기본값(now())에 맡긴다.
             if (requirements.length > 0) {
                 await tx.customerRequirement.createMany({
                     data: requirements.map((r, index) => ({
@@ -130,6 +132,7 @@ export async function POST(
                         kanoNegativeQ: r.kanoNegativeQ ?? null,
                         kanoWeight: r.kanoWeight ?? null,
                         order: r.order,
+                        createdAt: r.createdAt ? new Date(r.createdAt) : undefined,
                     })),
                 });
             }
@@ -212,6 +215,7 @@ export async function POST(
                         positiveAnswer: k.positiveAnswer,
                         negativeAnswer: k.negativeAnswer,
                         kanoCategory: k.kanoCategory,
+                        respondedAt: k.respondedAt ? new Date(k.respondedAt) : undefined,
                     })),
                 });
             }

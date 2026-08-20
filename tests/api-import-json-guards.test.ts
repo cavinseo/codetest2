@@ -237,7 +237,8 @@ describe('import-json 가드', () => {
         const requirementRows = tx.customerRequirement.createMany.mock.calls[0][0].data;
         expect(requirementRows[0].id).not.toBe('req_old');
         expect(requirementRows[0].projectId).toBe('proj_1');
-        expect(requirementRows[0]).not.toHaveProperty('createdAt');
+        // createdAt 은 신원 열이 아니라 실제 기록 시각이라 백업에 있으면 그대로 복원한다.
+        expect(requirementRows[0].createdAt).toEqual(new Date('2026-01-01T00:00:00.000Z'));
         expect(requirementRows[0].requirement).toBe('요구');
 
         // 요구사항 id 를 새로 만들었으므로 자식 행의 FK 도 새 id 를 가리켜야 한다.
@@ -253,5 +254,75 @@ describe('import-json 가드', () => {
         const fitnessRows = tx.attributeFitness.createMany.mock.calls[0][0].data;
         const attributeRows = tx.productAttribute.createMany.mock.calls[0][0].data;
         expect(fitnessRows[0].attributeId).toBe(attributeRows[0].id);
+    });
+
+    it('createdAt·respondedAt 은 신원 열이 아니라 실제 데이터라 그대로 복원한다', async () => {
+        const res = await POST(
+            jsonRequest({
+                version: '1.0-prisma',
+                customerRequirements: [
+                    {
+                        id: 'req_old',
+                        projectId: 'proj_old',
+                        category: 'A',
+                        requirement: '요구',
+                        order: 0,
+                        createdAt: '2020-01-02T03:04:05.000Z',
+                    },
+                ],
+                kanoResponses: [
+                    {
+                        id: 'res_old',
+                        projectId: 'proj_old',
+                        requirementId: 'req_old',
+                        invitationId: 'inv_1',
+                        respondentEmail: 'a@b.com',
+                        positiveAnswer: 1,
+                        negativeAnswer: 5,
+                        kanoCategory: 'M',
+                        respondedAt: '2020-01-02T03:04:05.000Z',
+                    },
+                ],
+            }),
+            params
+        );
+
+        expect(res.status).toBe(200);
+
+        const requirementRows = tx.customerRequirement.createMany.mock.calls[0][0].data;
+        expect(requirementRows[0].createdAt).toEqual(new Date('2020-01-02T03:04:05.000Z'));
+
+        const kanoRows = tx.kanoResponse.createMany.mock.calls[0][0].data;
+        expect(kanoRows[0].respondedAt).toEqual(new Date('2020-01-02T03:04:05.000Z'));
+    });
+
+    it('createdAt·respondedAt 이 없는 행도 그대로 들어간다(컬럼 기본값에 맡긴다)', async () => {
+        const res = await POST(
+            jsonRequest({
+                version: '1.0-prisma',
+                customerRequirements: [
+                    { category: 'A', requirement: '요구', order: 0 },
+                ],
+                kanoResponses: [
+                    {
+                        requirementId: 'req_missing',
+                        invitationId: 'inv_1',
+                        respondentEmail: 'a@b.com',
+                        positiveAnswer: 1,
+                        negativeAnswer: 5,
+                        kanoCategory: 'M',
+                    },
+                ],
+            }),
+            params
+        );
+
+        expect(res.status).toBe(200);
+
+        const requirementRows = tx.customerRequirement.createMany.mock.calls[0][0].data;
+        expect(requirementRows[0].createdAt).toBeUndefined();
+
+        const kanoRows = tx.kanoResponse.createMany.mock.calls[0][0].data;
+        expect(kanoRows[0].respondedAt).toBeUndefined();
     });
 });
