@@ -108,6 +108,50 @@ export const fitnessRowSchema = z.object({
 });
 export const fitnessBodySchema = z.object({ fitnesses: z.array(fitnessRowSchema) });
 
+// ── improvements ──────────────────────────────────────────────
+// type 은 화면이 need/feature 두 갈래로만 렌더링하므로 화이트리스트로 고정한다.
+export const improvementRowSchema = z.object({
+    type: z.enum(['need', 'feature']),
+    content: optionalText,
+    improvementRate: optionalText,
+    devProportion: optionalText,
+    priority: optionalText,
+    order: z.coerce.number().default(0),
+});
+export const improvementsBodySchema = z.object({ items: z.array(improvementRowSchema) });
+
+// ── assets ────────────────────────────────────────────────────
+export const assetRowSchema = z.object({
+    type: z.enum(['CORE', 'COMPLEMENTARY']),
+    category: optionalText,
+    content: optionalText,
+    order: z.coerce.number().default(0),
+});
+export const assetsBodySchema = z.object({ assets: z.array(assetRowSchema) });
+
+// ── funding ───────────────────────────────────────────────────
+// plans/sources 는 각각 독립적으로 저장할 수 있어야 해서 둘 다 optional 이다.
+// 다만 "키가 없으면 그 컬렉션은 건드리지 않는다"는 규칙을 라우트가 지켜야 한다.
+export const fundingPlanRowSchema = z.object({
+    category: optionalText,
+    item: optionalText,
+    year1: z.coerce.number().default(0),
+    year2: z.coerce.number().default(0),
+    year3: z.coerce.number().default(0),
+    order: z.coerce.number().default(0),
+});
+export const fundingSourceRowSchema = z.object({
+    category: optionalText,
+    year1: optionalText,
+    year2: optionalText,
+    year3: optionalText,
+    order: z.coerce.number().default(0),
+});
+export const fundingBodySchema = z.object({
+    plans: z.array(fundingPlanRowSchema).optional(),
+    sources: z.array(fundingSourceRowSchema).optional(),
+});
+
 export type TargetSpecRow = z.infer<typeof targetSpecRowSchema>;
 export type SalesRow = z.infer<typeof salesRowSchema>;
 export type TechRoadmapRow = z.infer<typeof techRoadmapRowSchema>;
@@ -115,3 +159,7 @@ export type DevPlanRow = z.infer<typeof devPlanRowSchema>;
 export type TechTreeRow = z.infer<typeof techTreeRowSchema>;
 export type AttributeRow = z.infer<typeof attributeRowSchema>;
 export type FitnessRow = z.infer<typeof fitnessRowSchema>;
+export type ImprovementRow = z.infer<typeof improvementRowSchema>;
+export type AssetRow = z.infer<typeof assetRowSchema>;
+export type FundingPlanRow = z.infer<typeof fundingPlanRowSchema>;
+export type FundingSourceRow = z.infer<typeof fundingSourceRowSchema>;
