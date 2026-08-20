@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
+import { guardUploadedExcel } from '@/lib/upload-guard';
 import { generateId } from '@/lib/id';
 import { classifyKanoResponse, type KanoAnswer } from '@/lib/kano-algorithm';
 import { parseGoogleFormsResponseSheet, parseKanoTemplateResponseSheet, parseWorksheetMatrixSheet } from '@/lib/kano-upload-parser';
@@ -150,8 +151,10 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         const file = formData.get('file');
         const uploadFormat = String(formData.get('format') ?? 'template');
         const writePolicy = parseWritePolicy(formData.get('writePolicy'));
-        if (!(file instanceof File)) {
-            return NextResponse.json({ error: '업로드할 엑셀 파일이 필요합니다.' }, { status: 400 });
+        // 다른 업로드 라우트에는 있던 크기·확장자 검사가 여기만 빠져 있었다.
+        const upload = guardUploadedExcel(file);
+        if (!upload.ok) {
+            return NextResponse.json({ error: upload.failure.error }, { status: upload.failure.status });
         }
 
         const requirements = await prisma.customerRequirement.findMany({
@@ -162,7 +165,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             return NextResponse.json({ error: '먼저 고객요구사항을 등록하세요.' }, { status: 400 });
         }
 
-        const bytes = Buffer.from(await file.arrayBuffer());
+        const bytes = Buffer.from(await upload.file.arrayBuffer());
         const workbook = XLSX.read(bytes, { type: 'buffer' });
         const sheetName = pickKanoUploadSheet(workbook, uploadFormat);
         if (!sheetName) {

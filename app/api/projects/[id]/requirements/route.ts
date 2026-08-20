@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
+import { toErrorResponse } from '@/lib/api-error';
 
 const log = createLogger('api/requirements');
 
@@ -117,27 +118,16 @@ export async function POST(
             success: true,
             count: requirements.length,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         if (error instanceof z.ZodError) {
-            log.error('요구사항 검증 오류 (Zod)', { errors: error.errors });
-            return NextResponse.json({ error: error.errors[0].message, details: error.errors }, { status: 400 });
+            log.warn('요구사항 검증 오류 (Zod)', { firstIssue: error.errors[0]?.message });
+            return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }
 
-        // Prisma 오류 상세 정보 로그
-        log.error('요구사항 저장 오류 (Prisma/DB)', {
-            message: error.message,
-            code: error.code,
-            meta: error.meta,
-            stack: error.stack
+        return toErrorResponse(error, {
+            log,
+            message: '요구사항 저장에 실패했습니다.',
+            context: { projectId: params.id },
         });
-
-        return NextResponse.json(
-            {
-                error: '요구사항 저장 실패',
-                message: error.message,
-                code: error.code
-            },
-            { status: 500 }
-        );
     }
 }

@@ -6,10 +6,16 @@ import { writeSingleImportTemplateSheetBuffer } from '../lib/import-template-wor
 
 const workbookPath = path.join(process.cwd(), 'public', 'asset', '워크시트.xlsx');
 
+// xlsx 0.20 부터 XLSX.readFile 은 set_fs 로 node:fs 를 주입해야 동작한다.
+// 앱 코드는 업로드된 버퍼만 다루므로, 테스트도 같은 방식(read + buffer)으로 맞춘다.
+function readWorkbook(options: XLSX.ParsingOptions = {}) {
+    return XLSX.read(readFileSync(workbookPath), { type: 'buffer', ...options });
+}
+
 describe('worksheet workbook integrity', () => {
     it('keeps the bundled workbook available as the upload template', () => {
         const workbookStats = statSync(workbookPath);
-        const workbook = XLSX.readFile(workbookPath);
+        const workbook = readWorkbook();
 
         expect(workbookStats.size).toBeGreaterThan(0);
         expect(workbook.SheetNames).toContain('AS-IS스펙표');
@@ -19,7 +25,7 @@ describe('worksheet workbook integrity', () => {
     });
 
     it('does not contain broken #REF! formulas in the bundled worksheet', () => {
-        const workbook = XLSX.readFile(workbookPath, { cellFormula: true });
+        const workbook = readWorkbook({ cellFormula: true });
         const brokenFormulaCells: Array<{ sheet: string; address: string; formula: string }> = [];
 
         for (const sheetName of workbook.SheetNames) {
