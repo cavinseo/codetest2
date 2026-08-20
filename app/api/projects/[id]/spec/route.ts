@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
+import { toErrorResponse } from '@/lib/api-error';
 
 const log = createLogger('api/spec');
 
@@ -152,10 +153,6 @@ export async function POST(
             message: '스펙이 저장되었습니다',
         });
     } catch (error: unknown) {
-        log.error('스펙 저장 실패', error);
-        return NextResponse.json(
-            { error: '스펙 저장 실패', detail: String(error) },
-            { status: 500 }
-        );
+        return toErrorResponse(error, { log, message: '스펙 저장에 실패했습니다.' });
     }
 }
