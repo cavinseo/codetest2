@@ -4,6 +4,10 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { attributesBodySchema } from '@/lib/bulk-save-schemas';
+import {
+    countAttributeCascadeImpact,
+    describeAttributeCascadeImpact,
+} from '@/lib/import-cascade-guard';
 
 const log = createLogger('api/attributes');
 
@@ -62,7 +66,25 @@ export async function POST(
             );
         }
 
-        const { attributes: newAttributes } = attributesBodySchema.parse(await request.json());
+        // 스키마가 strict 가 아니라 모르는 키를 버린다. confirmCascade 를 살리려면
+        // 원본 본문을 따로 들고 있어야 한다.
+        const rawBody = await request.json();
+        const { attributes: newAttributes } = attributesBodySchema.parse(rawBody);
+
+        // 속성을 비우면 적합도 시트가 캐스케이드로 함께 사라진다.
+        if (newAttributes.length === 0) {
+            const impact = await countAttributeCascadeImpact(prisma, projectId);
+            if (impact.fitnesses > 0 && rawBody?.confirmCascade !== true) {
+                return NextResponse.json(
+                    {
+                        error: describeAttributeCascadeImpact(impact),
+                        needsCascadeConfirm: true,
+                        cascadeImpact: impact,
+                    },
+                    { status: 409 }
+                );
+            }
+        }
 
         const updatedAttrs = await prisma.$transaction(async (tx: any) => {
             await tx.productAttribute.deleteMany({

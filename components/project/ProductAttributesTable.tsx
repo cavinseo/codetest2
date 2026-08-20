@@ -329,7 +329,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         setRows(rows.filter(r => r.id !== id).map((r, order) => ({ ...r, order })));
     };
 
-    const handleSave = async () => {
+    const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/attributes`, {
@@ -342,8 +342,22 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         techCapability: techCapability,
                         order: i,
                     })),
+                    ...(options.confirmCascade ? { confirmCascade: true } : {}),
                 }),
             });
+            const data = await res.json().catch(() => null);
+
+            // 속성을 모두 지우면 적합도 시트가 캐스케이드로 함께 사라진다.
+            // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
+                    await handleSave({ confirmCascade: true });
+                    return;
+                }
+                showToast('저장을 취소했습니다.', 'error');
+                return;
+            }
+
             if (res.ok) {
                 showToast('저장되었습니다.', 'success');
                 onSaved?.();
@@ -645,7 +659,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         </svg>
                         행 추가
                     </button>
-                    <button onClick={handleSave} disabled={isSaving} className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50">
+                    <button onClick={() => handleSave()} disabled={isSaving} className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                         </svg>

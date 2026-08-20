@@ -65,3 +65,30 @@ export function describeCascadeImpact(impact: CascadeImpact): string {
     return `고객요구사항을 덮어쓰면 ${parts.join(', ')}이 함께 삭제됩니다. `
         + '설문 응답은 다시 모을 수 없습니다.';
 }
+
+// ─── 제품 속성 ──────────────────────────────────────────────────
+//
+// ProductAttribute 삭제는 AttributeFitness 를 캐스케이드로 함께 지운다
+// (schema.prisma: onDelete: Cascade). 속성 시트를 비우면 적합도 시트가
+// 통째로 사라지는데, 응답에도 화면에도 그 사실이 드러나지 않았다.
+
+export interface AttributeCascadeImpact {
+    fitnesses: number;
+}
+
+export interface AttributeCascadeCounter {
+    attributeFitness: { count: (args: { where: { projectId: string } }) => Promise<number> };
+}
+
+export async function countAttributeCascadeImpact(
+    db: AttributeCascadeCounter,
+    projectId: string
+): Promise<AttributeCascadeImpact> {
+    const fitnesses = await db.attributeFitness.count({ where: { projectId } });
+    return { fitnesses };
+}
+
+export function describeAttributeCascadeImpact(impact: AttributeCascadeImpact): string {
+    if (impact.fitnesses === 0) return '';
+    return `제품 속성을 모두 지우면 적합도 ${impact.fitnesses}건이 함께 삭제됩니다.`;
+}

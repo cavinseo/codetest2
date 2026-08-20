@@ -159,14 +159,30 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         loadRequirements();
     }, [loadRequirements]);
 
-    const handleSave = async () => {
+    const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/requirements`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ requirements }),
+                body: JSON.stringify({
+                    requirements,
+                    ...(options.confirmCascade ? { confirmCascade: true } : {}),
+                }),
             });
+            const data = await res.json().catch(() => null);
+
+            // id 없는 행만 남아 전체 삭제로 이어지면 서버가 409 로 막는다.
+            // 무엇이 함께 지워지는지 보여주고 한 번 더 확인받는다.
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
+                    await handleSave({ confirmCascade: true });
+                    return;
+                }
+                showToast('저장을 취소했습니다.', 'error');
+                return;
+            }
+
             if (res.ok) {
                 showToast('저장되었습니다.', 'success');
                 setEditingId(null);
@@ -410,7 +426,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                         행 추가
                     </button>
                     <button
-                        onClick={handleSave}
+                        onClick={() => handleSave()}
                         disabled={isSaving || requirements.length === 0}
                         className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50"
                     >

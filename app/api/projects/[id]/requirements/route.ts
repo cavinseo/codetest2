@@ -5,6 +5,11 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
+import {
+    countCascadeImpact,
+    describeCascadeImpact,
+    hasCascadeImpact,
+} from '@/lib/import-cascade-guard';
 
 const log = createLogger('api/requirements');
 
@@ -72,11 +77,29 @@ export async function POST(
         const body = await request.json();
         const { requirements } = bulkRequirementsSchema.parse(body);
 
-        await prisma.$transaction(async (tx) => {
-            const submittedIds = requirements
-                .map((req) => req.id)
-                .filter((id): id is string => Boolean(id));
+        const submittedIds = requirements
+            .map((req) => req.id)
+            .filter((id): id is string => Boolean(id));
 
+        // id 없는 행만 오면 deleteMany 가 프로젝트 전체를 지우고,
+        // 그 캐스케이드로 설문 응답까지 사라진다. .min(1) 은 빈 배열만 막는다.
+        if (submittedIds.length === 0) {
+            const impact = await countCascadeImpact(prisma, projectId, {
+                replacesCustomerRequirements: true,
+            });
+            if (hasCascadeImpact(impact) && body?.confirmCascade !== true) {
+                return NextResponse.json(
+                    {
+                        error: describeCascadeImpact(impact),
+                        needsCascadeConfirm: true,
+                        cascadeImpact: impact,
+                    },
+                    { status: 409 }
+                );
+            }
+        }
+
+        await prisma.$transaction(async (tx) => {
             await tx.customerRequirement.deleteMany({
                 where: submittedIds.length > 0
                     ? { projectId, id: { notIn: submittedIds } }
