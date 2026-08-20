@@ -20,6 +20,16 @@ describe('safeReturnUrl', () => {
         expect(safeReturnUrl('\\\\evil.com')).toBe('/');
     });
 
+    it('제어문자를 섞은 우회를 막는다', () => {
+        // URL 파서는 구조 분석 전에 탭(U+0009)·LF(U+000A)·CR(U+000D)을 입력 전체에서
+        // 제거한다. raw[0]/raw[1]만 문자 그대로 보는 검사는 파서가 실제로 보는
+        // 문자열과 다른 것을 검사하는 셈이라, "/\t/evil.com" 같은 페이로드가 이 검사를
+        // 통과한 뒤 new URL() 안에서 "//evil.com" 으로 붕괴해 호스트가 바뀐다.
+        expect(safeReturnUrl('/\t/evil.com')).toBe('/');
+        expect(safeReturnUrl('/\n/evil.com')).toBe('/');
+        expect(safeReturnUrl('/\r/evil.com')).toBe('/');
+    });
+
     it('절대 URL 을 막는다', () => {
         expect(safeReturnUrl('https://evil.com')).toBe('/');
         expect(safeReturnUrl('http://evil.com')).toBe('/');
