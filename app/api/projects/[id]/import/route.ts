@@ -7,6 +7,11 @@ import {
     type WorkbookImportRecords,
     type WorkbookWritePolicy,
 } from '@/lib/workbook-importer';
+import {
+    countCascadeImpact,
+    describeCascadeImpact,
+    hasCascadeImpact,
+} from '@/lib/import-cascade-guard';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const PREVIEW_ROW_LIMIT = 8;
@@ -213,6 +218,7 @@ export async function POST(
         const requestedSheetNames = parseRequestedSheetNames(formData.get('sheetNames'));
         const action = parseAction(formData.get('action'));
         const writePolicy = parseWritePolicy(formData.get('writePolicy'));
+        const confirmCascade = formData.get('confirmCascade') === 'true';
 
         const accessResult = await requireProjectAccess(request, projectId, { write: action === 'apply' });
         if (accessResult instanceof NextResponse) return accessResult;
@@ -274,8 +280,27 @@ export async function POST(
             );
         }
 
+        // 고객요구사항을 replace 로 덮어쓰면 Kano 응답·벤치마크·QFD 관계가 캐스케이드로
+        // 함께 지워진다. preview 단계에서 건수를 보여주고, apply 는 사용자가 확인한
+        // 경우에만 진행시킨다.
+        const replacesCustomerRequirements =
+            writePolicy === 'replace' && importResult.records.customerRequirements.length > 0;
+        const cascadeImpact = await countCascadeImpact(prisma, projectId, {
+            replacesCustomerRequirements,
+        });
+
         let appliedCounts: Record<string, number> | null = null;
         if (action === 'apply') {
+            if (hasCascadeImpact(cascadeImpact) && !confirmCascade) {
+                return NextResponse.json(
+                    {
+                        error: describeCascadeImpact(cascadeImpact),
+                        needsCascadeConfirm: true,
+                        cascadeImpact,
+                    },
+                    { status: 409 }
+                );
+            }
             if (importResult.formulaIssues.length > 0) {
                 return NextResponse.json(
                     {
@@ -298,6 +323,8 @@ export async function POST(
             readOnly: action !== 'apply',
             applied: action === 'apply',
             writePolicy,
+            cascadeImpact,
+            cascadeWarning: describeCascadeImpact(cascadeImpact),
             mode: requestedSheetNames.length > 0 ? 'worksheet' : 'workbook',
             workbook: {
                 fileName: parsedData.fileName,

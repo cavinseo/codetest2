@@ -22,6 +22,9 @@ interface ImportResult {
     readOnly: boolean;
     applied?: boolean;
     writePolicy?: WritePolicy;
+    // 고객요구사항을 덮어쓸 때 캐스케이드로 함께 지워지는 데이터 안내
+    cascadeWarning?: string;
+    cascadeImpact?: { kanoResponses: number; benchmarks: number; qfdMatrices: number };
     mode: UploadMode;
     workbook: {
         fileName: string;
@@ -122,7 +125,7 @@ export default function ImportPage() {
         }
     };
 
-    const submitImport = async (action: 'preview' | 'apply') => {
+    const submitImport = async (action: 'preview' | 'apply', options: { confirmCascade?: boolean } = {}) => {
         if (!file) return;
         if (action === 'preview') {
             setIsUploading(true);
@@ -141,12 +144,26 @@ export default function ImportPage() {
             if (uploadMode === 'worksheet' && sheetNames.trim()) {
                 formData.append('sheetNames', sheetNames);
             }
+            if (options.confirmCascade) {
+                formData.append('confirmCascade', 'true');
+            }
 
             const response = await fetch(`/api/projects/${projectId}/import`, {
                 method: 'POST',
                 body: formData,
             });
             const data = await response.json();
+
+            // 고객요구사항을 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다.
+            // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
+            if (response.status === 409 && data.needsCascadeConfirm) {
+                if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
+                    await submitImport('apply', { confirmCascade: true });
+                    return;
+                }
+                setErrorMessage('반영을 취소했습니다. 기존 데이터는 그대로 유지됩니다.');
+                return;
+            }
 
             if (!response.ok) {
                 const available = data.availableSheets?.length
@@ -419,6 +436,13 @@ export default function ImportPage() {
                                     <div className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                                         깨진 수식이 있어 시스템 반영 전에 수정이 필요합니다:{' '}
                                         {result.formulaIssues.map((issue) => `${issue.sheet}!${issue.cell}`).join(', ')}
+                                    </div>
+                                )}
+
+                                {!result.applied && result.cascadeWarning && (
+                                    <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                                        <p className="font-semibold">함께 삭제되는 데이터가 있습니다</p>
+                                        <p className="mt-1">{result.cascadeWarning}</p>
                                     </div>
                                 )}
 
