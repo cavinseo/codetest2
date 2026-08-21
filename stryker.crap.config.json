@@ -1,0 +1,37 @@
+{
+    "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/api/schema/stryker-schema.json",
+    "_comment": "뮤테이션 테스트 설정. npm run test:mutation 으로 실행한다. 커버리지는 '실행됐는가'만 말하지만 뮤테이션은 '단언했는가'를 말한다. 대상은 Prisma 를 mock 하지 않는 순수 lib 모듈로 한정한다. 라우트 핸들러는 mock 이 뮤턴트를 흡수해 점수가 실제보다 좋게 나오므로 넣지 않는다.",
+    "packageManager": "npm",
+    "testRunner": "vitest",
+    "vitest": {
+        "configFile": "vitest.config.ts"
+    },
+    "mutate": [
+        "lib/safe-return-url.ts",
+        "lib/oauth-nonce.ts",
+        "lib/import-cascade-guard.ts",
+        "lib/import-json-schema.ts",
+        "lib/member-roles.ts",
+        "lib/invite-code.ts"
+    ],
+    "ignorePatterns": [
+        ".claude/**",
+        ".agents/**",
+        ".bkit/**",
+        ".superpowers/**",
+        ".vercel/**",
+        ".next/**",
+        ".git/**",
+        "node_modules/**",
+        ".stryker-tmp/**",
+        "docs/**",
+        "public/**"
+    ],
+    "reporters": ["clear-text", "json"],
+    "jsonReporter": {
+        "fileName": "stryker-crap-report.json"
+    },
+    "concurrency": 4,
+    "timeoutMS": 15000,
+    "coverageAnalysis": "all"
+}
