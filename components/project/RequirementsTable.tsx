@@ -213,19 +213,42 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             return;
         }
 
+        await uploadExcel(file, shouldReplace ? 'replace' : 'append');
+    };
+
+    const uploadExcel = async (
+        file: File,
+        writePolicy: 'replace' | 'append',
+        options: { confirmCascade?: boolean } = {}
+    ) => {
         setIsUploadingExcel(true);
         try {
             const formData = new FormData();
             formData.append('file', file);
             formData.append('action', 'apply');
-            formData.append('writePolicy', shouldReplace ? 'replace' : 'append');
+            formData.append('writePolicy', writePolicy);
             formData.append('sheetNames', '고객요구사항도출표');
+            if (options.confirmCascade) {
+                formData.append('confirmCascade', 'true');
+            }
 
             const res = await fetch(`/api/projects/${projectId}/import`, {
                 method: 'POST',
                 body: formData,
             });
             const data = await res.json().catch(() => null);
+
+            // replace 로 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다. 서버가
+            // 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받은 뒤
+            // 같은 파일을 confirmCascade 와 함께 다시 보낸다.
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
+                    await uploadExcel(file, writePolicy, { confirmCascade: true });
+                    return;
+                }
+                showToast('업로드를 취소했습니다. 기존 데이터는 그대로 유지됩니다.', 'error');
+                return;
+            }
 
             if (!res.ok) {
                 const available = data?.availableSheets?.length

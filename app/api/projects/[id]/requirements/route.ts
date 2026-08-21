@@ -81,9 +81,20 @@ export async function POST(
             .map((req) => req.id)
             .filter((id): id is string => Boolean(id));
 
-        // id 없는 행만 오면 deleteMany 가 프로젝트 전체를 지우고,
-        // 그 캐스케이드로 설문 응답까지 사라진다. .min(1) 은 빈 배열만 막는다.
-        if (submittedIds.length === 0) {
+        // deleteMany 로 지워질 "기존" 고객요구사항 수를 센다. 제출 id 가 있어도
+        // 기존 행과 안 겹치면(예: AI 자동생성 전체 교체의 새 gen_ id) notIn 이
+        // 기존 행을 전부 지우고, 그 캐스케이드로 설문 응답이 사라진다.
+        // notIn: [] 은 아무것도 안 지우는 게 아니라 전체를 지우므로, 빈 제출은
+        // 필터 없이 전체를 센다.
+        const deletedExistingCount = submittedIds.length === 0
+            ? await prisma.customerRequirement.count({ where: { projectId } })
+            : await prisma.customerRequirement.count({
+                where: { projectId, id: { notIn: submittedIds } },
+            });
+
+        // 기존 행이 실제로 지워질 때만(그 캐스케이드로 하위 데이터가 사라질 때만)
+        // 확인을 요구한다. id 를 유지한 정상 편집은 지워질 기존 행이 없어 통과한다.
+        if (deletedExistingCount > 0) {
             const impact = await countCascadeImpact(prisma, projectId, {
                 replacesCustomerRequirements: true,
             });

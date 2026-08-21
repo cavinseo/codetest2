@@ -71,19 +71,19 @@ export async function POST(
         const rawBody = await request.json();
         const { attributes: newAttributes } = attributesBodySchema.parse(rawBody);
 
-        // 속성을 비우면 적합도 시트가 캐스케이드로 함께 사라진다.
-        if (newAttributes.length === 0) {
-            const impact = await countAttributeCascadeImpact(prisma, projectId);
-            if (impact.fitnesses > 0 && rawBody?.confirmCascade !== true) {
-                return NextResponse.json(
-                    {
-                        error: describeAttributeCascadeImpact(impact),
-                        needsCascadeConfirm: true,
-                        cascadeImpact: impact,
-                    },
-                    { status: 409 }
-                );
-            }
+        // 저장은 항상 deleteMany 로 기존 속성을 전부 지우고 다시 만든다. 그 삭제의
+        // 캐스케이드로 적합도가 함께 사라지므로, 비우는 저장뿐 아니라 비어있지 않은
+        // 전체 교체 저장도 적합도가 있으면 확인 없이 진행하면 안 된다.
+        const impact = await countAttributeCascadeImpact(prisma, projectId);
+        if (impact.fitnesses > 0 && rawBody?.confirmCascade !== true) {
+            return NextResponse.json(
+                {
+                    error: describeAttributeCascadeImpact(impact),
+                    needsCascadeConfirm: true,
+                    cascadeImpact: impact,
+                },
+                { status: 409 }
+            );
         }
 
         const updatedAttrs = await prisma.$transaction(async (tx: any) => {
