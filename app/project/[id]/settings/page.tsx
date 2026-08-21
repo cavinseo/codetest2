@@ -242,6 +242,8 @@ export default function ProjectSettingsPage() {
             if (response.status === 409 && result.needsCascadeConfirm) {
                 if (window.confirm(`${result.error}\n\n그래도 계속하시겠습니까?`)) {
                     await handleImport({ confirmCascade: true });
+                } else {
+                    alert('가져오기를 취소했습니다. 기존 데이터는 그대로 유지됩니다.');
                 }
                 return;
             }
