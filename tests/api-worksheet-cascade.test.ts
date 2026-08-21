@@ -99,6 +99,22 @@ describe('requirements 저장 캐스케이드', () => {
 
         expect(res.status).toBe(200);
     });
+
+    it('confirmCascade 가 오면 전량 삭제라도 진행한다', async () => {
+        // 사용자가 경고를 확인했으면 id 없는 전량 삭제도 통과해야 한다.
+        // 안 그러면 확인을 눌러도 저장이 영영 안 된다.
+        countKanoResponse.mockResolvedValue(17);
+
+        const res = await saveRequirements(
+            postRequest('requirements', {
+                confirmCascade: true,
+                requirements: [{ category: 'A', requirement: 'x', order: 0 }],
+            }),
+            { params }
+        );
+
+        expect(res.status).toBe(200);
+    });
 });
 
 describe('attributes 저장 캐스케이드', () => {

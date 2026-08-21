@@ -88,6 +88,20 @@ describe('checkInviteCode', () => {
         expect(checkInviteCode(expired, 'mentee@example.com', now)).toBe('EXPIRED');
     });
 
+    it('만료 시각 정각에는 이미 만료로 본다', () => {
+        // 경계값. expiresAt === now 일 때 <= 라 EXPIRED 다. < 로 바뀌면 통과해
+        // 버려 만료 코드가 정각 한 순간 되살아난다.
+        const atBoundary = { ...valid, expiresAt: new Date(now) };
+
+        expect(checkInviteCode(atBoundary, 'mentee@example.com', now)).toBe('EXPIRED');
+    });
+
+    it('만료 1밀리초 전에는 통과시킨다', () => {
+        const justBefore = { ...valid, expiresAt: new Date(now.getTime() + 1) };
+
+        expect(checkInviteCode(justBefore, 'mentee@example.com', now)).toBeNull();
+    });
+
     it('다른 이메일로는 쓸 수 없다', () => {
         // 코드가 메일로 나가므로 전달·유출되면 제3자가 쓸 수 있다. 주소로 묶는다.
         expect(checkInviteCode(valid, 'someone-else@example.com', now)).toBe('EMAIL_MISMATCH');
@@ -95,6 +109,14 @@ describe('checkInviteCode', () => {
 
     it('이메일 대소문자와 공백 차이는 무시한다', () => {
         expect(checkInviteCode(valid, '  MENTEE@Example.com ', now)).toBeNull();
+    });
+
+    it('발급 대상 이메일 쪽 대소문자·공백도 정규화해 대조한다', () => {
+        // 관리자가 코드를 발급할 때 이메일을 대문자나 공백과 함께 넣을 수 있다.
+        // record.email 쪽을 정규화하지 않으면 정상 가입이 EMAIL_MISMATCH 로 막힌다.
+        const messyRecord = { ...valid, email: '  Mentee@Example.COM  ' };
+
+        expect(checkInviteCode(messyRecord, 'mentee@example.com', now)).toBeNull();
     });
 
     it('사용 여부를 기한보다 먼저 본다', () => {

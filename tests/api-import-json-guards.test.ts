@@ -102,6 +102,24 @@ describe('import-json 가드', () => {
         expect(transaction).toHaveBeenCalledTimes(1);
     });
 
+    it('createdAt 이 날짜 형식이 아니면 400 으로 막는다', async () => {
+        // 스키마가 z.string() 이면 'not-a-date' 가 통과해 new Date() 에서
+        // Invalid Date 가 되고, Prisma 가 트랜잭션 중간에 던져 500 이 된다.
+        // .datetime() 이 그것을 400 으로 앞에서 막는다.
+        const res = await POST(
+            jsonRequest({
+                version: '1.0-prisma',
+                customerRequirements: [
+                    { category: 'A', requirement: 'x', order: 0, createdAt: 'not-a-date' },
+                ],
+            }),
+            params
+        );
+
+        expect(res.status).toBe(400);
+        expect(transaction).not.toHaveBeenCalled();
+    });
+
     it('알 수 없는 필드가 들어오면 400 으로 막는다', async () => {
         const res = await POST(
             jsonRequest({

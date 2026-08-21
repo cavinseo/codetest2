@@ -3,8 +3,11 @@ import {
     countCascadeImpact,
     describeCascadeImpact,
     hasCascadeImpact,
+    countAttributeCascadeImpact,
+    describeAttributeCascadeImpact,
     EMPTY_CASCADE_IMPACT,
     type CascadeCounter,
+    type AttributeCascadeCounter,
 } from '../lib/import-cascade-guard';
 
 function counterWith(counts: { kano: number; benchmark: number; qfd: number }): CascadeCounter {
@@ -55,6 +58,16 @@ describe('describeCascadeImpact', () => {
         expect(text).not.toContain('벤치마크');
     });
 
+    it('벤치마크 건수도 문구에 담는다', () => {
+        // 이 항목만 0 이 아닌 경우가 테스트에 없어, 문구가 아예 실행되지 않았다.
+        // 데이터 파괴 직전 사용자에게 보여줄 경고라 문구 자체를 고정해 둔다.
+        const text = describeCascadeImpact({ kanoResponses: 0, benchmarks: 7, qfdMatrices: 0 });
+
+        expect(text).toContain('벤치마크 7건');
+        expect(text).not.toContain('Kano');
+        expect(text).not.toContain('QFD');
+    });
+
     it('설문 응답이 복구 불가라는 점을 알린다', () => {
         expect(describeCascadeImpact({ kanoResponses: 1, benchmarks: 0, qfdMatrices: 0 }))
             .toContain('다시 모을 수 없습니다');
@@ -62,5 +75,39 @@ describe('describeCascadeImpact', () => {
 
     it('영향이 없으면 빈 문자열', () => {
         expect(describeCascadeImpact(EMPTY_CASCADE_IMPACT)).toBe('');
+    });
+});
+
+describe('countAttributeCascadeImpact', () => {
+    function attrCounterWith(fitnesses: number): AttributeCascadeCounter {
+        return { attributeFitness: { count: vi.fn(async () => fitnesses) } };
+    }
+
+    it('속성을 지울 때 함께 사라질 적합도 건수를 센다', async () => {
+        const db = attrCounterWith(9);
+
+        const impact = await countAttributeCascadeImpact(db, 'project_1');
+
+        expect(impact).toEqual({ fitnesses: 9 });
+        expect(db.attributeFitness.count).toHaveBeenCalledWith({ where: { projectId: 'project_1' } });
+    });
+
+    it('적합도가 없으면 0 을 돌려준다', async () => {
+        const db = attrCounterWith(0);
+
+        expect(await countAttributeCascadeImpact(db, 'project_1')).toEqual({ fitnesses: 0 });
+    });
+});
+
+describe('describeAttributeCascadeImpact', () => {
+    it('적합도 건수를 문구에 담는다', () => {
+        const text = describeAttributeCascadeImpact({ fitnesses: 4 });
+
+        expect(text).toContain('적합도 4건');
+        expect(text).toContain('함께 삭제');
+    });
+
+    it('적합도가 0 이면 빈 문자열', () => {
+        expect(describeAttributeCascadeImpact({ fitnesses: 0 })).toBe('');
     });
 });
