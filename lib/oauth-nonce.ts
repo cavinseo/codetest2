@@ -10,6 +10,11 @@ import { getSessionSecret } from './auth';
 
 const NONCE_MAX_AGE_SECONDS = 300;
 
+// nonce 서명에 묶는 컨텍스트. 세션 쿠키는 auth.ts 에서 같은 시크릿으로 순수
+// payload 를 서명하므로, 컨텍스트를 붙이지 않으면 세션 쿠키 문자열이 그대로
+// 유효한 nonce 로 통과한다(H-2 우회). 컨텍스트를 붙여 두 서명 공간을 분리한다.
+const NONCE_CONTEXT = 'google-oauth-nonce.v1';
+
 interface OAuthNoncePayload {
     userId: string;
     nonce: string;
@@ -17,7 +22,9 @@ interface OAuthNoncePayload {
 }
 
 function signPayload(payload: string): string {
-    return createHmac('sha256', getSessionSecret()).update(payload).digest('base64url');
+    return createHmac('sha256', getSessionSecret())
+        .update(`${NONCE_CONTEXT}.${payload}`)
+        .digest('base64url');
 }
 
 function nowInSeconds(): number {

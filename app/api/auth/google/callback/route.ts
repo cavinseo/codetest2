@@ -4,6 +4,7 @@ import { setGoogleToken } from '@/lib/service-settings';
 import { createLogger } from '@/lib/logger';
 import { safeReturnUrl } from '@/lib/safe-return-url';
 import { verifyOAuthNonce } from '@/lib/oauth-nonce';
+import { prisma } from '@/lib/prisma';
 
 const log = createLogger('api/auth/google/callback');
 const OAUTH_NONCE_COOKIE = 'google_oauth_nonce';
@@ -40,6 +41,18 @@ export async function GET(request: NextRequest) {
     const issuedTo = verifyOAuthNonce(cookieNonce);
     if (!issuedTo) {
         log.error('OAuth nonce 서명 검증 실패');
+        return NextResponse.redirect(new URL(`/?error=invalid_state`, request.url));
+    }
+
+    // 관리자 게이트 재확인. start 라우트의 requireAdmin 은 교차 사이트 콜백에
+    // 실리지 않으므로, nonce 서명이 유효해도 여기서 다시 확인하지 않으면
+    // 비관리자가 자기 nonce 로 서비스 Google 계정을 탈취할 수 있다.
+    const issuer = await prisma.user.findUnique({
+        where: { id: issuedTo.userId },
+        select: { isAdmin: true },
+    });
+    if (!issuer?.isAdmin) {
+        log.error('OAuth 콜백 관리자 재확인 실패');
         return NextResponse.redirect(new URL(`/?error=invalid_state`, request.url));
     }
 
