@@ -1653,7 +1653,7 @@ git commit -m "chore: patch production dependency vulnerabilities"
 - Modify: `package.json` (`test:integration` 스크립트)
 
 **Interfaces:**
-- Consumes: 실제 `prisma` 클라이언트. `POSTGRES_PRISMA_URL`이 가리키는 **테스트 전용 DB**를 쓴다.
+- Consumes: 실제 `prisma` 클라이언트. `INTEGRATION_DATABASE_URL`이 가리키는 **테스트 전용 DB**를 쓴다.
 
 - [ ] **Step 1: 통합 테스트를 기본 실행에서 분리**
 
@@ -1680,7 +1680,7 @@ Create `tests/integration/db-cascade.integration.test.ts`:
 // 한 번도 실행되지 않는다. 그래서 'system' 같은 존재하지 않는 사용자 ID 를
 // invitedBy 에 넣는 버그가 437개 테스트를 모두 통과한 채로 살아 있었다.
 //
-// 이 파일은 POSTGRES_PRISMA_URL 이 가리키는 DB 에 실제로 쓴다.
+// 이 파일은 INTEGRATION_DATABASE_URL 이 가리키는 DB 에 실제로 쓴다.
 // 반드시 테스트 전용 DB 를 가리키게 한 뒤 실행한다.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
@@ -1843,7 +1843,7 @@ describe('FK 와 캐스케이드 실측', () => {
 
 - [ ] **Step 3: 테스트 DB 준비 후 실행**
 
-`.env`의 `POSTGRES_PRISMA_URL`이 **개발 DB가 아닌 테스트 DB**를 가리키는지 확인한 뒤 실행한다. 이 테스트는 실제로 행을 만들고 지운다.
+`.env`의 `INTEGRATION_DATABASE_URL`이 **개발 DB가 아닌 테스트 DB**를 가리키는지 확인한 뒤 실행한다. 이 테스트는 실제로 행을 만들고 지운다.
 
 ```bash
 npm run test:integration
