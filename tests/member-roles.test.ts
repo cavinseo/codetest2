@@ -8,6 +8,8 @@ import {
     canListAllProjects,
     canManageMembers,
     canReadAnyProject,
+    canTransitionRole,
+    canWriteAnyProject,
     isAccessExpired,
     parseInvitableRole,
     parseMemberRole,
@@ -43,7 +45,7 @@ const matrix: Array<{
     readAnyProject: boolean;
 }> = [
     { role: 'ADMIN', manageMembers: true, issueInvite: true, assignMentor: true, createProject: true, listAllProjects: true, readAnyProject: true },
-    { role: 'PROGRAM_MANAGER', manageMembers: false, issueInvite: true, assignMentor: true, createProject: false, listAllProjects: true, readAnyProject: false },
+    { role: 'PROGRAM_MANAGER', manageMembers: false, issueInvite: true, assignMentor: true, createProject: false, listAllProjects: true, readAnyProject: true },
     { role: 'MENTOR', manageMembers: false, issueInvite: false, assignMentor: false, createProject: false, listAllProjects: false, readAnyProject: false },
     { role: 'MENTEE', manageMembers: false, issueInvite: false, assignMentor: false, createProject: true, listAllProjects: false, readAnyProject: false },
 ];
@@ -65,7 +67,7 @@ describe('권한 경계 요약', () => {
     it('매니저는 목록은 보지만 내용은 못 본다', () => {
         // 배정 대상을 고르려면 목록이 필요하지만, 멘티 자료가 다 보이면 안 된다.
         expect(canListAllProjects('PROGRAM_MANAGER')).toBe(true);
-        expect(canReadAnyProject('PROGRAM_MANAGER')).toBe(false);
+        expect(canReadAnyProject('PROGRAM_MANAGER')).toBe(true);
     });
 
     it('멘토는 프로젝트를 만들지 않는다', () => {
@@ -109,5 +111,68 @@ describe('접근 기간', () => {
     it('만료 시각이 없으면 만료되지 않는다', () => {
         expect(isAccessExpired(null)).toBe(false);
         expect(isAccessExpired(undefined)).toBe(false);
+    });
+});
+
+describe('전체 프로젝트 읽기·쓰기', () => {
+    it('관리자와 매니저는 전체를 읽는다', () => {
+        expect(canReadAnyProject('ADMIN')).toBe(true);
+        expect(canReadAnyProject('PROGRAM_MANAGER')).toBe(true);
+    });
+
+    it('멘토와 멘티는 전체를 읽지 못한다', () => {
+        expect(canReadAnyProject('MENTOR')).toBe(false);
+        expect(canReadAnyProject('MENTEE')).toBe(false);
+    });
+
+    it('전체 쓰기는 관리자만 된다', () => {
+        // 매니저는 전체를 보되 고치지는 못한다. 읽기와 쓰기를 나눠 둔 이유다.
+        expect(canWriteAnyProject('ADMIN')).toBe(true);
+        expect(canWriteAnyProject('PROGRAM_MANAGER')).toBe(false);
+        expect(canWriteAnyProject('MENTOR')).toBe(false);
+        expect(canWriteAnyProject('MENTEE')).toBe(false);
+    });
+});
+
+describe('canTransitionRole', () => {
+    it('멘토에서 매니저로 승격할 수 있다', () => {
+        expect(canTransitionRole('MENTOR', 'PROGRAM_MANAGER')).toBe(true);
+    });
+
+    it('매니저를 멘토로 해임할 수 있다', () => {
+        expect(canTransitionRole('PROGRAM_MANAGER', 'MENTOR')).toBe(true);
+    });
+
+    it('멘티를 바로 매니저로 올릴 수 없다', () => {
+        // 매니저는 멘토 중에서 선택한다. 멘토를 거쳐 두 단계로 올린다.
+        expect(canTransitionRole('MENTEE', 'PROGRAM_MANAGER')).toBe(false);
+    });
+
+    it('매니저를 바로 멘티로 내릴 수 없다', () => {
+        expect(canTransitionRole('PROGRAM_MANAGER', 'MENTEE')).toBe(false);
+    });
+
+    it('멘토와 멘티 사이는 오갈 수 있다', () => {
+        expect(canTransitionRole('MENTEE', 'MENTOR')).toBe(true);
+        expect(canTransitionRole('MENTOR', 'MENTEE')).toBe(true);
+    });
+
+    it('관리자는 예외로 모든 전환이 열려 있다', () => {
+        expect(canTransitionRole('ADMIN', 'MENTOR')).toBe(true);
+        expect(canTransitionRole('MENTEE', 'ADMIN')).toBe(true);
+    });
+
+    it('관리자 예외는 매니저가 얽힌 전환에도 적용된다', () => {
+        // 매니저 조건(멘토 ↔ 매니저)보다 관리자 예외가 먼저 걸려야 한다.
+        expect(canTransitionRole('ADMIN', 'PROGRAM_MANAGER')).toBe(true);
+        expect(canTransitionRole('PROGRAM_MANAGER', 'ADMIN')).toBe(true);
+    });
+
+    it('같은 역할로의 전환은 허용한다', () => {
+        expect(canTransitionRole('MENTOR', 'MENTOR')).toBe(true);
+    });
+
+    it('매니저에서 매니저로의 전환도 허용한다', () => {
+        expect(canTransitionRole('PROGRAM_MANAGER', 'PROGRAM_MANAGER')).toBe(true);
     });
 });

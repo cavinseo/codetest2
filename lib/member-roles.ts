@@ -67,9 +67,14 @@ export function canListAllProjects(role: MemberRole): boolean {
 
 /**
  * 소속과 무관하게 모든 프로젝트의 내용을 열 수 있는가.
- * 매니저는 목록·배정만 하고 내용은 본인이 멘토로 배정된 곳만 본다.
+ * 매니저는 전체를 읽되 고치지는 못한다(canWriteAnyProject 참고).
  */
 export function canReadAnyProject(role: MemberRole): boolean {
+    return role === 'ADMIN' || role === 'PROGRAM_MANAGER';
+}
+
+/** 소속과 무관하게 모든 프로젝트를 고칠 수 있는가. */
+export function canWriteAnyProject(role: MemberRole): boolean {
     return role === 'ADMIN';
 }
 
@@ -88,4 +93,20 @@ export function accessExpiryFrom(
 export function isAccessExpired(accessExpiresAt: Date | null | undefined, now: Date = new Date()): boolean {
     if (!accessExpiresAt) return false;
     return accessExpiresAt.getTime() <= now.getTime();
+}
+
+// ─── 역할 전환 ──────────────────────────────────────────────────
+//
+// 매니저는 멘토 중에서 선택한다. 그래서 멘티를 바로 매니저로 올릴 수 없고,
+// 관리자가 멘토를 거쳐 두 단계로 올린다. 그 과정에서 멘토 프로필
+// (전문분야·경력 연수)을 채우게 되는 것도 의도한 바다.
+
+/** from 에서 to 로 역할을 바꿀 수 있는가. */
+export function canTransitionRole(from: MemberRole, to: MemberRole): boolean {
+    if (from === to) return true;
+    // 관리자가 얽히면 예외로 연다. 관리자는 모든 권한을 가지기 때문이다.
+    if (from === 'ADMIN' || to === 'ADMIN') return true;
+    if (to === 'PROGRAM_MANAGER') return from === 'MENTOR';
+    if (from === 'PROGRAM_MANAGER') return to === 'MENTOR';
+    return true;
 }
