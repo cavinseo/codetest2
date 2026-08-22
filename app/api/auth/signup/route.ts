@@ -20,6 +20,9 @@ const signupSchema = z.object({
     profile: z.record(z.unknown()),
 });
 
+/** 코드를 쓰려는 순간 다른 요청이 먼저 써 버린 경우. */
+class InviteAlreadyUsedError extends Error {}
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
@@ -112,10 +115,16 @@ export async function POST(request: NextRequest) {
             });
 
             if (invite) {
-                await tx.inviteCode.update({
-                    where: { id: invite.id },
+                // 코드 조회는 트랜잭션 밖에서 했으므로 그 사이에 다른 요청이
+                // 먼저 쓸 수 있다. usedAt 이 아직 비어 있을 때만 쓰고, 못 쓰면
+                // 이미 누가 쓴 것이라 가입 전체를 되돌린다.
+                const marked = await tx.inviteCode.updateMany({
+                    where: { id: invite.id, usedAt: null },
                     data: { usedAt: now, usedById: user.id },
                 });
+                if (marked.count !== 1) {
+                    throw new InviteAlreadyUsedError();
+                }
             }
 
             return user;
@@ -133,6 +142,12 @@ export async function POST(request: NextRequest) {
     } catch (error: unknown) {
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
+        }
+        if (error instanceof InviteAlreadyUsedError) {
+            return NextResponse.json(
+                { error: INVITE_CODE_MESSAGES.ALREADY_USED },
+                { status: 409 }
+            );
         }
         log.error('회원가입 중 예상치 못한 오류', error);
         return NextResponse.json({ error: '회원가입 중 오류가 발생했습니다.' }, { status: 500 });

@@ -19,7 +19,14 @@ async function createSampleData() {
             body: JSON.stringify({
                 email: 'demo@kano.com',
                 name: '데모 사용자',
-                password: 'Demo1234!'
+                password: 'Demo1234!',
+                profile: {
+                    organization: '데모기관',
+                    phone: '010-0000-0000',
+                    privacyConsent: true,
+                    companyName: '데모기업',
+                    industry: '제조',
+                }
             })
         });
 

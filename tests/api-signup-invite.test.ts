@@ -1,6 +1,7 @@
 // 초대 코드 가입이 역할·만료·승인을 한 트랜잭션에서 처리하는지 확인한다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { INVITE_CODE_MESSAGES } from '../lib/invite-code';
 
 const findUniqueUser = vi.fn();
 const findUniqueInvite = vi.fn();
@@ -47,12 +48,12 @@ beforeEach(() => {
     findUniqueInvite.mockResolvedValue(null);
     txCreateUser.mockResolvedValue({ id: 'user_new', email: 'm@x.com', name: '새회원' });
     txCreateProfile.mockResolvedValue({});
-    txUpdateInvite.mockResolvedValue({});
+    txUpdateInvite.mockResolvedValue({ count: 1 });
     transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
             user: { create: txCreateUser },
             memberProfile: { create: txCreateProfile },
-            inviteCode: { update: txUpdateInvite },
+            inviteCode: { updateMany: txUpdateInvite },
         })
     );
 });
@@ -69,11 +70,26 @@ describe('초대 코드 없는 가입', () => {
         const body = await res.json();
 
         expect(res.status).toBe(200);
+        expect(transaction).toHaveBeenCalledTimes(1);
         expect(body.pendingApproval).toBe(true);
         const created = txCreateUser.mock.calls[0][0].data;
         expect(created.status).toBe('PENDING');
         expect(created.role).toBe('MENTEE');
         expect(created.accessExpiresAt).toBeNull();
+    });
+
+    it('요청 본문에 role 을 실어 보내도 무시한다', async () => {
+        // 역할은 서버가 초대 코드 유무로만 정한다. 클라이언트가 최상위에 role 을
+        // 실어 보내도 스스로 역할을 올릴 수 없어야 한다.
+        const res = await POST(signupRequest({
+            name: '새회원', email: 'm@x.com', password: 'password123',
+            role: 'ADMIN', profile: menteeProfile,
+        }));
+
+        expect(res.status).toBe(200);
+        const created = txCreateUser.mock.calls[0][0].data;
+        expect(created.role).toBe('MENTEE');
+        expect(created.status).toBe('PENDING');
     });
 
     it('프로필이 없으면 막는다', async () => {
@@ -111,6 +127,7 @@ describe('초대 코드 가입', () => {
         }));
 
         expect(res.status).toBe(200);
+        expect(transaction).toHaveBeenCalledTimes(1);
         const created = txCreateUser.mock.calls[0][0].data;
         expect(created.role).toBe('MENTOR');
         expect(created.status).toBe('APPROVED');
@@ -126,7 +143,42 @@ describe('초대 코드 가입', () => {
         }));
 
         expect(txUpdateInvite).toHaveBeenCalled();
+        expect(txUpdateInvite.mock.calls[0][0].where).toEqual({ id: 'inv_1', usedAt: null });
         expect(txUpdateInvite.mock.calls[0][0].data.usedAt).toBeInstanceOf(Date);
+        expect(txUpdateInvite.mock.calls[0][0].data.usedById).toBe('user_new');
+    });
+
+    it('트랜잭션 안에서 다른 요청이 먼저 코드를 다 써버리면 409 로 막는다', async () => {
+        // 조회는 트랜잭션 밖에서 했으므로 그 사이 동시 요청이 먼저 썼을 수 있다.
+        // count 가 0 이면 조건절(usedAt: null)에 걸리지 않았다는 뜻이라 이미
+        // 소진된 코드로 보고 가입 전체를 되돌린다.
+        findUniqueInvite.mockResolvedValue(validInvite);
+        txUpdateInvite.mockResolvedValue({ count: 0 });
+
+        const res = await POST(signupRequest({
+            name: '새회원', email: 'm@x.com', password: 'password123',
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: mentorProfile,
+        }));
+        const body = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(body.error).toBe(INVITE_CODE_MESSAGES.ALREADY_USED);
+    });
+
+    it('프로필 생성이 실패하면 코드 사용 처리까지 되돌아간다', async () => {
+        // 트랜잭션 콜백 중간에 던지면 이후 단계(코드 사용 처리)는 아예 실행되지
+        // 않아야 한다. 실행된다면 세 쓰기가 실제로는 하나의 트랜잭션으로 묶여
+        // 있지 않다는 뜻이다.
+        findUniqueInvite.mockResolvedValue(validInvite);
+        txCreateProfile.mockRejectedValue(new Error('DB 오류'));
+
+        const res = await POST(signupRequest({
+            name: '새회원', email: 'm@x.com', password: 'password123',
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: mentorProfile,
+        }));
+
+        expect(res.status).toBe(500);
+        expect(txUpdateInvite).not.toHaveBeenCalled();
     });
 
     it('다른 이메일로는 쓸 수 없다', async () => {
