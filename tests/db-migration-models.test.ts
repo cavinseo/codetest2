@@ -1,10 +1,13 @@
 // 데이터 이관 모델 순서 정의가 FK 의존 관계와 일치하는지 검증하는 테스트입니다.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
     MIGRATION_MODEL_ORDER,
     MODEL_DEPENDENCIES,
     chunk,
 } from '../scripts/db-migration-models.mjs';
+
+const schema = readFileSync('prisma/schema.prisma', 'utf8');
 
 describe('MIGRATION_MODEL_ORDER', () => {
     it('이관 대상 24개 모델을 중복 없이 담는다', () => {
@@ -53,5 +56,29 @@ describe('chunk', () => {
 
     it('크기보다 짧은 배열은 한 덩어리로 둔다', () => {
         expect(chunk([1, 2], 10)).toEqual([[1, 2]]);
+    });
+});
+
+describe('MemberProfile 모델', () => {
+    it('스키마에 member_profiles 로 매핑돼 있다', () => {
+        expect(schema).toContain('model MemberProfile');
+        expect(schema).toContain('@@map("member_profiles")');
+    });
+
+    it('공통 항목은 필수, 역할별 항목은 nullable 이다', () => {
+        // 멘토에게 companyName 을 NOT NULL 로 걸 수 없어 역할별 항목은 전부
+        // nullable 이다. 필수 여부는 zod 스키마가 역할로 분기해 강제한다.
+        const model = schema.slice(schema.indexOf('model MemberProfile'));
+        const body = model.slice(0, model.indexOf('}'));
+
+        expect(body).toMatch(/organization\s+String\s*$/m);
+        expect(body).toMatch(/phone\s+String\s*$/m);
+        expect(body).toMatch(/privacyConsentAt\s+DateTime\s*$/m);
+        expect(body).toMatch(/expertise\s+String\?/);
+        expect(body).toMatch(/companyName\s+String\?/);
+    });
+
+    it('User 에 mustChangePassword 가 있다', () => {
+        expect(schema).toMatch(/mustChangePassword\s+Boolean\s+@default\(false\)/);
     });
 });

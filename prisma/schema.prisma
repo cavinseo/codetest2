@@ -25,6 +25,9 @@ model User {
   // 발급된 세션을 한꺼번에 무효화하기 위한 값. 비밀번호 변경이나 승인 취소 때
   // 1 올리면, 그 전에 발급된 쿠키는 전부 거부된다.
   sessionVersion      Int                    @default(0)
+  // 관리자가 만든 계정은 임시 비밀번호를 받는다. 이 값이 true 인 동안에는
+  // 비밀번호를 바꾸기 전까지 다른 화면으로 넘어가지 못한다.
+  mustChangePassword  Boolean                @default(false)
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
   kanoInvitationsSent KanoSurveyInvitation[]
@@ -33,6 +36,7 @@ model User {
   ownedProjects       Project[]              @relation("ProjectOwner")
   issuedInviteCodes   InviteCode[]           @relation("InviteIssuer")
   usedInviteCode      InviteCode?            @relation("InviteRedeemer")
+  profile             MemberProfile?
 
   @@map("users")
 }
@@ -497,4 +501,37 @@ model InviteCode {
   @@index([email])
   @@index([issuedById])
   @@map("invite_codes")
+}
+
+// 회원등록 정보. 인증에 쓰이는 users 행과 분리해 둔다.
+// requireAuth 가 매 요청마다 users 를 읽으므로 관심사를 섞지 않는다.
+model MemberProfile {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 공통
+  // 소속기관명
+  organization String
+  // 직책·직위
+  jobTitle     String?
+  // 휴대폰
+  phone        String
+
+  // 멘토·프로그램 매니저
+  expertise     String? // 전문분야
+  careerYears   Int?    // 경력 연수
+  careerSummary String? // 주요이력·보유자격
+
+  // 멘티
+  companyName String? // 기업명
+  industry    String? // 업종
+  foundedYear Int?    // 창업 연차
+
+  // 개인정보 수집·이용 동의 시각
+  privacyConsentAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("member_profiles")
 }
