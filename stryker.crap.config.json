@@ -13,7 +13,8 @@
         "lib/import-json-schema.ts",
         "lib/member-roles.ts",
         "lib/invite-code.ts",
-        "lib/member-profile.ts"
+        "lib/member-profile.ts",
+        "lib/temp-password-email.ts"
     ],
     "ignorePatterns": [
         ".claude/**",

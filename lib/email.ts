@@ -34,6 +34,32 @@ async function createTransporter() {
     };
 }
 
+/**
+ * 공용 메일 발송. SMTP 가 설정되지 않았으면 false 를 돌려준다.
+ * 호출부는 이 값을 보고 사용자에게 "메일이 나가지 않았다"고 알려야 한다.
+ * 조용히 성공으로 처리하면 관리자가 코드를 전달할 기회를 놓친다.
+ */
+export async function sendMail(options: EmailOptions): Promise<boolean> {
+    const mailer = await createTransporter();
+    if (!mailer) {
+        log.warn('SMTP 미설정으로 메일을 보내지 못했습니다.');
+        return false;
+    }
+
+    try {
+        await mailer.transport.sendMail({
+            from: mailer.from,
+            to: options.to,
+            subject: sanitizeHeaderValue(options.subject),
+            html: options.html,
+        });
+        return true;
+    } catch (error: unknown) {
+        log.error('메일 발송 실패', error);
+        return false;
+    }
+}
+
 export async function sendSurveyInvitation(
     email: string,
     surveyLink: string,
