@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
 import { requireAuth } from '@/lib/auth';
+import { resolveProjectRole } from '@/lib/authorization';
 import { canCreateProject, canListAllProjects } from '@/lib/member-roles';
 import { createLogger } from '@/lib/logger';
 import {
@@ -64,9 +65,11 @@ export async function GET(request: NextRequest) {
                 createdAt: p.createdAt.toISOString(),
                 updatedAt: p.updatedAt.toISOString(),
                 memberCount: p._count.members + 1, // 소유자 포함
-                role: p.ownerId === userId
-                    ? 'OWNER'
-                    : (p.members[0]?.role ?? (canListAllProjects(authResult.role) ? 'VIEWER' : 'EDITOR')),
+                role: resolveProjectRole({
+                    systemRole: authResult.role,
+                    isOwner: p.ownerId === userId,
+                    memberRole: p.members[0]?.role,
+                }) ?? 'EDITOR',
             })),
         });
     } catch (error: unknown) {

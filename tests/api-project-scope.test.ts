@@ -32,6 +32,24 @@ function postRequest(body: unknown): NextRequest {
     });
 }
 
+// GET 라우트의 select 모양을 그대로 흉내낸 목록 행. role 계산은 ownerId/members 만
+// 보므로 나머지 필드는 고정값으로 채운다.
+function projectRow(overrides: {
+    ownerId: string;
+    members: Array<{ role: string }>;
+}) {
+    return {
+        id: 'proj_1',
+        name: '프로젝트 1',
+        description: null,
+        detailedDescription: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+        _count: { members: 0 },
+        ...overrides,
+    };
+}
+
 beforeEach(() => {
     findManyProject.mockResolvedValue([]);
     createProject.mockResolvedValue({
@@ -89,7 +107,10 @@ describe('프로젝트 목록 범위', () => {
         await GET(new NextRequest('http://localhost/api/projects'));
 
         const where = findManyProject.mock.calls[0][0].where;
-        expect(where.OR).toBeDefined();
+        // OR 정의 여부만 보면 멤버십 절이 빠져도 통과한다. 두 절이 다 있는지 본다.
+        expect(where).toEqual({
+            OR: [{ ownerId: 'mentee_1' }, { members: { some: { userId: 'mentee_1' } } }],
+        });
     });
 
     it('관리자는 전체를 본다', async () => {
@@ -98,7 +119,7 @@ describe('프로젝트 목록 범위', () => {
         await GET(new NextRequest('http://localhost/api/projects'));
 
         const where = findManyProject.mock.calls[0][0].where;
-        expect(where.OR).toBeUndefined();
+        expect(where).toEqual({});
     });
 
     it('매니저는 전체를 본다', async () => {
@@ -107,7 +128,7 @@ describe('프로젝트 목록 범위', () => {
         await GET(new NextRequest('http://localhost/api/projects'));
 
         const where = findManyProject.mock.calls[0][0].where;
-        expect(where.OR).toBeUndefined();
+        expect(where).toEqual({});
     });
 
     it('멘토는 소유·참여한 것만 본다', async () => {
@@ -116,6 +137,72 @@ describe('프로젝트 목록 범위', () => {
         await GET(new NextRequest('http://localhost/api/projects'));
 
         const where = findManyProject.mock.calls[0][0].where;
-        expect(where.OR).toBeDefined();
+        expect(where).toEqual({
+            OR: [{ ownerId: 'mentor_1' }, { members: { some: { userId: 'mentor_1' } } }],
+        });
+    });
+});
+
+describe('프로젝트 목록의 role 필드', () => {
+    // requireProjectAccess 가 실제로 주는 접근 권한과 목록의 role 이 어긋나면 안 된다.
+    // (docs/superpowers/specs/2026-08-20-member-management-design.md:194-200)
+    it('관리자는 배정되지 않은 프로젝트도 ADMIN 으로 나온다', async () => {
+        authAs('ADMIN', 'admin_1');
+        findManyProject.mockResolvedValue([
+            projectRow({ ownerId: 'someone_else', members: [] }),
+        ]);
+
+        const res = await GET(new NextRequest('http://localhost/api/projects'));
+        const body = await res.json();
+
+        expect(body.projects[0].role).toBe('ADMIN');
+    });
+
+    it('관리자는 COACH 로 배정돼 있어도 ADMIN 으로 나온다', async () => {
+        authAs('ADMIN', 'admin_1');
+        findManyProject.mockResolvedValue([
+            projectRow({ ownerId: 'someone_else', members: [{ role: 'COACH' }] }),
+        ]);
+
+        const res = await GET(new NextRequest('http://localhost/api/projects'));
+        const body = await res.json();
+
+        expect(body.projects[0].role).toBe('ADMIN');
+    });
+
+    it('매니저는 배정되지 않은 프로젝트에서 VIEWER 로 나온다', async () => {
+        authAs('PROGRAM_MANAGER', 'pm_1');
+        findManyProject.mockResolvedValue([
+            projectRow({ ownerId: 'someone_else', members: [] }),
+        ]);
+
+        const res = await GET(new NextRequest('http://localhost/api/projects'));
+        const body = await res.json();
+
+        expect(body.projects[0].role).toBe('VIEWER');
+    });
+
+    it('매니저는 COACH 로 배정돼 있으면 COACH 로 나온다', async () => {
+        authAs('PROGRAM_MANAGER', 'pm_1');
+        findManyProject.mockResolvedValue([
+            projectRow({ ownerId: 'someone_else', members: [{ role: 'COACH' }] }),
+        ]);
+
+        const res = await GET(new NextRequest('http://localhost/api/projects'));
+        const body = await res.json();
+
+        expect(body.projects[0].role).toBe('COACH');
+    });
+
+    it('멘티는 자신이 만든 프로젝트에서 OWNER 로 나온다', async () => {
+        authAs('MENTEE', 'mentee_1');
+        findManyProject.mockResolvedValue([
+            projectRow({ ownerId: 'mentee_1', members: [] }),
+        ]);
+
+        const res = await GET(new NextRequest('http://localhost/api/projects'));
+        const body = await res.json();
+
+        expect(body.projects[0].role).toBe('OWNER');
     });
 });

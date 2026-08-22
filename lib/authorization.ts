@@ -1,11 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 import { requireAuth, SessionUser } from './auth';
-import { canReadAnyProject, canWriteAnyProject } from './member-roles';
+import { canReadAnyProject, canWriteAnyProject, type MemberRole } from './member-roles';
 
 export type ProjectAccessRole = 'OWNER' | 'EDITOR' | 'COACH' | 'ADMIN' | 'VIEWER';
 
 const WRITE_ROLES = new Set<ProjectAccessRole>(['OWNER', 'EDITOR', 'ADMIN']);
+
+/**
+ * 프로젝트에서 유효한 역할을 정한다. requireProjectAccess 와 목록 API 가
+ * 같은 답을 내야 하므로 판정을 한 곳에 둔다. 예전에는 두 곳에 복제돼 있어
+ * 목록은 VIEWER 라고 하는데 상세는 편집을 허용하는 어긋남이 생겼다.
+ *
+ * 반환값이 undefined 면 접근 권한이 없다는 뜻이다.
+ */
+export function resolveProjectRole(params: {
+    systemRole: MemberRole;
+    isOwner: boolean;
+    memberRole: string | null | undefined;
+}): ProjectAccessRole | undefined {
+    const explicitRole = params.isOwner
+        ? 'OWNER'
+        : (params.memberRole as ProjectAccessRole | undefined) ?? undefined;
+
+    if (canWriteAnyProject(params.systemRole)) {
+        // 관리자는 전권이되, 이미 쓰기 가능한 명시 역할이 있으면 그대로 둔다.
+        // OWNER 전용 게이트에서 관리자 소유자가 막히면 안 된다.
+        if (!explicitRole || !WRITE_ROLES.has(explicitRole)) return 'ADMIN';
+        return explicitRole;
+    }
+    if (!explicitRole && canReadAnyProject(params.systemRole)) {
+        // 매니저는 배정되지 않은 프로젝트도 읽는다. VIEWER 는 WRITE_ROLES 에
+        // 없으므로 쓰기와 roles 검사에서 자동으로 걸러진다.
+        return 'VIEWER';
+    }
+    return explicitRole;
+}
 
 export interface ProjectAccess {
     user: SessionUser;
@@ -60,21 +90,11 @@ export async function requireProjectAccess(
     }
 
     // 관리자는 명시 역할과 무관하게 전권이다. "관리자는 이상의 모든 권한을 가진다".
-    const systemRole = authResult.role;
-    const explicitRole = project.ownerId === authResult.userId
-        ? 'OWNER'
-        : (project.members[0]?.role as ProjectAccessRole | undefined);
-
-    let role: ProjectAccessRole | undefined = explicitRole;
-    if (canWriteAnyProject(systemRole)) {
-        // 관리자는 전권이되, 이미 쓰기 가능한 명시 역할이 있으면 그대로 둔다.
-        // OWNER 전용 게이트에서 관리자 소유자가 막히면 안 된다.
-        if (!explicitRole || !WRITE_ROLES.has(explicitRole)) role = 'ADMIN';
-    } else if (!role && canReadAnyProject(systemRole)) {
-        // 매니저는 배정되지 않은 프로젝트도 읽는다. VIEWER 는 WRITE_ROLES 에
-        // 없으므로 쓰기와 roles 검사에서 자동으로 걸러진다.
-        role = 'VIEWER';
-    }
+    const role = resolveProjectRole({
+        systemRole: authResult.role,
+        isOwner: project.ownerId === authResult.userId,
+        memberRole: project.members[0]?.role,
+    });
 
     if (!role) {
         return NextResponse.json({ error: 'Project access denied.' }, { status: 403 });
