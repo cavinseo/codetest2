@@ -67,7 +67,9 @@ export async function requireProjectAccess(
 
     let role: ProjectAccessRole | undefined = explicitRole;
     if (canWriteAnyProject(systemRole)) {
-        role = 'ADMIN';
+        // 관리자는 전권이되, 이미 쓰기 가능한 명시 역할이 있으면 그대로 둔다.
+        // OWNER 전용 게이트에서 관리자 소유자가 막히면 안 된다.
+        if (!explicitRole || !WRITE_ROLES.has(explicitRole)) role = 'ADMIN';
     } else if (!role && canReadAnyProject(systemRole)) {
         // 매니저는 배정되지 않은 프로젝트도 읽는다. VIEWER 는 WRITE_ROLES 에
         // 없으므로 쓰기와 roles 검사에서 자동으로 걸러진다.

@@ -310,4 +310,36 @@ describe('시스템 역할에 따른 프로젝트 접근', () => {
 
         expect((result as ProjectAccess).role).toBe('OWNER');
     });
+
+    it('관리자는 자기 소유 프로젝트의 OWNER 전용 라우트에서도 통과한다', async () => {
+        // 관리자 escalation 이 OWNER 를 덮어쓰면 팀원 초대에서 스스로 막힌다.
+        mockAuthUser({ userId: 'admin_1', role: 'ADMIN', isAdmin: true });
+        mockProject({ ownerId: 'admin_1', members: [] });
+
+        const result = await requireProjectAccess(req(), 'proj_1', { roles: ['OWNER'] });
+
+        expect(result).not.toBeInstanceOf(NextResponse);
+    });
+
+    it('매니저가 코치로 배정돼 있으면 COACH 이고 쓰기는 막힌다', async () => {
+        mockAuthUser({ userId: 'pm_1', role: 'PROGRAM_MANAGER', isAdmin: false });
+        mockProject({ ownerId: 'someone_else', members: [{ role: 'COACH' }] });
+
+        const readResult = await requireProjectAccess(req(), 'proj_1');
+        expect((readResult as ProjectAccess).role).toBe('COACH');
+
+        const writeResult = await requireProjectAccess(req(), 'proj_1', { write: true });
+        expect(writeResult).toBeInstanceOf(NextResponse);
+        expect((writeResult as NextResponse).status).toBe(403);
+    });
+
+    it('관리자가 코치로 배정돼 있어도 전권을 갖는다', async () => {
+        mockAuthUser({ userId: 'admin_1', role: 'ADMIN', isAdmin: true });
+        mockProject({ ownerId: 'someone_else', members: [{ role: 'COACH' }] });
+
+        const result = await requireProjectAccess(req(), 'proj_1', { write: true });
+
+        expect(result).not.toBeInstanceOf(NextResponse);
+        expect((result as ProjectAccess).role).toBe('ADMIN');
+    });
 });
