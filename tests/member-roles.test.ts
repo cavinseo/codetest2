@@ -64,8 +64,9 @@ describe('권한 경계 요약', () => {
         expect(canManageMembers('PROGRAM_MANAGER')).toBe(false);
     });
 
-    it('매니저는 목록은 보지만 내용은 못 본다', () => {
-        // 배정 대상을 고르려면 목록이 필요하지만, 멘티 자료가 다 보이면 안 된다.
+    it('매니저는 목록과 내용을 모두 본다', () => {
+        // 배정 대상을 고르려면 목록이 필요하고, 진행 상황을 보려면 내용도 필요하다.
+        // 다만 고칠 수는 없다. canWriteAnyProject 가 관리자만 허용한다.
         expect(canListAllProjects('PROGRAM_MANAGER')).toBe(true);
         expect(canReadAnyProject('PROGRAM_MANAGER')).toBe(true);
     });
