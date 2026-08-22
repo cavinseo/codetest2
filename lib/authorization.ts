@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 import { requireAuth, SessionUser } from './auth';
+import { canReadAnyProject, canWriteAnyProject } from './member-roles';
 
-export type ProjectAccessRole = 'OWNER' | 'EDITOR' | 'COACH' | 'ADMIN';
+export type ProjectAccessRole = 'OWNER' | 'EDITOR' | 'COACH' | 'ADMIN' | 'VIEWER';
 
 const WRITE_ROLES = new Set<ProjectAccessRole>(['OWNER', 'EDITOR', 'ADMIN']);
 
@@ -58,9 +59,20 @@ export async function requireProjectAccess(
         return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
     }
 
-    const role = project.ownerId === authResult.userId
+    // 관리자는 명시 역할과 무관하게 전권이다. "관리자는 이상의 모든 권한을 가진다".
+    const systemRole = authResult.role;
+    const explicitRole = project.ownerId === authResult.userId
         ? 'OWNER'
         : (project.members[0]?.role as ProjectAccessRole | undefined);
+
+    let role: ProjectAccessRole | undefined = explicitRole;
+    if (canWriteAnyProject(systemRole)) {
+        role = 'ADMIN';
+    } else if (!role && canReadAnyProject(systemRole)) {
+        // 매니저는 배정되지 않은 프로젝트도 읽는다. VIEWER 는 WRITE_ROLES 에
+        // 없으므로 쓰기와 roles 검사에서 자동으로 걸러진다.
+        role = 'VIEWER';
+    }
 
     if (!role) {
         return NextResponse.json({ error: 'Project access denied.' }, { status: 403 });

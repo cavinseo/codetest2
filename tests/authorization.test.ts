@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { encodeSessionCookie, type SessionUser } from '../lib/auth';
 import { prisma } from '../lib/prisma';
-import { requireAdmin, requireProjectAccess } from '../lib/authorization';
+import { requireAdmin, requireProjectAccess, type ProjectAccess } from '../lib/authorization';
+import type { MemberRole } from '../lib/member-roles';
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
@@ -48,6 +49,10 @@ function approvedRow(userId: string, overrides: Record<string, unknown> = {}) {
         status: 'APPROVED',
         isAdmin: false,
         sessionVersion: 0,
+        // requireAuth 가 이제 role/accessExpiresAt 도 돌려주므로 기본값을 명시한다.
+        // 명시하지 않으면 시스템 역할 관련 테스트가 undefined 를 보고 조용히 틀릴 수 있다.
+        role: 'MENTEE',
+        accessExpiresAt: null,
         ...overrides,
     };
 }
@@ -195,5 +200,114 @@ describe('authorization helpers', () => {
         );
 
         expect(responseStatus(result)).toBe(401);
+    });
+});
+
+describe('시스템 역할에 따른 프로젝트 접근', () => {
+    // 이 블록의 헬퍼는 "authorization helpers" 블록의 mock 방식(prisma.user.findUnique 를
+    // 통해 requireAuth 를 실제로 통과시키는 방식)을 그대로 따른다. mockAuthUser 가 지정한
+    // 사용자를 req() 가 이어받아 요청을 만든다.
+    let currentUser: SessionUser | null = null;
+
+    function mockAuthUser(overrides: { userId: string; role: MemberRole; isAdmin?: boolean }) {
+        const email = `${overrides.userId}@example.com`;
+        currentUser = { userId: overrides.userId, email, name: null };
+        findUser.mockImplementation((async (args: { where: { id: string } }) =>
+            approvedRow(args.where.id, {
+                email,
+                isAdmin: overrides.isAdmin ?? false,
+                role: overrides.role,
+            })) as never
+        );
+    }
+
+    function mockProject(overrides: { ownerId: string; members: Array<{ role: string }> }) {
+        findProject.mockResolvedValue(overrides as never);
+    }
+
+    function req(method = 'GET'): NextRequest {
+        if (!currentUser) {
+            throw new Error('req() 호출 전에 mockAuthUser() 로 사용자를 지정해야 한다.');
+        }
+        return requestFor(currentUser, method);
+    }
+
+    beforeEach(() => {
+        vi.stubEnv('SESSION_SECRET', 'test-secret');
+    });
+
+    afterEach(() => {
+        vi.clearAllMocks();
+        vi.unstubAllEnvs();
+        currentUser = null;
+    });
+
+    it('관리자는 남의 프로젝트에도 ADMIN 으로 들어간다', async () => {
+        // 관리자는 이상의 모든 권한을 가진다. 명시 역할이 없어도 전권이다.
+        mockAuthUser({ userId: 'admin_1', role: 'ADMIN', isAdmin: true });
+        mockProject({ ownerId: 'someone_else', members: [] });
+
+        const result = await requireProjectAccess(req(), 'proj_1');
+
+        expect(result).not.toBeInstanceOf(NextResponse);
+        expect((result as ProjectAccess).role).toBe('ADMIN');
+    });
+
+    it('매니저는 배정되지 않은 프로젝트에 VIEWER 로 들어간다', async () => {
+        mockAuthUser({ userId: 'pm_1', role: 'PROGRAM_MANAGER', isAdmin: false });
+        mockProject({ ownerId: 'someone_else', members: [] });
+
+        const result = await requireProjectAccess(req(), 'proj_1');
+
+        expect((result as ProjectAccess).role).toBe('VIEWER');
+    });
+
+    it('VIEWER 는 쓰기가 막힌다', async () => {
+        mockAuthUser({ userId: 'pm_1', role: 'PROGRAM_MANAGER', isAdmin: false });
+        mockProject({ ownerId: 'someone_else', members: [] });
+
+        const result = await requireProjectAccess(req(), 'proj_1', { write: true });
+
+        expect(result).toBeInstanceOf(NextResponse);
+        expect((result as NextResponse).status).toBe(403);
+    });
+
+    it('배정되지 않은 멘토는 거부된다', async () => {
+        mockAuthUser({ userId: 'mentor_1', role: 'MENTOR', isAdmin: false });
+        mockProject({ ownerId: 'someone_else', members: [] });
+
+        const result = await requireProjectAccess(req(), 'proj_1');
+
+        expect(result).toBeInstanceOf(NextResponse);
+        expect((result as NextResponse).status).toBe(403);
+    });
+
+    it('배정된 멘토는 COACH 로 들어간다', async () => {
+        mockAuthUser({ userId: 'mentor_1', role: 'MENTOR', isAdmin: false });
+        mockProject({ ownerId: 'someone_else', members: [{ role: 'COACH' }] });
+
+        const result = await requireProjectAccess(req(), 'proj_1');
+
+        expect((result as ProjectAccess).role).toBe('COACH');
+    });
+
+    it('VIEWER 는 roles 로 특정 역할을 요구하는 라우트에서도 막힌다', async () => {
+        // 팀원 초대처럼 소유자만 하는 동작이 매니저에게 열리면 안 된다.
+        mockAuthUser({ userId: 'pm_1', role: 'PROGRAM_MANAGER', isAdmin: false });
+        mockProject({ ownerId: 'someone_else', members: [] });
+
+        const result = await requireProjectAccess(req(), 'proj_1', { roles: ['OWNER'] });
+
+        expect(result).toBeInstanceOf(NextResponse);
+        expect((result as NextResponse).status).toBe(403);
+    });
+
+    it('소유자는 시스템 역할과 무관하게 OWNER 다', async () => {
+        mockAuthUser({ userId: 'mentee_1', role: 'MENTEE', isAdmin: false });
+        mockProject({ ownerId: 'mentee_1', members: [] });
+
+        const result = await requireProjectAccess(req(), 'proj_1');
+
+        expect((result as ProjectAccess).role).toBe('OWNER');
     });
 });
