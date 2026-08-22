@@ -12,7 +12,8 @@
         "lib/import-cascade-guard.ts",
         "lib/import-json-schema.ts",
         "lib/member-roles.ts",
-        "lib/invite-code.ts"
+        "lib/invite-code.ts",
+        "lib/member-profile.ts"
     ],
     "ignorePatterns": [
         ".claude/**",
