@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
 import { requireAuth } from '@/lib/auth';
+import { canCreateProject, canListAllProjects } from '@/lib/member-roles';
 import { createLogger } from '@/lib/logger';
 import {
     BusinessPlanFileValidationError,
@@ -29,13 +30,13 @@ export async function GET(request: NextRequest) {
     const { userId } = authResult;
 
     try {
+        // 관리자와 매니저는 배정 대상을 고르기 위해 전체 목록을 본다.
+        const scope = canListAllProjects(authResult.role)
+            ? {}
+            : { OR: [{ ownerId: userId }, { members: { some: { userId } } }] };
+
         const userProjects = await prisma.project.findMany({
-            where: {
-                OR: [
-                    { ownerId: userId },
-                    { members: { some: { userId: userId } } },
-                ],
-            },
+            where: scope,
             select: {
                 id: true,
                 name: true,
@@ -63,7 +64,9 @@ export async function GET(request: NextRequest) {
                 createdAt: p.createdAt.toISOString(),
                 updatedAt: p.updatedAt.toISOString(),
                 memberCount: p._count.members + 1, // 소유자 포함
-                role: p.ownerId === userId ? 'OWNER' : (p.members[0]?.role ?? 'EDITOR'),
+                role: p.ownerId === userId
+                    ? 'OWNER'
+                    : (p.members[0]?.role ?? (canListAllProjects(authResult.role) ? 'VIEWER' : 'EDITOR')),
             })),
         });
     } catch (error: unknown) {
@@ -78,6 +81,14 @@ export async function POST(request: NextRequest) {
     const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
     const { userId } = authResult;
+
+    // 멘티가 과제를 만들고 멘토가 붙는 구조다. 멘토·매니저는 만들지 않는다.
+    if (!canCreateProject(authResult.role)) {
+        return NextResponse.json(
+            { error: '프로젝트를 만들 권한이 없습니다. 멘티 계정으로 생성할 수 있습니다.' },
+            { status: 403 }
+        );
+    }
 
     try {
         const body = await request.json();
