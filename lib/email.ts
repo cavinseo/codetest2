@@ -55,7 +55,12 @@ export async function sendMail(options: EmailOptions): Promise<boolean> {
         });
         return true;
     } catch (error: unknown) {
-        log.error('메일 발송 실패', error);
+        // 원본 오류를 그대로 넘기면 logger 가 error.message 를 meta 에 넣는데,
+        // SMTP 거부 메시지에는 수신자 주소가 들어 있다. 코드만 남긴다.
+        const code = typeof error === 'object' && error !== null && 'code' in error
+            ? String((error as { code?: unknown }).code)
+            : 'unknown';
+        log.error('메일 발송 실패', undefined, { code });
         return false;
     }
 }
@@ -116,7 +121,12 @@ export async function sendSurveyInvitation(
         return true;
     } catch (error) {
         // 수신자 이메일은 기록하지 않는다. lib/logger.ts 규칙.
-        log.error('설문 초대 메일 발송 실패', error);
+        // 원본 오류를 그대로 넘기면 logger 가 error.message 를 meta 에 넣는데,
+        // SMTP 거부 메시지에는 수신자 주소가 들어 있다. 코드만 남긴다.
+        const code = typeof error === 'object' && error !== null && 'code' in error
+            ? String((error as { code?: unknown }).code)
+            : 'unknown';
+        log.error('설문 초대 메일 발송 실패', undefined, { code });
         return false;
     }
 }
