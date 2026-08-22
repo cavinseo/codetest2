@@ -162,6 +162,26 @@ describe('초대 코드 회수', () => {
         expect(res.status).toBe(400);
         expect(updateInvite).not.toHaveBeenCalled();
     });
+
+    it('매니저도 회수할 수 있다', async () => {
+        // 이 라우트를 /api/admin/ 밖에 둔 이유가 매니저도 쓰기 때문이다.
+        // 게이트가 관리자 전용으로 좁아지면 여기서 잡힌다.
+        authAs('PROGRAM_MANAGER');
+
+        const res = await DELETE(jsonRequest('DELETE', { id: 'inv_1' }));
+
+        expect(res.status).toBe(200);
+        expect(updateInvite).toHaveBeenCalled();
+    });
+
+    it('멘토는 회수할 수 없다', async () => {
+        authAs('MENTOR');
+
+        const res = await DELETE(jsonRequest('DELETE', { id: 'inv_1' }));
+
+        expect(res.status).toBe(403);
+        expect(updateInvite).not.toHaveBeenCalled();
+    });
 });
 
 describe('초대 코드 목록', () => {
