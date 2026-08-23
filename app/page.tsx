@@ -58,16 +58,6 @@ export default async function HomePage() {
                         <br className="hidden md:block" />
                         고객이 진정으로 원하는 제품을 만드세요.
                     </p>
-
-                    {/* CTA */}
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up" style={{ animationDelay: '0.3s' }}>
-                        <Link href="/signup" className="btn-primary px-8 py-3.5 text-base">
-                            무료로 시작하기 →
-                        </Link>
-                        <Link href="/login" className="btn-secondary px-8 py-3.5 text-base">
-                            데모 체험하기
-                        </Link>
-                    </div>
                 </div>
 
                 {/* Feature Cards */}
