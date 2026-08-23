@@ -7,7 +7,7 @@ import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-poli
 import MembersTab, { type User } from '@/components/admin/MembersTab';
 import InvitesTab from '@/components/admin/InvitesTab';
 import MentorAssign from '@/components/admin/MentorAssign';
-import { MEMBER_ROLE_LABELS, type MemberRole } from '@/lib/member-roles';
+import { MEMBER_ROLE_LABELS, canAssignMentor, canIssueInviteCode, type MemberRole } from '@/lib/member-roles';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -57,10 +57,6 @@ export default function AdminModePage() {
     const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [isChangingPassword, setIsChangingPassword] = useState(false);
     const [role, setRole] = useState<MemberRole | null>(null);
-    // requireAdmin 과 같은 기준(hasAdminAccess)을 프로필 API 가 계산해 내려준다.
-    // isAdmin/role 을 화면이 따로 조합하지 않는다 — 그렇게 하면 ADMIN_EMAILS 로
-    // 들어온 계정이 이 값과 어긋나 카드를 못 보는 일이 다시 생긴다.
-    const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
     const [openMentorAssign, setOpenMentorAssign] = useState<Record<string, boolean>>({});
 
     const load = useCallback(async () => {
@@ -89,7 +85,6 @@ export default function AdminModePage() {
             if (meRes.ok) {
                 const d = await meRes.json();
                 setRole(d.role ?? null);
-                setCanAccessAdmin(d.canAccessAdmin ?? false);
             }
         } finally {
             setLoading(false);
@@ -249,8 +244,11 @@ export default function AdminModePage() {
         }
     };
 
-    // 대시보드 헤더의 관리자 링크와 같은 기준(canAccessAdmin)을 쓴다.
-    const canAssignMentorUI = canAccessAdmin;
+    // 초대 발행·멘토 배정 API 는 시스템 역할(canIssueInviteCode/canAssignMentor)로
+    // 막는다. ADMIN_EMAILS 로 들어온 MENTEE 계정이 이 컨트롤을 열면 API 가 403 을
+    // 주므로, 화면도 같은 역할 기준으로 감춘다. 화면 전체 접근은 서버 requireAdmin(403)이 막는다.
+    const canInvite = role !== null && canIssueInviteCode(role);
+    const canAssignMentorUI = role !== null && canAssignMentor(role);
 
     const toggleMentorAssign = (projectId: string) => {
         setOpenMentorAssign((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
@@ -265,7 +263,7 @@ export default function AdminModePage() {
         );
     });
 
-    const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    const allTabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
         {
             id: 'overview', label: '개요',
             icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>,
@@ -287,6 +285,8 @@ export default function AdminModePage() {
             icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>,
         },
     ];
+    // 초대 발행 권한이 없는 역할에게는 초대 관리 탭 자체를 감춘다(/api/invites 가 403).
+    const tabs = allTabs.filter((t) => t.id !== 'invites' || canInvite);
 
     const statItems = [
         { label: '총 프로젝트', value: stats?.totalProjects ?? 0, unit: '개', gradient: 'from-blue-500/20 to-cyan-500/20', color: 'text-blue-400' },
@@ -600,7 +600,7 @@ export default function AdminModePage() {
                         )}
 
                         {/* ── Invites Tab ──────────────────────────────── */}
-                        {tab === 'invites' && <InvitesTab />}
+                        {tab === 'invites' && canInvite && <InvitesTab />}
 
                         {/* ── Projects Tab ─────────────────────────────── */}
                         {tab === 'projects' && (
