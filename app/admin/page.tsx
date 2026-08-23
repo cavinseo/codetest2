@@ -58,6 +58,7 @@ export default function AdminModePage() {
     const [isChangingPassword, setIsChangingPassword] = useState(false);
     const [role, setRole] = useState<MemberRole | null>(null);
     const [openMentorAssign, setOpenMentorAssign] = useState<Record<string, boolean>>({});
+    const [loadedAt, setLoadedAt] = useState<string | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -88,6 +89,9 @@ export default function AdminModePage() {
             }
         } finally {
             setLoading(false);
+            // 마지막 갱신 시각은 브라우저에서만 정한다. 렌더 중에 new Date() 를
+            // 부르면 서버가 찍은 시각이 HTML 에 박혀 hydration 이 어긋난다.
+            setLoadedAt(new Date().toLocaleString('ko-KR'));
         }
     }, [router]);
 
@@ -356,7 +360,7 @@ export default function AdminModePage() {
                     <div className="flex items-center gap-3">
                         <div className="flex items-center gap-2 text-xs text-gray-600">
                             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            {new Date().toLocaleString('ko-KR')}
+                            {loadedAt}
                         </div>
                         <button
                             onClick={load}
