@@ -195,10 +195,10 @@ describe('canTransitionRole', () => {
         expect(canTransitionRole('MENTEE', 'ADMIN')).toBe(false);
     });
 
-    it('관리자는 멘티로 내릴 수 있다', () => {
-        // 관리자에서 나가는 방향은 열려 있다. 다만 멘티가 되면 그 계정은
-        // 더는 다른 역할로 돌아가지 못한다.
-        expect(canTransitionRole('ADMIN', 'MENTEE')).toBe(true);
+    it('관리자도 멘티로는 내려가지 않는다', () => {
+        // 멘티는 운영 인력이 아니라 참가자다. 관리자를 물러나게 하려면
+        // 멘토나 매니저로 옮긴다.
+        expect(canTransitionRole('ADMIN', 'MENTEE')).toBe(false);
     });
 
     it('같은 역할로의 전환은 허용한다', () => {
@@ -219,7 +219,7 @@ describe('canTransitionRole', () => {
         { from: 'ADMIN', to: 'ADMIN', allowed: true },
         { from: 'ADMIN', to: 'PROGRAM_MANAGER', allowed: true },
         { from: 'ADMIN', to: 'MENTOR', allowed: true },
-        { from: 'ADMIN', to: 'MENTEE', allowed: true },
+        { from: 'ADMIN', to: 'MENTEE', allowed: false },
         { from: 'PROGRAM_MANAGER', to: 'ADMIN', allowed: true },
         { from: 'PROGRAM_MANAGER', to: 'PROGRAM_MANAGER', allowed: true },
         { from: 'PROGRAM_MANAGER', to: 'MENTOR', allowed: true },
