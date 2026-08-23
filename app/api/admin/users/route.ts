@@ -142,9 +142,26 @@ export async function PATCH(request: NextRequest) {
                 return NextResponse.json({ error: '연장할 일수(1~365)를 지정하세요.' }, { status: 400 });
             }
 
+            // null 은 관리자가 직접 만든 무제한 계정이다(스키마 주석 참고). 실수로
+            // 유효기간을 새로 씌우지 않도록 여기서 막는다.
+            const current = target.accessExpiresAt;
+            if (!current) {
+                return NextResponse.json({ error: '이 계정은 이용 기간 제한이 없습니다.' }, { status: 400 });
+            }
+
+            // 이미 남은 기간이 더 길면 지금이 아니라 기존 만료일부터 늘린다.
+            // 그러지 않으면 "연장"이 오히려 기간을 당겨 버릴 수 있다.
+            const base = current > new Date() ? current : new Date();
+            const nextExpiry = accessExpiryFrom(base, days);
+            // 그래도 원래보다 당겨졌다면 권한이 줄어드는 변경이므로 세션을 끊는다.
+            const shortened = nextExpiry < current;
+
             const updated = await prisma.user.update({
                 where: { id: userId },
-                data: { accessExpiresAt: accessExpiryFrom(new Date(), days) },
+                data: {
+                    accessExpiresAt: nextExpiry,
+                    ...(shortened ? { sessionVersion: { increment: 1 } } : {}),
+                },
                 select: { id: true, email: true, accessExpiresAt: true },
             });
 
@@ -157,19 +174,25 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: '관리자 계정은 승인을 취소할 수 없습니다.' }, { status: 400 });
         }
 
-        // 승인을 취소할 때는 sessionVersion 을 올려 이미 발급된 세션까지 끊는다.
-        // 그러지 않으면 로그인 중인 사용자는 취소 이후에도 계속 쓸 수 있어
-        // 승인 게이트가 사후에 아무 소용이 없다.
-        const updated = await prisma.user.update({
-            where: { id: userId },
-            data: action === 'approve'
-                ? { status: 'APPROVED' }
-                : { status: 'PENDING', sessionVersion: { increment: 1 } },
-            select: { id: true, email: true, status: true },
-        });
+        if (action === 'approve' || action === 'revoke') {
+            // 승인을 취소할 때는 sessionVersion 을 올려 이미 발급된 세션까지 끊는다.
+            // 그러지 않으면 로그인 중인 사용자는 취소 이후에도 계속 쓸 수 있어
+            // 승인 게이트가 사후에 아무 소용이 없다.
+            const updated = await prisma.user.update({
+                where: { id: userId },
+                data: action === 'approve'
+                    ? { status: 'APPROVED' }
+                    : { status: 'PENDING', sessionVersion: { increment: 1 } },
+                select: { id: true, email: true, status: true },
+            });
 
-        log.info('사용자 승인 상태 변경', { userId, status: updated.status });
-        return NextResponse.json({ success: true, user: updated });
+            log.info('사용자 승인 상태 변경', { userId, status: updated.status });
+            return NextResponse.json({ success: true, user: updated });
+        }
+
+        // allowedActions 가 이미 걸러서 실제로는 닿지 않는다. 다만 나중에 action 이
+        // 추가되고 분기 처리를 잊으면 조용히 승인 취소로 새는 대신 명시적으로 막는다.
+        return NextResponse.json({ error: '처리할 수 없는 action 입니다.' }, { status: 400 });
     } catch (error: unknown) {
         log.error('사용자 승인 상태 변경 실패', error);
         return NextResponse.json({ error: '승인 상태 변경에 실패했습니다.' }, { status: 500 });
@@ -189,13 +212,14 @@ const createUserSchema = z.object({
     profile: z.record(z.unknown()),
 });
 
-/** 사람이 옮겨 적을 임시 비밀번호. 헷갈리는 글자를 빼고 12자를 만든다. */
+/** 사람이 옮겨 적을 임시 비밀번호. 헷갈리는 글자를 빼고 14자를 만든다. */
 function generateTempPassword(): string {
     const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
     const bytes = randomBytes(12);
     let out = '';
     for (let i = 0; i < 12; i++) out += alphabet[bytes[i] % alphabet.length];
-    // 숫자와 기호를 하나씩 섞어 비밀번호 정책을 만족시킨다.
+    // lib/password-policy.ts 는 최소 길이만 요구한다(복잡도 규칙 없음). 필수는
+    // 아니지만 숫자와 기호를 하나씩 덧붙여 둔다.
     return `${out}7!`;
 }
 
@@ -218,8 +242,14 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const email = parsed.data.email.trim().toLowerCase();
-        const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+        // 로그인(app/api/auth/login/route.ts)은 입력값을 그대로(대소문자 구분) 조회하므로
+        // 여기서 소문자로 바꿔 저장하면 관리자가 알려준 주소 그대로는 로그인할 수 없다.
+        // 입력한 그대로 저장하되, 대소문자만 다른 중복 가입은 막는다.
+        const email = parsed.data.email.trim();
+        const existing = await prisma.user.findFirst({
+            where: { email: { equals: email, mode: 'insensitive' } },
+            select: { id: true },
+        });
         if (existing) {
             return NextResponse.json({ error: '이미 사용 중인 이메일입니다.' }, { status: 409 });
         }
@@ -286,10 +316,17 @@ export async function POST(request: NextRequest) {
         // 평문 비밀번호는 로그에도 남기지 않는다. lib/logger.ts 규칙.
         log.info('계정 생성', { userId: created.id, role, emailSent });
 
+        // 메일이 안 가면 임시 비밀번호는 해시로만 남아 관리자도 다시 알아낼 수 없다.
+        // 재발송·재설정 엔드포인트가 없으므로 계정을 다시 만들어야 한다고 명확히 알린다.
+        const message = emailSent
+            ? undefined
+            : '계정은 생성되었지만 임시 비밀번호 메일 발송에 실패했습니다. 이 계정을 삭제하고 다시 만들어 주세요.';
+
         // 평문 비밀번호는 응답에 담지 않는다. 본인 메일로만 간다.
         return NextResponse.json({
             success: true,
             emailSent,
+            ...(message ? { message } : {}),
             user: { id: created.id, name: created.name, email: created.email, role },
         });
     } catch (error: unknown) {
