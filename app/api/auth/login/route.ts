@@ -8,7 +8,7 @@ import { encodeSessionCookie } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { LOGIN_RATE_LIMIT, clientIpFrom, consumeRateLimit, resetRateLimit } from '@/lib/rate-limit';
 import { isProfileCompleteForRole } from '@/lib/member-profile';
-import { parseMemberRole } from '@/lib/member-roles';
+import { isAccessExpired, parseMemberRole } from '@/lib/member-roles';
 
 const log = createLogger('api/auth/login');
 
@@ -65,6 +65,16 @@ export async function POST(request: NextRequest) {
             log.warn('로그인 거부 — 승인 대기 계정', { userId: user.id });
             return NextResponse.json(
                 { error: '관리자 승인 대기 중인 계정입니다. 승인 후 로그인할 수 있습니다.' },
+                { status: 403 }
+            );
+        }
+
+        // 이용 기간이 끝난 계정은 로그인시켜도 모든 요청이 requireAuth 에서 403 이 되어
+        // 빈 대시보드만 보게 된다. 여기서 requireAuth 와 같은 문구로 미리 막는다.
+        if (isAccessExpired(user.accessExpiresAt)) {
+            log.warn('로그인 거부 — 이용 기간 만료 계정', { userId: user.id });
+            return NextResponse.json(
+                { error: '이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.' },
                 { status: 403 }
             );
         }
