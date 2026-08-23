@@ -4,18 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-policy';
+import MembersTab, { type User } from '@/components/admin/MembersTab';
+import InvitesTab from '@/components/admin/InvitesTab';
+import { MEMBER_ROLE_LABELS, type MemberRole } from '@/lib/member-roles';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-interface User {
-    id: string;
-    name: string;
-    email: string;
-    status: 'PENDING' | 'APPROVED';
-    isAdmin: boolean;
-    createdAt: string;
-    updatedAt: string;
-}
 
 interface Project {
     id: string;
@@ -40,7 +33,7 @@ interface Stats {
     recentProjects: Array<{ id: string; name: string; createdAt: string }>;
 }
 
-type Tab = 'overview' | 'users' | 'projects' | 'password';
+type Tab = 'overview' | 'members' | 'invites' | 'projects' | 'password';
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -51,7 +44,6 @@ export default function AdminModePage() {
     const [users, setUsers] = useState<User[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
-    const [searchUser, setSearchUser] = useState('');
     const [searchProject, setSearchProject] = useState('');
     const [confirmDelete, setConfirmDelete] = useState<{ type: 'user' | 'project'; id: string; name: string } | null>(null);
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
@@ -141,6 +133,61 @@ export default function AdminModePage() {
         }
     };
 
+    const handleSetRole = async (userId: string, role: MemberRole) => {
+        const res = await fetch('/api/admin/users', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, action: 'setRole', role }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok) {
+            setUsers((prev) => prev.map((u) => (
+                u.id === userId ? { ...u, role: data.user.role, isAdmin: data.user.isAdmin } : u
+            )));
+            showMsg('success', `역할을 ${MEMBER_ROLE_LABELS[role]}(으)로 변경했습니다.`);
+        } else {
+            showMsg('error', data?.error || '역할 변경에 실패했습니다.');
+        }
+    };
+
+    const handleExtendAccess = async (userId: string, days: number) => {
+        const res = await fetch('/api/admin/users', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, action: 'extendAccess', days }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok) {
+            setUsers((prev) => prev.map((u) => (
+                u.id === userId ? { ...u, accessExpiresAt: data.user.accessExpiresAt } : u
+            )));
+            showMsg('success', `이용 기간을 ${days}일 연장했습니다.`);
+        } else {
+            showMsg('error', data?.error || '기간 연장에 실패했습니다.');
+        }
+    };
+
+    const handleCreateMember = async (payload: {
+        name: string; email: string; role: 'MENTOR' | 'MENTEE'; profile: Record<string, unknown>;
+    }): Promise<boolean> => {
+        const res = await fetch('/api/admin/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+            showMsg('error', data?.error || '계정 생성에 실패했습니다.');
+            return false;
+        }
+        // 메일이 안 가면 관리자가 직접 안내해야 하므로 그 사실을 알린다.
+        showMsg('success', data.emailSent
+            ? '계정을 만들고 임시 비밀번호를 보냈습니다.'
+            : '계정은 만들었으나 메일 발송에 실패했습니다. 비밀번호 재설정을 안내하세요.');
+        await load();
+        return true;
+    };
+
     const handleDeleteProject = async (projectId: string) => {
         const res = await fetch('/api/admin/projects', {
             method: 'DELETE',
@@ -189,9 +236,6 @@ export default function AdminModePage() {
         }
     };
 
-    const filteredUsers = users.filter(
-        (u) => u.name.toLowerCase().includes(searchUser.toLowerCase()) || u.email.toLowerCase().includes(searchUser.toLowerCase())
-    );
     const filteredProjects = projects.filter((p) => {
         const q = searchProject.toLowerCase();
         return (
@@ -207,8 +251,12 @@ export default function AdminModePage() {
             icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>,
         },
         {
-            id: 'users', label: `이용자 관리 (${users.length})`,
+            id: 'members', label: `회원 관리 (${users.length})`,
             icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
+        },
+        {
+            id: 'invites', label: '초대 관리',
+            icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
         },
         {
             id: 'projects', label: `프로젝트 관리 (${projects.length})`,
@@ -486,7 +534,7 @@ export default function AdminModePage() {
                                 {/* 빠른 이동 */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <button
-                                        onClick={() => setTab('users')}
+                                        onClick={() => setTab('members')}
                                         className="card text-left hover:border-primary-500/30 transition-all duration-200 cursor-pointer group"
                                     >
                                         <div className="flex items-center gap-4">
@@ -494,8 +542,8 @@ export default function AdminModePage() {
                                                 <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                                             </div>
                                             <div>
-                                                <p className="font-semibold text-white">이용자 관리</p>
-                                                <p className="text-xs text-gray-500 mt-0.5">총 {users.length}명의 가입 사용자</p>
+                                                <p className="font-semibold text-white">회원 관리</p>
+                                                <p className="text-xs text-gray-500 mt-0.5">총 {users.length}명의 가입 회원</p>
                                             </div>
                                             <svg className="w-4 h-4 text-gray-600 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                         </div>
@@ -519,109 +567,20 @@ export default function AdminModePage() {
                             </div>
                         )}
 
-                        {/* ── Users Tab ────────────────────────────────── */}
-                        {tab === 'users' && (
-                            <div className="space-y-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="relative flex-1 max-w-sm">
-                                        <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                        <input
-                                            type="text"
-                                            placeholder="이름 또는 이메일 검색..."
-                                            value={searchUser}
-                                            onChange={(e) => setSearchUser(e.target.value)}
-                                            className="input pl-10 w-full"
-                                            id="admin-user-search"
-                                        />
-                                    </div>
-                                    <span className="text-sm text-gray-500">{filteredUsers.length}명</span>
-                                </div>
-
-                                {filteredUsers.length === 0 ? (
-                                    <div className="card text-center py-16">
-                                        <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-4">
-                                            <svg className="w-8 h-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                                        </div>
-                                        <p className="text-gray-500 text-sm">{searchUser ? '검색 결과가 없습니다' : '등록된 사용자가 없습니다'}</p>
-                                    </div>
-                                ) : (
-                                    <div className="card overflow-hidden p-0">
-                                        <table className="w-full">
-                                            <thead>
-                                                <tr className="border-b border-white/[0.06] bg-white/[0.02]">
-                                                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">사용자</th>
-                                                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">승인 상태</th>
-                                                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">아이디</th>
-                                                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">가입일</th>
-                                                    <th className="px-5 py-3.5" />
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-white/[0.04]">
-                                                {filteredUsers.map((user) => (
-                                                    <tr key={user.id} className="hover:bg-white/[0.02] transition-colors">
-                                                        <td className="px-5 py-4">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500/30 to-accent-500/30 flex items-center justify-center text-sm font-bold text-white">
-                                                                    {user.name.charAt(0)}
-                                                                </div>
-                                                                <div>
-                                                                    <p className="text-sm font-medium text-white">
-                                                                        {user.name}
-                                                                        {user.isAdmin && <span className="ml-2 badge-amber text-[10px]">관리자</span>}
-                                                                    </p>
-                                                                    <p className="text-xs text-gray-500">{user.email}</p>
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-5 py-4">
-                                                            {user.status === 'APPROVED' ? (
-                                                                <span className="badge-emerald text-[10px]">승인됨</span>
-                                                            ) : (
-                                                                <span className="badge-rose text-[10px]">승인 대기</span>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-5 py-4 hidden md:table-cell">
-                                                            <span className="text-xs font-mono text-gray-600">{user.id}</span>
-                                                        </td>
-                                                        <td className="px-5 py-4 hidden md:table-cell">
-                                                            <span className="text-xs text-gray-500">{new Date(user.createdAt).toLocaleDateString('ko-KR')}</span>
-                                                        </td>
-                                                        <td className="px-5 py-4 text-right">
-                                                            <div className="inline-flex items-center gap-2">
-                                                                {user.status === 'PENDING' ? (
-                                                                    <button
-                                                                        onClick={() => handleApproval(user.id, 'approve')}
-                                                                        className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
-                                                                        id={`admin-approve-user-${user.id}`}
-                                                                    >
-                                                                        승인
-                                                                    </button>
-                                                                ) : !user.isAdmin && (
-                                                                    <button
-                                                                        onClick={() => handleApproval(user.id, 'revoke')}
-                                                                        className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors"
-                                                                        id={`admin-revoke-user-${user.id}`}
-                                                                    >
-                                                                        승인 취소
-                                                                    </button>
-                                                                )}
-                                                                <button
-                                                                    onClick={() => setConfirmDelete({ type: 'user', id: user.id, name: user.name })}
-                                                                    className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"
-                                                                    id={`admin-delete-user-${user.id}`}
-                                                                >
-                                                                    삭제
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-                            </div>
+                        {/* ── Members Tab ──────────────────────────────── */}
+                        {tab === 'members' && (
+                            <MembersTab
+                                members={users}
+                                onApprove={handleApproval}
+                                onRequestDelete={(user) => setConfirmDelete({ type: 'user', id: user.id, name: user.name })}
+                                onSetRole={handleSetRole}
+                                onExtendAccess={handleExtendAccess}
+                                onCreate={handleCreateMember}
+                            />
                         )}
+
+                        {/* ── Invites Tab ──────────────────────────────── */}
+                        {tab === 'invites' && <InvitesTab />}
 
                         {/* ── Projects Tab ─────────────────────────────── */}
                         {tab === 'projects' && (
