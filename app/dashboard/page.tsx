@@ -12,7 +12,7 @@ import {
     PROJECT_AI_MODE_LABELS,
     type ProjectAiMode,
 } from '@/lib/ai/project-ai-mode';
-import type { MemberRole } from '@/lib/member-roles';
+import { canCreateProject, type MemberRole } from '@/lib/member-roles';
 
 interface Project {
     id: string;
@@ -231,13 +231,16 @@ export default function DashboardPage() {
                             {displayProjects.length}개의 활성 프로젝트
                         </p>
                     </div>
-                    <button
-                        onClick={() => setShowNewProjectModal(true)}
-                        className="btn-primary flex items-center gap-2"
-                    >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                        <span>새 프로젝트</span>
-                    </button>
+                    {/* 프로젝트 생성 권한이 없는 역할(멘토·매니저)에게는 버튼을 감춘다. API 가 403 으로 막기 때문이다. */}
+                    {role !== null && canCreateProject(role) && (
+                        <button
+                            onClick={() => setShowNewProjectModal(true)}
+                            className="btn-primary flex items-center gap-2"
+                        >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                            <span>새 프로젝트</span>
+                        </button>
+                    )}
                 </div>
 
                 {/* Project Grid */}
@@ -298,12 +301,14 @@ export default function DashboardPage() {
                             <p className="text-gray-500 mb-6 text-sm">
                                 새 프로젝트를 만들어 품질 개선을 시작하세요
                             </p>
-                            <button
-                                onClick={() => setShowNewProjectModal(true)}
-                                className="btn-primary"
-                            >
-                                첫 프로젝트 만들기
-                            </button>
+                            {role !== null && canCreateProject(role) && (
+                                <button
+                                    onClick={() => setShowNewProjectModal(true)}
+                                    className="btn-primary"
+                                >
+                                    첫 프로젝트 만들기
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
