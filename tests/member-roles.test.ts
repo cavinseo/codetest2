@@ -173,9 +173,14 @@ describe('canTransitionRole', () => {
         expect(canTransitionRole('MENTEE', 'MENTOR')).toBe(false);
     });
 
-    it('관리자는 예외로 모든 전환이 열려 있다', () => {
+    it('관리자에서 나가는 전환은 열려 있다', () => {
+        // 관리자를 해임할 길이 없으면 마지막 관리자를 바꿀 수 없다.
         expect(canTransitionRole('ADMIN', 'MENTOR')).toBe(true);
-        expect(canTransitionRole('MENTEE', 'ADMIN')).toBe(true);
+    });
+
+    it('멘토와 매니저는 관리자가 될 수 있다', () => {
+        expect(canTransitionRole('MENTOR', 'ADMIN')).toBe(true);
+        expect(canTransitionRole('PROGRAM_MANAGER', 'ADMIN')).toBe(true);
     });
 
     it('관리자 예외는 매니저가 얽힌 전환에도 적용된다', () => {
@@ -184,10 +189,16 @@ describe('canTransitionRole', () => {
         expect(canTransitionRole('PROGRAM_MANAGER', 'ADMIN')).toBe(true);
     });
 
-    it('관리자 예외는 멘티가 얽힌 전환에도 적용된다', () => {
-        // 멘티 제자리 규칙(멘티 → 멘토/매니저 불가)보다 관리자 예외가 먼저 걸려야 한다.
+    it('멘티는 관리자도 될 수 없다', () => {
+        // 멘티 제자리 규칙이 관리자 예외보다 먼저 걸린다. 순서가 뒤바뀌면
+        // 멘티가 관리자로 바로 올라가는 길이 열린다.
+        expect(canTransitionRole('MENTEE', 'ADMIN')).toBe(false);
+    });
+
+    it('관리자는 멘티로 내릴 수 있다', () => {
+        // 관리자에서 나가는 방향은 열려 있다. 다만 멘티가 되면 그 계정은
+        // 더는 다른 역할로 돌아가지 못한다.
         expect(canTransitionRole('ADMIN', 'MENTEE')).toBe(true);
-        expect(canTransitionRole('MENTEE', 'ADMIN')).toBe(true);
     });
 
     it('같은 역할로의 전환은 허용한다', () => {
@@ -217,7 +228,7 @@ describe('canTransitionRole', () => {
         { from: 'MENTOR', to: 'PROGRAM_MANAGER', allowed: true },
         { from: 'MENTOR', to: 'MENTOR', allowed: true },
         { from: 'MENTOR', to: 'MENTEE', allowed: false },
-        { from: 'MENTEE', to: 'ADMIN', allowed: true },
+        { from: 'MENTEE', to: 'ADMIN', allowed: false },
         { from: 'MENTEE', to: 'PROGRAM_MANAGER', allowed: false },
         { from: 'MENTEE', to: 'MENTOR', allowed: false },
         { from: 'MENTEE', to: 'MENTEE', allowed: true },

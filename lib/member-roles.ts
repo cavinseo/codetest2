@@ -104,24 +104,30 @@ export function isAccessExpired(accessExpiresAt: Date | null | undefined, now: D
  *   ADMIN               가능      가능          가능    가능
  *   PROGRAM_MANAGER      가능      가능          가능    불가
  *   MENTOR               가능      가능          가능    불가
- *   MENTEE               가능      불가          불가    가능
+ *   MENTEE               불가      불가          불가    가능
  *
  * 멘티는 제자리다. 멘티는 프로그램에 참가한 기업 담당자이지 멘토 후보가
- * 아니라서, 이 함수로는 멘토로도 매니저로도 올라가지 않는다. 멘토가 되는
- * 길은 가입할 때 스스로 멘토를 선택하거나, 멘토용 초대 코드를 받거나,
- * 관리자가 멘토 계정을 직접 만드는 세 가지뿐이며 전부 이 함수 밖에서
+ * 아니라서, 이 함수로는 멘토로도 매니저로도, 관리자로도 올라가지 않는다.
+ * 멘토가 되는 길은 가입할 때 스스로 멘토를 선택하거나, 멘토용 초대 코드를
+ * 받거나, 관리자가 멘토 계정을 직접 만드는 세 가지뿐이며 전부 이 함수 밖에서
  * 일어난다.
  *
  * 매니저는 멘토 중에서 고르는 자리라 멘토·매니저 사이는 양방향으로 열어
  * 둔다. 다만 어느 쪽도 멘티로는 내려가지 않는다.
  *
- * 관리자는 예외다. from 이나 to 어느 한쪽이라도 관리자면 항상 허용한다.
- * 그러지 않으면 관리자를 새로 임명하거나 관리자를 다른 역할로 옮길 방법이
- * 없어진다.
+ * 관리자 예외는 한 방향뿐이다. 관리자를 임명하거나 해임할 길은 있어야 하므로
+ * 관리자에서 나가는 전환과 멘토·매니저가 관리자가 되는 전환은 열어 두되,
+ * 멘티가 관리자가 되는 것은 막는다. 그래서 멘티 검사를 관리자 예외보다 먼저 한다.
  */
 export function canTransitionRole(from: MemberRole, to: MemberRole): boolean {
     if (from === to) return true;
-    if (from === 'ADMIN' || to === 'ADMIN') return true;
-    if (from === 'MENTEE' || to === 'MENTEE') return false;
+    // 멘티에서 나가는 전환은 관리자행을 포함해 전부 막는다.
+    if (from === 'MENTEE') return false;
+    // 관리자는 어느 역할로든 내려올 수 있다. 이 줄이 없으면 아래 멘티 검사에
+    // 걸려 관리자를 멘티로 내리지 못한다.
+    if (from === 'ADMIN') return true;
+    // 멘토·매니저는 멘티로 내려가지 않는다. 관리자로 올라가는 것은 위 검사를
+    // 지나 마지막 return 으로 허용되므로 따로 적지 않는다.
+    if (to === 'MENTEE') return false;
     return true;
 }
