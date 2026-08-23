@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import ProfileFields, { EMPTY_PROFILE, toProfilePayload, type ProfileValue } from '@/components/member/ProfileFields';
+import type { MemberRole } from '@/lib/member-roles';
 
 export default function SignupPage() {
     const router = useRouter();
@@ -12,6 +14,11 @@ export default function SignupPage() {
         password: '',
         confirmPassword: '',
     });
+    const [inviteCode, setInviteCode] = useState('');
+    const [profile, setProfile] = useState<ProfileValue>(EMPTY_PROFILE);
+    // 코드가 없으면 멘티로 가입한다. 멘토로 가입하려면 초대 코드가 있어야 하고,
+    // 그것이 의도한 동선이다.
+    const [assumedRole, setAssumedRole] = useState<MemberRole>('MENTEE');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [focusedField, setFocusedField] = useState<string | null>(null);
@@ -50,6 +57,8 @@ export default function SignupPage() {
                     name: formData.name,
                     email: formData.email,
                     password: formData.password,
+                    ...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
+                    profile: toProfilePayload(profile, assumedRole),
                 }),
             });
 
@@ -169,6 +178,42 @@ export default function SignupPage() {
                                 )}
                             </div>
                         ))}
+
+                        <div>
+                            <label
+                                htmlFor="inviteCode"
+                                className="block text-sm font-medium mb-2 text-gray-400"
+                            >
+                                초대 코드
+                            </label>
+                            <input
+                                id="inviteCode"
+                                type="text"
+                                value={inviteCode}
+                                onChange={(e) => setInviteCode(e.target.value)}
+                                className="input"
+                                placeholder="초대 코드(선택)"
+                            />
+                            <p className="mt-2 text-xs text-gray-500">
+                                초대 코드가 있으면 입력하세요. 없으면 관리자 승인 후 이용할 수 있습니다.
+                            </p>
+                        </div>
+
+                        {inviteCode.trim() && (
+                            <label className="block text-sm font-medium mb-2 text-gray-400">
+                                초대받은 역할
+                                <select
+                                    className="input mt-2"
+                                    value={assumedRole}
+                                    onChange={(e) => setAssumedRole(e.target.value as MemberRole)}
+                                >
+                                    <option value="MENTEE">멘티</option>
+                                    <option value="MENTOR">멘토</option>
+                                </select>
+                            </label>
+                        )}
+
+                        <ProfileFields role={assumedRole} value={profile} onChange={setProfile} />
 
                         <button
                             type="submit"
