@@ -17,6 +17,12 @@ const signupSchema = z.object({
     email: z.string().email('유효한 이메일을 입력하세요'),
     password: z.string().min(8, '비밀번호는 최소 8자 이상이어야 합니다'),
     inviteCode: z.string().optional(),
+    // 코드가 없을 때 가입자가 스스로 고른 역할. 코드가 있으면 무시되고 코드의
+    // 역할이 쓰인다(아래 참고). 관리자·매니저는 가입 화면에서 자처할 수 있는
+    // 값이 아니므로 여기서부터 두 값으로 좁혀 막는다.
+    role: z.enum(['MENTOR', 'MENTEE'], {
+        errorMap: () => ({ message: '역할은 멘토 또는 멘티 중 하나를 선택하세요.' }),
+    }).optional(),
     profile: z.record(z.unknown()),
 });
 
@@ -26,7 +32,7 @@ class InviteAlreadyUsedError extends Error {}
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { name, email, password, inviteCode, profile } = signupSchema.parse(body);
+        const { name, email, password, inviteCode, role: requestedRole, profile } = signupSchema.parse(body);
 
         // 가입을 무제한 허용하면 승인 대기 큐가 오염되고 DB 행이 소모된다.
         const rateKey = `signup:${clientIpFrom(request.headers)}`;
@@ -47,9 +53,13 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: '이미 사용 중인 이메일입니다.' }, { status: 409 });
         }
 
-        // 초대 코드가 있으면 역할이 코드로 정해지고, 그 역할에 맞는 프로필을 받는다.
+        // 코드가 없으면 가입자가 고른 역할(멘토/멘티)을 쓴다. 이것은 자기 신고일
+        // 뿐이고 승인 게이트는 그대로다 — 멘토를 자처해도 계정은 아래에서
+        // status: 'PENDING' 으로 남고 관리자가 승인해야 로그인할 수 있으므로
+        // 권한 상승 구멍이 아니다. 초대 코드가 있으면 역할이 코드로 정해지고,
+        // 그 역할에 맞는 프로필을 받는다(클라이언트가 고른 role 은 무시한다).
         let invite: { id: string; role: MemberRole; accessDurationDays: number } | null = null;
-        let role: MemberRole = 'MENTEE';
+        let role: MemberRole = requestedRole ?? 'MENTEE';
 
         if (inviteCode) {
             const normalized = normalizeInviteCode(inviteCode);

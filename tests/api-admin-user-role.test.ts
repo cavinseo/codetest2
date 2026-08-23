@@ -75,8 +75,8 @@ describe('역할 변경', () => {
         expect(updateUser.mock.calls[0][0].data.role).toBe('PROGRAM_MANAGER');
     });
 
-    it('멘티를 바로 매니저로 올릴 수 없다', async () => {
-        // 매니저는 멘토 중에서 선택한다. 두 단계를 강제한다.
+    it('멘티를 매니저로 올릴 수 없다', async () => {
+        // 멘티는 제자리다. 멘토를 거치는 승격도 막혀 있어 매니저가 될 길이 없다.
         findUniqueUser.mockResolvedValue({ id: 'user_2', email: 'u@x.com', role: 'MENTEE', isAdmin: false });
 
         const res = await PATCH(jsonRequest('PATCH', {
@@ -85,7 +85,34 @@ describe('역할 변경', () => {
         const body = await res.json();
 
         expect(res.status).toBe(400);
-        expect(body.error).toContain('멘토');
+        expect(body.error).toBe('허용되지 않는 역할 변경입니다.');
+        expect(updateUser).not.toHaveBeenCalled();
+    });
+
+    it('멘티를 멘토로 올릴 수 없다', async () => {
+        // 멘토가 되는 길은 가입 선택·초대 코드·관리자 생성뿐이다. 역할 변경으로는 열리지 않는다.
+        findUniqueUser.mockResolvedValue({ id: 'user_2', email: 'u@x.com', role: 'MENTEE', isAdmin: false });
+
+        const res = await PATCH(jsonRequest('PATCH', {
+            userId: 'user_2', action: 'setRole', role: 'MENTOR',
+        }));
+        const body = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(body.error).toBe('허용되지 않는 역할 변경입니다.');
+        expect(updateUser).not.toHaveBeenCalled();
+    });
+
+    it('멘토를 멘티로 내릴 수 없다', async () => {
+        // 기본 findUniqueUser 는 MENTOR 다. 멘티는 제자리라 멘토·매니저 어느
+        // 쪽에서도 멘티로는 내려가지 않는다.
+        const res = await PATCH(jsonRequest('PATCH', {
+            userId: 'user_2', action: 'setRole', role: 'MENTEE',
+        }));
+        const body = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(body.error).toBe('허용되지 않는 역할 변경입니다.');
         expect(updateUser).not.toHaveBeenCalled();
     });
 

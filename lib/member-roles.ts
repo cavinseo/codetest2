@@ -96,17 +96,32 @@ export function isAccessExpired(accessExpiresAt: Date | null | undefined, now: D
 }
 
 // ─── 역할 전환 ──────────────────────────────────────────────────
-//
-// 매니저는 멘토 중에서 선택한다. 그래서 멘티를 바로 매니저로 올릴 수 없고,
-// 관리자가 멘토를 거쳐 두 단계로 올린다. 그 과정에서 멘토 프로필
-// (전문분야·경력 연수)을 채우게 되는 것도 의도한 바다.
 
-/** from 에서 to 로 역할을 바꿀 수 있는가. */
+/**
+ * from 에서 to 로 역할을 바꿀 수 있는가.
+ *
+ *   from \ to         ADMIN  PROGRAM_MANAGER  MENTOR  MENTEE
+ *   ADMIN               가능      가능          가능    가능
+ *   PROGRAM_MANAGER      가능      가능          가능    불가
+ *   MENTOR               가능      가능          가능    불가
+ *   MENTEE               가능      불가          불가    가능
+ *
+ * 멘티는 제자리다. 멘티는 프로그램에 참가한 기업 담당자이지 멘토 후보가
+ * 아니라서, 이 함수로는 멘토로도 매니저로도 올라가지 않는다. 멘토가 되는
+ * 길은 가입할 때 스스로 멘토를 선택하거나, 멘토용 초대 코드를 받거나,
+ * 관리자가 멘토 계정을 직접 만드는 세 가지뿐이며 전부 이 함수 밖에서
+ * 일어난다.
+ *
+ * 매니저는 멘토 중에서 고르는 자리라 멘토·매니저 사이는 양방향으로 열어
+ * 둔다. 다만 어느 쪽도 멘티로는 내려가지 않는다.
+ *
+ * 관리자는 예외다. from 이나 to 어느 한쪽이라도 관리자면 항상 허용한다.
+ * 그러지 않으면 관리자를 새로 임명하거나 관리자를 다른 역할로 옮길 방법이
+ * 없어진다.
+ */
 export function canTransitionRole(from: MemberRole, to: MemberRole): boolean {
     if (from === to) return true;
-    // 관리자가 얽히면 예외로 연다. 관리자는 모든 권한을 가지기 때문이다.
     if (from === 'ADMIN' || to === 'ADMIN') return true;
-    if (to === 'PROGRAM_MANAGER') return from === 'MENTOR';
-    if (from === 'PROGRAM_MANAGER') return to === 'MENTOR';
+    if (from === 'MENTEE' || to === 'MENTEE') return false;
     return true;
 }

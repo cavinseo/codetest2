@@ -93,12 +93,12 @@ export async function PATCH(request: NextRequest) {
             const currentRole = parseMemberRole(target.role) ?? 'MENTEE';
 
             if (!canTransitionRole(currentRole, nextRole)) {
+                // 멘티→매니저, 멘티→멘토, 매니저→멘티, 멘토→멘티 등 막히는 경우가
+                // 여럿이라 특정 경로 하나를 짚어 안내하면 다른 경우에는 틀린 말이
+                // 된다(예: "먼저 멘토로 바꾸세요" 는 멘토 경유도 막힌 지금은 거짓이다).
+                // 모든 차단 사례에 그대로 맞는 일반 메시지로 통일한다.
                 return NextResponse.json(
-                    {
-                        error: nextRole === 'PROGRAM_MANAGER'
-                            ? '프로그램 매니저는 멘토 중에서만 승격할 수 있습니다. 먼저 멘토로 바꾸세요.'
-                            : '허용되지 않는 역할 변경입니다.',
-                    },
+                    { error: '허용되지 않는 역할 변경입니다.' },
                     { status: 400 }
                 );
             }

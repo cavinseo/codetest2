@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_ACCESS_DURATION_DAYS,
+    MEMBER_ROLE_LABELS,
     accessExpiryFrom,
     canAssignMentor,
     canCreateProject,
@@ -31,6 +32,13 @@ describe('역할 파싱', () => {
         // 코드로 관리자·매니저가 생기면 권한 상승 경로가 된다.
         expect(parseInvitableRole('ADMIN')).toBeNull();
         expect(parseInvitableRole('PROGRAM_MANAGER')).toBeNull();
+    });
+
+    it('네 역할 모두 한글 표시 이름을 갖는다', () => {
+        expect(MEMBER_ROLE_LABELS.ADMIN).toBe('관리자');
+        expect(MEMBER_ROLE_LABELS.PROGRAM_MANAGER).toBe('프로그램 매니저');
+        expect(MEMBER_ROLE_LABELS.MENTOR).toBe('멘토');
+        expect(MEMBER_ROLE_LABELS.MENTEE).toBe('멘티');
     });
 });
 
@@ -144,8 +152,9 @@ describe('canTransitionRole', () => {
         expect(canTransitionRole('PROGRAM_MANAGER', 'MENTOR')).toBe(true);
     });
 
-    it('멘티를 바로 매니저로 올릴 수 없다', () => {
-        // 매니저는 멘토 중에서 선택한다. 멘토를 거쳐 두 단계로 올린다.
+    it('멘티를 매니저로 올릴 수 없다', () => {
+        // 매니저는 멘토 중에서 고르는 자리고, 멘티가 멘토를 거치는 길도
+        // 이제는 막혀 있다. 그래서 멘티는 어느 경로로도 매니저가 되지 않는다.
         expect(canTransitionRole('MENTEE', 'PROGRAM_MANAGER')).toBe(false);
     });
 
@@ -153,9 +162,15 @@ describe('canTransitionRole', () => {
         expect(canTransitionRole('PROGRAM_MANAGER', 'MENTEE')).toBe(false);
     });
 
-    it('멘토와 멘티 사이는 오갈 수 있다', () => {
-        expect(canTransitionRole('MENTEE', 'MENTOR')).toBe(true);
-        expect(canTransitionRole('MENTOR', 'MENTEE')).toBe(true);
+    it('멘토를 멘티로 내릴 수 없다', () => {
+        // 멘티는 제자리다. 멘토·매니저 어느 쪽도 멘티로는 강등되지 않는다.
+        expect(canTransitionRole('MENTOR', 'MENTEE')).toBe(false);
+    });
+
+    it('멘티는 멘토로도 오르지 않는다', () => {
+        // 멘토가 되는 길은 가입 시 선택·초대 코드·관리자 생성뿐이며,
+        // 역할 전환으로는 열리지 않는다.
+        expect(canTransitionRole('MENTEE', 'MENTOR')).toBe(false);
     });
 
     it('관리자는 예외로 모든 전환이 열려 있다', () => {
@@ -169,11 +184,48 @@ describe('canTransitionRole', () => {
         expect(canTransitionRole('PROGRAM_MANAGER', 'ADMIN')).toBe(true);
     });
 
+    it('관리자 예외는 멘티가 얽힌 전환에도 적용된다', () => {
+        // 멘티 제자리 규칙(멘티 → 멘토/매니저 불가)보다 관리자 예외가 먼저 걸려야 한다.
+        expect(canTransitionRole('ADMIN', 'MENTEE')).toBe(true);
+        expect(canTransitionRole('MENTEE', 'ADMIN')).toBe(true);
+    });
+
     it('같은 역할로의 전환은 허용한다', () => {
         expect(canTransitionRole('MENTOR', 'MENTOR')).toBe(true);
     });
 
     it('매니저에서 매니저로의 전환도 허용한다', () => {
         expect(canTransitionRole('PROGRAM_MANAGER', 'PROGRAM_MANAGER')).toBe(true);
+    });
+
+    it('멘티에서 멘티로의 전환도 허용한다', () => {
+        expect(canTransitionRole('MENTEE', 'MENTEE')).toBe(true);
+    });
+
+    // 16개 조합을 전부 표로 확인한다. canTransitionRole 문서의 표를 그대로
+    // 옮긴 것이라, 규칙이 바뀌면 이 표만 고치면 무엇이 바뀌었는지 한눈에 보인다.
+    const transitionMatrix: Array<{ from: MemberRole; to: MemberRole; allowed: boolean }> = [
+        { from: 'ADMIN', to: 'ADMIN', allowed: true },
+        { from: 'ADMIN', to: 'PROGRAM_MANAGER', allowed: true },
+        { from: 'ADMIN', to: 'MENTOR', allowed: true },
+        { from: 'ADMIN', to: 'MENTEE', allowed: true },
+        { from: 'PROGRAM_MANAGER', to: 'ADMIN', allowed: true },
+        { from: 'PROGRAM_MANAGER', to: 'PROGRAM_MANAGER', allowed: true },
+        { from: 'PROGRAM_MANAGER', to: 'MENTOR', allowed: true },
+        { from: 'PROGRAM_MANAGER', to: 'MENTEE', allowed: false },
+        { from: 'MENTOR', to: 'ADMIN', allowed: true },
+        { from: 'MENTOR', to: 'PROGRAM_MANAGER', allowed: true },
+        { from: 'MENTOR', to: 'MENTOR', allowed: true },
+        { from: 'MENTOR', to: 'MENTEE', allowed: false },
+        { from: 'MENTEE', to: 'ADMIN', allowed: true },
+        { from: 'MENTEE', to: 'PROGRAM_MANAGER', allowed: false },
+        { from: 'MENTEE', to: 'MENTOR', allowed: false },
+        { from: 'MENTEE', to: 'MENTEE', allowed: true },
+    ];
+
+    describe.each(transitionMatrix)('$from → $to', ({ from, to, allowed }) => {
+        it(allowed ? '허용한다' : '막는다', () => {
+            expect(canTransitionRole(from, to)).toBe(allowed);
+        });
     });
 });

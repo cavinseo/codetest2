@@ -78,18 +78,44 @@ describe('초대 코드 없는 가입', () => {
         expect(created.accessExpiresAt).toBeNull();
     });
 
-    it('요청 본문에 role 을 실어 보내도 무시한다', async () => {
-        // 역할은 서버가 초대 코드 유무로만 정한다. 클라이언트가 최상위에 role 을
-        // 실어 보내도 스스로 역할을 올릴 수 없어야 한다.
+    it('role 을 멘토로 보내면 멘토 역할로 승인 대기시킨다', async () => {
+        // 코드가 없어도 이제는 가입자가 직접 멘토·멘티를 고른다. 다만 이것은
+        // 자기 신고일 뿐이고 승인 게이트는 그대로다 — 아래 '승인은 그대로 대기시킨다' 참고.
         const res = await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123',
-            role: 'ADMIN', profile: menteeProfile,
+            role: 'MENTOR', profile: mentorProfile,
         }));
+        const body = await res.json();
 
         expect(res.status).toBe(200);
+        expect(body.pendingApproval).toBe(true);
         const created = txCreateUser.mock.calls[0][0].data;
-        expect(created.role).toBe('MENTEE');
+        expect(created.role).toBe('MENTOR');
         expect(created.status).toBe('PENDING');
+    });
+
+    it('승인은 그대로 대기시킨다', async () => {
+        // 멘토를 자처해도 계정을 바로 활성화하지 않는다. 관리자 승인이 여전히
+        // 유일한 게이트라, 스스로 role 을 골라도 권한 상승 구멍이 되지 않는다.
+        const res = await POST(signupRequest({
+            name: '새회원', email: 'm@x.com', password: 'password123',
+            role: 'MENTOR', profile: mentorProfile,
+        }));
+        const body = await res.json();
+
+        expect(body.pendingApproval).toBe(true);
+        expect(txCreateUser.mock.calls[0][0].data.status).toBe('PENDING');
+    });
+
+    it.each(['ADMIN', 'PROGRAM_MANAGER'])('role 로 %s 는 받지 않는다', async (invalidRole) => {
+        // 관리자·매니저는 가입 화면에서 자처할 수 있는 역할이 아니다.
+        const res = await POST(signupRequest({
+            name: '새회원', email: 'm@x.com', password: 'password123',
+            role: invalidRole, profile: menteeProfile,
+        }));
+
+        expect(res.status).toBe(400);
+        expect(transaction).not.toHaveBeenCalled();
     });
 
     it('프로필이 없으면 막는다', async () => {
@@ -132,6 +158,22 @@ describe('초대 코드 가입', () => {
         expect(created.role).toBe('MENTOR');
         expect(created.status).toBe('APPROVED');
         expect(created.accessExpiresAt).toBeInstanceOf(Date);
+    });
+
+    it('본문의 role 이 달라도 코드의 역할이 이긴다', async () => {
+        // 코드가 있으면 코드의 역할이 항상 이긴다. 클라이언트가 본문에 다른
+        // role(여기서는 MENTEE)을 실어 보내도 무시되고 코드의 역할(MENTOR)이 쓰인다.
+        findUniqueInvite.mockResolvedValue(validInvite);
+
+        const res = await POST(signupRequest({
+            name: '새회원', email: 'm@x.com', password: 'password123',
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', role: 'MENTEE', profile: mentorProfile,
+        }));
+
+        expect(res.status).toBe(200);
+        const created = txCreateUser.mock.calls[0][0].data;
+        expect(created.role).toBe('MENTOR');
+        expect(created.status).toBe('APPROVED');
     });
 
     it('코드를 사용 처리한다', async () => {

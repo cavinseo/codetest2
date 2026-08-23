@@ -16,8 +16,9 @@ export default function SignupPage() {
     });
     const [inviteCode, setInviteCode] = useState('');
     const [profile, setProfile] = useState<ProfileValue>(EMPTY_PROFILE);
-    // 코드가 없으면 멘티로 가입한다. 멘토로 가입하려면 초대 코드가 있어야 하고,
-    // 그것이 의도한 동선이다.
+    // 가입자가 멘토·멘티 중 하나를 직접 고른다. 기본값은 멘티다. 초대 코드가
+    // 있으면 서버가 코드의 역할로 덮어쓰므로, 여기 선택은 코드가 없을 때만
+    // 실제 계정 역할로 반영된다.
     const [assumedRole, setAssumedRole] = useState<MemberRole>('MENTEE');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -58,6 +59,7 @@ export default function SignupPage() {
                     email: formData.email,
                     password: formData.password,
                     ...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
+                    role: assumedRole,
                     profile: toProfilePayload(profile, assumedRole),
                 }),
             });
@@ -190,11 +192,7 @@ export default function SignupPage() {
                                 id="inviteCode"
                                 type="text"
                                 value={inviteCode}
-                                onChange={(e) => {
-                                    const next = e.target.value;
-                                    setInviteCode(next);
-                                    if (!next.trim()) setAssumedRole('MENTEE');
-                                }}
+                                onChange={(e) => setInviteCode(e.target.value)}
                                 className="input"
                                 placeholder="초대 코드(선택)"
                             />
@@ -203,9 +201,9 @@ export default function SignupPage() {
                             </p>
                         </div>
 
-                        {inviteCode.trim() && (
+                        <div>
                             <label className="block text-sm font-medium mb-2 text-gray-400">
-                                초대받은 역할
+                                가입할 역할
                                 <select
                                     className="input mt-2"
                                     value={assumedRole}
@@ -215,7 +213,10 @@ export default function SignupPage() {
                                     <option value="MENTOR">멘토</option>
                                 </select>
                             </label>
-                        )}
+                            <p className="mt-2 text-xs text-gray-500">
+                                초대 코드가 있으면 코드에 정해진 역할이 우선 적용됩니다.
+                            </p>
+                        </div>
 
                         <ProfileFields role={assumedRole} value={profile} onChange={setProfile} />
 
