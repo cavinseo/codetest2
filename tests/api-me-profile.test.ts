@@ -4,9 +4,13 @@ import { NextRequest } from 'next/server';
 
 const findUniqueProfile = vi.fn();
 const upsertProfile = vi.fn();
+const findUniqueUser = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
-    prisma: { memberProfile: { findUnique: findUniqueProfile, upsert: upsertProfile } },
+    prisma: {
+        memberProfile: { findUnique: findUniqueProfile, upsert: upsertProfile },
+        user: { findUnique: findUniqueUser },
+    },
 }));
 
 const requireAuth = vi.fn();
@@ -34,6 +38,7 @@ function putRequest(body: unknown): NextRequest {
 beforeEach(() => {
     findUniqueProfile.mockResolvedValue(null);
     upsertProfile.mockResolvedValue({ userId: 'user_1' });
+    findUniqueUser.mockResolvedValue({ mustChangePassword: false });
 });
 
 afterEach(() => {
@@ -79,6 +84,26 @@ describe('프로필 조회', () => {
         const body = await res.json();
 
         expect(body.needsProfile).toBe(true);
+    });
+
+    it('임시 비밀번호 계정은 mustChangePassword 를 알린다', async () => {
+        // 온보딩 화면이 비밀번호 변경 섹션을 띄울지 이 값으로 판단한다.
+        authAs('MENTEE');
+        findUniqueUser.mockResolvedValue({ mustChangePassword: true });
+
+        const res = await GET(new NextRequest('http://localhost/api/me/profile'));
+        const body = await res.json();
+
+        expect(body.mustChangePassword).toBe(true);
+    });
+
+    it('일반 계정은 mustChangePassword 가 false 다', async () => {
+        authAs('MENTEE');
+
+        const res = await GET(new NextRequest('http://localhost/api/me/profile'));
+        const body = await res.json();
+
+        expect(body.mustChangePassword).toBe(false);
     });
 
     it('ADMIN_EMAILS 계정은 isAdmin 이 꺼져 있어도 canAccessAdmin 을 true 로 알린다', async () => {

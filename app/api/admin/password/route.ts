@@ -5,8 +5,7 @@ import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { BCRYPT_ROUNDS, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
 import { createLogger } from '@/lib/logger';
-import { encodeSessionCookie } from '@/lib/auth';
-import { requireAdmin } from '@/lib/authorization';
+import { encodeSessionCookie, requireAuth } from '@/lib/auth';
 import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-policy';
 
 const log = createLogger('api/admin/password');
@@ -20,8 +19,10 @@ const changePasswordSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-    const adminResult = await requireAdmin(request);
-    if (adminResult instanceof NextResponse) return adminResult;
+    // 본인 비밀번호 변경은 관리자 전용이 아니다. 관리자가 만든 회원이 메일로 받은
+    // 임시 비밀번호를 스스로 바꿀 수 있어야 하므로 requireAuth 로 연다.
+    const authResult = await requireAuth(request);
+    if (authResult instanceof NextResponse) return authResult;
 
     try {
         const body = await request.json().catch(() => ({}));
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
         }
 
         const user = await prisma.user.findUnique({
-            where: { id: adminResult.userId },
+            where: { id: authResult.userId },
             select: { id: true, passwordHash: true },
         });
         if (!user) {
@@ -54,6 +55,8 @@ export async function POST(request: NextRequest) {
             data: {
                 passwordHash: await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS),
                 sessionVersion: { increment: 1 },
+                // 임시 비밀번호를 실제로 바꿨으니 강제 변경 플래그를 내린다.
+                mustChangePassword: false,
             },
             select: { id: true, email: true, name: true, sessionVersion: true },
         });

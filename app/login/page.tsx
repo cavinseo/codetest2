@@ -39,7 +39,8 @@ export default function LoginPage() {
                 throw new Error(data.error || '로그인에 실패했습니다.');
             }
 
-            router.push(data.needsProfile ? '/onboarding' : '/dashboard');
+            // 임시 비밀번호를 바꿔야 하거나 프로필이 미완성이면 온보딩에서 마무리한다.
+            router.push(data.mustChangePassword || data.needsProfile ? '/onboarding' : '/dashboard');
         } catch (err: any) {
             setError(err.message);
         } finally {

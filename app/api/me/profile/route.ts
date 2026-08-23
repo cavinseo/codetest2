@@ -17,13 +17,22 @@ export async function GET(request: NextRequest) {
     if (authResult instanceof NextResponse) return authResult;
 
     try {
-        const profile = await prisma.memberProfile.findUnique({
-            where: { userId: authResult.userId },
-        });
+        const [profile, account] = await Promise.all([
+            prisma.memberProfile.findUnique({
+                where: { userId: authResult.userId },
+            }),
+            // 온보딩 화면이 비밀번호 변경 섹션을 띄울지 판단하려면 이 값이 필요하다.
+            prisma.user.findUnique({
+                where: { id: authResult.userId },
+                select: { mustChangePassword: true },
+            }),
+        ]);
 
         return NextResponse.json({
             profile,
             needsProfile: !isProfileCompleteForRole(authResult.role, profile),
+            // 관리자가 만든 계정은 임시 비밀번호를 강제 변경해야 온보딩을 마칠 수 있다.
+            mustChangePassword: account?.mustChangePassword ?? false,
             role: authResult.role,
             // 화면의 관리자 링크·메뉴가 requireAdmin 과 같은 답을 보도록, 판정을
             // 여기서 한 번만 계산해 내려준다(ADMIN_EMAILS 로 들어온 계정도 포함).
