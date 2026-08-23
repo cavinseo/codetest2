@@ -29,10 +29,13 @@ export function resolveProjectRole(params: {
         if (!explicitRole || !WRITE_ROLES.has(explicitRole)) return 'ADMIN';
         return explicitRole;
     }
-    if (!explicitRole && canReadAnyProject(params.systemRole)) {
-        // 매니저는 배정되지 않은 프로젝트도 읽는다. VIEWER 는 WRITE_ROLES 에
-        // 없으므로 쓰기와 roles 검사에서 자동으로 걸러진다.
-        return 'VIEWER';
+    if (canReadAnyProject(params.systemRole)) {
+        // 매니저는 전체를 읽되 고치지 못한다("매니저는 내용을 수정할 수 없다").
+        // 명시 역할이 없으면 배정되지 않은 프로젝트도 VIEWER 로 읽는다. 팀 초대로
+        // EDITOR 행이 생겨도 그 역할로 쓰기가 열리면 안 되므로 VIEWER 로 낮춘다.
+        // 단, 승격 전에 직접 만든 프로젝트의 OWNER 는 실제 소유 관계라 유지한다.
+        if (!explicitRole || explicitRole === 'EDITOR') return 'VIEWER';
+        return explicitRole;
     }
     return explicitRole;
 }

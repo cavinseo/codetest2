@@ -9,8 +9,10 @@ const log = createLogger('api/members');
 
 const inviteSchema = z.object({
     email: z.string().email('Valid email is required.'),
-    role: z.enum(['EDITOR', 'COACH'], {
-        errorMap: () => ({ message: 'Only EDITOR or COACH can be invited.' }),
+    // 팀 초대로는 EDITOR(편집자)만 붙인다. 멘토(COACH) 배정은 대상의 시스템 역할을
+    // 검사하는 POST /api/projects/[id]/mentors 로만 해야 하므로 여기서 제외한다.
+    role: z.enum(['EDITOR'], {
+        errorMap: () => ({ message: 'Only EDITOR can be invited.' }),
     }),
 });
 

@@ -336,6 +336,32 @@ describe('시스템 역할에 따른 프로젝트 접근', () => {
         expect((result as ProjectAccess).role).toBe('OWNER');
     });
 
+    it('매니저의 명시 EDITOR 는 쓰기로 승격되지 않는다', async () => {
+        // PROGRAM_MANAGER 는 전체를 읽되 고치지 못한다. 팀 초대로 EDITOR 행이
+        // 생겨도 그 역할로 쓰기가 열리면 §2("매니저는 내용을 수정할 수 없다")가 깨진다.
+        mockAuthUser({ userId: 'pm_1', role: 'PROGRAM_MANAGER', isAdmin: false });
+        mockProject({ ownerId: 'someone_else', members: [{ role: 'EDITOR' }] });
+
+        const readResult = await requireProjectAccess(req(), 'proj_1');
+        expect((readResult as ProjectAccess).role).toBe('VIEWER');
+
+        const writeResult = await requireProjectAccess(req(), 'proj_1', { write: true });
+        expect(writeResult).toBeInstanceOf(NextResponse);
+        expect((writeResult as NextResponse).status).toBe(403);
+    });
+
+    it('매니저가 소유한 프로젝트는 OWNER 로 쓰기가 유지된다', async () => {
+        // 승격 전에 직접 만든 프로젝트의 소유권은 실제 관계이므로 EDITOR 강등과
+        // 무관하게 유지되어야 한다.
+        mockAuthUser({ userId: 'pm_1', role: 'PROGRAM_MANAGER', isAdmin: false });
+        mockProject({ ownerId: 'pm_1', members: [] });
+
+        const result = await requireProjectAccess(req(), 'proj_1', { write: true });
+
+        expect(result).not.toBeInstanceOf(NextResponse);
+        expect((result as ProjectAccess).role).toBe('OWNER');
+    });
+
     it('관리자는 자기 소유 프로젝트의 OWNER 전용 라우트에서도 통과한다', async () => {
         // 관리자 escalation 이 OWNER 를 덮어쓰면 팀원 초대에서 스스로 막힌다.
         mockAuthUser({ userId: 'admin_1', role: 'ADMIN', isAdmin: true });
