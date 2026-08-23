@@ -188,10 +188,11 @@ export default function AdminModePage() {
             showMsg('error', data?.error || '계정 생성에 실패했습니다.');
             return false;
         }
-        // 메일이 안 가면 관리자가 직접 안내해야 하므로 그 사실을 알린다.
+        // 메일이 안 가면 서버가 내려준 복구 안내(계정 삭제 후 재생성)를 그대로 보여준다.
+        // 여기서 다른 문구를 지어내면(예: 재설정 안내) 실제 복구 절차와 어긋난다.
         showMsg('success', data.emailSent
             ? '계정을 만들고 임시 비밀번호를 보냈습니다.'
-            : '계정은 만들었으나 메일 발송에 실패했습니다. 비밀번호 재설정을 안내하세요.');
+            : data.message);
         await load();
         return true;
     };
