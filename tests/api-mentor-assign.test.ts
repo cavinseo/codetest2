@@ -239,9 +239,47 @@ describe('배정 후보 목록', () => {
         );
 
         expect(findManyUser).toHaveBeenCalledWith({
-            where: { role: { in: ['MENTOR', 'PROGRAM_MANAGER'] } },
-            select: { id: true, name: true, email: true, role: true },
+            where: { role: { in: ['MENTOR', 'PROGRAM_MANAGER'] }, status: 'APPROVED' },
+            select: { id: true, name: true, email: true, role: true, accessExpiresAt: true },
             orderBy: { name: 'asc' },
         });
+    });
+
+    it('승인 대기(PENDING) 회원은 후보에서 빠진다', async () => {
+        // 쿼리 자체가 status: 'APPROVED' 로 걸러야, 가입만 하고 아직 승인되지
+        // 않은 회원이 배정 후보로 뜨지 않는다.
+        authAs('PROGRAM_MANAGER');
+
+        await GET(
+            new NextRequest('http://localhost/api/projects/proj_1/mentors?candidates=1'),
+            params
+        );
+
+        expect(findManyUser.mock.calls[0][0].where).toEqual({
+            role: { in: ['MENTOR', 'PROGRAM_MANAGER'] },
+            status: 'APPROVED',
+        });
+    });
+
+    it('이용 기간이 지난 회원은 응답에서 빠진다', async () => {
+        // status 필터로 못 거르는 만료는 isAccessExpired 로 애플리케이션에서 걸러야 한다.
+        authAs('ADMIN');
+        findManyUser.mockResolvedValue([
+            { id: 'mentor_1', name: '멘토', email: 'm@x.com', role: 'MENTOR', accessExpiresAt: null },
+            {
+                id: 'mentor_2', name: '만료멘토', email: 'exp@x.com', role: 'MENTOR',
+                accessExpiresAt: new Date('2000-01-01T00:00:00Z'),
+            },
+        ]);
+
+        const res = await GET(
+            new NextRequest('http://localhost/api/projects/proj_1/mentors?candidates=1'),
+            params
+        );
+        const body = await res.json();
+
+        expect(body.candidates).toEqual([
+            { id: 'mentor_1', name: '멘토', email: 'm@x.com', role: 'MENTOR' },
+        ]);
     });
 });

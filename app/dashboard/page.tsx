@@ -26,6 +26,7 @@ interface Project {
 export default function DashboardPage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [role, setRole] = useState<MemberRole | null>(null);
+    const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showNewProjectModal, setShowNewProjectModal] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
@@ -51,6 +52,7 @@ export default function DashboardPage() {
             if (response.ok) {
                 const data = await response.json();
                 setRole(data.role ?? null);
+                setIsAdmin(data.isAdmin ?? false);
             }
         } catch (error) {
             console.error('역할 조회 실패:', error);
@@ -172,7 +174,7 @@ export default function DashboardPage() {
                             <Link href="/settings" className="btn-ghost text-sm">
                                 🔗 서비스 설정
                             </Link>
-                            {role === 'ADMIN' && (
+                            {(isAdmin || role === 'ADMIN') && (
                                 <Link href="/admin" className="btn-ghost text-sm">
                                     🛡️ 관리자모드
                                 </Link>

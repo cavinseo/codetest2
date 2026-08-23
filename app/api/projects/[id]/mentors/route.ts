@@ -11,7 +11,7 @@ import { requireAuth } from '@/lib/auth';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
-import { canAssignMentor, parseMemberRole } from '@/lib/member-roles';
+import { canAssignMentor, isAccessExpired, parseMemberRole } from '@/lib/member-roles';
 
 const log = createLogger('api/mentors');
 
@@ -33,11 +33,16 @@ export async function GET(
     const wantsCandidates = new URL(request.url).searchParams.get('candidates') === '1';
     if (wantsCandidates) {
         try {
-            const candidates = await prisma.user.findMany({
-                where: { role: { in: ['MENTOR', 'PROGRAM_MANAGER'] } },
-                select: { id: true, name: true, email: true, role: true },
+            // 대기 중(PENDING)이거나 이용 기간이 끝난 계정은 아직 배정할 수 없다.
+            // 승인 여부는 쿼리에서 거르고, 만료 여부는 isAccessExpired 로 한 곳에서 판정한다.
+            const rows = await prisma.user.findMany({
+                where: { role: { in: ['MENTOR', 'PROGRAM_MANAGER'] }, status: 'APPROVED' },
+                select: { id: true, name: true, email: true, role: true, accessExpiresAt: true },
                 orderBy: { name: 'asc' },
             });
+            const candidates = rows
+                .filter((row) => !isAccessExpired(row.accessExpiresAt))
+                .map(({ accessExpiresAt: _accessExpiresAt, ...rest }) => rest);
 
             return NextResponse.json({ candidates });
         } catch (error: unknown) {

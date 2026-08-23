@@ -22,8 +22,12 @@ export default function MentorAssign({ projectId }: { projectId: string }) {
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [selected, setSelected] = useState('');
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+    // message 는 배정/해제 성공 토스트와 공유되므로 load() 시작 시 지우면 그 토스트가
+    // 지워진다. 불러오기 실패는 별도 상태에 담아 매번 갱신될 때 초기화한다.
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     const load = useCallback(async () => {
+        setLoadError(null);
         // /api/admin/users 는 requireAdmin 이라 매니저는 403 을 받는다. 같은 라우트의
         // ?candidates=1 분기(canAssignMentor 게이트)를 대신 쓴다.
         const [mentorRes, candidateRes] = await Promise.all([
@@ -33,12 +37,12 @@ export default function MentorAssign({ projectId }: { projectId: string }) {
         if (mentorRes.ok) {
             setMentors((await mentorRes.json()).mentors);
         } else {
-            setMessage({ type: 'error', text: '배정된 멘토 목록을 불러오지 못했습니다.' });
+            setLoadError('배정된 멘토 목록을 불러오지 못했습니다.');
         }
         if (candidateRes.ok) {
             setCandidates((await candidateRes.json()).candidates);
         } else {
-            setMessage({ type: 'error', text: '배정 가능한 인원을 불러오지 못했습니다.' });
+            setLoadError('배정 가능한 인원을 불러오지 못했습니다.');
         }
     }, [projectId]);
 
@@ -88,6 +92,10 @@ export default function MentorAssign({ projectId }: { projectId: string }) {
                     배정
                 </button>
             </div>
+
+            {loadError && (
+                <p className="text-sm text-rose-300">{loadError}</p>
+            )}
 
             {message && (
                 <p className={`text-sm ${message.type === 'success' ? 'text-emerald-300' : 'text-rose-300'}`}>

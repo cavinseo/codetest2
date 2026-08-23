@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
             profile,
             needsProfile: !isProfileCompleteForRole(authResult.role, profile),
             role: authResult.role,
+            isAdmin: authResult.isAdmin,
         });
     } catch (error: unknown) {
         return toErrorResponse(error, { log, message: '프로필을 불러오지 못했습니다.' });

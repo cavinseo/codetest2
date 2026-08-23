@@ -56,14 +56,21 @@ export default function AdminModePage() {
     });
     const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [isChangingPassword, setIsChangingPassword] = useState(false);
+    // requireAdmin 은 isAdmin/ADMIN_EMAILS/ALLOW_DEV_ADMIN 을 보고 role 은 보지 않는다.
+    // 반면 멘토 배정 API(canAssignMentor)는 role 만 본다. 그래서 이 화면에 들어온
+    // 계정이라도 role 이 ADMIN 이 아니면 배정 카드를 열 이유가 없다.
+    const [role, setRole] = useState<MemberRole | null>(null);
+    const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+    const [openMentorAssign, setOpenMentorAssign] = useState<Record<string, boolean>>({});
 
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const [statsRes, usersRes, projectsRes] = await Promise.all([
+            const [statsRes, usersRes, projectsRes, meRes] = await Promise.all([
                 fetch('/api/admin/stats'),
                 fetch('/api/admin/users'),
                 fetch('/api/admin/projects'),
+                fetch('/api/me/profile'),
             ]);
 
             // 미로그인은 관리자 로그인창으로, 로그인은 했지만 권한이 없으면 안내 화면으로 보낸다.
@@ -79,6 +86,11 @@ export default function AdminModePage() {
             if (statsRes.ok) setStats(await statsRes.json());
             if (usersRes.ok) { const d = await usersRes.json(); setUsers(d.users); }
             if (projectsRes.ok) { const d = await projectsRes.json(); setProjects(d.projects); }
+            if (meRes.ok) {
+                const d = await meRes.json();
+                setRole(d.role ?? null);
+                setIsAdmin(d.isAdmin ?? false);
+            }
         } finally {
             setLoading(false);
         }
@@ -235,6 +247,14 @@ export default function AdminModePage() {
         } finally {
             setIsChangingPassword(false);
         }
+    };
+
+    // 대시보드 헤더의 관리자 링크와 같은 기준이다. role='MENTEE' 인 ADMIN_EMAILS
+    // 계정에서는 canAssignMentor(role) 가 항상 403 을 내므로 카드를 열지 않는다.
+    const canAssignMentorUI = isAdmin || role === 'ADMIN';
+
+    const toggleMentorAssign = (projectId: string) => {
+        setOpenMentorAssign((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
     };
 
     const filteredProjects = projects.filter((p) => {
@@ -670,8 +690,24 @@ export default function AdminModePage() {
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <div className="divider my-4" />
-                                                <MentorAssign projectId={project.id} />
+                                                {canAssignMentorUI && (
+                                                    <>
+                                                        <div className="divider my-4" />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleMentorAssign(project.id)}
+                                                            className="btn-secondary text-sm"
+                                                            id={`admin-mentor-assign-toggle-${project.id}`}
+                                                        >
+                                                            {openMentorAssign[project.id] ? '멘토 배정 닫기' : '멘토 배정'}
+                                                        </button>
+                                                        {openMentorAssign[project.id] && (
+                                                            <div className="mt-3">
+                                                                <MentorAssign projectId={project.id} />
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                )}
                                             </div>
                                         ))}
                                     </div>

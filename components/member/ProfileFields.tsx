@@ -15,13 +15,11 @@ export default function ProfileFields({
     role,
     value,
     onChange,
-    showConsent = true,
     consentLabel = '개인정보 수집·이용에 동의합니다. 소속·연락처는 프로그램 운영에만 씁니다.',
 }: {
     role: MemberRole;
     value: ProfileValue;
     onChange: (next: ProfileValue) => void;
-    showConsent?: boolean;
     consentLabel?: string;
 }) {
     const set = (key: keyof ProfileValue, v: string | boolean) => onChange({ ...value, [key]: v });
@@ -87,13 +85,11 @@ export default function ProfileFields({
                 </>
             )}
 
-            {showConsent && (
-                <label className="flex items-start gap-2 text-sm">
-                    <input type="checkbox" className="mt-1" checked={value.privacyConsent}
-                        onChange={(e) => set('privacyConsent', e.target.checked)} required />
-                    <span>{consentLabel}</span>
-                </label>
-            )}
+            <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-1" checked={value.privacyConsent}
+                    onChange={(e) => set('privacyConsent', e.target.checked)} required />
+                <span>{consentLabel}</span>
+            </label>
         </div>
     );
 }
