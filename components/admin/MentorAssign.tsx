@@ -24,15 +24,21 @@ export default function MentorAssign({ projectId }: { projectId: string }) {
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const load = useCallback(async () => {
-        const [mentorRes, userRes] = await Promise.all([
+        // /api/admin/users 는 requireAdmin 이라 매니저는 403 을 받는다. 같은 라우트의
+        // ?candidates=1 분기(canAssignMentor 게이트)를 대신 쓴다.
+        const [mentorRes, candidateRes] = await Promise.all([
             fetch(`/api/projects/${projectId}/mentors`),
-            fetch('/api/admin/users'),
+            fetch(`/api/projects/${projectId}/mentors?candidates=1`),
         ]);
-        if (mentorRes.ok) setMentors((await mentorRes.json()).mentors);
-        if (userRes.ok) {
-            const users: Candidate[] = (await userRes.json()).users;
-            // 매니저는 멘토에서 승격되므로 겸직 대상이다.
-            setCandidates(users.filter((u) => u.role === 'MENTOR' || u.role === 'PROGRAM_MANAGER'));
+        if (mentorRes.ok) {
+            setMentors((await mentorRes.json()).mentors);
+        } else {
+            setMessage({ type: 'error', text: '배정된 멘토 목록을 불러오지 못했습니다.' });
+        }
+        if (candidateRes.ok) {
+            setCandidates((await candidateRes.json()).candidates);
+        } else {
+            setMessage({ type: 'error', text: '배정 가능한 인원을 불러오지 못했습니다.' });
         }
     }, [projectId]);
 

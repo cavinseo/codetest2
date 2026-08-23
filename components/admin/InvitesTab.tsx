@@ -23,7 +23,10 @@ export default function InvitesTab() {
 
     const load = useCallback(async () => {
         const res = await fetch('/api/invites');
-        if (!res.ok) return;
+        if (!res.ok) {
+            setMessage({ type: 'error', text: '초대 코드 목록을 불러오지 못했습니다.' });
+            return;
+        }
         const data = await res.json();
         setInvites(data.invites);
     }, []);

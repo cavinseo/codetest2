@@ -2,47 +2,11 @@
 // 역할에 맞는 회원등록 항목만 보여주는 공용 입력 폼.
 
 import type { MemberRole } from '@/lib/member-roles';
+import { EMPTY_PROFILE, toProfilePayload, type ProfileValue } from '@/lib/member-profile-payload';
 
-export interface ProfileValue {
-    organization: string;
-    jobTitle: string;
-    phone: string;
-    expertise: string;
-    careerYears: string;
-    careerSummary: string;
-    companyName: string;
-    industry: string;
-    foundedYear: string;
-    privacyConsent: boolean;
-}
-
-export const EMPTY_PROFILE: ProfileValue = {
-    organization: '', jobTitle: '', phone: '',
-    expertise: '', careerYears: '', careerSummary: '',
-    companyName: '', industry: '', foundedYear: '',
-    privacyConsent: false,
-};
-
-/** 서버가 받는 형태로 바꾼다. 빈 값은 보내지 않아 선택 항목으로 남긴다. */
-export function toProfilePayload(value: ProfileValue, role: MemberRole): Record<string, unknown> {
-    const payload: Record<string, unknown> = {
-        organization: value.organization,
-        phone: value.phone,
-        privacyConsent: value.privacyConsent,
-    };
-    if (value.jobTitle.trim()) payload.jobTitle = value.jobTitle;
-
-    if (role === 'MENTOR' || role === 'PROGRAM_MANAGER') {
-        payload.expertise = value.expertise;
-        payload.careerYears = Number(value.careerYears);
-        if (value.careerSummary.trim()) payload.careerSummary = value.careerSummary;
-    } else if (role === 'MENTEE') {
-        payload.companyName = value.companyName;
-        payload.industry = value.industry;
-        if (value.foundedYear.trim()) payload.foundedYear = Number(value.foundedYear);
-    }
-    return payload;
-}
+// toProfilePayload/EMPTY_PROFILE/ProfileValue 는 JSX 없는 lib/member-profile-payload.ts 로
+// 옮겨 vitest 가 직접 임포트할 수 있게 했다. 기존 소비자는 그대로 여기서 가져온다.
+export { EMPTY_PROFILE, toProfilePayload, type ProfileValue };
 
 const inputClass = 'input mt-2';
 const labelClass = 'block text-sm font-medium text-gray-400';
@@ -52,11 +16,13 @@ export default function ProfileFields({
     value,
     onChange,
     showConsent = true,
+    consentLabel = '개인정보 수집·이용에 동의합니다. 소속·연락처는 프로그램 운영에만 씁니다.',
 }: {
     role: MemberRole;
     value: ProfileValue;
     onChange: (next: ProfileValue) => void;
     showConsent?: boolean;
+    consentLabel?: string;
 }) {
     const set = (key: keyof ProfileValue, v: string | boolean) => onChange({ ...value, [key]: v });
     const isMentorSide = role === 'MENTOR' || role === 'PROGRAM_MANAGER';
@@ -125,7 +91,7 @@ export default function ProfileFields({
                 <label className="flex items-start gap-2 text-sm">
                     <input type="checkbox" className="mt-1" checked={value.privacyConsent}
                         onChange={(e) => set('privacyConsent', e.target.checked)} required />
-                    <span>개인정보 수집·이용에 동의합니다. 소속·연락처는 프로그램 운영에만 씁니다.</span>
+                    <span>{consentLabel}</span>
                 </label>
             )}
         </div>

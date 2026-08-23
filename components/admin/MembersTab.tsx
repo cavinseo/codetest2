@@ -120,12 +120,17 @@ export default function MembersTab({
                             </select>
                         </label>
                     </div>
-                    <ProfileFields role={newMember.role} value={newProfile} onChange={setNewProfile} showConsent={false} />
+                    <ProfileFields
+                        role={newMember.role}
+                        value={newProfile}
+                        onChange={setNewProfile}
+                        consentLabel="본인에게 개인정보 수집·이용 동의를 받았습니다."
+                    />
                     <div className="flex justify-end">
                         <button
                             type="button"
                             onClick={handleCreate}
-                            disabled={isCreating || !newMember.name || !newMember.email}
+                            disabled={isCreating || !newMember.name || !newMember.email || !newProfile.privacyConsent}
                             className="btn-primary text-sm disabled:opacity-50"
                             id="admin-member-create-submit"
                         >

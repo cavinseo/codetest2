@@ -12,6 +12,7 @@ import {
     PROJECT_AI_MODE_LABELS,
     type ProjectAiMode,
 } from '@/lib/ai/project-ai-mode';
+import type { MemberRole } from '@/lib/member-roles';
 
 interface Project {
     id: string;
@@ -24,6 +25,7 @@ interface Project {
 
 export default function DashboardPage() {
     const [projects, setProjects] = useState<Project[]>([]);
+    const [role, setRole] = useState<MemberRole | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showNewProjectModal, setShowNewProjectModal] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
@@ -35,10 +37,25 @@ export default function DashboardPage() {
     const [newProjectError, setNewProjectError] = useState('');
     const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-    // 마운트 시 프로젝트 목록 로드
+    // 마운트 시 프로젝트 목록과 역할 로드
     useEffect(() => {
         fetchProjects();
+        fetchRole();
     }, []);
+
+    // 관리자/매니저 전용 링크를 가리기 위해 역할만 조회한다. 새 엔드포인트 대신
+    // 이미 있는 본인 프로필 API(app/api/me/profile)를 쓴다.
+    const fetchRole = async () => {
+        try {
+            const response = await fetch('/api/me/profile');
+            if (response.ok) {
+                const data = await response.json();
+                setRole(data.role ?? null);
+            }
+        } catch (error) {
+            console.error('역할 조회 실패:', error);
+        }
+    };
 
     const fetchProjects = async () => {
         try {
@@ -155,9 +172,16 @@ export default function DashboardPage() {
                             <Link href="/settings" className="btn-ghost text-sm">
                                 🔗 서비스 설정
                             </Link>
-                            <Link href="/admin" className="btn-ghost text-sm">
-                                🛡️ 관리자모드
-                            </Link>
+                            {role === 'ADMIN' && (
+                                <Link href="/admin" className="btn-ghost text-sm">
+                                    🛡️ 관리자모드
+                                </Link>
+                            )}
+                            {role === 'PROGRAM_MANAGER' && (
+                                <Link href="/manage" className="btn-ghost text-sm">
+                                    🧭 프로그램 관리
+                                </Link>
+                            )}
                             <div className="w-px h-6 bg-white/10" />
                             <div className="flex items-center gap-2">
                                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-accent-400 flex items-center justify-center text-xs text-white font-bold">

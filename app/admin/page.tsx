@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-policy';
 import MembersTab, { type User } from '@/components/admin/MembersTab';
 import InvitesTab from '@/components/admin/InvitesTab';
+import MentorAssign from '@/components/admin/MentorAssign';
 import { MEMBER_ROLE_LABELS, type MemberRole } from '@/lib/member-roles';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -669,6 +670,8 @@ export default function AdminModePage() {
                                                         </button>
                                                     </div>
                                                 </div>
+                                                <div className="divider my-4" />
+                                                <MentorAssign projectId={project.id} />
                                             </div>
                                         ))}
                                     </div>

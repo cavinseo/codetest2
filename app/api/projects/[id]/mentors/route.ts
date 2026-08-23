@@ -28,6 +28,23 @@ export async function GET(
         return NextResponse.json({ error: '멘토 배정을 볼 권한이 없습니다.' }, { status: 403 });
     }
 
+    // 매니저는 /api/admin/users(requireAdmin)를 못 본다. 배정 후보 목록은 이
+    // 엔드포인트에서 함께 내려, 매니저도 배정 대상을 고를 수 있게 한다.
+    const wantsCandidates = new URL(request.url).searchParams.get('candidates') === '1';
+    if (wantsCandidates) {
+        try {
+            const candidates = await prisma.user.findMany({
+                where: { role: { in: ['MENTOR', 'PROGRAM_MANAGER'] } },
+                select: { id: true, name: true, email: true, role: true },
+                orderBy: { name: 'asc' },
+            });
+
+            return NextResponse.json({ candidates });
+        } catch (error: unknown) {
+            return toErrorResponse(error, { log, message: '배정 후보 목록을 불러오지 못했습니다.', context: { projectId } });
+        }
+    }
+
     try {
         const members = await prisma.projectMember.findMany({
             where: { projectId, role: 'COACH' },

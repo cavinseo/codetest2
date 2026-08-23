@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const findUniqueUser = vi.fn();
+const findManyUser = vi.fn();
 const findUniqueProject = vi.fn();
 const findUniqueMember = vi.fn();
 const createMember = vi.fn();
@@ -11,7 +12,7 @@ const findManyMember = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
-        user: { findUnique: findUniqueUser },
+        user: { findUnique: findUniqueUser, findMany: findManyUser },
         project: { findUnique: findUniqueProject },
         projectMember: {
             findUnique: findUniqueMember, create: createMember,
@@ -51,6 +52,7 @@ beforeEach(() => {
     createMember.mockResolvedValue({ id: 'pm_1' });
     deleteMember.mockResolvedValue({ id: 'pm_1' });
     findManyMember.mockResolvedValue([]);
+    findManyUser.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -191,5 +193,55 @@ describe('배정 목록', () => {
         expect(res.status).toBe(200);
         expect(findManyMember).toHaveBeenCalled();
         expect(findManyMember.mock.calls[0][0].where).toEqual({ projectId: 'proj_1', role: 'COACH' });
+    });
+});
+
+describe('배정 후보 목록', () => {
+    // /api/admin/users 는 requireAdmin 이라 매니저에게 403 을 준다. 매니저도
+    // 배정 후보를 볼 수 있도록 이 라우트의 ?candidates=1 분기가 대신 응답한다.
+    it('매니저는 후보 목록을 받는다', async () => {
+        authAs('PROGRAM_MANAGER');
+        findManyUser.mockResolvedValue([
+            { id: 'mentor_1', name: '멘토', email: 'm@x.com', role: 'MENTOR' },
+        ]);
+
+        const res = await GET(
+            new NextRequest('http://localhost/api/projects/proj_1/mentors?candidates=1'),
+            params
+        );
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.candidates).toEqual([
+            { id: 'mentor_1', name: '멘토', email: 'm@x.com', role: 'MENTOR' },
+        ]);
+    });
+
+    it('멘티는 후보 목록을 볼 수 없다', async () => {
+        authAs('MENTEE');
+
+        const res = await GET(
+            new NextRequest('http://localhost/api/projects/proj_1/mentors?candidates=1'),
+            params
+        );
+
+        expect(res.status).toBe(403);
+        expect(findManyUser).not.toHaveBeenCalled();
+    });
+
+    it('멘티·관리자는 후보에서 빠진다', async () => {
+        // MENTOR·PROGRAM_MANAGER 만 조회해야 하고, MENTEE·ADMIN 은 쿼리 자체에서 걸러진다.
+        authAs('ADMIN');
+
+        await GET(
+            new NextRequest('http://localhost/api/projects/proj_1/mentors?candidates=1'),
+            params
+        );
+
+        expect(findManyUser).toHaveBeenCalledWith({
+            where: { role: { in: ['MENTOR', 'PROGRAM_MANAGER'] } },
+            select: { id: true, name: true, email: true, role: true },
+            orderBy: { name: 'asc' },
+        });
     });
 });
