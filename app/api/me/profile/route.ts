@@ -7,7 +7,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
-import { memberProfileSchemaFor } from '@/lib/member-profile';
+import { isProfileCompleteForRole, memberProfileSchemaFor } from '@/lib/member-profile';
 
 const log = createLogger('api/me/profile');
 
@@ -20,7 +20,11 @@ export async function GET(request: NextRequest) {
             where: { userId: authResult.userId },
         });
 
-        return NextResponse.json({ profile, needsProfile: profile === null, role: authResult.role });
+        return NextResponse.json({
+            profile,
+            needsProfile: !isProfileCompleteForRole(authResult.role, profile),
+            role: authResult.role,
+        });
     } catch (error: unknown) {
         return toErrorResponse(error, { log, message: '프로필을 불러오지 못했습니다.' });
     }

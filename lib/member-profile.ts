@@ -47,3 +47,32 @@ export function memberProfileSchemaFor(role: MemberRole) {
 }
 
 export type MemberProfileInput = z.infer<ReturnType<typeof memberProfileSchemaFor>>;
+
+/** 공백만 든 문자열을 값 없음으로 본다. requiredText 와 판정 기준을 맞춘다. */
+function hasText(value?: string | null): boolean {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** 저장된 프로필이 이 역할에 필요한 항목을 다 갖췄는지. */
+export function isProfileCompleteForRole(
+    role: MemberRole,
+    profile: {
+        organization?: string | null;
+        phone?: string | null;
+        expertise?: string | null;
+        careerYears?: number | null;
+        companyName?: string | null;
+        industry?: string | null;
+    } | null
+): boolean {
+    if (profile === null) return false;
+    if (!hasText(profile.organization) || !hasText(profile.phone)) return false;
+
+    if (role === 'MENTOR' || role === 'PROGRAM_MANAGER') {
+        return hasText(profile.expertise) && profile.careerYears != null;
+    }
+    if (role === 'MENTEE') {
+        return hasText(profile.companyName) && hasText(profile.industry);
+    }
+    return true;
+}

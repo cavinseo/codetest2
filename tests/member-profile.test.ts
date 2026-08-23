@@ -3,7 +3,7 @@
 // DB 에서는 역할별 항목이 전부 nullable 이다. 멘토에게 companyName 을
 // NOT NULL 로 걸 수 없기 때문이다. 그래서 필수 여부는 이 스키마가 강제한다.
 import { describe, expect, it } from 'vitest';
-import { memberProfileSchemaFor } from '../lib/member-profile';
+import { isProfileCompleteForRole, memberProfileSchemaFor } from '../lib/member-profile';
 
 const common = {
     organization: '한국기술대',
@@ -196,5 +196,103 @@ describe('공통 항목', () => {
         if (result.success) {
             expect(result.data.jobTitle).toBe('팀장');
         }
+    });
+});
+
+describe('isProfileCompleteForRole', () => {
+    it('행 자체가 없으면 항상 미완성이다', () => {
+        expect(isProfileCompleteForRole('MENTEE', null)).toBe(false);
+        expect(isProfileCompleteForRole('MENTOR', null)).toBe(false);
+        expect(isProfileCompleteForRole('PROGRAM_MANAGER', null)).toBe(false);
+        expect(isProfileCompleteForRole('ADMIN', null)).toBe(false);
+    });
+
+    it('관리자는 공통 항목만 갖추면 완성이다', () => {
+        expect(
+            isProfileCompleteForRole('ADMIN', { organization: '한국기술대', phone: '010-1234-5678' })
+        ).toBe(true);
+    });
+
+    it('관리자도 소속기관명이나 휴대폰이 없으면 미완성이다', () => {
+        expect(isProfileCompleteForRole('ADMIN', { organization: '한국기술대', phone: null })).toBe(false);
+        expect(isProfileCompleteForRole('ADMIN', { organization: null, phone: '010-1234-5678' })).toBe(false);
+    });
+
+    describe('멘토·매니저', () => {
+        const complete = {
+            organization: '한국기술대', phone: '010-1234-5678',
+            expertise: '재료공학', careerYears: 12,
+        };
+
+        it('공통 항목과 전문분야·경력 연수를 갖추면 완성이다', () => {
+            expect(isProfileCompleteForRole('MENTOR', complete)).toBe(true);
+            expect(isProfileCompleteForRole('PROGRAM_MANAGER', complete)).toBe(true);
+        });
+
+        it('전문분야가 없으면 미완성이다', () => {
+            // 승격된 멘토가 여기 걸리지 않으면 배정 근거 없이 배정될 수 있다.
+            expect(isProfileCompleteForRole('MENTOR', { ...complete, expertise: null })).toBe(false);
+        });
+
+        it('매니저도 전문분야가 없으면 미완성이다', () => {
+            // 매니저를 멘토 판정 갈래에서 빠뜨리면 공통 항목만으로 완성 처리될 수 있다.
+            expect(isProfileCompleteForRole('PROGRAM_MANAGER', { ...complete, expertise: null })).toBe(false);
+        });
+
+        it('경력 연수가 없으면 미완성이다', () => {
+            expect(isProfileCompleteForRole('MENTOR', { ...complete, careerYears: null })).toBe(false);
+        });
+
+        it('경력 연수 0 은 값이 있는 것으로 본다', () => {
+            expect(isProfileCompleteForRole('MENTOR', { ...complete, careerYears: 0 })).toBe(true);
+        });
+
+        it('멘티 전용 항목이 없어도 완성이다', () => {
+            expect(isProfileCompleteForRole('MENTOR', complete)).toBe(true);
+        });
+    });
+
+    describe('멘티', () => {
+        const complete = {
+            organization: '한국기술대', phone: '010-1234-5678',
+            companyName: '가나테크', industry: '제조',
+        };
+
+        it('공통 항목과 기업명·업종을 갖추면 완성이다', () => {
+            expect(isProfileCompleteForRole('MENTEE', complete)).toBe(true);
+        });
+
+        it('기업명이 없으면 미완성이다', () => {
+            expect(isProfileCompleteForRole('MENTEE', { ...complete, companyName: null })).toBe(false);
+        });
+
+        it('업종이 없으면 미완성이다', () => {
+            expect(isProfileCompleteForRole('MENTEE', { ...complete, industry: null })).toBe(false);
+        });
+
+        it('멘토 전용 항목이 없어도 완성이다', () => {
+            expect(isProfileCompleteForRole('MENTEE', complete)).toBe(true);
+        });
+    });
+
+    it('공백만 있는 문자열은 값이 없는 것으로 본다', () => {
+        expect(
+            isProfileCompleteForRole('ADMIN', { organization: '   ', phone: '010-1234-5678' })
+        ).toBe(false);
+        expect(
+            isProfileCompleteForRole('ADMIN', { organization: '한국기술대', phone: '   ' })
+        ).toBe(false);
+        expect(
+            isProfileCompleteForRole('MENTOR', {
+                organization: '한국기술대', phone: '010-1234-5678',
+                expertise: '   ', careerYears: 12,
+            })
+        ).toBe(false);
+        expect(
+            isProfileCompleteForRole('MENTEE', {
+                organization: '한국기술대', phone: '010-1234-5678',
+                companyName: '가나테크', industry: '   ',
+            })
+        ).toBe(false);
     });
 });

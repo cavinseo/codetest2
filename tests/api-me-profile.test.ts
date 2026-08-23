@@ -53,13 +53,31 @@ describe('프로필 조회', () => {
 
     it('있으면 그대로 돌려준다', async () => {
         authAs('MENTEE');
-        findUniqueProfile.mockResolvedValue({ userId: 'user_1', organization: '가나대' });
+        findUniqueProfile.mockResolvedValue({
+            userId: 'user_1', organization: '가나대', phone: '010-0000-0000',
+            companyName: '가나기업', industry: '제조업',
+        });
 
         const res = await GET(new NextRequest('http://localhost/api/me/profile'));
         const body = await res.json();
 
         expect(body.needsProfile).toBe(false);
         expect(body.profile.organization).toBe('가나대');
+    });
+
+    it('승격된 멘토의 저장된 행에 전문분야가 없으면 needsProfile 을 알린다', async () => {
+        // 멘티였다가 멘토로 승격된 회원. setRole 은 MemberProfile 을 건드리지
+        // 않으므로 행은 남아 있지만 expertise/careerYears 는 비어 있다.
+        authAs('MENTOR');
+        findUniqueProfile.mockResolvedValue({
+            userId: 'user_1', organization: '가나대', phone: '010-0000-0000',
+            expertise: null, careerYears: null,
+        });
+
+        const res = await GET(new NextRequest('http://localhost/api/me/profile'));
+        const body = await res.json();
+
+        expect(body.needsProfile).toBe(true);
     });
 });
 
@@ -109,18 +127,12 @@ describe('프로필 저장', () => {
         expect(upsertProfile.mock.calls[0][0].where.userId).toBe('user_1');
     });
 
-    it('예전 역할의 컬럼이 남아 있어도 현재 역할로 저장할 수 있다', async () => {
-        // 멘티 -> 멘토로 전환된 회원의 저장된 행에는 companyName/industry 가
-        // 그대로 남아 있다(역할 전환이 컬럼을 정리해 주지 않는다). 검증 payload 를
-        // 이 저장된 행과 body 를 섞어(spread) 만들면, MENTOR 스키마는 strict 라
-        // companyName/industry 를 알 수 없는 키로 거부해 정상적인 수정이 막힌다.
-        // body 만으로 검증해야 이 저장이 통과한다.
+    it('저장할 때마다 다른 역할의 컬럼을 null 로 정리한다', async () => {
+        // PUT 은 body 만으로 검증하고 저장된 행을 읽지 않는다(findUnique 를
+        // 호출하지 않는다). 그래서 멘티 -> 멘토로 전환된 회원이 저장할 때도 예전
+        // 역할(멘티)의 값이 행에 남아 있을 위험이 있다 — 매 저장이 아홉 개 컬럼을
+        // 전부 쓰면서 현재 역할에 없는 항목을 명시적으로 null 로 정리하는지 본다.
         authAs('MENTOR');
-        findUniqueProfile.mockResolvedValue({
-            userId: 'user_1', organization: '가나대', phone: '010-0000-0000',
-            companyName: '가나기업', industry: '제조업', foundedYear: 2010,
-            expertise: null, careerYears: null, careerSummary: null,
-        });
 
         const res = await PUT(putRequest({
             organization: '가나대', phone: '010-0000-0000', privacyConsent: true,
@@ -128,6 +140,9 @@ describe('프로필 저장', () => {
         }));
 
         expect(res.status).toBe(200);
-        expect(upsertProfile).toHaveBeenCalled();
+        const update = upsertProfile.mock.calls[0][0].update;
+        expect(update.companyName).toBeNull();
+        expect(update.industry).toBeNull();
+        expect(update.foundedYear).toBeNull();
     });
 });

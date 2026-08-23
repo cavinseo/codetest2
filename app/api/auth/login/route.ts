@@ -7,6 +7,8 @@ import { BCRYPT_ROUNDS, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/l
 import { encodeSessionCookie } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { LOGIN_RATE_LIMIT, clientIpFrom, consumeRateLimit, resetRateLimit } from '@/lib/rate-limit';
+import { isProfileCompleteForRole } from '@/lib/member-profile';
+import { parseMemberRole } from '@/lib/member-roles';
 
 const log = createLogger('api/auth/login');
 
@@ -67,12 +69,15 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 임시 비밀번호를 받은 회원과 프로필이 없는 회원을 로그인 응답에서 바로
-        // 가려낸다. 화면은 이 값으로 비밀번호 변경·프로필 작성 화면으로 보낸다.
-        const hasProfile = await prisma.memberProfile.findUnique({
+        // 임시 비밀번호를 받은 회원과 프로필이 미완성인 회원을 로그인 응답에서
+        // 바로 가려낸다. 화면은 이 값으로 비밀번호 변경·프로필 작성 화면으로 보낸다.
+        // 행 존재 여부가 아니라 현재 역할에 필요한 항목을 다 갖췄는지로 판정한다 —
+        // 멘티 -> 멘토 승격은 MemberProfile 을 건드리지 않으므로, 행만 보면
+        // expertise 가 빈 멘토도 완료로 잘못 판정된다.
+        const profile = await prisma.memberProfile.findUnique({
             where: { userId: user.id },
-            select: { userId: true },
         });
+        const role = parseMemberRole(user.role) ?? 'MENTEE';
 
         const sessionPayload = { userId: user.id, email: user.email, name: user.name };
 
@@ -98,7 +103,7 @@ export async function POST(request: NextRequest) {
             success: true,
             user: { id: user.id, email: user.email, name: user.name },
             mustChangePassword: user.mustChangePassword,
-            needsProfile: hasProfile === null,
+            needsProfile: !isProfileCompleteForRole(role, profile),
         });
     } catch (error: unknown) {
         if (error instanceof z.ZodError) {
