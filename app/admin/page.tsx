@@ -56,11 +56,11 @@ export default function AdminModePage() {
     });
     const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [isChangingPassword, setIsChangingPassword] = useState(false);
-    // requireAdmin 은 isAdmin/ADMIN_EMAILS/ALLOW_DEV_ADMIN 을 보고 role 은 보지 않는다.
-    // 반면 멘토 배정 API(canAssignMentor)는 role 만 본다. 그래서 이 화면에 들어온
-    // 계정이라도 role 이 ADMIN 이 아니면 배정 카드를 열 이유가 없다.
     const [role, setRole] = useState<MemberRole | null>(null);
-    const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+    // requireAdmin 과 같은 기준(hasAdminAccess)을 프로필 API 가 계산해 내려준다.
+    // isAdmin/role 을 화면이 따로 조합하지 않는다 — 그렇게 하면 ADMIN_EMAILS 로
+    // 들어온 계정이 이 값과 어긋나 카드를 못 보는 일이 다시 생긴다.
+    const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
     const [openMentorAssign, setOpenMentorAssign] = useState<Record<string, boolean>>({});
 
     const load = useCallback(async () => {
@@ -89,7 +89,7 @@ export default function AdminModePage() {
             if (meRes.ok) {
                 const d = await meRes.json();
                 setRole(d.role ?? null);
-                setIsAdmin(d.isAdmin ?? false);
+                setCanAccessAdmin(d.canAccessAdmin ?? false);
             }
         } finally {
             setLoading(false);
@@ -249,9 +249,8 @@ export default function AdminModePage() {
         }
     };
 
-    // 대시보드 헤더의 관리자 링크와 같은 기준이다. role='MENTEE' 인 ADMIN_EMAILS
-    // 계정에서는 canAssignMentor(role) 가 항상 403 을 내므로 카드를 열지 않는다.
-    const canAssignMentorUI = isAdmin || role === 'ADMIN';
+    // 대시보드 헤더의 관리자 링크와 같은 기준(canAccessAdmin)을 쓴다.
+    const canAssignMentorUI = canAccessAdmin;
 
     const toggleMentorAssign = (projectId: string) => {
         setOpenMentorAssign((prev) => ({ ...prev, [projectId]: !prev[projectId] }));

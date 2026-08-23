@@ -51,17 +51,28 @@ function isAdminEmail(email: string): boolean {
     return adminEmails.includes(email.toLowerCase());
 }
 
+/**
+ * 관리자 화면에 들어갈 수 있는가. requireAdmin 과 화면이 같은 답을 내야 하므로
+ * 판정을 한 곳에 둔다. 예전에는 화면이 isAdmin 과 role 만 보고 판단해,
+ * ADMIN_EMAILS 로 들어오는 계정이 링크를 잃었다.
+ */
+export function hasAdminAccess(user: { email: string; isAdmin: boolean }): boolean {
+    // isAdmin 은 requireAuth 가 DB 에서 읽어 온 값이라 플래그 회수가 즉시 반영된다.
+    if (user.isAdmin) return true;
+
+    if (isAdminEmail(user.email)) return true;
+
+    // 로컬 개발용 우회: ALLOW_DEV_ADMIN=true 를 명시해야만 활성화 (암묵적 허용 금지)
+    if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_ADMIN === 'true') return true;
+
+    return false;
+}
+
 export async function requireAdmin(request: NextRequest): Promise<SessionUser | NextResponse> {
     const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
 
-    // isAdmin 은 requireAuth 가 DB 에서 읽어 온 값이라 플래그 회수가 즉시 반영된다.
-    if (authResult.isAdmin) return authResult;
-
-    if (isAdminEmail(authResult.email)) return authResult;
-
-    // 로컬 개발용 우회: ALLOW_DEV_ADMIN=true 를 명시해야만 활성화 (암묵적 허용 금지)
-    if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_ADMIN === 'true') return authResult;
+    if (hasAdminAccess(authResult)) return authResult;
 
     return NextResponse.json({ error: 'Admin access required.' }, { status: 403 });
 }

@@ -38,6 +38,7 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
 });
 
 describe('프로필 조회', () => {
@@ -78,6 +79,18 @@ describe('프로필 조회', () => {
         const body = await res.json();
 
         expect(body.needsProfile).toBe(true);
+    });
+
+    it('ADMIN_EMAILS 계정은 isAdmin 이 꺼져 있어도 canAccessAdmin 을 true 로 알린다', async () => {
+        // 화면(dashboard/admin)이 requireAdmin 과 같은 답을 보도록, isAdmin 만이
+        // 아니라 ADMIN_EMAILS 매치도 canAccessAdmin 에 반영돼야 한다.
+        vi.stubEnv('ADMIN_EMAILS', 'u@x.com');
+        authAs('MENTEE');
+
+        const res = await GET(new NextRequest('http://localhost/api/me/profile'));
+        const body = await res.json();
+
+        expect(body.canAccessAdmin).toBe(true);
     });
 });
 

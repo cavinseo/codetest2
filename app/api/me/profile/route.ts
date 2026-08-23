@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { hasAdminAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { isProfileCompleteForRole, memberProfileSchemaFor } from '@/lib/member-profile';
@@ -24,7 +25,9 @@ export async function GET(request: NextRequest) {
             profile,
             needsProfile: !isProfileCompleteForRole(authResult.role, profile),
             role: authResult.role,
-            isAdmin: authResult.isAdmin,
+            // 화면의 관리자 링크·메뉴가 requireAdmin 과 같은 답을 보도록, 판정을
+            // 여기서 한 번만 계산해 내려준다(ADMIN_EMAILS 로 들어온 계정도 포함).
+            canAccessAdmin: hasAdminAccess(authResult),
         });
     } catch (error: unknown) {
         return toErrorResponse(error, { log, message: '프로필을 불러오지 못했습니다.' });

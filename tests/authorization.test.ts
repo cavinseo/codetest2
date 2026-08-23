@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { encodeSessionCookie, type SessionUser } from '../lib/auth';
 import { prisma } from '../lib/prisma';
-import { requireAdmin, requireProjectAccess, type ProjectAccess } from '../lib/authorization';
+import { hasAdminAccess, requireAdmin, requireProjectAccess, type ProjectAccess } from '../lib/authorization';
 import type { MemberRole } from '../lib/member-roles';
 
 vi.mock('../lib/prisma', () => ({
@@ -200,6 +200,31 @@ describe('authorization helpers', () => {
         );
 
         expect(responseStatus(result)).toBe(401);
+    });
+});
+
+describe('hasAdminAccess', () => {
+    // requireAdmin 과 화면(dashboard/admin)이 같은 답을 내야 한다는 계약을 지키는지
+    // 본다. 예전에는 화면이 isAdmin/role 만 보고 판단해 ADMIN_EMAILS 로 들어오는
+    // 계정이 링크를 잃었다 — 그 회귀 케이스를 여기서 고정한다.
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it('isAdmin 플래그가 켜져 있으면 true 다', () => {
+        expect(hasAdminAccess({ email: 'user@example.com', isAdmin: true })).toBe(true);
+    });
+
+    it('ADMIN_EMAILS 에 등록된 이메일이면 isAdmin 이 false 여도 true 다', () => {
+        vi.stubEnv('ADMIN_EMAILS', 'admin@example.com');
+
+        expect(hasAdminAccess({ email: 'admin@example.com', isAdmin: false })).toBe(true);
+    });
+
+    it('평범한 회원이면 false 다', () => {
+        vi.stubEnv('ADMIN_EMAILS', 'admin@example.com');
+
+        expect(hasAdminAccess({ email: 'user@example.com', isAdmin: false })).toBe(false);
     });
 });
 
