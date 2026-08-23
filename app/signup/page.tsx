@@ -190,7 +190,11 @@ export default function SignupPage() {
                                 id="inviteCode"
                                 type="text"
                                 value={inviteCode}
-                                onChange={(e) => setInviteCode(e.target.value)}
+                                onChange={(e) => {
+                                    const next = e.target.value;
+                                    setInviteCode(next);
+                                    if (!next.trim()) setAssumedRole('MENTEE');
+                                }}
                                 className="input"
                                 placeholder="초대 코드(선택)"
                             />

@@ -39,7 +39,7 @@ export default function LoginPage() {
                 throw new Error(data.error || '로그인에 실패했습니다.');
             }
 
-            router.push('/dashboard');
+            router.push(data.needsProfile ? '/onboarding' : '/dashboard');
         } catch (err: any) {
             setError(err.message);
         } finally {

@@ -1,5 +1,6 @@
 'use client';
-// 첫 로그인 관문. 임시 비밀번호 변경과 프로필 작성을 한 화면에서 끝낸다.
+// 첫 로그인 관문. 프로필 작성을 이 화면에서 끝낸다.
+// 임시 비밀번호 변경은 여기 포함되지 않으며 이후 작업으로 미뤄져 있다.
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
