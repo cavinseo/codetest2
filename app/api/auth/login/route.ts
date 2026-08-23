@@ -67,6 +67,13 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // 임시 비밀번호를 받은 회원과 프로필이 없는 회원을 로그인 응답에서 바로
+        // 가려낸다. 화면은 이 값으로 비밀번호 변경·프로필 작성 화면으로 보낸다.
+        const hasProfile = await prisma.memberProfile.findUnique({
+            where: { userId: user.id },
+            select: { userId: true },
+        });
+
         const sessionPayload = { userId: user.id, email: user.email, name: user.name };
 
         const cookieStore = await cookies();
@@ -90,6 +97,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: true,
             user: { id: user.id, email: user.email, name: user.name },
+            mustChangePassword: user.mustChangePassword,
+            needsProfile: hasProfile === null,
         });
     } catch (error: unknown) {
         if (error instanceof z.ZodError) {
