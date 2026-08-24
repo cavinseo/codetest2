@@ -110,13 +110,28 @@ describe('프로필 조회', () => {
         // 화면(dashboard/admin)이 requireAdmin 과 같은 답을 보도록, isAdmin 만이
         // 아니라 ADMIN_EMAILS 매치도 canAccessAdmin 에 반영돼야 한다.
         vi.stubEnv('ADMIN_EMAILS', 'u@x.com');
-        authAs('MENTEE');
+        authAs('ADMIN');
 
         const res = await GET(new NextRequest('http://localhost/api/me/profile'));
         const body = await res.json();
 
         expect(body.canAccessAdmin).toBe(true);
     });
+
+    it.each(['PROGRAM_MANAGER', 'MENTOR', 'MENTEE'])(
+        '%s 는 ADMIN_EMAILS 에 있어도 canAccessAdmin 이 false 다',
+        async (role) => {
+            // 화면이 관리자 모드 링크를 띄우는 근거가 이 값 하나뿐이다. 여기서
+            // true 가 새면 멘티에게 관리자 모드 아이콘이 그대로 보인다.
+            vi.stubEnv('ADMIN_EMAILS', 'u@x.com');
+            authAs(role);
+
+            const res = await GET(new NextRequest('http://localhost/api/me/profile'));
+            const body = await res.json();
+
+            expect(body.canAccessAdmin).toBe(false);
+        }
+    );
 });
 
 describe('프로필 저장', () => {

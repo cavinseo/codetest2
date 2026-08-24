@@ -58,8 +58,16 @@ function isAdminEmail(email: string): boolean {
  * 관리자 화면에 들어갈 수 있는가. requireAdmin 과 화면이 같은 답을 내야 하므로
  * 판정을 한 곳에 둔다. 예전에는 화면이 isAdmin 과 role 만 보고 판단해,
  * ADMIN_EMAILS 로 들어오는 계정이 링크를 잃었다.
+ *
+ * 역할이 첫 관문이다. 멘토·멘티·프로그램 매니저는 어떤 경로로도 관리자
+ * 모드에 들어올 수 없다 — 아래 세 우회로(isAdmin 플래그, ADMIN_EMAILS,
+ * 개발용 플래그)를 전부 이 관문 뒤에 둔 이유다. 예전에는 셋 다 역할을
+ * 보지 않아서, 멘티 계정이라도 ADMIN_EMAILS 에 이메일이 있거나
+ * ALLOW_DEV_ADMIN 이 켜져 있으면 그대로 통과했다.
  */
-export function hasAdminAccess(user: { email: string; isAdmin: boolean }): boolean {
+export function hasAdminAccess(user: { email: string; isAdmin: boolean; role: MemberRole }): boolean {
+    if (user.role !== 'ADMIN') return false;
+
     // isAdmin 은 requireAuth 가 DB 에서 읽어 온 값이라 플래그 회수가 즉시 반영된다.
     if (user.isAdmin) return true;
 

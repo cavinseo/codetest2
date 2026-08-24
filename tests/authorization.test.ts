@@ -158,8 +158,10 @@ describe('authorization helpers', () => {
         vi.stubEnv('NODE_ENV', 'production');
         vi.stubEnv('ADMIN_EMAILS', 'admin@example.com,ops@example.com');
         // 환경변수 목록에 없는 계정은 DB isAdmin 플래그도 없다고 가정한다.
+        // 역할은 둘 다 ADMIN 으로 둔다 — 여기서 보려는 것은 "ADMIN_EMAILS 에
+        // 있는가" 하나뿐이라, 역할까지 갈라 두면 무엇 때문에 갈렸는지 흐려진다.
         findUser.mockImplementation((async (args: { where: { id: string } }) =>
-            approvedRow(args.where.id, { isAdmin: false })) as never
+            approvedRow(args.where.id, { isAdmin: false, role: 'ADMIN' })) as never
         );
 
         const adminResult = await requireAdmin(
@@ -178,7 +180,7 @@ describe('authorization helpers', () => {
         vi.stubEnv('NODE_ENV', 'production');
         vi.stubEnv('ADMIN_EMAILS', '');
         findUser.mockImplementation((async (args: { where: { id: string } }) =>
-            approvedRow(args.where.id, { isAdmin: true })) as never
+            approvedRow(args.where.id, { isAdmin: true, role: 'ADMIN' })) as never
         );
 
         const result = await requireAdmin(
@@ -187,6 +189,22 @@ describe('authorization helpers', () => {
 
         expect(responseStatus(result)).toBeNull();
         expect(result).toMatchObject({ email: 'admin@ks-qfd.com' });
+    });
+
+    it('관리자 역할이 아니면 isAdmin 플래그가 있어도 requireAdmin 이 막는다', async () => {
+        // 화면(hasAdminAccess)만이 아니라 서버 게이트도 같은 답을 내야 한다.
+        // 이 단언이 없으면 링크만 감추고 직접 URL 로 들어오는 길이 열려 있게 된다.
+        vi.stubEnv('NODE_ENV', 'production');
+        vi.stubEnv('ADMIN_EMAILS', '');
+        findUser.mockImplementation((async (args: { where: { id: string } }) =>
+            approvedRow(args.where.id, { isAdmin: true, role: 'PROGRAM_MANAGER' })) as never
+        );
+
+        const result = await requireAdmin(
+            requestFor({ userId: 'pm_1', email: 'pm@example.com', name: null })
+        );
+
+        expect(responseStatus(result)).toBe(403);
     });
 
     it('rejects a non-admin when the DB row is missing', async () => {
@@ -212,19 +230,61 @@ describe('hasAdminAccess', () => {
     });
 
     it('isAdmin 플래그가 켜져 있으면 true 다', () => {
-        expect(hasAdminAccess({ email: 'user@example.com', isAdmin: true })).toBe(true);
+        expect(hasAdminAccess({ email: 'user@example.com', isAdmin: true, role: 'ADMIN' })).toBe(true);
     });
 
     it('ADMIN_EMAILS 에 등록된 이메일이면 isAdmin 이 false 여도 true 다', () => {
         vi.stubEnv('ADMIN_EMAILS', 'admin@example.com');
 
-        expect(hasAdminAccess({ email: 'admin@example.com', isAdmin: false })).toBe(true);
+        expect(hasAdminAccess({ email: 'admin@example.com', isAdmin: false, role: 'ADMIN' })).toBe(true);
     });
 
     it('평범한 회원이면 false 다', () => {
         vi.stubEnv('ADMIN_EMAILS', 'admin@example.com');
 
-        expect(hasAdminAccess({ email: 'user@example.com', isAdmin: false })).toBe(false);
+        expect(hasAdminAccess({ email: 'user@example.com', isAdmin: false, role: 'MENTEE' })).toBe(false);
+    });
+});
+
+describe('hasAdminAccess: 관리자 역할이 아니면 어떤 경로로도 못 들어온다', () => {
+    // "멘토·멘티·프로그램 매니저로 로그인하면 절대로 관리자 모드에 들어갈 수
+    // 없어야 한다". 우회로가 셋(isAdmin 플래그, ADMIN_EMAILS, ALLOW_DEV_ADMIN)
+    // 이라 역할 관문이 그 셋 모두보다 앞에 있는지 하나씩 확인한다.
+    const NON_ADMIN_ROLES: MemberRole[] = ['PROGRAM_MANAGER', 'MENTOR', 'MENTEE'];
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it.each(NON_ADMIN_ROLES)('%s 는 isAdmin 플래그가 켜져 있어도 막힌다', (role) => {
+        // DB 의 두 값이 어긋난 계정(role 은 멘티인데 isAdmin 만 true)이 있어도
+        // 역할이 이긴다.
+        expect(hasAdminAccess({ email: 'user@example.com', isAdmin: true, role })).toBe(false);
+    });
+
+    it.each(NON_ADMIN_ROLES)('%s 는 ADMIN_EMAILS 에 있어도 막힌다', (role) => {
+        vi.stubEnv('ADMIN_EMAILS', 'someone@example.com');
+
+        expect(hasAdminAccess({ email: 'someone@example.com', isAdmin: false, role })).toBe(false);
+    });
+
+    it.each(NON_ADMIN_ROLES)('%s 는 ALLOW_DEV_ADMIN 이 켜져 있어도 막힌다', (role) => {
+        // 개발 환경 우회는 원래 역할을 보지 않아 아무나 통과시켰다. 가장 넓은
+        // 구멍이었다.
+        vi.stubEnv('NODE_ENV', 'development');
+        vi.stubEnv('ALLOW_DEV_ADMIN', 'true');
+
+        expect(hasAdminAccess({ email: 'user@example.com', isAdmin: false, role })).toBe(false);
+    });
+
+    it('관리자 역할이면 개발 우회로 들어올 수 있다', () => {
+        // 관문을 세운 뒤에도 기존 우회로가 관리자에게는 그대로 열려 있어야 한다.
+        // 이 단언이 없으면 위 세 테스트는 hasAdminAccess 가 항상 false 를
+        // 돌려줘도 통과한다.
+        vi.stubEnv('NODE_ENV', 'development');
+        vi.stubEnv('ALLOW_DEV_ADMIN', 'true');
+
+        expect(hasAdminAccess({ email: 'user@example.com', isAdmin: false, role: 'ADMIN' })).toBe(true);
     });
 });
 
