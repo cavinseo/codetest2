@@ -38,12 +38,21 @@ export async function GET(request: NextRequest) {
                 mustChangePassword: true,
                 createdAt: true,
                 updatedAt: true,
+                // 회원 관리 화면이 멘티의 소속 프로그램을 보여주고 바로 배정할 수
+                // 있게 함께 내린다. 멘티가 아닌 역할은 항상 null 이다.
+                programId: true,
+                program: { select: { name: true } },
             },
             // 승인 대기가 먼저 보이도록 정렬한다.
             orderBy: [{ status: 'desc' }, { createdAt: 'desc' }],
         });
 
-        return NextResponse.json({ users });
+        return NextResponse.json({
+            users: users.map(({ program, ...rest }) => ({
+                ...rest,
+                programName: program?.name ?? null,
+            })),
+        });
     } catch (error: unknown) {
         log.error('사용자 목록 조회 실패', error);
         return NextResponse.json({ error: '사용자 목록 조회 실패' }, { status: 500 });

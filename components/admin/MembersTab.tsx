@@ -25,7 +25,19 @@ export interface User {
     mustChangePassword: boolean;
     createdAt: string;
     updatedAt: string;
+    /** 멘티만 프로그램에 속한다. 다른 역할은 항상 null 이다. */
+    programId?: string | null;
+    programName?: string | null;
 }
+
+/** 역할별로 나눠 보는 필터. '전체' 를 앞에 두고 나머지는 역할 순서를 따른다. */
+const ROLE_FILTERS = ['ALL', ...MEMBER_ROLES] as const;
+type RoleFilter = (typeof ROLE_FILTERS)[number];
+
+const ROLE_FILTER_LABELS: Record<RoleFilter, string> = {
+    ALL: '전체',
+    ...MEMBER_ROLE_LABELS,
+};
 
 export interface CreateMemberPayload {
     name: string;
@@ -49,17 +61,22 @@ interface MembersTabProps {
     onSetRole: (userId: string, role: MemberRole) => void;
     onExtendAccess: (userId: string, days: number) => void;
     onCreate: (payload: CreateMemberPayload) => Promise<boolean>;
+    /** 멘티를 프로그램에 배정한 뒤 목록을 다시 받아오기 위해 부른다. */
+    onReload: () => void;
 }
 
 export default function MembersTab({
-    members, onApprove, onRequestDelete, onSetRole, onExtendAccess, onCreate,
+    members, onApprove, onRequestDelete, onSetRole, onExtendAccess, onCreate, onReload,
 }: MembersTabProps) {
     const [searchMember, setSearchMember] = useState('');
+    const [roleFilter, setRoleFilter] = useState<RoleFilter>('ALL');
     const [showCreate, setShowCreate] = useState(false);
     const [newMember, setNewMember] = useState({ name: '', email: '', role: 'MENTEE' as 'MENTOR' | 'MENTEE', programId: '' });
     const [newProfile, setNewProfile] = useState<ProfileValue>(EMPTY_PROFILE);
     const [isCreating, setIsCreating] = useState(false);
     const [programs, setPrograms] = useState<ProgramOption[]>([]);
+    const [assignBusy, setAssignBusy] = useState<Record<string, boolean>>({});
+    const [assignError, setAssignError] = useState('');
 
     // 멘티 계정을 만들 때 프로그램을 고를 수 있게, 목록을 미리 받아 둔다.
     // 멘토 계정 생성에는 쓰지 않지만 한 번만 불러오면 되므로 마운트 시 가져온다.
@@ -70,9 +87,48 @@ export default function MembersTab({
             .catch(() => { /* 프로그램 없이도 멘토 계정은 만들 수 있어야 하므로 조용히 무시한다 */ });
     }, []);
 
-    const filteredMembers = members.filter(
-        (m) => m.name.toLowerCase().includes(searchMember.toLowerCase()) || m.email.toLowerCase().includes(searchMember.toLowerCase())
+    const roleCounts = MEMBER_ROLES.reduce(
+        (acc, role) => ({ ...acc, [role]: members.filter((m) => m.role === role).length }),
+        {} as Record<MemberRole, number>
     );
+
+    const filteredMembers = members
+        .filter((m) => roleFilter === 'ALL' || m.role === roleFilter)
+        .filter(
+            (m) => m.name.toLowerCase().includes(searchMember.toLowerCase()) || m.email.toLowerCase().includes(searchMember.toLowerCase())
+        );
+
+    /**
+     * 기존 멘티를 프로그램에 배정한다. 프로그램 화면과 같은 엔드포인트를 써서
+     * "이미 다른 프로그램 소속이면 한 번 더 확인" 규칙이 여기서도 그대로 적용된다.
+     */
+    const assignProgram = async (userId: string, programId: string) => {
+        setAssignBusy((prev) => ({ ...prev, [userId]: true }));
+        setAssignError('');
+        try {
+            const attempt = (confirmReassign: boolean) => fetch(`/api/programs/${programId}/mentees`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, ...(confirmReassign ? { confirmReassign: true } : {}) }),
+            });
+
+            let res = await attempt(false);
+            let data = await res.json().catch(() => null);
+
+            if (res.status === 409 && data?.needsReassignConfirm) {
+                if (!window.confirm(data.error)) return;
+                res = await attempt(true);
+                data = await res.json().catch(() => null);
+            }
+
+            if (!res.ok) throw new Error(data?.error || '프로그램 배정에 실패했습니다.');
+            onReload();
+        } catch (error) {
+            setAssignError(error instanceof Error ? error.message : '프로그램 배정에 실패했습니다.');
+        } finally {
+            setAssignBusy((prev) => ({ ...prev, [userId]: false }));
+        }
+    };
 
     const handleCreate = async () => {
         setIsCreating(true);
@@ -118,6 +174,31 @@ export default function MembersTab({
                     {showCreate ? '닫기' : '계정 생성'}
                 </button>
             </div>
+
+            {/* 역할별로 나눠 본다. 한 표에 섞여 있으면 누가 매니저이고 누가
+                멘티인지 한눈에 들어오지 않는다. */}
+            <div className="flex gap-1 p-1 bg-white/[0.03] border border-white/[0.06] rounded-2xl w-fit">
+                {ROLE_FILTERS.map((filter) => (
+                    <button
+                        key={filter}
+                        type="button"
+                        onClick={() => setRoleFilter(filter)}
+                        className={roleFilter === filter ? 'nav-tab-active' : 'nav-tab'}
+                        id={`admin-member-filter-${filter}`}
+                    >
+                        {ROLE_FILTER_LABELS[filter]}
+                        <span className="ml-1.5 text-[11px] opacity-70">
+                            {filter === 'ALL' ? members.length : roleCounts[filter]}
+                        </span>
+                    </button>
+                ))}
+            </div>
+
+            {assignError && (
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                    {assignError}
+                </div>
+            )}
 
             {showCreate && (
                 <div className="card space-y-4">
@@ -189,6 +270,7 @@ export default function MembersTab({
                             <tr className="border-b border-white/[0.06] bg-white/[0.02]">
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">사용자</th>
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">역할</th>
+                                <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">프로그램</th>
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">승인 상태</th>
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">이용 만료</th>
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">가입일</th>
@@ -224,6 +306,28 @@ export default function MembersTab({
                                                 <option key={r} value={r}>{MEMBER_ROLE_LABELS[r]}</option>
                                             ))}
                                         </select>
+                                    </td>
+                                    <td className="px-5 py-4">
+                                        {/* 프로그램에 속하는 것은 멘티뿐이다. 이미 등록된 멘티도
+                                            여기서 바로 배정하거나 옮길 수 있다. */}
+                                        {m.role !== 'MENTEE' ? (
+                                            <span className="text-xs text-gray-600">—</span>
+                                        ) : programs.length === 0 ? (
+                                            <span className="text-xs text-gray-600">개설된 프로그램 없음</span>
+                                        ) : (
+                                            <select
+                                                value={m.programId ?? ''}
+                                                onChange={(e) => { if (e.target.value) assignProgram(m.id, e.target.value); }}
+                                                disabled={assignBusy[m.id]}
+                                                className="input w-auto py-1.5 px-3 text-xs disabled:opacity-50"
+                                                id={`admin-member-program-${m.id}`}
+                                            >
+                                                <option value="">미배정</option>
+                                                {programs.map((p) => (
+                                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                                ))}
+                                            </select>
+                                        )}
                                     </td>
                                     <td className="px-5 py-4">
                                         {m.status === 'APPROVED' ? (

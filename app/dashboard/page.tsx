@@ -12,7 +12,7 @@ import {
     PROJECT_AI_MODE_LABELS,
     type ProjectAiMode,
 } from '@/lib/ai/project-ai-mode';
-import { canCreateProject, type MemberRole } from '@/lib/member-roles';
+import { canCreateProject, canCreateProjectForOthers, type MemberRole } from '@/lib/member-roles';
 
 interface Project {
     id: string;
@@ -64,10 +64,10 @@ export default function DashboardPage() {
         fetchRole();
     }, []);
 
-    // 프로젝트를 만들 수 있는 역할만 프로그램 목록이 필요하다. 멘티·멘토에게는
-    // 이 API 가 403 이므로 애초에 부르지 않는다.
+    // 남을 소유자로 지정해 만드는 역할만 프로그램 목록이 필요하다. 멘티는 자기
+    // 프로그램에 자기 것으로만 만들어 고를 것이 없고, /api/programs 도 403 이다.
     useEffect(() => {
-        if (!role || !canCreateProject(role)) return;
+        if (!role || !canCreateProjectForOthers(role)) return;
         fetch('/api/programs')
             .then((res) => (res.ok ? res.json() : null))
             .then((data) => {
@@ -145,8 +145,10 @@ export default function DashboardPage() {
                     detailedDescription: newProjectDetailDesc || undefined,
                     businessPlanFile,
                     aiMode: newProjectAiMode,
-                    programId: newProjectProgramId,
-                    ownerMenteeId: newProjectOwnerMenteeId,
+                    // 멘티는 보내지 않는다. 서버가 본인 프로그램·본인 소유로 정한다.
+                    ...(createsForOthers
+                        ? { programId: newProjectProgramId, ownerMenteeId: newProjectOwnerMenteeId }
+                        : {}),
                 }),
             });
             // 작성 중 세션이 만료된 경우에도 오류 문구 대신 로그인으로 보낸다.
@@ -194,6 +196,10 @@ export default function DashboardPage() {
         };
         return map[role] || { cls: 'badge-primary', label: role };
     };
+
+    // 멘티는 자기 것만, 관리자·매니저는 남의 것도 만든다. 모달이 프로그램·소유자
+    // 선택을 보여줄지 정한다.
+    const createsForOthers = role !== null && canCreateProjectForOthers(role);
 
     const displayProjects = projects;
 
@@ -407,45 +413,51 @@ export default function DashboardPage() {
                                 />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-400 mb-2">
-                                        프로그램 <span className="text-primary-400">*</span>
-                                    </label>
-                                    <select
-                                        required
-                                        value={newProjectProgramId}
-                                        onChange={(e) => setNewProjectProgramId(e.target.value)}
-                                        className="input"
-                                    >
-                                        <option value="" disabled>선택하세요</option>
-                                        {programs.map((p) => (
-                                            <option key={p.id} value={p.id}>{p.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-400 mb-2">
-                                        소유할 멘티 <span className="text-primary-400">*</span>
-                                    </label>
-                                    <select
-                                        required
-                                        value={newProjectOwnerMenteeId}
-                                        onChange={(e) => setNewProjectOwnerMenteeId(e.target.value)}
-                                        className="input"
-                                        disabled={!newProjectProgramId}
-                                    >
-                                        <option value="" disabled>선택하세요</option>
-                                        {mentees.map((m) => (
-                                            <option key={m.id} value={m.id}>{m.name} ({m.email})</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                            {newProjectProgramId && mentees.length === 0 && (
-                                <p className="text-xs text-amber-400 -mt-3">
-                                    이 프로그램에 속한 멘티가 아직 없습니다. 먼저 멘티를 초대하세요.
-                                </p>
+                            {/* 멘티는 자기 프로그램에 자기 것으로만 만든다. 고를 여지가
+                                없으므로 이 두 칸을 아예 보여주지 않는다. */}
+                            {createsForOthers && (
+                                <>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-400 mb-2">
+                                                프로그램 <span className="text-primary-400">*</span>
+                                            </label>
+                                            <select
+                                                required
+                                                value={newProjectProgramId}
+                                                onChange={(e) => setNewProjectProgramId(e.target.value)}
+                                                className="input"
+                                            >
+                                                <option value="" disabled>선택하세요</option>
+                                                {programs.map((p) => (
+                                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-400 mb-2">
+                                                소유할 멘티 <span className="text-primary-400">*</span>
+                                            </label>
+                                            <select
+                                                required
+                                                value={newProjectOwnerMenteeId}
+                                                onChange={(e) => setNewProjectOwnerMenteeId(e.target.value)}
+                                                className="input"
+                                                disabled={!newProjectProgramId}
+                                            >
+                                                <option value="" disabled>선택하세요</option>
+                                                {mentees.map((m) => (
+                                                    <option key={m.id} value={m.id}>{m.name} ({m.email})</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    {newProjectProgramId && mentees.length === 0 && (
+                                        <p className="text-xs text-amber-400 -mt-3">
+                                            이 프로그램에 속한 멘티가 아직 없습니다. 먼저 멘티를 초대하세요.
+                                        </p>
+                                    )}
+                                </>
                             )}
 
                             <div>

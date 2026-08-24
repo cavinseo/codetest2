@@ -74,12 +74,28 @@ export function canAssignMentor(role: MemberRole): boolean {
     return role === 'ADMIN' || role === 'PROGRAM_MANAGER';
 }
 
-/** 프로젝트를 새로 만들 수 있는가. */
+/**
+ * 프로젝트를 새로 만들 수 있는가.
+ *
+ * 멘티는 자기 프로젝트를 스스로 연다 — 자신이 속한 프로그램 안에, 자신을
+ * 소유자로. 관리자·매니저는 그 밖에도 남(멘티)을 소유자로 지정해 열 수 있다.
+ * "누가 만드는가"와 "누가 갖는가"가 갈리는 곳이라, 소유자 쪽 판정은
+ * lib/program.ts 의 canOwnProjectIn 이 따로 맡는다.
+ *
+ * 멘토는 만들지 못한다. 멘토는 남의 과제에 배정돼 보는 자리다.
+ */
 export function canCreateProject(role: MemberRole): boolean {
-    // 프로그램 쪽(관리자·매니저)이 과제를 열고, 멘토·멘티는 나중에 참가자로
-    // 붙는 구조다. 멘티가 스스로 과제를 만들던 예전 모델은 폐기됐다.
-    // 다만 개설 시점에 소유자로 지정하는 멘티는 이 함수와 무관하다 —
-    // "누가 만드는가"와 "누가 갖는가"는 다른 질문이다. 아래 lib/program.ts 참고.
+    return role === 'ADMIN' || role === 'PROGRAM_MANAGER' || role === 'MENTEE';
+}
+
+/**
+ * 남을 소유자로 지정해 프로젝트를 열 수 있는가.
+ *
+ * 멘티도 프로젝트를 만들 수 있게 되면서 canCreateProject 만으로는 "내 것을
+ * 만드는 것"과 "남의 것을 만들어 주는 것"을 구분할 수 없게 됐다. 이 판정이
+ * 없으면 멘티가 ownerMenteeId 를 실어 남의 이름으로 과제를 열 수 있다.
+ */
+export function canCreateProjectForOthers(role: MemberRole): boolean {
     return role === 'ADMIN' || role === 'PROGRAM_MANAGER';
 }
 

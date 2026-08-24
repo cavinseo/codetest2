@@ -5,6 +5,7 @@ import {
     accessExpiryFrom,
     canAssignMentor,
     canCreateProject,
+    canCreateProjectForOthers,
     canIssueInviteCode,
     canListAllProjects,
     canManageMembers,
@@ -59,7 +60,9 @@ const matrix: Array<{
     { role: 'ADMIN', manageMembers: true, issueInvite: true, assignMentor: true, createProject: true, listAllProjects: true, readAnyProject: true, managePrograms: true },
     { role: 'PROGRAM_MANAGER', manageMembers: false, issueInvite: true, assignMentor: true, createProject: true, listAllProjects: true, readAnyProject: true, managePrograms: true },
     { role: 'MENTOR', manageMembers: false, issueInvite: false, assignMentor: false, createProject: false, listAllProjects: false, readAnyProject: false, managePrograms: false },
-    { role: 'MENTEE', manageMembers: false, issueInvite: false, assignMentor: false, createProject: false, listAllProjects: false, readAnyProject: false, managePrograms: false },
+    // 멘티는 자기 과제를 스스로 연다. 다만 남을 소유자로 지정하지는 못한다
+    // (canCreateProjectForOthers 는 아래에서 따로 본다).
+    { role: 'MENTEE', manageMembers: false, issueInvite: false, assignMentor: false, createProject: true, listAllProjects: false, readAnyProject: false, managePrograms: false },
 ];
 
 describe.each(matrix)('$role 권한', (row) => {
@@ -88,15 +91,31 @@ describe('권한 경계 요약', () => {
         expect(canCreateProject('MENTOR')).toBe(false);
     });
 
-    it('멘티는 프로젝트를 만들지 않는다', () => {
-        // 프로그램 쪽(관리자·매니저)이 과제를 열고 멘토·멘티는 나중에 참가자로
-        // 붙는 구조로 바뀌어, 멘티가 스스로 과제를 만들던 예전 모델은 폐기됐다.
-        expect(canCreateProject('MENTEE')).toBe(false);
+    it('멘티는 자기 과제를 스스로 만든다', () => {
+        expect(canCreateProject('MENTEE')).toBe(true);
     });
 
-    it('관리자와 매니저만 프로젝트를 만든다', () => {
+    it('관리자와 매니저도 프로젝트를 만든다', () => {
         expect(canCreateProject('ADMIN')).toBe(true);
         expect(canCreateProject('PROGRAM_MANAGER')).toBe(true);
+    });
+});
+
+describe('canCreateProjectForOthers', () => {
+    // "만들 수 있다" 와 "남의 것을 만들어 줄 수 있다" 는 다른 권한이다. 이 둘이
+    // 한 함수로 합쳐지면 멘티가 ownerMenteeId 를 실어 남의 이름으로 과제를 연다.
+    it('관리자와 매니저는 남을 소유자로 지정할 수 있다', () => {
+        expect(canCreateProjectForOthers('ADMIN')).toBe(true);
+        expect(canCreateProjectForOthers('PROGRAM_MANAGER')).toBe(true);
+    });
+
+    it('멘티는 자기 것만 만든다', () => {
+        expect(canCreateProjectForOthers('MENTEE')).toBe(false);
+    });
+
+    it('멘토는 어느 쪽도 못 한다', () => {
+        expect(canCreateProject('MENTOR')).toBe(false);
+        expect(canCreateProjectForOthers('MENTOR')).toBe(false);
     });
 });
 

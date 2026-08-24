@@ -73,14 +73,14 @@ afterEach(() => {
 });
 
 describe('프로젝트 생성 권한', () => {
-    it('멘티는 만들 수 없다', async () => {
-        // 관리자·매니저가 과제를 열고 멘토·멘티는 나중에 참가자로 붙는 구조다.
-        authAs('MENTEE');
+    it('멘티는 자기 과제를 만들 수 있다', async () => {
+        authAs('MENTEE', 'mentee_1');
+        findUniqueUser.mockResolvedValue({ programId: 'prog_1', program: { name: '프로그램 1' } });
 
-        const res = await POST(postRequest(validCreateBody));
+        const res = await POST(postRequest({ name: '새 과제' }));
 
-        expect(res.status).toBe(403);
-        expect(createProject).not.toHaveBeenCalled();
+        expect(res.status).toBe(200);
+        expect(createProject).toHaveBeenCalled();
     });
 
     it('관리자는 만들 수 있다', async () => {
@@ -111,6 +111,50 @@ describe('프로젝트 생성 권한', () => {
     });
 });
 
+describe('멘티가 자기 과제를 만들 때', () => {
+    beforeEach(() => {
+        authAs('MENTEE', 'mentee_1');
+        findUniqueUser.mockResolvedValue({ programId: 'prog_1', program: { name: '프로그램 1' } });
+    });
+
+    it('자기 프로그램에 자기 소유로 만든다', async () => {
+        await POST(postRequest({ name: '새 과제' }));
+
+        const data = createProject.mock.calls[0][0].data;
+        expect(data.programId).toBe('prog_1');
+        expect(data.ownerId).toBe('mentee_1');
+    });
+
+    it('본문에 실린 programId·ownerMenteeId 를 무시한다', async () => {
+        // 이 값을 믿으면 멘티가 남의 프로그램에 남의 이름으로 과제를 열 수 있다.
+        await POST(postRequest({
+            name: '새 과제', programId: 'prog_남의것', ownerMenteeId: 'mentee_다른사람',
+        }));
+
+        const data = createProject.mock.calls[0][0].data;
+        expect(data.programId).toBe('prog_1');
+        expect(data.ownerId).toBe('mentee_1');
+    });
+
+    it('소속 프로그램이 없으면 만들 수 없다', async () => {
+        findUniqueUser.mockResolvedValue({ programId: null, program: null });
+
+        const res = await POST(postRequest({ name: '새 과제' }));
+        const body = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(body.error).toContain('소속된 프로그램이 없어');
+        expect(createProject).not.toHaveBeenCalled();
+    });
+
+    it('프로그램 조회나 권한 검사 경로를 타지 않는다', async () => {
+        // 멘티는 자기 프로그램으로 정해져 있어 프로그램을 조회할 이유가 없다.
+        await POST(postRequest({ name: '새 과제' }));
+
+        expect(findUniqueProgram).not.toHaveBeenCalled();
+    });
+});
+
 describe('프로젝트 생성 시 프로그램·소유자 검증', () => {
     beforeEach(() => authAs('ADMIN'));
 
@@ -130,6 +174,14 @@ describe('프로젝트 생성 시 프로그램·소유자 검증', () => {
         const res = await POST(postRequest(validCreateBody));
 
         expect(res.status).toBe(403);
+        expect(createProject).not.toHaveBeenCalled();
+    });
+
+    it('프로그램이나 소유자를 안 보내면 막는다', async () => {
+        // 관리자·매니저는 반드시 골라야 한다. 안 고르면 누구 것인지 정해지지 않는다.
+        expect((await POST(postRequest({ name: '새 과제' }))).status).toBe(400);
+        expect((await POST(postRequest({ name: '새 과제', programId: 'prog_1' }))).status).toBe(400);
+        expect((await POST(postRequest({ name: '새 과제', ownerMenteeId: 'mentee_1' }))).status).toBe(400);
         expect(createProject).not.toHaveBeenCalled();
     });
 

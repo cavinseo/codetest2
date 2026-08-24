@@ -691,6 +691,7 @@ export default function AdminModePage() {
                                 onSetRole={handleSetRole}
                                 onExtendAccess={handleExtendAccess}
                                 onCreate={handleCreateMember}
+                                onReload={load}
                             />
                         )}
 
