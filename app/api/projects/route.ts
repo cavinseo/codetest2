@@ -61,7 +61,10 @@ export async function GET(request: NextRequest) {
                     select: { role: true },
                 },
                 _count: {
-                    select: { members: true },
+                    // 대시보드 상단 통계가 이 값을 합산해 보여준다. 목록 조회가
+                    // 이미 역할별로 범위를 좁히므로(scope), 합계도 자연히 본인
+                    // 몫만 잡힌다.
+                    select: { members: true, kanoInvitations: true, qfdMatrices: true },
                 },
             },
             orderBy: { updatedAt: 'desc' },
@@ -77,6 +80,8 @@ export async function GET(request: NextRequest) {
                 programId: p.programId,
                 programName: p.program.name,
                 memberCount: p._count.members + 1, // 소유자 포함
+                surveyCount: p._count.kanoInvitations,
+                qfdMatrixCount: p._count.qfdMatrices,
                 role: resolveProjectRole({
                     systemRole: authResult.role,
                     isOwner: p.ownerId === userId,
@@ -198,6 +203,9 @@ export async function POST(request: NextRequest) {
                 updatedAt: newProject.updatedAt.toISOString(),
                 programName,
                 memberCount: 1,
+                // 갓 만든 프로젝트라 설문도 QFD 도 아직 없다.
+                surveyCount: 0,
+                qfdMatrixCount: 0,
                 role: 'OWNER',
             },
         });

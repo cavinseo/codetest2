@@ -21,6 +21,8 @@ interface Project {
     updatedAt: string;
     programName: string;
     memberCount: number;
+    surveyCount: number;
+    qfdMatrixCount: number;
     role: 'OWNER' | 'EDITOR' | 'COACH' | 'ADMIN';
 }
 
@@ -203,6 +205,13 @@ export default function DashboardPage() {
 
     const displayProjects = projects;
 
+    // 상단 통계는 전부 이 회원에게 보이는 프로젝트에서만 뽑는다. Kano 설문과
+    // QFD 매트릭스는 예전에 12·3 으로 박혀 있어, 프로젝트가 하나도 없는 회원에게도
+    // 남의 숫자가 그대로 보였다.
+    const teamMemberCount = displayProjects.reduce((acc, p) => acc + p.memberCount, 0);
+    const surveyCount = displayProjects.reduce((acc, p) => acc + (p.surveyCount ?? 0), 0);
+    const qfdMatrixCount = displayProjects.reduce((acc, p) => acc + (p.qfdMatrixCount ?? 0), 0);
+
     return (
         <div className="min-h-screen bg-surface-900 bg-grid relative">
             {/* Subtle Orbs */}
@@ -269,9 +278,9 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                     {[
                         { label: '전체 프로젝트', value: displayProjects.length, icon: '📁', accent: 'from-blue-500/20 to-cyan-500/20' },
-                        { label: '팀 멤버', value: displayProjects.reduce((acc, p) => acc + p.memberCount, 0), icon: '👥', accent: 'from-purple-500/20 to-pink-500/20' },
-                        { label: 'Kano 설문', value: 12, icon: '📊', accent: 'from-emerald-500/20 to-teal-500/20' },
-                        { label: 'QFD 매트릭스', value: 3, icon: '🔗', accent: 'from-amber-500/20 to-orange-500/20' },
+                        { label: '팀 멤버', value: teamMemberCount, icon: '👥', accent: 'from-purple-500/20 to-pink-500/20' },
+                        { label: 'Kano 설문', value: surveyCount, icon: '📊', accent: 'from-emerald-500/20 to-teal-500/20' },
+                        { label: 'QFD 매트릭스', value: qfdMatrixCount, icon: '🔗', accent: 'from-amber-500/20 to-orange-500/20' },
                     ].map((stat) => (
                         <div key={stat.label} className="stat-card">
                             <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.accent} flex items-center justify-center text-xl mx-auto mb-3`}>

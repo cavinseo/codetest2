@@ -52,7 +52,7 @@ function projectRow(overrides: {
         createdAt: new Date('2026-01-01T00:00:00Z'),
         updatedAt: new Date('2026-01-02T00:00:00Z'),
         program: { name: '프로그램 1' },
-        _count: { members: 0 },
+        _count: { members: 0, kanoInvitations: 0, qfdMatrices: 0 },
         ...overrides,
     };
 }
@@ -325,6 +325,37 @@ describe('프로젝트 목록의 role 필드', () => {
         const body = await res.json();
 
         expect(body.projects[0].role).toBe('OWNER');
+    });
+
+    it('대시보드 통계용 건수를 프로젝트마다 함께 내려준다', async () => {
+        // 예전에는 대시보드가 Kano 설문 12, QFD 매트릭스 3 을 상수로 박아 두어
+        // 프로젝트가 하나도 없는 회원에게도 남의 숫자가 보였다. 화면이 합산할
+        // 실제 값을 여기서 내려준다.
+        authAs('MENTEE', 'mentee_1');
+        findManyProject.mockResolvedValue([
+            projectRow({
+                ownerId: 'mentee_1', members: [],
+                _count: { members: 2, kanoInvitations: 20, qfdMatrices: 16 },
+            }),
+        ]);
+
+        const res = await GET(new NextRequest('http://localhost/api/projects'));
+        const body = await res.json();
+
+        expect(body.projects[0].surveyCount).toBe(20);
+        expect(body.projects[0].qfdMatrixCount).toBe(16);
+        expect(body.projects[0].memberCount).toBe(3); // 소유자 포함
+    });
+
+    it('설문·QFD 가 없으면 0 으로 내려준다', async () => {
+        authAs('MENTEE', 'mentee_1');
+        findManyProject.mockResolvedValue([projectRow({ ownerId: 'mentee_1', members: [] })]);
+
+        const res = await GET(new NextRequest('http://localhost/api/projects'));
+        const body = await res.json();
+
+        expect(body.projects[0].surveyCount).toBe(0);
+        expect(body.projects[0].qfdMatrixCount).toBe(0);
     });
 
     it('소속 프로그램명을 함께 내려준다', async () => {
