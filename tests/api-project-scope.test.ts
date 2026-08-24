@@ -63,13 +63,14 @@ afterEach(() => {
 });
 
 describe('프로젝트 생성 권한', () => {
-    it('멘티는 만들 수 있다', async () => {
+    it('멘티는 만들 수 없다', async () => {
+        // 관리자·매니저가 과제를 열고 멘토·멘티는 나중에 참가자로 붙는 구조다.
         authAs('MENTEE');
 
         const res = await POST(postRequest({ name: '새 과제' }));
 
-        expect(res.status).toBe(200);
-        expect(createProject).toHaveBeenCalled();
+        expect(res.status).toBe(403);
+        expect(createProject).not.toHaveBeenCalled();
     });
 
     it('관리자는 만들 수 있다', async () => {
@@ -81,7 +82,7 @@ describe('프로젝트 생성 권한', () => {
     });
 
     it('멘토는 만들 수 없다', async () => {
-        // 멘티가 과제를 만들고 멘토가 붙는 구조다.
+        // 프로젝트 생성은 관리자·매니저만 한다.
         authAs('MENTOR');
 
         const res = await POST(postRequest({ name: '새 과제' }));
@@ -90,13 +91,13 @@ describe('프로젝트 생성 권한', () => {
         expect(createProject).not.toHaveBeenCalled();
     });
 
-    it('매니저는 만들 수 없다', async () => {
+    it('매니저는 만들 수 있다', async () => {
         authAs('PROGRAM_MANAGER');
 
         const res = await POST(postRequest({ name: '새 과제' }));
 
-        expect(res.status).toBe(403);
-        expect(createProject).not.toHaveBeenCalled();
+        expect(res.status).toBe(200);
+        expect(createProject).toHaveBeenCalled();
     });
 });
 

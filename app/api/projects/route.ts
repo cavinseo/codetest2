@@ -85,10 +85,10 @@ export async function POST(request: NextRequest) {
     if (authResult instanceof NextResponse) return authResult;
     const { userId } = authResult;
 
-    // 멘티가 과제를 만들고 멘토가 붙는 구조다. 멘토·매니저는 만들지 않는다.
+    // 관리자·매니저가 과제를 열고 멘토·멘티는 나중에 참가자로 붙는 구조다.
     if (!canCreateProject(authResult.role)) {
         return NextResponse.json(
-            { error: '프로젝트를 만들 권한이 없습니다. 멘티 계정으로 생성할 수 있습니다.' },
+            { error: '프로젝트를 만들 권한이 없습니다. 관리자 또는 프로그램 매니저 계정으로 생성할 수 있습니다.' },
             { status: 403 }
         );
     }

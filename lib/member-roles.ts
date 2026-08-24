@@ -5,9 +5,9 @@
 // 무엇을 할 수 있는가"를 정한다.
 //
 //   ADMIN            모든 권한
-//   PROGRAM_MANAGER  멘토 배정, 초대 코드 발행. 멘토를 겸할 수 있다
+//   PROGRAM_MANAGER  멘토 배정, 초대 코드 발행, 프로젝트 생성. 멘토를 겸할 수 있다
 //   MENTOR           배정된 프로젝트만 열람(읽기 전용)
-//   MENTEE           본인이 만든 프로젝트만. 프로젝트 생성 가능
+//   MENTEE           배정된 프로젝트만. 프로젝트는 만들지 못한다
 
 export const MEMBER_ROLES = ['ADMIN', 'PROGRAM_MANAGER', 'MENTOR', 'MENTEE'] as const;
 export type MemberRole = (typeof MEMBER_ROLES)[number];
@@ -53,8 +53,9 @@ export function canAssignMentor(role: MemberRole): boolean {
 
 /** 프로젝트를 새로 만들 수 있는가. */
 export function canCreateProject(role: MemberRole): boolean {
-    // 멘티가 과제를 만들고 멘토가 붙는 구조다. 멘토는 만들지 않는다.
-    return role === 'ADMIN' || role === 'MENTEE';
+    // 프로그램 쪽(관리자·매니저)이 과제를 열고, 멘토·멘티는 나중에 참가자로
+    // 붙는 구조다. 멘티가 스스로 과제를 만들던 예전 모델은 폐기됐다.
+    return role === 'ADMIN' || role === 'PROGRAM_MANAGER';
 }
 
 /**
@@ -101,23 +102,27 @@ export function isAccessExpired(accessExpiresAt: Date | null | undefined, now: D
  * from 에서 to 로 역할을 바꿀 수 있는가.
  *
  *   from \ to         ADMIN  PROGRAM_MANAGER  MENTOR  MENTEE
- *   ADMIN               가능      가능          가능    불가
- *   PROGRAM_MANAGER      가능      가능          가능    불가
- *   MENTOR               가능      가능          가능    불가
+ *   ADMIN               가능      불가          불가    불가
+ *   PROGRAM_MANAGER      불가      가능          가능    불가
+ *   MENTOR               불가      가능          가능    불가
  *   MENTEE               불가      불가          불가    가능
  *
- * 멘티는 따로 떨어진 자리다. 멘티로 들어오지도, 멘티에서 나가지도 못한다.
- * 멘티는 프로그램에 참가한 기업 담당자이지 운영 인력이 아니기 때문이다.
- * 멘티가 되는 길은 가입할 때 멘티를 선택하거나, 멘티용 초대 코드를 받거나,
- * 관리자가 멘티 계정을 직접 만드는 세 가지뿐이며 전부 이 함수 밖에서 일어난다.
- * 멘토가 되는 길도 마찬가지다.
+ * 관리자와 멘티는 각자 따로 떨어진 자리라 역할 전환이 건드리지 않는다.
+ * 관리자는 회원 전환 밖에서(시딩, DB 직접 수정, ADMIN_EMAILS 환경변수) 만들어지고
+ * 물러나는 자리이므로, 역할 전환으로는 관리자로 들어오지도 관리자에서
+ * 나가지도 못한다. 멘티가 되는 길은 가입할 때 멘티를 선택하거나, 멘티용
+ * 초대 코드를 받거나, 관리자가 멘티 계정을 직접 만드는 세 가지뿐이며 이
+ * 역시 전부 이 함수 밖에서 일어난다. 멘토가 되는 길도 마찬가지다.
  *
- * 나머지 셋(관리자·매니저·멘토)은 운영 인력이라 서로 오갈 수 있다. 매니저는
- * 멘토 중에서 고르는 자리이고, 관리자는 임명과 해임 경로가 있어야 한다.
+ * 실제로 오가는 전환은 매니저 ↔ 멘토 하나뿐이다. 매니저는 멘토 중에서
+ * 고르는 자리이고, 물러나면 다시 멘토로 돌아간다.
  */
 export function canTransitionRole(from: MemberRole, to: MemberRole): boolean {
     if (from === to) return true;
-    // 멘티는 양방향 모두 막는다. 들어오지도 나가지도 못한다.
-    if (from === 'MENTEE' || to === 'MENTEE') return false;
-    return true;
+    // 실질적인 전환은 매니저 ↔ 멘토뿐이다. 그 밖에는 전부 같은 역할일 때만
+    // 통과하므로(위에서 이미 걸러졌다) 여기까지 왔다면 막는다.
+    return (
+        (from === 'PROGRAM_MANAGER' && to === 'MENTOR') ||
+        (from === 'MENTOR' && to === 'PROGRAM_MANAGER')
+    );
 }

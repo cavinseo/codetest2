@@ -93,9 +93,10 @@ export async function PATCH(request: NextRequest) {
             const currentRole = parseMemberRole(target.role) ?? 'MENTEE';
 
             if (!canTransitionRole(currentRole, nextRole)) {
-                // 멘티→매니저, 멘티→멘토, 매니저→멘티, 멘토→멘티 등 막히는 경우가
-                // 여럿이라 특정 경로 하나를 짚어 안내하면 다른 경우에는 틀린 말이
-                // 된다(예: "먼저 멘토로 바꾸세요" 는 멘토 경유도 막힌 지금은 거짓이다).
+                // 멘티→매니저, 멘티→멘토, 매니저→멘티, 멘토→멘티, 그리고 관리자로
+                // 들어오거나 관리자에서 나가는 모든 방향 등 막히는 경우가 여럿이라
+                // 특정 경로 하나를 짚어 안내하면 다른 경우에는 틀린 말이 된다(예:
+                // "먼저 멘토로 바꾸세요" 는 멘토 경유도 막힌 지금은 거짓이다).
                 // 모든 차단 사례에 그대로 맞는 일반 메시지로 통일한다.
                 return NextResponse.json(
                     { error: '허용되지 않는 역할 변경입니다.' },
@@ -103,30 +104,18 @@ export async function PATCH(request: NextRequest) {
                 );
             }
 
-            // 마지막 관리자를 강등하면 승인·관리 기능이 영구히 잠긴다.
-            // requireAdmin 이 보는 값이 isAdmin 이므로 삭제 가드와 같은 기준으로 센다.
-            if (target.isAdmin && nextRole !== 'ADMIN') {
-                const adminCount = await prisma.user.count({ where: { isAdmin: true } });
-                if (adminCount <= 1) {
-                    return NextResponse.json(
-                        { error: '마지막 관리자 계정은 강등할 수 없습니다.' },
-                        { status: 400 }
-                    );
-                }
-            }
-
-            // role 이 단일 진실이고 isAdmin 은 동기화 대상이다. 둘이 어긋나면
-            // requireAdmin 과 프로젝트 접근 판정이 서로 다른 답을 낸다.
-            const isAdmin = nextRole === 'ADMIN';
+            // 관리자는 canTransitionRole 이 같은 역할로의 전환만 허용하므로
+            // (관리자는 시딩·DB 직접 수정·ADMIN_EMAILS 로만 임명·해임된다) 이
+            // 지점에서 nextRole 이 ADMIN 이면 currentRole 도 이미 ADMIN 이다.
+            // "마지막 관리자 강등 금지" 가드와 isAdmin 동기화는 그래서 더 이상
+            // 이 액션이 할 일이 아니다 — 관리자 강등 자체가 일어나지 않는다.
             // 권한이 줄어드는 변경은 발급된 세션을 끊어야 즉시 적용된다.
-            const losesPower = ROLE_POWER[nextRole] < ROLE_POWER[currentRole]
-                || (target.isAdmin && !isAdmin);
+            const losesPower = ROLE_POWER[nextRole] < ROLE_POWER[currentRole];
 
             const updated = await prisma.user.update({
                 where: { id: userId },
                 data: {
                     role: nextRole,
-                    isAdmin,
                     ...(losesPower ? { sessionVersion: { increment: 1 } } : {}),
                 },
                 select: { id: true, email: true, role: true, isAdmin: true },

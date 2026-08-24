@@ -75,6 +75,16 @@ describe('역할 변경', () => {
         expect(updateUser.mock.calls[0][0].data.role).toBe('PROGRAM_MANAGER');
     });
 
+    it('승격하면 세션을 끊지 않는다', async () => {
+        // 권한이 늘어나는 변경까지 세션을 끊으면 승격 직후 로그아웃되는
+        // 불편이 생긴다. 세션 종료는 권한이 줄어드는 변경에만 필요하다.
+        await PATCH(jsonRequest('PATCH', {
+            userId: 'user_2', action: 'setRole', role: 'PROGRAM_MANAGER',
+        }));
+
+        expect(updateUser.mock.calls[0][0].data.sessionVersion).toBeUndefined();
+    });
+
     it('멘티를 매니저로 올릴 수 없다', async () => {
         // 멘티는 제자리다. 멘토를 거치는 승격도 막혀 있어 매니저가 될 길이 없다.
         findUniqueUser.mockResolvedValue({ id: 'user_2', email: 'u@x.com', role: 'MENTEE', isAdmin: false });
@@ -116,18 +126,28 @@ describe('역할 변경', () => {
         expect(updateUser).not.toHaveBeenCalled();
     });
 
-    it('관리자로 올리면 isAdmin 도 함께 켠다', async () => {
-        const res = await PATCH(jsonRequest('PATCH', {
+    it('매니저·멘토는 관리자로 올릴 수 없다', async () => {
+        // 관리자는 시딩·DB 직접 수정·ADMIN_EMAILS 로만 생긴다. setRole 로는
+        // 어느 역할에서도 관리자로 들어오지 못한다.
+        findUniqueUser.mockResolvedValue({ id: 'user_2', email: 'u@x.com', role: 'MENTOR', isAdmin: false });
+        const mentorRes = await PATCH(jsonRequest('PATCH', {
             userId: 'user_2', action: 'setRole', role: 'ADMIN',
         }));
+        expect(mentorRes.status).toBe(400);
 
-        expect(res.status).toBe(200);
-        expect(updateUser.mock.calls[0][0].data.isAdmin).toBe(true);
+        findUniqueUser.mockResolvedValue({ id: 'user_2', email: 'u@x.com', role: 'PROGRAM_MANAGER', isAdmin: false });
+        const managerRes = await PATCH(jsonRequest('PATCH', {
+            userId: 'user_2', action: 'setRole', role: 'ADMIN',
+        }));
+        expect(managerRes.status).toBe(400);
+
+        expect(updateUser).not.toHaveBeenCalled();
     });
 
-    it('마지막 관리자를 강등할 수 없다', async () => {
+    it('관리자는 강등할 수 없다', async () => {
+        // 예전에는 마지막 관리자만 막았지만, 이제 관리자는 역할 전환 자체가
+        // 막혀 있어(canTransitionRole) 인원수를 세어볼 필요조차 없다.
         findUniqueUser.mockResolvedValue({ id: 'user_2', email: 'u@x.com', role: 'ADMIN', isAdmin: true });
-        countUser.mockResolvedValue(1);
 
         const res = await PATCH(jsonRequest('PATCH', {
             userId: 'user_2', action: 'setRole', role: 'MENTOR',
@@ -135,31 +155,18 @@ describe('역할 변경', () => {
 
         expect(res.status).toBe(400);
         expect(updateUser).not.toHaveBeenCalled();
+        expect(countUser).not.toHaveBeenCalled();
     });
 
-    it('강등하면 발급된 세션을 끊는다', async () => {
-        // 권한이 줄어드는 변경은 로그인 중인 사용자에게도 즉시 적용돼야 한다.
-        findUniqueUser.mockResolvedValue({ id: 'user_2', email: 'u@x.com', role: 'ADMIN', isAdmin: true });
-        countUser.mockResolvedValue(3);
-
+    it('역할을 바꿔도 isAdmin 은 더 이상 손대지 않는다', async () => {
+        // role 이 ADMIN 을 넘나들 수 없어졌으니(canTransitionRole 참고) 이 액션이
+        // isAdmin 을 동기화할 일이 없다. 관리자 지정·해제는 이 함수 밖에서 일어난다.
         await PATCH(jsonRequest('PATCH', {
-            userId: 'user_2', action: 'setRole', role: 'MENTOR',
+            userId: 'user_2', action: 'setRole', role: 'PROGRAM_MANAGER',
         }));
 
-        expect(updateUser.mock.calls[0][0].data.sessionVersion).toEqual({ increment: 1 });
-    });
-
-    it('강등하면 isAdmin 도 함께 끈다', async () => {
-        // role 이 단일 진실이다. 둘이 어긋나면 앱의 절반에서만 관리자가 된다.
-        findUniqueUser.mockResolvedValue({ id: 'user_2', email: 'u@x.com', role: 'ADMIN', isAdmin: true });
-        countUser.mockResolvedValue(3);
-
-        await PATCH(jsonRequest('PATCH', {
-            userId: 'user_2', action: 'setRole', role: 'MENTOR',
-        }));
-
-        expect(updateUser.mock.calls[0][0].data.role).toBe('MENTOR');
-        expect(updateUser.mock.calls[0][0].data.isAdmin).toBe(false);
+        expect(updateUser.mock.calls[0][0].data.role).toBe('PROGRAM_MANAGER');
+        expect('isAdmin' in updateUser.mock.calls[0][0].data).toBe(false);
     });
 
     it('매니저를 멘토로 내릴 때도 세션을 끊는다', async () => {

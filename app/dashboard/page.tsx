@@ -231,7 +231,7 @@ export default function DashboardPage() {
                             {displayProjects.length}개의 활성 프로젝트
                         </p>
                     </div>
-                    {/* 프로젝트 생성 권한이 없는 역할(멘토·매니저)에게는 버튼을 감춘다. API 가 403 으로 막기 때문이다. */}
+                    {/* 프로젝트 생성 권한이 없는 역할(멘토·멘티)에게는 버튼을 감춘다. API 가 403 으로 막기 때문이다. */}
                     {role !== null && canCreateProject(role) && (
                         <button
                             onClick={() => setShowNewProjectModal(true)}
@@ -299,7 +299,9 @@ export default function DashboardPage() {
                                 프로젝트가 없습니다
                             </h3>
                             <p className="text-gray-500 mb-6 text-sm">
-                                새 프로젝트를 만들어 품질 개선을 시작하세요
+                                {role !== null && canCreateProject(role)
+                                    ? '새 프로젝트를 만들어 품질 개선을 시작하세요'
+                                    : '프로젝트에 참가자로 추가되면 이곳에 표시됩니다'}
                             </p>
                             {role !== null && canCreateProject(role) && (
                                 <button

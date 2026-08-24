@@ -53,9 +53,9 @@ const matrix: Array<{
     readAnyProject: boolean;
 }> = [
     { role: 'ADMIN', manageMembers: true, issueInvite: true, assignMentor: true, createProject: true, listAllProjects: true, readAnyProject: true },
-    { role: 'PROGRAM_MANAGER', manageMembers: false, issueInvite: true, assignMentor: true, createProject: false, listAllProjects: true, readAnyProject: true },
+    { role: 'PROGRAM_MANAGER', manageMembers: false, issueInvite: true, assignMentor: true, createProject: true, listAllProjects: true, readAnyProject: true },
     { role: 'MENTOR', manageMembers: false, issueInvite: false, assignMentor: false, createProject: false, listAllProjects: false, readAnyProject: false },
-    { role: 'MENTEE', manageMembers: false, issueInvite: false, assignMentor: false, createProject: true, listAllProjects: false, readAnyProject: false },
+    { role: 'MENTEE', manageMembers: false, issueInvite: false, assignMentor: false, createProject: false, listAllProjects: false, readAnyProject: false },
 ];
 
 describe.each(matrix)('$role 권한', (row) => {
@@ -81,7 +81,17 @@ describe('권한 경계 요약', () => {
 
     it('멘토는 프로젝트를 만들지 않는다', () => {
         expect(canCreateProject('MENTOR')).toBe(false);
-        expect(canCreateProject('MENTEE')).toBe(true);
+    });
+
+    it('멘티는 프로젝트를 만들지 않는다', () => {
+        // 프로그램 쪽(관리자·매니저)이 과제를 열고 멘토·멘티는 나중에 참가자로
+        // 붙는 구조로 바뀌어, 멘티가 스스로 과제를 만들던 예전 모델은 폐기됐다.
+        expect(canCreateProject('MENTEE')).toBe(false);
+    });
+
+    it('관리자와 매니저만 프로젝트를 만든다', () => {
+        expect(canCreateProject('ADMIN')).toBe(true);
+        expect(canCreateProject('PROGRAM_MANAGER')).toBe(true);
     });
 });
 
@@ -173,31 +183,27 @@ describe('canTransitionRole', () => {
         expect(canTransitionRole('MENTEE', 'MENTOR')).toBe(false);
     });
 
-    it('관리자에서 나가는 전환은 열려 있다', () => {
-        // 관리자를 해임할 길이 없으면 마지막 관리자를 바꿀 수 없다.
-        expect(canTransitionRole('ADMIN', 'MENTOR')).toBe(true);
+    it('관리자는 다른 역할로 옮겨가지 않는다', () => {
+        // 관리자는 시딩·DB 직접 수정·ADMIN_EMAILS 환경변수처럼 회원 전환 밖에서만
+        // 생기고 물러난다. 그래서 역할 전환으로는 관리자를 내려오게 할 수 없다.
+        expect(canTransitionRole('ADMIN', 'PROGRAM_MANAGER')).toBe(false);
+        expect(canTransitionRole('ADMIN', 'MENTOR')).toBe(false);
+        expect(canTransitionRole('ADMIN', 'MENTEE')).toBe(false);
     });
 
-    it('멘토와 매니저는 관리자가 될 수 있다', () => {
-        expect(canTransitionRole('MENTOR', 'ADMIN')).toBe(true);
-        expect(canTransitionRole('PROGRAM_MANAGER', 'ADMIN')).toBe(true);
-    });
-
-    it('관리자 예외는 매니저가 얽힌 전환에도 적용된다', () => {
-        // 매니저 조건(멘토 ↔ 매니저)보다 관리자 예외가 먼저 걸려야 한다.
-        expect(canTransitionRole('ADMIN', 'PROGRAM_MANAGER')).toBe(true);
-        expect(canTransitionRole('PROGRAM_MANAGER', 'ADMIN')).toBe(true);
+    it('멘토와 매니저는 관리자가 될 수 없다', () => {
+        // 관리자로 들어오는 길도 마찬가지로 막혀 있다.
+        expect(canTransitionRole('MENTOR', 'ADMIN')).toBe(false);
+        expect(canTransitionRole('PROGRAM_MANAGER', 'ADMIN')).toBe(false);
     });
 
     it('멘티는 관리자도 될 수 없다', () => {
-        // 멘티 제자리 규칙이 관리자 예외보다 먼저 걸린다. 순서가 뒤바뀌면
-        // 멘티가 관리자로 바로 올라가는 길이 열린다.
         expect(canTransitionRole('MENTEE', 'ADMIN')).toBe(false);
     });
 
     it('관리자도 멘티로는 내려가지 않는다', () => {
-        // 멘티는 운영 인력이 아니라 참가자다. 관리자를 물러나게 하려면
-        // 멘토나 매니저로 옮긴다.
+        // 멘티는 운영 인력이 아니라 참가자다. 관리자는 역할 전환 밖에서만
+        // 물러난다.
         expect(canTransitionRole('ADMIN', 'MENTEE')).toBe(false);
     });
 
@@ -213,18 +219,23 @@ describe('canTransitionRole', () => {
         expect(canTransitionRole('MENTEE', 'MENTEE')).toBe(true);
     });
 
+    it('관리자에서 관리자로의 전환도 허용한다', () => {
+        // 값을 바꾸지 않는 자기 자신 전환까지 막을 이유는 없다.
+        expect(canTransitionRole('ADMIN', 'ADMIN')).toBe(true);
+    });
+
     // 16개 조합을 전부 표로 확인한다. canTransitionRole 문서의 표를 그대로
     // 옮긴 것이라, 규칙이 바뀌면 이 표만 고치면 무엇이 바뀌었는지 한눈에 보인다.
     const transitionMatrix: Array<{ from: MemberRole; to: MemberRole; allowed: boolean }> = [
         { from: 'ADMIN', to: 'ADMIN', allowed: true },
-        { from: 'ADMIN', to: 'PROGRAM_MANAGER', allowed: true },
-        { from: 'ADMIN', to: 'MENTOR', allowed: true },
+        { from: 'ADMIN', to: 'PROGRAM_MANAGER', allowed: false },
+        { from: 'ADMIN', to: 'MENTOR', allowed: false },
         { from: 'ADMIN', to: 'MENTEE', allowed: false },
-        { from: 'PROGRAM_MANAGER', to: 'ADMIN', allowed: true },
+        { from: 'PROGRAM_MANAGER', to: 'ADMIN', allowed: false },
         { from: 'PROGRAM_MANAGER', to: 'PROGRAM_MANAGER', allowed: true },
         { from: 'PROGRAM_MANAGER', to: 'MENTOR', allowed: true },
         { from: 'PROGRAM_MANAGER', to: 'MENTEE', allowed: false },
-        { from: 'MENTOR', to: 'ADMIN', allowed: true },
+        { from: 'MENTOR', to: 'ADMIN', allowed: false },
         { from: 'MENTOR', to: 'PROGRAM_MANAGER', allowed: true },
         { from: 'MENTOR', to: 'MENTOR', allowed: true },
         { from: 'MENTOR', to: 'MENTEE', allowed: false },
