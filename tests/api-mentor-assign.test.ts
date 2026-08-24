@@ -130,6 +130,17 @@ describe('배정 대상 역할', () => {
         expect(createMember).not.toHaveBeenCalled();
     });
 
+    it('관리자는 멘토로 배정할 수 없다', async () => {
+        // 관리자는 독립적인 관리자 역할만 한다. 모든 프로젝트를 열람하고
+        // 멘토를 배정하되, 스스로 멘토로 배정되지는 않는다.
+        findUniqueUser.mockResolvedValue({ id: 'admin_2', role: 'ADMIN', name: '관리자', email: 'a2@x.com' });
+
+        const res = await POST(jsonRequest('POST', { userId: 'admin_2' }), params);
+
+        expect(res.status).toBe(400);
+        expect(createMember).not.toHaveBeenCalled();
+    });
+
     it('이미 배정된 사람은 중복 배정하지 않는다', async () => {
         findUniqueMember.mockResolvedValue({ id: 'pm_existing', role: 'COACH' });
 
