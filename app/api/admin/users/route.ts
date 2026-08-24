@@ -13,7 +13,7 @@ import { escapeHtml } from '@/lib/html-escape';
 import { buildTempPasswordEmail } from '@/lib/temp-password-email';
 import { memberProfileSchemaFor } from '@/lib/member-profile';
 import {
-    accessExpiryFrom, canTransitionRole, parseInvitableRole,
+    accessExpiryFrom, canTransitionRole, parseDirectCreateRole,
     parseMemberRole, MEMBER_ROLE_LABELS, type MemberRole,
 } from '@/lib/member-roles';
 
@@ -197,6 +197,9 @@ const createUserSchema = z.object({
     name: z.string().min(1, '이름을 입력하세요.'),
     email: z.string().email('유효한 이메일을 입력하세요.'),
     role: z.string(),
+    // 멘티 계정을 만들 때만 의미가 있다. 비워 두면 어느 프로그램에도 속하지
+    // 않은 멘티가 되고, 프로젝트 소유자로 지정될 때까지는 그 상태로 남는다.
+    programId: z.string().min(1).optional(),
     accessDurationDays: z.number().int().min(1).max(365).optional(),
     profile: z.record(z.unknown()),
 });
@@ -223,12 +226,29 @@ export async function POST(request: NextRequest) {
         }
 
         // 매니저는 멘토에서 승격으로만 생긴다. 관리자도 여기서 만들지 않는다.
-        const role = parseInvitableRole(parsed.data.role);
+        const role = parseDirectCreateRole(parsed.data.role);
         if (!role) {
             return NextResponse.json(
                 { error: '멘토 또는 멘티 계정만 만들 수 있습니다.' },
                 { status: 400 }
             );
+        }
+
+        // 멘티만 프로그램에 속한다. 멘토에 programId 를 보내는 것은 클라이언트
+        // 실수이므로 조용히 무시하지 않고 막는다.
+        if (parsed.data.programId && role !== 'MENTEE') {
+            return NextResponse.json({ error: '프로그램은 멘티 계정에만 지정할 수 있습니다.' }, { status: 400 });
+        }
+        let programId: string | null = null;
+        if (parsed.data.programId) {
+            const program = await prisma.program.findUnique({
+                where: { id: parsed.data.programId },
+                select: { id: true },
+            });
+            if (!program) {
+                return NextResponse.json({ error: '프로그램을 찾을 수 없습니다.' }, { status: 404 });
+            }
+            programId = program.id;
         }
 
         // 로그인(app/api/auth/login/route.ts)은 입력값을 그대로(대소문자 구분) 조회하므로
@@ -271,6 +291,7 @@ export async function POST(request: NextRequest) {
                     accessExpiresAt: parsed.data.accessDurationDays
                         ? accessExpiryFrom(now, parsed.data.accessDurationDays)
                         : null,
+                    programId,
                 },
             });
 
@@ -359,6 +380,30 @@ export async function DELETE(request: NextRequest) {
                     { status: 400 }
                 );
             }
+        }
+
+        // 멘티는 다르게 다룬다: 소유한 프로젝트가 사라지는 게 아니라 그 프로그램의
+        // 매니저에게 넘어간다. 프로그램은 "참여 멘티들의 프로젝트로 구성"되므로,
+        // 멘티 계정이 없어졌다고 그 프로젝트까지 함께 없어지면 안 된다. 파괴적인
+        // 조작이 아니라서 다른 역할처럼 confirmCascade 를 요구하지 않는다.
+        if (parseMemberRole(target.role) === 'MENTEE') {
+            const ownedProjects = await prisma.project.findMany({
+                where: { ownerId: userId },
+                select: { id: true, program: { select: { managerId: true } } },
+            });
+
+            await prisma.$transaction([
+                ...ownedProjects.map((p) => prisma.project.update({
+                    where: { id: p.id },
+                    data: { ownerId: p.program.managerId },
+                })),
+                prisma.user.delete({ where: { id: userId } }),
+            ]);
+
+            log.info('멘티 삭제, 소유 프로젝트를 프로그램 매니저에게 이전', {
+                userId, transferredProjects: ownedProjects.length,
+            });
+            return NextResponse.json({ success: true, transferredProjects: ownedProjects.length });
         }
 
         // User 삭제는 Project.ownerId 의 onDelete: Cascade 를 타고 그 사람이 소유한

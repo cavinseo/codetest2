@@ -6,8 +6,9 @@ import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-poli
 import AdminLoginForm from '@/components/admin/AdminLoginForm';
 import MembersTab, { type User } from '@/components/admin/MembersTab';
 import InvitesTab from '@/components/admin/InvitesTab';
+import ProgramsTab from '@/components/admin/ProgramsTab';
 import MentorAssign from '@/components/admin/MentorAssign';
-import { MEMBER_ROLE_LABELS, canAssignMentor, canIssueInviteCode, type MemberRole } from '@/lib/member-roles';
+import { MEMBER_ROLE_LABELS, canAssignMentor, canIssueInviteCode, canManagePrograms, type MemberRole } from '@/lib/member-roles';
 import { deleteActionFor, cancelGoesBack, type DeleteStage } from '@/lib/delete-confirmation';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ interface Stats {
     recentProjects: Array<{ id: string; name: string; createdAt: string }>;
 }
 
-type Tab = 'overview' | 'members' | 'invites' | 'projects' | 'password';
+type Tab = 'overview' | 'members' | 'invites' | 'programs' | 'projects' | 'password';
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -190,7 +191,7 @@ export default function AdminModePage() {
     };
 
     const handleCreateMember = async (payload: {
-        name: string; email: string; role: 'MENTOR' | 'MENTEE'; profile: Record<string, unknown>;
+        name: string; email: string; role: 'MENTOR' | 'MENTEE'; programId?: string; profile: Record<string, unknown>;
     }): Promise<boolean> => {
         const res = await fetch('/api/admin/users', {
             method: 'POST',
@@ -277,6 +278,7 @@ export default function AdminModePage() {
     // 주므로, 화면도 같은 역할 기준으로 감춘다. 화면 전체 접근은 서버 requireAdmin(403)이 막는다.
     const canInvite = role !== null && canIssueInviteCode(role);
     const canAssignMentorUI = role !== null && canAssignMentor(role);
+    const canManageProgramsUI = role !== null && canManagePrograms(role);
 
     const toggleMentorAssign = (projectId: string) => {
         setOpenMentorAssign((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
@@ -311,6 +313,10 @@ export default function AdminModePage() {
             icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
         },
         {
+            id: 'programs', label: '프로그램 관리',
+            icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2M19 21H5m0 0H3m9-14h.01M12 11h.01M12 15h.01M8 11h.01M8 15h.01M16 11h.01M16 15h.01" /></svg>,
+        },
+        {
             id: 'projects', label: `프로젝트 관리 (${projects.length})`,
             icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>,
         },
@@ -320,7 +326,10 @@ export default function AdminModePage() {
         },
     ];
     // 초대 발행 권한이 없는 역할에게는 초대 관리 탭 자체를 감춘다(/api/invites 가 403).
-    const tabs = allTabs.filter((t) => t.id !== 'invites' || canInvite);
+    // 프로그램 개설 권한이 없는 역할도 마찬가지다(/api/programs 가 403).
+    const tabs = allTabs.filter((t) =>
+        (t.id !== 'invites' || canInvite) && (t.id !== 'programs' || canManageProgramsUI)
+    );
 
     const statItems = [
         { label: '총 프로젝트', value: stats?.totalProjects ?? 0, unit: '개', gradient: 'from-blue-500/20 to-cyan-500/20', color: 'text-blue-400' },
@@ -687,6 +696,9 @@ export default function AdminModePage() {
 
                         {/* ── Invites Tab ──────────────────────────────── */}
                         {tab === 'invites' && canInvite && <InvitesTab />}
+
+                        {/* ── Programs Tab ─────────────────────────────── */}
+                        {tab === 'programs' && canManageProgramsUI && <ProgramsTab />}
 
                         {/* ── Projects Tab ─────────────────────────────── */}
                         {tab === 'projects' && (

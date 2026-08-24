@@ -9,12 +9,16 @@ import { NextRequest, NextResponse } from 'next/server';
 const findUser = vi.fn();
 const countUser = vi.fn();
 const countProject = vi.fn();
+const findManyProject = vi.fn();
+const updateProject = vi.fn();
 const deleteUser = vi.fn();
+const transaction = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
         user: { findUnique: findUser, count: countUser, delete: deleteUser },
-        project: { count: countProject },
+        project: { count: countProject, findMany: findManyProject, update: updateProject },
+        $transaction: (arg: unknown) => transaction(arg),
     },
 }));
 
@@ -40,7 +44,12 @@ beforeEach(() => {
     findUser.mockResolvedValue({ id: 'user_2', email: 'member@x.com', isAdmin: false });
     countUser.mockResolvedValue(2);
     countProject.mockResolvedValue(0);
+    findManyProject.mockResolvedValue([]);
+    updateProject.mockResolvedValue({});
     deleteUser.mockResolvedValue({ id: 'user_2' });
+    // 배열 형태(prisma.$transaction([...]))로 호출한다. 각 원소는 이미 호출된
+    // 쿼리의 Promise 이므로 그대로 기다리기만 하면 실제 트랜잭션과 같은 결과다.
+    transaction.mockImplementation(async (ops: unknown) => Promise.all(ops as Promise<unknown>[]));
 });
 
 afterEach(() => {
@@ -126,6 +135,67 @@ describe('admin users DELETE', () => {
         const res = await DELETE(deleteRequest({ userId: 'user_2' }));
 
         expect(res.status).toBe(403);
+        expect(deleteUser).not.toHaveBeenCalled();
+    });
+});
+
+describe('멘티 삭제: 프로젝트는 지워지지 않고 프로그램 매니저에게 넘어간다', () => {
+    beforeEach(() => {
+        findUser.mockResolvedValue({ id: 'user_2', email: 'mentee@x.com', isAdmin: false, role: 'MENTEE' });
+    });
+
+    it('소유한 프로젝트를 그 프로그램의 매니저에게 넘긴다', async () => {
+        findManyProject.mockResolvedValue([
+            { id: 'proj_a', program: { managerId: 'pm_a' } },
+            { id: 'proj_b', program: { managerId: 'pm_b' } },
+        ]);
+
+        const res = await DELETE(deleteRequest({ userId: 'user_2' }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.transferredProjects).toBe(2);
+        expect(updateProject).toHaveBeenCalledWith({ where: { id: 'proj_a' }, data: { ownerId: 'pm_a' } });
+        expect(updateProject).toHaveBeenCalledWith({ where: { id: 'proj_b' }, data: { ownerId: 'pm_b' } });
+        expect(deleteUser).toHaveBeenCalledWith({ where: { id: 'user_2' } });
+    });
+
+    it('소유한 프로젝트가 없어도 정상적으로 삭제한다', async () => {
+        findManyProject.mockResolvedValue([]);
+
+        const res = await DELETE(deleteRequest({ userId: 'user_2' }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.transferredProjects).toBe(0);
+        expect(updateProject).not.toHaveBeenCalled();
+        expect(deleteUser).toHaveBeenCalled();
+    });
+
+    it('확인을 요구하지 않고 바로 처리한다', async () => {
+        // 파괴적인 조작이 아니다 — 프로젝트가 사라지는 게 아니라 소유자만
+        // 바뀐다. 그래서 다른 역할과 달리 confirmCascade 를 요구하지 않는다.
+        findManyProject.mockResolvedValue([{ id: 'proj_a', program: { managerId: 'pm_a' } }]);
+
+        const res = await DELETE(deleteRequest({ userId: 'user_2' }));
+
+        expect(res.status).not.toBe(409);
+        const body = await res.json();
+        expect(body.needsCascadeConfirm).toBeUndefined();
+    });
+
+    it('멘티가 아닌 역할은 이 경로를 타지 않는다', async () => {
+        // 회귀 확인: 소유 프로젝트가 있는 멘토는 여전히 기존 cascade-confirm
+        // 흐름(409)을 거쳐야 한다. 멘티 분기가 다른 역할까지 삼키면 안 된다.
+        findUser.mockResolvedValue({ id: 'user_2', email: 'mentor@x.com', isAdmin: false, role: 'MENTOR' });
+        countProject.mockResolvedValue(2);
+
+        const res = await DELETE(deleteRequest({ userId: 'user_2' }));
+        const body = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(body.needsCascadeConfirm).toBe(true);
+        expect(updateProject).not.toHaveBeenCalled();
         expect(deleteUser).not.toHaveBeenCalled();
     });
 });

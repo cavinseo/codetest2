@@ -1,4 +1,8 @@
-// 멘토·멘티 초대 코드의 발행·목록·회수 API.
+// 멘티 초대 코드의 발행·목록·회수 API.
+//
+// 멘토는 정식 등록(자기 신고 + 관리자 승인)으로만 들어오므로 이 코드는
+// 멘티 전용이다. 코드는 프로그램에 묶인다 — 그 코드로 가입한 멘티는 그
+// 프로그램에만 속하게 된다(User.programId).
 //
 // 매니저도 쓰므로 requireAdmin 이 아니라 시스템 역할 게이트를 쓴다.
 // 그래서 경로도 /api/admin/ 아래에 두지 않는다.
@@ -17,6 +21,7 @@ import {
     MEMBER_ROLE_LABELS,
     DEFAULT_ACCESS_DURATION_DAYS,
 } from '@/lib/member-roles';
+import { canManageThisProgram } from '@/lib/program';
 import { buildInviteEmail, generateInviteCode, inviteCodeExpiryFrom } from '@/lib/invite-code';
 
 const log = createLogger('api/invites');
@@ -24,6 +29,7 @@ const log = createLogger('api/invites');
 const issueSchema = z.object({
     email: z.string().email('유효한 이메일을 입력하세요.'),
     role: z.string(),
+    programId: z.string().min(1, '프로그램을 선택하세요.'),
     accessDurationDays: z.number().int().min(1).max(365).optional(),
 });
 
@@ -37,15 +43,23 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        // 매니저는 자신이 개설한 프로그램의 코드만 본다. 다른 매니저가 누구를
+        // 초대했는지까지 보일 이유가 없다. 관리자는 전체를 본다.
+        const scope = authResult.role === 'ADMIN' ? {} : { program: { managerId: authResult.userId } };
+
         const invites = await prisma.inviteCode.findMany({
+            where: scope,
             select: {
                 id: true, code: true, email: true, role: true, expiresAt: true,
                 accessDurationDays: true, usedAt: true, createdAt: true,
+                programId: true, program: { select: { name: true } },
             },
             orderBy: { createdAt: 'desc' },
         });
 
-        return NextResponse.json({ invites });
+        return NextResponse.json({
+            invites: invites.map(({ program, ...rest }) => ({ ...rest, programName: program.name })),
+        });
     } catch (error: unknown) {
         return toErrorResponse(error, { log, message: '초대 코드 목록을 불러오지 못했습니다.' });
     }
@@ -64,12 +78,26 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
         }
 
-        // 매니저와 관리자는 코드로 만들지 않는다. 매니저는 멘토에서 승격으로만 생긴다.
+        // 멘토는 코드로 만들지 않는다. 정식 등록(자기 신고 + 관리자 승인)으로만 생긴다.
         const role = parseInvitableRole(parsed.data.role);
         if (!role) {
             return NextResponse.json(
-                { error: '초대 코드는 멘토 또는 멘티로만 발행할 수 있습니다.' },
+                { error: '초대 코드는 멘티로만 발행할 수 있습니다.' },
                 { status: 400 }
+            );
+        }
+
+        const program = await prisma.program.findUnique({
+            where: { id: parsed.data.programId },
+            select: { id: true, managerId: true },
+        });
+        if (!program) {
+            return NextResponse.json({ error: '프로그램을 찾을 수 없습니다.' }, { status: 404 });
+        }
+        if (!canManageThisProgram({ role: authResult.role, userId: authResult.userId }, program)) {
+            return NextResponse.json(
+                { error: '이 프로그램에 초대 코드를 발행할 권한이 없습니다.' },
+                { status: 403 }
             );
         }
 
@@ -89,6 +117,7 @@ export async function POST(request: NextRequest) {
                 code,
                 email,
                 role,
+                programId: program.id,
                 expiresAt: inviteCodeExpiryFrom(now),
                 accessDurationDays,
                 issuedById: authResult.userId,
@@ -116,7 +145,7 @@ export async function POST(request: NextRequest) {
             code,
             invite: {
                 id: invite.id, email: invite.email, role: invite.role,
-                expiresAt: invite.expiresAt, accessDurationDays,
+                programId: invite.programId, expiresAt: invite.expiresAt, accessDurationDays,
             },
         });
     } catch (error: unknown) {
@@ -139,10 +168,15 @@ export async function DELETE(request: NextRequest) {
 
         const invite = await prisma.inviteCode.findUnique({
             where: { id: parsed.data.id },
-            select: { id: true, usedAt: true },
+            select: { id: true, usedAt: true, program: { select: { managerId: true } } },
         });
         if (!invite) {
             return NextResponse.json({ error: '초대 코드를 찾을 수 없습니다.' }, { status: 404 });
+        }
+        // 다른 매니저가 개설한 프로그램의 코드는 회수할 수 없다. GET 의 조회
+        // 범위와 같은 경계다.
+        if (!canManageThisProgram({ role: authResult.role, userId: authResult.userId }, invite.program)) {
+            return NextResponse.json({ error: '이 초대 코드를 회수할 권한이 없습니다.' }, { status: 403 });
         }
         if (invite.usedAt) {
             return NextResponse.json({ error: '이미 사용된 코드는 회수할 수 없습니다.' }, { status: 400 });

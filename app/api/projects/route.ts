@@ -4,7 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
 import { requireAuth } from '@/lib/auth';
 import { resolveProjectRole } from '@/lib/authorization';
-import { canCreateProject, canListAllProjects } from '@/lib/member-roles';
+import { canCreateProject, canListAllProjects, parseMemberRole } from '@/lib/member-roles';
+import { canManageThisProgram, canOwnProjectIn } from '@/lib/program';
 import { createLogger } from '@/lib/logger';
 import {
     BusinessPlanFileValidationError,
@@ -20,6 +21,10 @@ const createProjectSchema = z.object({
     detailedDescription: z.string().optional(),
     businessPlanFile: z.string().nullable().optional(),
     aiMode: projectAiModeSchema.optional().default(DEFAULT_PROJECT_AI_MODE),
+    // 프로그램은 매니저·관리자가 열고, 그 안의 프로젝트는 참여 멘티가 소유한다.
+    // "누가 만드는가"(canCreateProject)와 "누가 갖는가"는 다른 질문이다.
+    programId: z.string().min(1, '프로그램을 선택하세요.'),
+    ownerMenteeId: z.string().min(1, '소유할 멘티를 선택하세요.'),
 });
 
 // ─── GET: 프로젝트 목록 조회 ──────────────────────────────────────────
@@ -46,6 +51,7 @@ export async function GET(request: NextRequest) {
                 ownerId: true,
                 createdAt: true,
                 updatedAt: true,
+                program: { select: { name: true } },
                 members: {
                     where: { userId: userId },
                     select: { role: true },
@@ -64,6 +70,7 @@ export async function GET(request: NextRequest) {
                 detailedDescription: p.detailedDescription,
                 createdAt: p.createdAt.toISOString(),
                 updatedAt: p.updatedAt.toISOString(),
+                programName: p.program.name,
                 memberCount: p._count.members + 1, // 소유자 포함
                 role: resolveProjectRole({
                     systemRole: authResult.role,
@@ -95,9 +102,35 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json();
-        const { name, description, detailedDescription, businessPlanFile, aiMode } =
+        const { name, description, detailedDescription, businessPlanFile, aiMode, programId, ownerMenteeId } =
             createProjectSchema.parse(body);
         const validatedBusinessPlanFile = validateBusinessPlanFileStorageValue(businessPlanFile);
+
+        const program = await prisma.program.findUnique({
+            where: { id: programId },
+            select: { id: true, name: true, managerId: true },
+        });
+        if (!program) {
+            return NextResponse.json({ error: '프로그램을 찾을 수 없습니다.' }, { status: 404 });
+        }
+        if (!canManageThisProgram({ role: authResult.role, userId }, program)) {
+            return NextResponse.json(
+                { error: '이 프로그램에 프로젝트를 만들 권한이 없습니다.' },
+                { status: 403 }
+            );
+        }
+
+        const owner = await prisma.user.findUnique({
+            where: { id: ownerMenteeId },
+            select: { id: true, role: true, programId: true },
+        });
+        const ownerRole = owner ? parseMemberRole(owner.role) : null;
+        if (!owner || !ownerRole || !canOwnProjectIn({ role: ownerRole, programId: owner.programId }, programId)) {
+            return NextResponse.json(
+                { error: '이 프로그램에 속한 멘티만 프로젝트 소유자로 지정할 수 있습니다.' },
+                { status: 400 }
+            );
+        }
 
         const newProject = await prisma.project.create({
             data: {
@@ -107,11 +140,12 @@ export async function POST(request: NextRequest) {
                 detailedDescription,
                 businessPlanFile: validatedBusinessPlanFile,
                 aiMode,
-                ownerId: userId,
+                programId,
+                ownerId: owner.id,
             },
         });
 
-        log.info('프로젝트 생성', { userId, projectId: newProject.id });
+        log.info('프로젝트 생성', { userId, projectId: newProject.id, programId, ownerId: owner.id });
 
         return NextResponse.json({
             project: {
@@ -122,6 +156,7 @@ export async function POST(request: NextRequest) {
                 aiMode: newProject.aiMode,
                 createdAt: newProject.createdAt.toISOString(),
                 updatedAt: newProject.updatedAt.toISOString(),
+                programName: program.name,
                 memberCount: 1,
                 role: 'OWNER',
             },

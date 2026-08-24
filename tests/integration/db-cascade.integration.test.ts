@@ -53,6 +53,7 @@ function uid(label: string): string {
 }
 
 let userId: string;
+let programId: string;
 
 beforeAll(async () => {
     const user = await prisma.user.create({
@@ -64,6 +65,21 @@ beforeAll(async () => {
         },
     });
     userId = user.id;
+
+    // Project.programId 는 NOT NULL 이라 프로젝트를 만들려면 먼저 프로그램이
+    // 있어야 한다. 이 사용자를 그대로 담당 매니저로 쓴다 — FK 만족이 목적이라
+    // 역할이 실제로 매니저인지는 이 스위트의 관심사가 아니다.
+    const program = await prisma.program.create({
+        data: {
+            id: uid('prog'),
+            name: 'itest program',
+            organization: 'itest org',
+            startsAt: new Date(),
+            endsAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
+            managerId: userId,
+        },
+    });
+    programId = program.id;
 });
 
 // kano_responses.invitationId 는 KanoSurveyInvitation 에 대해 ON DELETE RESTRICT 다.
@@ -87,6 +103,12 @@ afterEach(async () => {
 afterAll(async () => {
     try {
         await cleanupRunData();
+        // Program 은 자신을 가리키는 Project 가 있으면 Restrict 로 지워지지
+        // 않는다. cleanupRunData 가 이미 이 실행의 프로젝트를 전부 지웠으므로
+        // 이 시점엔 안전하다.
+        if (programId) {
+            await prisma.program.deleteMany({ where: { id: programId } });
+        }
         if (userId) {
             await prisma.user.deleteMany({ where: { id: userId } });
         }
@@ -97,7 +119,7 @@ afterAll(async () => {
 
 async function makeProject(): Promise<string> {
     const project = await prisma.project.create({
-        data: { id: uid('proj'), name: 'itest', ownerId: userId },
+        data: { id: uid('proj'), name: 'itest', ownerId: userId, programId },
     });
     return project.id;
 }

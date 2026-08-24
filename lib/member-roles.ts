@@ -12,9 +12,28 @@
 export const MEMBER_ROLES = ['ADMIN', 'PROGRAM_MANAGER', 'MENTOR', 'MENTEE'] as const;
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 
-/** 초대 코드로 모집할 수 있는 역할. 관리자·매니저는 코드로 만들지 않는다. */
-export const INVITABLE_ROLES = ['MENTOR', 'MENTEE'] as const;
+/**
+ * 초대 코드로 모집할 수 있는 역할.
+ *
+ * 멘티만 코드로 받는다. 코드는 프로그램에 묶이므로(InviteCode.programId) 그
+ * 프로그램 소속 멘티를 모으는 통로다. 멘토는 정식 가입(자기 신고 후 관리자
+ * 승인)으로만 들어온다 — 멘토는 여러 프로그램의 프로젝트에 배정될 수 있어
+ * 코드 하나로 프로그램에 묶는 모델과 맞지 않는다. 관리자·매니저는 코드로
+ * 만들지 않는다.
+ */
+export const INVITABLE_ROLES = ['MENTEE'] as const;
 export type InvitableRole = (typeof INVITABLE_ROLES)[number];
+
+/**
+ * 관리자가 계정을 직접 만들 때 고를 수 있는 역할.
+ *
+ * INVITABLE_ROLES 와 다른 목록이다 — 코드 발급은 프로그램 배정이라는 별개의
+ * 제약이 있어 멘티로 좁혔지만, 관리자가 임시 비밀번호로 계정을 직접 트는
+ * 것은 그 제약과 무관하다. 여기서 하나로 합치면 "멘토는 코드로 안 받는다"는
+ * 규칙이 "관리자도 멘토 계정을 못 만든다"로 조용히 번진다.
+ */
+export const DIRECT_CREATE_ROLES = ['MENTOR', 'MENTEE'] as const;
+export type DirectCreateRole = (typeof DIRECT_CREATE_ROLES)[number];
 
 export const MEMBER_ROLE_LABELS: Record<MemberRole, string> = {
     ADMIN: '관리자',
@@ -32,6 +51,10 @@ export function parseMemberRole(value: unknown): MemberRole | null {
 
 export function parseInvitableRole(value: unknown): InvitableRole | null {
     return INVITABLE_ROLES.includes(value as InvitableRole) ? (value as InvitableRole) : null;
+}
+
+export function parseDirectCreateRole(value: unknown): DirectCreateRole | null {
+    return DIRECT_CREATE_ROLES.includes(value as DirectCreateRole) ? (value as DirectCreateRole) : null;
 }
 
 // ─── 권한 판정 ──────────────────────────────────────────────────
@@ -55,6 +78,13 @@ export function canAssignMentor(role: MemberRole): boolean {
 export function canCreateProject(role: MemberRole): boolean {
     // 프로그램 쪽(관리자·매니저)이 과제를 열고, 멘토·멘티는 나중에 참가자로
     // 붙는 구조다. 멘티가 스스로 과제를 만들던 예전 모델은 폐기됐다.
+    // 다만 개설 시점에 소유자로 지정하는 멘티는 이 함수와 무관하다 —
+    // "누가 만드는가"와 "누가 갖는가"는 다른 질문이다. 아래 lib/program.ts 참고.
+    return role === 'ADMIN' || role === 'PROGRAM_MANAGER';
+}
+
+/** 프로그램을 새로 개설할 수 있는가. */
+export function canManagePrograms(role: MemberRole): boolean {
     return role === 'ADMIN' || role === 'PROGRAM_MANAGER';
 }
 

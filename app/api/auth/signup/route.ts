@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
         // status: 'PENDING' 으로 남고 관리자가 승인해야 로그인할 수 있으므로
         // 권한 상승 구멍이 아니다. 초대 코드가 있으면 역할이 코드로 정해지고,
         // 그 역할에 맞는 프로필을 받는다(클라이언트가 고른 role 은 무시한다).
-        let invite: { id: string; role: MemberRole; accessDurationDays: number } | null = null;
+        let invite: { id: string; role: MemberRole; accessDurationDays: number; programId: string } | null = null;
         let role: MemberRole = requestedRole ?? 'MENTEE';
 
         if (inviteCode) {
@@ -75,7 +75,10 @@ export async function POST(request: NextRequest) {
             if (!inviteRole) {
                 return NextResponse.json({ error: INVITE_CODE_MESSAGES.NOT_FOUND }, { status: 400 });
             }
-            invite = { id: record.id, role: inviteRole, accessDurationDays: record.accessDurationDays };
+            invite = {
+                id: record.id, role: inviteRole,
+                accessDurationDays: record.accessDurationDays, programId: record.programId,
+            };
             role = inviteRole;
         }
 
@@ -105,6 +108,9 @@ export async function POST(request: NextRequest) {
                     // 3개월 접근 기간이 대기 중에도 흘러가 버린다.
                     status: invite ? 'APPROVED' : 'PENDING',
                     accessExpiresAt: invite ? accessExpiryFrom(now, invite.accessDurationDays) : null,
+                    // 코드로 들어온 멘티는 그 코드의 프로그램에 묶인다. 다른
+                    // 프로그램의 프로젝트 소유자로는 지정될 수 없다(lib/program.ts).
+                    programId: invite?.programId ?? null,
                 },
             });
 

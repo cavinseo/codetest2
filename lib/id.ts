@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
  * @returns 'prefix_<16자 랜덤 hex>' 형태의 고유 문자열
  */
 export function generateId(
-    prefix: 'user' | 'proj' | 'member' | 'response' | 'inv' | 'invite' | 'spec' | 'attr' | 'fitness' | 'rel' | 'corr' | 'bm' | 'tech'
+    prefix: 'user' | 'proj' | 'prog' | 'member' | 'response' | 'inv' | 'invite' | 'spec' | 'attr' | 'fitness' | 'rel' | 'corr' | 'bm' | 'tech'
 ): string {
     // UUID의 하이픈을 제거한 뒤 앞 16자만 사용 (충분한 엔트로피 유지)
     const shortUuid = randomUUID().replace(/-/g, '').slice(0, 16);

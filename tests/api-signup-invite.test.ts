@@ -138,8 +138,11 @@ describe('초대 코드 없는 가입', () => {
 });
 
 describe('초대 코드 가입', () => {
+    // 코드는 이제 멘티만 모집한다(멘토는 정식 등록). programId 는 코드가
+    // 묶인 프로그램이고, 가입한 멘티는 이 프로그램에 속하게 된다.
     const validInvite = {
-        id: 'inv_1', code: 'KSQF-ABCD-EFGH-JKMN', email: 'm@x.com', role: 'MENTOR',
+        id: 'inv_1', code: 'KSQF-ABCD-EFGH-JKMN', email: 'm@x.com', role: 'MENTEE',
+        programId: 'prog_1',
         expiresAt: new Date(Date.now() + 86400000), accessDurationDays: 90, usedAt: null,
     };
 
@@ -149,30 +152,42 @@ describe('초대 코드 가입', () => {
 
         const res = await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123',
-            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: mentorProfile,
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: menteeProfile,
         }));
 
         expect(res.status).toBe(200);
         expect(transaction).toHaveBeenCalledTimes(1);
         const created = txCreateUser.mock.calls[0][0].data;
-        expect(created.role).toBe('MENTOR');
+        expect(created.role).toBe('MENTEE');
         expect(created.status).toBe('APPROVED');
         expect(created.accessExpiresAt).toBeInstanceOf(Date);
     });
 
+    it('코드의 프로그램을 계정에 담는다', async () => {
+        // 이 값이 있어야 이 멘티를 그 프로그램의 프로젝트 소유자로 지정할 수 있다.
+        findUniqueInvite.mockResolvedValue(validInvite);
+
+        await POST(signupRequest({
+            name: '새회원', email: 'm@x.com', password: 'password123',
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: menteeProfile,
+        }));
+
+        expect(txCreateUser.mock.calls[0][0].data.programId).toBe('prog_1');
+    });
+
     it('본문의 role 이 달라도 코드의 역할이 이긴다', async () => {
         // 코드가 있으면 코드의 역할이 항상 이긴다. 클라이언트가 본문에 다른
-        // role(여기서는 MENTEE)을 실어 보내도 무시되고 코드의 역할(MENTOR)이 쓰인다.
+        // role(여기서는 MENTOR)을 실어 보내도 무시되고 코드의 역할(MENTEE)이 쓰인다.
         findUniqueInvite.mockResolvedValue(validInvite);
 
         const res = await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123',
-            inviteCode: 'KSQF-ABCD-EFGH-JKMN', role: 'MENTEE', profile: mentorProfile,
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', role: 'MENTOR', profile: menteeProfile,
         }));
 
         expect(res.status).toBe(200);
         const created = txCreateUser.mock.calls[0][0].data;
-        expect(created.role).toBe('MENTOR');
+        expect(created.role).toBe('MENTEE');
         expect(created.status).toBe('APPROVED');
     });
 
@@ -181,7 +196,7 @@ describe('초대 코드 가입', () => {
 
         await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123',
-            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: mentorProfile,
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: menteeProfile,
         }));
 
         expect(txUpdateInvite).toHaveBeenCalled();
@@ -199,7 +214,7 @@ describe('초대 코드 가입', () => {
 
         const res = await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123',
-            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: mentorProfile,
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: menteeProfile,
         }));
         const body = await res.json();
 
@@ -216,7 +231,7 @@ describe('초대 코드 가입', () => {
 
         const res = await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123',
-            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: mentorProfile,
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: menteeProfile,
         }));
 
         expect(res.status).toBe(500);
@@ -228,7 +243,7 @@ describe('초대 코드 가입', () => {
 
         const res = await POST(signupRequest({
             name: '새회원', email: 'other@x.com', password: 'password123',
-            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: mentorProfile,
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: menteeProfile,
         }));
 
         expect(res.status).toBe(400);
@@ -240,19 +255,33 @@ describe('초대 코드 가입', () => {
 
         const res = await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123',
-            inviteCode: 'KSQF-ZZZZ-ZZZZ-ZZZZ', profile: mentorProfile,
+            inviteCode: 'KSQF-ZZZZ-ZZZZ-ZZZZ', profile: menteeProfile,
         }));
 
         expect(res.status).toBe(400);
     });
 
-    it('멘토 코드인데 멘티 항목만 보내면 막는다', async () => {
+    it('멘티 코드인데 멘토 항목만 보내면 막는다', async () => {
         // 역할이 코드로 정해지므로 그 역할에 맞는 항목을 요구한다.
         findUniqueInvite.mockResolvedValue(validInvite);
 
         const res = await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123',
-            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: menteeProfile,
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: mentorProfile,
+        }));
+
+        expect(res.status).toBe(400);
+        expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('예전에 발급된 멘토 코드는 더 이상 쓸 수 없다', async () => {
+        // role 컬럼은 과거 발급분과의 호환을 위해 남아 있지만, 새 가입은
+        // 더 이상 멘토 코드를 받아들이지 않는다.
+        findUniqueInvite.mockResolvedValue({ ...validInvite, role: 'MENTOR' });
+
+        const res = await POST(signupRequest({
+            name: '새회원', email: 'm@x.com', password: 'password123',
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', profile: mentorProfile,
         }));
 
         expect(res.status).toBe(400);

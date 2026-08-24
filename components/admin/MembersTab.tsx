@@ -1,12 +1,18 @@
 'use client';
 // 회원 목록·역할 변경·승인·기간 연장·계정 생성 UI. 관리자 전용이며 상태는 app/admin/page.tsx 가 갖는다.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ProfileFields, { EMPTY_PROFILE, toProfilePayload, type ProfileValue } from '@/components/member/ProfileFields';
 import {
     MEMBER_ROLES, MEMBER_ROLE_LABELS, canTransitionRole,
     DEFAULT_ACCESS_DURATION_DAYS, type MemberRole,
 } from '@/lib/member-roles';
+
+interface ProgramOption {
+    id: string;
+    name: string;
+    organization: string;
+}
 
 export interface User {
     id: string;
@@ -25,6 +31,9 @@ export interface CreateMemberPayload {
     name: string;
     email: string;
     role: 'MENTOR' | 'MENTEE';
+    // 멘티 계정에만 의미가 있다. 비워 두면 프로그램 없이 만들어지고, 프로젝트
+    // 소유자로 지정될 때까지는 그 상태로 남는다.
+    programId?: string;
     profile: Record<string, unknown>;
 }
 
@@ -47,9 +56,19 @@ export default function MembersTab({
 }: MembersTabProps) {
     const [searchMember, setSearchMember] = useState('');
     const [showCreate, setShowCreate] = useState(false);
-    const [newMember, setNewMember] = useState({ name: '', email: '', role: 'MENTEE' as 'MENTOR' | 'MENTEE' });
+    const [newMember, setNewMember] = useState({ name: '', email: '', role: 'MENTEE' as 'MENTOR' | 'MENTEE', programId: '' });
     const [newProfile, setNewProfile] = useState<ProfileValue>(EMPTY_PROFILE);
     const [isCreating, setIsCreating] = useState(false);
+    const [programs, setPrograms] = useState<ProgramOption[]>([]);
+
+    // 멘티 계정을 만들 때 프로그램을 고를 수 있게, 목록을 미리 받아 둔다.
+    // 멘토 계정 생성에는 쓰지 않지만 한 번만 불러오면 되므로 마운트 시 가져온다.
+    useEffect(() => {
+        fetch('/api/programs')
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => { if (data) setPrograms(data.programs); })
+            .catch(() => { /* 프로그램 없이도 멘토 계정은 만들 수 있어야 하므로 조용히 무시한다 */ });
+    }, []);
 
     const filteredMembers = members.filter(
         (m) => m.name.toLowerCase().includes(searchMember.toLowerCase()) || m.email.toLowerCase().includes(searchMember.toLowerCase())
@@ -59,12 +78,15 @@ export default function MembersTab({
         setIsCreating(true);
         try {
             const ok = await onCreate({
-                ...newMember,
+                name: newMember.name,
+                email: newMember.email,
+                role: newMember.role,
+                ...(newMember.role === 'MENTEE' && newMember.programId ? { programId: newMember.programId } : {}),
                 profile: toProfilePayload(newProfile, newMember.role),
             });
             if (ok) {
                 setShowCreate(false);
-                setNewMember({ name: '', email: '', role: 'MENTEE' });
+                setNewMember({ name: '', email: '', role: 'MENTEE', programId: '' });
                 setNewProfile(EMPTY_PROFILE);
             }
         } finally {
@@ -119,6 +141,19 @@ export default function MembersTab({
                                 <option value="MENTOR">{MEMBER_ROLE_LABELS.MENTOR}</option>
                             </select>
                         </label>
+                        {newMember.role === 'MENTEE' && (
+                            <label className="block text-sm font-medium text-gray-400">
+                                프로그램 <span className="text-gray-600">(선택)</span>
+                                <select className="input mt-2" value={newMember.programId}
+                                    onChange={(e) => setNewMember({ ...newMember, programId: e.target.value })}
+                                    id="admin-member-create-program">
+                                    <option value="">지정 안 함</option>
+                                    {programs.map((p) => (
+                                        <option key={p.id} value={p.id}>{p.name} ({p.organization})</option>
+                                    ))}
+                                </select>
+                            </label>
+                        )}
                     </div>
                     <ProfileFields
                         role={newMember.role}

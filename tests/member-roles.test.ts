@@ -8,6 +8,7 @@ import {
     canIssueInviteCode,
     canListAllProjects,
     canManageMembers,
+    canManagePrograms,
     canReadAnyProject,
     canTransitionRole,
     canWriteAnyProject,
@@ -26,9 +27,11 @@ describe('역할 파싱', () => {
         expect(parseMemberRole(undefined)).toBeNull();
     });
 
-    it('초대 코드로는 멘토·멘티만 모집할 수 있다', () => {
-        expect(parseInvitableRole('MENTOR')).toBe('MENTOR');
+    it('초대 코드로는 멘티만 모집할 수 있다', () => {
         expect(parseInvitableRole('MENTEE')).toBe('MENTEE');
+        // 코드는 프로그램에 묶인다. 멘토는 여러 프로그램의 프로젝트에 배정될 수
+        // 있어 코드 하나로 프로그램에 묶는 모델과 맞지 않아 정식 등록으로만 받는다.
+        expect(parseInvitableRole('MENTOR')).toBeNull();
         // 코드로 관리자·매니저가 생기면 권한 상승 경로가 된다.
         expect(parseInvitableRole('ADMIN')).toBeNull();
         expect(parseInvitableRole('PROGRAM_MANAGER')).toBeNull();
@@ -51,11 +54,12 @@ const matrix: Array<{
     createProject: boolean;
     listAllProjects: boolean;
     readAnyProject: boolean;
+    managePrograms: boolean;
 }> = [
-    { role: 'ADMIN', manageMembers: true, issueInvite: true, assignMentor: true, createProject: true, listAllProjects: true, readAnyProject: true },
-    { role: 'PROGRAM_MANAGER', manageMembers: false, issueInvite: true, assignMentor: true, createProject: true, listAllProjects: true, readAnyProject: true },
-    { role: 'MENTOR', manageMembers: false, issueInvite: false, assignMentor: false, createProject: false, listAllProjects: false, readAnyProject: false },
-    { role: 'MENTEE', manageMembers: false, issueInvite: false, assignMentor: false, createProject: false, listAllProjects: false, readAnyProject: false },
+    { role: 'ADMIN', manageMembers: true, issueInvite: true, assignMentor: true, createProject: true, listAllProjects: true, readAnyProject: true, managePrograms: true },
+    { role: 'PROGRAM_MANAGER', manageMembers: false, issueInvite: true, assignMentor: true, createProject: true, listAllProjects: true, readAnyProject: true, managePrograms: true },
+    { role: 'MENTOR', manageMembers: false, issueInvite: false, assignMentor: false, createProject: false, listAllProjects: false, readAnyProject: false, managePrograms: false },
+    { role: 'MENTEE', manageMembers: false, issueInvite: false, assignMentor: false, createProject: false, listAllProjects: false, readAnyProject: false, managePrograms: false },
 ];
 
 describe.each(matrix)('$role 권한', (row) => {
@@ -65,6 +69,7 @@ describe.each(matrix)('$role 권한', (row) => {
     it('프로젝트 생성', () => expect(canCreateProject(row.role)).toBe(row.createProject));
     it('전체 목록 조회', () => expect(canListAllProjects(row.role)).toBe(row.listAllProjects));
     it('전체 내용 열람', () => expect(canReadAnyProject(row.role)).toBe(row.readAnyProject));
+    it('프로그램 개설', () => expect(canManagePrograms(row.role)).toBe(row.managePrograms));
 });
 
 describe('권한 경계 요약', () => {

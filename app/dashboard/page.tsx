@@ -19,8 +19,21 @@ interface Project {
     name: string;
     description?: string;
     updatedAt: string;
+    programName: string;
     memberCount: number;
     role: 'OWNER' | 'EDITOR' | 'COACH' | 'ADMIN';
+}
+
+interface ProgramOption {
+    id: string;
+    name: string;
+    organization: string;
+}
+
+interface MenteeOption {
+    id: string;
+    name: string;
+    email: string;
 }
 
 export default function DashboardPage() {
@@ -37,12 +50,43 @@ export default function DashboardPage() {
     const [newProjectAiMode, setNewProjectAiMode] = useState<ProjectAiMode>('local');
     const [newProjectError, setNewProjectError] = useState('');
     const [isLoggingOut, setIsLoggingOut] = useState(false);
+    // 프로그램은 매니저·관리자가 열고, 그 안의 프로젝트는 참여 멘티가 소유한다.
+    // 그래서 새 프로젝트를 만들 때 어느 프로그램의, 어느 멘티 것인지 함께 고른다.
+    const [programs, setPrograms] = useState<ProgramOption[]>([]);
+    const [mentees, setMentees] = useState<MenteeOption[]>([]);
+    const [newProjectProgramId, setNewProjectProgramId] = useState('');
+    const [newProjectOwnerMenteeId, setNewProjectOwnerMenteeId] = useState('');
 
     // 마운트 시 프로젝트 목록과 역할 로드
     useEffect(() => {
         fetchProjects();
         fetchRole();
     }, []);
+
+    // 프로젝트를 만들 수 있는 역할만 프로그램 목록이 필요하다. 멘티·멘토에게는
+    // 이 API 가 403 이므로 애초에 부르지 않는다.
+    useEffect(() => {
+        if (!role || !canCreateProject(role)) return;
+        fetch('/api/programs')
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+                if (!data) return;
+                setPrograms(data.programs);
+                setNewProjectProgramId((prev) => prev || data.programs[0]?.id || '');
+            })
+            .catch(() => { /* 프로그램 목록 없이도 나머지 화면은 그대로 쓸 수 있다 */ });
+    }, [role]);
+
+    // 고른 프로그램이 바뀌면 그 프로그램 소속 멘티로 후보를 다시 채운다.
+    // 이전 프로그램의 멘티가 새 프로그램의 소유자로 잘못 남지 않도록 선택을 지운다.
+    useEffect(() => {
+        if (!newProjectProgramId) { setMentees([]); return; }
+        setNewProjectOwnerMenteeId('');
+        fetch(`/api/programs/${newProjectProgramId}/mentees`)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => setMentees(data?.mentees ?? []))
+            .catch(() => setMentees([]));
+    }, [newProjectProgramId]);
 
     // 관리자/매니저 전용 링크를 가리기 위해 역할만 조회한다. 새 엔드포인트 대신
     // 이미 있는 본인 프로필 API(app/api/me/profile)를 쓴다.
@@ -99,6 +143,8 @@ export default function DashboardPage() {
                     detailedDescription: newProjectDetailDesc || undefined,
                     businessPlanFile,
                     aiMode: newProjectAiMode,
+                    programId: newProjectProgramId,
+                    ownerMenteeId: newProjectOwnerMenteeId,
                 }),
             });
             // 작성 중 세션이 만료된 경우에도 오류 문구 대신 로그인으로 보낸다.
@@ -115,6 +161,7 @@ export default function DashboardPage() {
             setNewProjectDetailDesc('');
             setNewProjectFile(null);
             setNewProjectAiMode('local');
+            setNewProjectOwnerMenteeId('');
         } catch (error) {
             console.error(error);
             setNewProjectError(error instanceof Error ? error.message : '프로젝트 생성에 실패했습니다.');
@@ -260,6 +307,9 @@ export default function DashboardPage() {
                                     <h3 className="text-lg font-display font-semibold text-white group-hover:text-primary-400 transition-colors duration-200">
                                         {project.name}
                                     </h3>
+                                    <span className="inline-block mt-1 text-[11px] text-primary-400/80">
+                                        {project.programName}
+                                    </span>
                                     {project.description && (
                                         <p className="text-sm text-gray-500 mt-1.5 line-clamp-2 leading-relaxed">
                                             {project.description}
@@ -349,6 +399,47 @@ export default function DashboardPage() {
                                     placeholder="예: 스마트 IoT 센서 개발"
                                 />
                             </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-2">
+                                        프로그램 <span className="text-primary-400">*</span>
+                                    </label>
+                                    <select
+                                        required
+                                        value={newProjectProgramId}
+                                        onChange={(e) => setNewProjectProgramId(e.target.value)}
+                                        className="input"
+                                    >
+                                        <option value="" disabled>선택하세요</option>
+                                        {programs.map((p) => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-2">
+                                        소유할 멘티 <span className="text-primary-400">*</span>
+                                    </label>
+                                    <select
+                                        required
+                                        value={newProjectOwnerMenteeId}
+                                        onChange={(e) => setNewProjectOwnerMenteeId(e.target.value)}
+                                        className="input"
+                                        disabled={!newProjectProgramId}
+                                    >
+                                        <option value="" disabled>선택하세요</option>
+                                        {mentees.map((m) => (
+                                            <option key={m.id} value={m.id}>{m.name} ({m.email})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            {newProjectProgramId && mentees.length === 0 && (
+                                <p className="text-xs text-amber-400 -mt-3">
+                                    이 프로그램에 속한 멘티가 아직 없습니다. 먼저 멘티를 초대하세요.
+                                </p>
+                            )}
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-400 mb-2">

@@ -9,6 +9,7 @@ const updateUser = vi.fn();
 const transaction = vi.fn();
 const txCreateUser = vi.fn();
 const txCreateProfile = vi.fn();
+const findUniqueProgram = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
@@ -17,6 +18,7 @@ vi.mock('../lib/prisma', () => ({
             update: updateUser, findMany: vi.fn(async () => []),
         },
         project: { count: vi.fn(async () => 0) },
+        program: { findUnique: findUniqueProgram },
         $transaction: (fn: unknown) => transaction(fn),
     },
 }));
@@ -51,6 +53,7 @@ beforeEach(() => {
     updateUser.mockResolvedValue({ id: 'user_2', email: 'u@x.com', role: 'PROGRAM_MANAGER' });
     txCreateUser.mockResolvedValue({ id: 'user_new', email: 'n@x.com', name: '새회원' });
     txCreateProfile.mockResolvedValue({});
+    findUniqueProgram.mockResolvedValue({ id: 'prog_1' });
     transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({ user: { create: txCreateUser }, memberProfile: { create: txCreateProfile } })
     );
@@ -369,5 +372,56 @@ describe('계정 생성', () => {
 
         expect(res.status).toBe(403);
         expect(transaction).not.toHaveBeenCalled();
+    });
+
+    describe('프로그램 지정', () => {
+        it('멘티 계정에 프로그램을 지정할 수 있다', async () => {
+            findUniqueUser.mockResolvedValue(null);
+
+            const res = await POST(jsonRequest('POST', {
+                name: '새회원', email: 'mentee@x.com', role: 'MENTEE', programId: 'prog_1', profile: menteeProfile,
+            }));
+
+            expect(res.status).toBe(200);
+            expect(txCreateUser.mock.calls[0][0].data.programId).toBe('prog_1');
+        });
+
+        it('프로그램을 지정하지 않으면 null 로 남는다', async () => {
+            // 초대 코드 없이(가입 화면 또는 관리자 생성으로) 들어온 멘티는 프로젝트를
+            // 소유하려면 나중에 어떤 식으로든 프로그램에 배정돼야 한다 — 지금은
+            // 이 상태로 남아 있는다.
+            findUniqueUser.mockResolvedValue(null);
+
+            await POST(jsonRequest('POST', {
+                name: '새회원', email: 'mentee@x.com', role: 'MENTEE', profile: menteeProfile,
+            }));
+
+            expect(txCreateUser.mock.calls[0][0].data.programId).toBeNull();
+        });
+
+        it('존재하지 않는 프로그램은 거부한다', async () => {
+            findUniqueUser.mockResolvedValue(null);
+            findUniqueProgram.mockResolvedValue(null);
+
+            const res = await POST(jsonRequest('POST', {
+                name: '새회원', email: 'mentee@x.com', role: 'MENTEE', programId: 'prog_missing', profile: menteeProfile,
+            }));
+
+            expect(res.status).toBe(404);
+            expect(transaction).not.toHaveBeenCalled();
+        });
+
+        it('멘토 계정에는 프로그램을 지정할 수 없다', async () => {
+            findUniqueUser.mockResolvedValue(null);
+
+            const res = await POST(jsonRequest('POST', {
+                name: '새회원', email: 'n@x.com', role: 'MENTOR', programId: 'prog_1', profile,
+            }));
+            const body = await res.json();
+
+            expect(res.status).toBe(400);
+            expect(body.error).toContain('멘티 계정에만');
+            expect(transaction).not.toHaveBeenCalled();
+        });
     });
 });

@@ -13,6 +13,7 @@
         "lib/import-json-schema.ts",
         "lib/member-roles.ts",
         "lib/delete-confirmation.ts",
+        "lib/program.ts",
         "lib/invite-code.ts",
         "lib/member-profile.ts",
         "lib/temp-password-email.ts"

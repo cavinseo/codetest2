@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import InvitesTab from '@/components/admin/InvitesTab';
+import ProgramsTab from '@/components/admin/ProgramsTab';
 import MentorAssign from '@/components/admin/MentorAssign';
 
 interface ProjectRow {
@@ -14,10 +15,10 @@ interface ProjectRow {
     name: string;
 }
 
-type Tab = 'invites' | 'assign';
+type Tab = 'programs' | 'invites' | 'assign';
 
 export default function ManagePage() {
-    const [tab, setTab] = useState<Tab>('invites');
+    const [tab, setTab] = useState<Tab>('programs');
     const [projects, setProjects] = useState<ProjectRow[]>([]);
     const [selectedProject, setSelectedProject] = useState('');
     const [denied, setDenied] = useState(false);
@@ -84,7 +85,7 @@ export default function ManagePage() {
                                 <span className="w-6 h-6 rounded-md bg-gradient-to-br from-primary-500/30 to-accent-500/30 flex items-center justify-center text-xs">🧭</span>
                                 프로그램 관리
                             </h1>
-                            <p className="text-xs text-gray-500 mt-0.5">초대 코드 발행과 멘토 배정</p>
+                            <p className="text-xs text-gray-500 mt-0.5">프로그램 개설, 초대 코드 발행, 멘토 배정</p>
                         </div>
                     </div>
                 </div>
@@ -93,6 +94,14 @@ export default function ManagePage() {
             <main className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 page-enter">
                 {/* Tabs */}
                 <div className="flex gap-1 p-1 bg-white/[0.03] border border-white/[0.06] rounded-2xl mb-8 w-fit">
+                    <button
+                        type="button"
+                        onClick={() => setTab('programs')}
+                        id="manage-tab-programs"
+                        className={tab === 'programs' ? 'nav-tab-active' : 'nav-tab'}
+                    >
+                        프로그램
+                    </button>
                     <button
                         type="button"
                         onClick={() => setTab('invites')}
@@ -123,6 +132,8 @@ export default function ManagePage() {
                     </div>
                 ) : (
                     <>
+                        {tab === 'programs' && <ProgramsTab />}
+
                         {tab === 'invites' && <InvitesTab />}
 
                         {tab === 'assign' && (
