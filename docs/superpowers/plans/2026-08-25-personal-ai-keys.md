@@ -856,7 +856,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 4 API (`GET/PUT/DELETE /api/me/ai-connection`, `POST .../verify`), Task 2 `PERSONAL_AI_VENDORS`, `PERSONAL_AI_VENDOR_LABELS`, `PERSONAL_AI_VENDOR_PRESETS`
 
-- [ ] **Step 1: 상태와 로딩 추가**
+- [x] **Step 1: 상태와 로딩 추가**
 
 임포트 추가:
 
@@ -887,7 +887,7 @@ import {
             }
 ```
 
-- [ ] **Step 2: 핸들러 3개 추가** (`handleSave` 아래)
+- [x] **Step 2: 핸들러 3개 추가** (`handleSave` 아래)
 
 ```ts
     const saveAiConnection = async () => {
@@ -949,7 +949,7 @@ import {
     };
 ```
 
-- [ ] **Step 3: 섹션 JSX 추가** — 「회원 정보 수정」 섹션 바로 위에:
+- [x] **Step 3: 섹션 JSX 추가** — 「회원 정보 수정」 섹션 바로 위에:
 
 ```tsx
                         {/* ── 내 AI 연결 ──────────────────────────────── */}
@@ -1031,7 +1031,7 @@ import {
                         </section>
 ```
 
-- [ ] **Step 4: 검증 후 커밋**
+- [x] **Step 4: 검증 후 커밋**
 
 Run: `npx tsc --noEmit`, `npx vitest run`, `npx next lint` 통과. dev 서버가 떠 있으면 `/profile` 이 컴파일 오류 없이 열리는지(미로그인 → /login 리다이렉트) 확인.
 

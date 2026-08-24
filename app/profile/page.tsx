@@ -11,6 +11,12 @@ import ProfileFields, { EMPTY_PROFILE, toProfilePayload, type ProfileValue } fro
 import { fromProfileRecord } from '@/lib/member-profile-payload';
 import { MEMBER_ROLE_LABELS, type MemberRole } from '@/lib/member-roles';
 import type { MentorRef, ProgramRef, ProgramWithProjects } from '@/lib/affiliation';
+import {
+    PERSONAL_AI_VENDORS,
+    PERSONAL_AI_VENDOR_LABELS,
+    PERSONAL_AI_VENDOR_PRESETS,
+    type PersonalAiVendor,
+} from '@/lib/ai/personal-vendors';
 
 interface Account {
     name: string | null;
@@ -33,6 +39,15 @@ export default function ProfilePage() {
     const [affiliation, setAffiliation] = useState<Affiliation | null>(null);
     const [profile, setProfile] = useState<ProfileValue>(EMPTY_PROFILE);
     const [name, setName] = useState('');
+    // 내 AI 연결. null = 미등록. 키 값은 서버가 돌려주지 않으므로 화면에 없다.
+    const [aiConn, setAiConn] = useState<{ vendor: PersonalAiVendor; model: string | null } | null>(null);
+    const [aiForm, setAiForm] = useState({
+        vendor: 'openai' as PersonalAiVendor,
+        apiKey: '',
+        model: '',
+    });
+    const [aiBusy, setAiBusy] = useState(false);
+    const [aiMsg, setAiMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [loading, setLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -40,9 +55,10 @@ export default function ProfilePage() {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const [profileRes, affiliationRes] = await Promise.all([
+            const [profileRes, affiliationRes, aiRes] = await Promise.all([
                 fetch('/api/me/profile'),
                 fetch('/api/me/affiliation'),
+                fetch('/api/me/ai-connection'),
             ]);
 
             if (profileRes.status === 401) {
@@ -61,6 +77,16 @@ export default function ProfilePage() {
 
             const affiliationData = await affiliationRes.json().catch(() => null);
             if (affiliationRes.ok && affiliationData) setAffiliation(affiliationData);
+
+            const aiData = await aiRes.json().catch(() => null);
+            if (aiRes.ok && aiData?.connection) {
+                setAiConn(aiData.connection);
+                setAiForm({
+                    vendor: aiData.connection.vendor,
+                    apiKey: '',
+                    model: aiData.connection.model ?? '',
+                });
+            }
         } catch {
             setMessage({ type: 'error', text: '회원 정보를 불러오지 못했습니다. 연결을 확인하세요.' });
         } finally {
@@ -90,6 +116,76 @@ export default function ProfilePage() {
             setMessage({ type: 'error', text: error instanceof Error ? error.message : '저장에 실패했습니다.' });
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const saveAiConnection = async () => {
+        setAiBusy(true);
+        setAiMsg(null);
+        try {
+            const res = await fetch('/api/me/ai-connection', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    vendor: aiForm.vendor,
+                    ...(aiForm.apiKey.trim() ? { apiKey: aiForm.apiKey.trim() } : {}),
+                    ...(aiForm.model.trim() ? { model: aiForm.model.trim() } : {}),
+                }),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) throw new Error(data?.error || '저장에 실패했습니다.');
+            setAiConn(data.connection);
+            // 키는 저장 즉시 입력칸에서 지운다 — 화면에 남겨둘 이유가 없다.
+            setAiForm((prev) => ({ ...prev, apiKey: '' }));
+            setAiMsg({
+                type: 'success',
+                text: '저장했습니다. [연결 확인]으로 키가 통하는지 점검해 보세요.',
+            });
+        } catch (error) {
+            setAiMsg({
+                type: 'error',
+                text: error instanceof Error ? error.message : '저장에 실패했습니다.',
+            });
+        } finally {
+            setAiBusy(false);
+        }
+    };
+
+    const verifyAiConnection = async () => {
+        setAiBusy(true);
+        setAiMsg(null);
+        try {
+            const res = await fetch('/api/me/ai-connection/verify', { method: 'POST' });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) throw new Error(data?.error || '연결 확인에 실패했습니다.');
+            setAiMsg({ type: data.ok ? 'success' : 'error', text: data.message });
+        } catch (error) {
+            setAiMsg({
+                type: 'error',
+                text: error instanceof Error ? error.message : '연결 확인에 실패했습니다.',
+            });
+        } finally {
+            setAiBusy(false);
+        }
+    };
+
+    const removeAiConnection = async () => {
+        if (!window.confirm('등록된 AI 키를 삭제하시겠습니까?')) return;
+        setAiBusy(true);
+        setAiMsg(null);
+        try {
+            const res = await fetch('/api/me/ai-connection', { method: 'DELETE' });
+            if (!res.ok) throw new Error('삭제에 실패했습니다.');
+            setAiConn(null);
+            setAiForm({ vendor: 'openai', apiKey: '', model: '' });
+            setAiMsg({ type: 'success', text: '삭제했습니다.' });
+        } catch (error) {
+            setAiMsg({
+                type: 'error',
+                text: error instanceof Error ? error.message : '삭제에 실패했습니다.',
+            });
+        } finally {
+            setAiBusy(false);
         }
     };
 
@@ -236,6 +332,115 @@ export default function ProfilePage() {
                                 )}
                             </section>
                         )}
+
+                        {/* ── 내 AI 연결 ──────────────────────────────── */}
+                        <section className="card space-y-4">
+                            <div>
+                                <h2 className="text-sm font-bold text-white">내 AI 연결</h2>
+                                <p className="mt-1 text-xs text-gray-500">
+                                    본인의 OpenAI·Claude·Gemini API 키를 등록하면, 프로젝트 AI 모드에서
+                                    「내 AI (개인 키)」를 골라 쓸 수 있습니다. 키는 암호화되어 저장되고 다시
+                                    표시되지 않으며, 사용 요금은 본인의 벤더 계정에 청구됩니다.
+                                </p>
+                            </div>
+
+                            {aiConn && (
+                                <p className="text-xs text-emerald-300">
+                                    ✅ {PERSONAL_AI_VENDOR_LABELS[aiConn.vendor]} 키가 등록되어 있습니다.
+                                </p>
+                            )}
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <label className="block text-sm font-medium text-gray-400">
+                                    벤더
+                                    <select
+                                        className="input mt-2"
+                                        value={aiForm.vendor}
+                                        onChange={(e) => setAiForm({
+                                            ...aiForm,
+                                            vendor: e.target.value as PersonalAiVendor,
+                                        })}
+                                        id="profile-ai-vendor"
+                                    >
+                                        {PERSONAL_AI_VENDORS.map((vendor) => (
+                                            <option key={vendor} value={vendor}>
+                                                {PERSONAL_AI_VENDOR_LABELS[vendor]}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <label className="block text-sm font-medium text-gray-400">
+                                    모델 <span className="text-gray-600">(선택)</span>
+                                    <input
+                                        className="input mt-2"
+                                        value={aiForm.model}
+                                        placeholder={PERSONAL_AI_VENDOR_PRESETS[aiForm.vendor].defaultModel}
+                                        onChange={(e) => setAiForm({ ...aiForm, model: e.target.value })}
+                                        id="profile-ai-model"
+                                    />
+                                </label>
+                            </div>
+
+                            <label className="block text-sm font-medium text-gray-400">
+                                API 키 {aiConn?.vendor === aiForm.vendor && (
+                                    <span className="text-gray-600">(비워 두면 저장된 키 유지)</span>
+                                )}
+                                <input
+                                    type="password"
+                                    className="input mt-2"
+                                    value={aiForm.apiKey}
+                                    autoComplete="off"
+                                    placeholder="sk-..."
+                                    onChange={(e) => setAiForm({ ...aiForm, apiKey: e.target.value })}
+                                    id="profile-ai-key"
+                                />
+                            </label>
+
+                            {aiMsg && (
+                                <div className={`rounded-lg border px-4 py-3 text-sm ${aiMsg.type === 'success'
+                                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                                    : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                                    }`}>
+                                    {aiMsg.text}
+                                </div>
+                            )}
+
+                            <div className="flex justify-end gap-2">
+                                {aiConn && (
+                                    <button
+                                        type="button"
+                                        onClick={removeAiConnection}
+                                        disabled={aiBusy}
+                                        className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors disabled:opacity-50"
+                                        id="profile-ai-delete"
+                                    >
+                                        삭제
+                                    </button>
+                                )}
+                                {aiConn && (
+                                    <button
+                                        type="button"
+                                        onClick={verifyAiConnection}
+                                        disabled={aiBusy}
+                                        className="btn-secondary text-sm disabled:opacity-50"
+                                        id="profile-ai-verify"
+                                    >
+                                        연결 확인
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={saveAiConnection}
+                                    disabled={aiBusy || (
+                                        !aiForm.apiKey.trim() && aiConn?.vendor !== aiForm.vendor
+                                    )}
+                                    className="btn-primary text-sm disabled:opacity-50"
+                                    id="profile-ai-save"
+                                >
+                                    {aiBusy ? '처리 중...' : '저장'}
+                                </button>
+                            </div>
+                        </section>
 
                         {/* ── 회원 정보 수정 ──────────────────────────── */}
                         <section className="card">
