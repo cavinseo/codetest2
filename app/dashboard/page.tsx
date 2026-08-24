@@ -39,6 +39,7 @@ interface MenteeOption {
 export default function DashboardPage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [role, setRole] = useState<MemberRole | null>(null);
+    const [userName, setUserName] = useState<string | null>(null);
     const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showNewProjectModal, setShowNewProjectModal] = useState(false);
@@ -96,6 +97,7 @@ export default function DashboardPage() {
             if (response.ok) {
                 const data = await response.json();
                 setRole(data.role ?? null);
+                setUserName(data.name ?? null);
                 setCanAccessAdmin(data.canAccessAdmin ?? false);
             }
         } catch (error) {
@@ -232,12 +234,17 @@ export default function DashboardPage() {
                                 </Link>
                             )}
                             <div className="w-px h-6 bg-white/10" />
-                            <div className="flex items-center gap-2">
+                            <Link
+                                href="/profile"
+                                className="flex items-center gap-2 rounded-xl px-2 py-1 -mx-2 transition-colors hover:bg-white/[0.06]"
+                                title="사용자 정보 보기·수정"
+                                id="dashboard-profile-link"
+                            >
                                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-accent-400 flex items-center justify-center text-xs text-white font-bold">
-                                    U
+                                    {(userName ?? '사용자').charAt(0)}
                                 </div>
-                                <span className="text-sm text-gray-300 hidden sm:block">사용자</span>
-                            </div>
+                                <span className="text-sm text-gray-300 hidden sm:block">{userName ?? '사용자'}</span>
+                            </Link>
                             <button
                                 onClick={handleLogout}
                                 disabled={isLoggingOut}

@@ -34,6 +34,10 @@ export async function GET(request: NextRequest) {
             // 관리자가 만든 계정은 임시 비밀번호를 강제 변경해야 온보딩을 마칠 수 있다.
             mustChangePassword: account?.mustChangePassword ?? false,
             role: authResult.role,
+            // 사용자 정보 화면이 헤더와 기본 정보에 쓴다. 세션에서 온 값이라
+            // 추가 조회가 없다. 이름·ID·역할은 화면에서 바꿀 수 없다(관리자 전용).
+            name: authResult.name,
+            email: authResult.email,
             // 화면의 관리자 링크·메뉴가 requireAdmin 과 같은 답을 보도록, 판정을
             // 여기서 한 번만 계산해 내려준다(ADMIN_EMAILS 로 들어온 계정도 포함).
             canAccessAdmin: hasAdminAccess(authResult),
