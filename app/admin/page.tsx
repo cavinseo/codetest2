@@ -8,6 +8,7 @@ import MembersTab, { type User } from '@/components/admin/MembersTab';
 import InvitesTab from '@/components/admin/InvitesTab';
 import MentorAssign from '@/components/admin/MentorAssign';
 import { MEMBER_ROLE_LABELS, canAssignMentor, canIssueInviteCode, type MemberRole } from '@/lib/member-roles';
+import { deleteActionFor, cancelGoesBack, type DeleteStage } from '@/lib/delete-confirmation';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,15 @@ export default function AdminModePage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchProject, setSearchProject] = useState('');
-    const [confirmDelete, setConfirmDelete] = useState<{ type: 'user' | 'project'; id: string; name: string } | null>(null);
+    // 프로젝트 삭제는 되돌릴 수 없고 하위 22개 모델을 함께 지운다. 그래서 확인을
+    // 두 번 받는다. stage 1 은 "무엇을 지우는지", stage 2 는 "정말 지울 것인지"다.
+    // 사용자 삭제는 서버가 409 로 되물어보는 자체 2단계가 있어 stage 1 만 쓴다.
+    const [confirmDelete, setConfirmDelete] = useState<{
+        type: 'user' | 'project';
+        id: string;
+        name: string;
+        stage: DeleteStage;
+    } | null>(null);
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [accessDenied, setAccessDenied] = useState(false);
     const [needsLogin, setNeedsLogin] = useState(false);
@@ -282,6 +291,12 @@ export default function AdminModePage() {
         );
     });
 
+    // 마지막 확인창에서 "무엇이 몇 개 사라지는지" 실제 숫자로 보여주기 위해
+    // 대상 프로젝트를 찾아둔다. 목록에서 이미 받아온 값이라 추가 조회가 없다.
+    const deleteTargetProject = confirmDelete?.type === 'project'
+        ? projects.find((p) => p.id === confirmDelete.id) ?? null
+        : null;
+
     const allTabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
         {
             id: 'overview', label: '개요',
@@ -418,33 +433,73 @@ export default function AdminModePage() {
                             <svg className="w-6 h-6 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                         </div>
                         <h3 className="text-lg font-bold text-white mb-2">
-                            {confirmDelete.type === 'user' ? '사용자 삭제' : '프로젝트 삭제'}
+                            {confirmDelete.stage === 2
+                                ? '마지막 확인'
+                                : confirmDelete.type === 'user' ? '사용자 삭제' : '프로젝트 삭제'}
                         </h3>
-                        <p className="text-sm text-gray-400 mb-1">
-                            <span className="text-white font-medium">&quot;{confirmDelete.name}&quot;</span>을(를) 삭제하시겠습니까?
-                        </p>
-                        {confirmDelete.type === 'project' && (
-                            <p className="text-xs text-rose-400 mt-1 mb-4">⚠️ 프로젝트의 모든 데이터(요구사항, QFD, Kano 응답 등)가 함께 삭제됩니다.</p>
+
+                        {confirmDelete.stage === 2 ? (
+                            <>
+                                <p className="text-sm text-gray-400 mb-3">
+                                    <span className="text-white font-medium">&quot;{confirmDelete.name}&quot;</span>을(를)
+                                    정말 삭제합니까? 이 작업은 <span className="text-rose-300 font-medium">되돌릴 수 없습니다.</span>
+                                </p>
+                                {deleteTargetProject && (
+                                    <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.06] px-4 py-3 mb-4">
+                                        <p className="text-[11px] text-rose-300/80 mb-2">함께 삭제되는 데이터</p>
+                                        <ul className="space-y-1 text-xs text-gray-300">
+                                            <li>요구사항 {deleteTargetProject.reqCount}개</li>
+                                            <li>Kano 응답 {deleteTargetProject.responseCount}개</li>
+                                            <li>참여 멤버 {deleteTargetProject.memberCount}명의 접근 권한</li>
+                                            <li>QFD 행렬·기술특성·설문 초대 전체</li>
+                                        </ul>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-sm text-gray-400 mb-1">
+                                    <span className="text-white font-medium">&quot;{confirmDelete.name}&quot;</span>을(를) 삭제하시겠습니까?
+                                </p>
+                                {confirmDelete.type === 'project' && (
+                                    <p className="text-xs text-rose-400 mt-1 mb-4">⚠️ 프로젝트의 모든 데이터(요구사항, QFD, Kano 응답 등)가 함께 삭제됩니다.</p>
+                                )}
+                                {confirmDelete.type === 'user' && (
+                                    <p className="text-xs text-amber-400 mt-1 mb-4">⚠️ 이 작업은 되돌릴 수 없습니다.</p>
+                                )}
+                            </>
                         )}
-                        {confirmDelete.type === 'user' && (
-                            <p className="text-xs text-amber-400 mt-1 mb-4">⚠️ 이 작업은 되돌릴 수 없습니다.</p>
-                        )}
+
                         <div className="flex gap-3 mt-4">
                             <button
-                                onClick={() => setConfirmDelete(null)}
+                                onClick={() => cancelGoesBack(confirmDelete)
+                                    // 되돌아갈 자리를 준다. 마지막 확인에서 취소만 가능하면
+                                    // 실수로 다음 단계에 온 사람이 처음부터 다시 해야 한다.
+                                    ? setConfirmDelete({ ...confirmDelete, stage: 1 })
+                                    : setConfirmDelete(null)
+                                }
                                 className="btn-ghost flex-1"
+                                id="admin-cancel-delete-btn"
                             >
-                                취소
+                                {confirmDelete.stage === 2 ? '뒤로' : '취소'}
                             </button>
                             <button
-                                onClick={() => confirmDelete.type === 'user'
-                                    ? handleDeleteUser(confirmDelete.id)
-                                    : handleDeleteProject(confirmDelete.id)
-                                }
+                                onClick={() => {
+                                    // 몇 번 더 물어볼지는 lib/delete-confirmation 이 정한다.
+                                    if (deleteActionFor(confirmDelete) === 'advance') {
+                                        setConfirmDelete({ ...confirmDelete, stage: 2 });
+                                        return;
+                                    }
+                                    if (confirmDelete.type === 'user') {
+                                        handleDeleteUser(confirmDelete.id);
+                                        return;
+                                    }
+                                    handleDeleteProject(confirmDelete.id);
+                                }}
                                 className="flex-1 px-4 py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-sm font-medium hover:bg-rose-500/30 transition-colors"
                                 id="admin-confirm-delete-btn"
                             >
-                                삭제
+                                {deleteActionFor(confirmDelete) === 'advance' ? '계속' : '삭제'}
                             </button>
                         </div>
                     </div>
@@ -623,7 +678,7 @@ export default function AdminModePage() {
                             <MembersTab
                                 members={users}
                                 onApprove={handleApproval}
-                                onRequestDelete={(user) => setConfirmDelete({ type: 'user', id: user.id, name: user.name })}
+                                onRequestDelete={(user) => setConfirmDelete({ type: 'user', id: user.id, name: user.name, stage: 1 })}
                                 onSetRole={handleSetRole}
                                 onExtendAccess={handleExtendAccess}
                                 onCreate={handleCreateMember}
@@ -712,7 +767,7 @@ export default function AdminModePage() {
                                                             보기
                                                         </Link>
                                                         <button
-                                                            onClick={() => setConfirmDelete({ type: 'project', id: project.id, name: project.name })}
+                                                            onClick={() => setConfirmDelete({ type: 'project', id: project.id, name: project.name, stage: 1 })}
                                                             className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"
                                                             id={`admin-delete-project-${project.id}`}
                                                         >
