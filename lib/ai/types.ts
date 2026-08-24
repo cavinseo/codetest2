@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import type { SpecAiContext } from '../spec-ai-agent';
 
-export const AI_PROVIDER_IDS = ['rule', 'local', 'hermes', 'api'] as const;
+export const AI_PROVIDER_IDS = ['rule', 'local', 'hermes', 'api', 'personal'] as const;
 export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
 
 // 브라우저가 자기 PC의 LLM을 직접 호출한 경우를 화면에 구분해 보여주기 위한 태그.

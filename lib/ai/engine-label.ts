@@ -8,6 +8,7 @@ const ENGINE_LABELS: Record<AiEngineTag, string> = {
     'browser-local': '로컬 AI(브라우저)',
     hermes: '헤르메스',
     api: '클라우드 API',
+    personal: '내 AI',
 };
 
 export function describeAiEngine(data: { provider?: string; degraded?: boolean }): string {

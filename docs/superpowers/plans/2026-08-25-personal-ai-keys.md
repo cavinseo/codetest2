@@ -277,7 +277,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `verifyPersonalConnection(conn: PersonalAiConnection): Promise<{ ok: boolean; message: string }>`
   - `RunAiTaskOptions.personalConnection?: PersonalAiConnection | null` — Task 6 라우트가 넘긴다
 
-- [ ] **Step 1: openai-compatible.ts 에 directEndpoint 추가**
+- [x] **Step 1: openai-compatible.ts 에 directEndpoint 추가**
 
 `OpenAiCompatibleConfig` 에 필드 추가 (`allowRemoteHost` 아래):
 
@@ -298,7 +298,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         }
 ```
 
-- [ ] **Step 2: types / engine-label / providers 수정**
+- [x] **Step 2: types / engine-label / providers 수정**
 
 `lib/ai/types.ts`: `AI_PROVIDER_IDS` 를 `['rule', 'local', 'hermes', 'api', 'personal'] as const` 로.
 
@@ -313,7 +313,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
             throw new Error('personal 프로바이더는 registry 의 personalConnection 으로만 생성됩니다.');
 ```
 
-- [ ] **Step 3: lib/ai/personal.ts 작성**
+- [x] **Step 3: lib/ai/personal.ts 작성**
 
 ```ts
 // 개인 키 프로바이더. DB 를 모른다 — 복호화된 연결 정보를 받아 프로바이더만 만든다.
@@ -388,7 +388,7 @@ export async function verifyPersonalConnection(
 }
 ```
 
-- [ ] **Step 4: registry.ts 배선**
+- [x] **Step 4: registry.ts 배선**
 
 임포트 추가: `import { AiProviderError } from './openai-compatible';` / `import { createPersonalProvider, type PersonalAiConnection } from './personal';`
 
@@ -417,7 +417,7 @@ export async function verifyPersonalConnection(
 
 주의: `requested === 'rule'` 조기 반환 분기의 `resolve('rule')` 는 그대로 동작한다.
 
-- [ ] **Step 5: 실패하는 테스트 작성** — `tests/ai-personal-provider.test.ts`
+- [x] **Step 5: 실패하는 테스트 작성** — `tests/ai-personal-provider.test.ts`
 
 기존 `tests/ai-provider-registry.test.ts` 의 mock 패턴(어떤 모듈을 어떻게 mock 하는지)을 먼저 읽고 그대로 따른다. 핵심 케이스:
 
@@ -503,11 +503,11 @@ describe('verifyPersonalConnection', () => {
 });
 ```
 
-- [ ] **Step 6: 실패 확인 → 구현 마무리 → 통과 확인**
+- [x] **Step 6: 실패 확인 → 구현 마무리 → 통과 확인**
 
 Run: `npx vitest run tests/ai-personal-provider.test.ts` → PASS 까지.
 
-- [ ] **Step 7: 전체 검증 후 커밋**
+- [x] **Step 7: 전체 검증 후 커밋**
 
 Run: `npx tsc --noEmit` / `npx vitest run` / `npx next lint` 모두 통과.
 

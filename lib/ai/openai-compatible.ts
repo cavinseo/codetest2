@@ -32,6 +32,10 @@ export interface OpenAiCompatibleConfig {
     apiKey?: string;
     // 로컬 엔진은 localhost 계열만 허용해 SSRF 를 막는다. 클라우드 API 만 원격 호스트를 연다.
     allowRemoteHost?: boolean;
+    // true 면 /models 탐색 없이 첫 baseUrl + 지정한 model 을 그대로 쓴다.
+    // 개인 키 벤더는 주소·모델이 프리셋으로 확정돼 있고, Anthropic 호환
+    // 레이어는 /models 조회를 지원하지 않을 수 있어 탐색이 오히려 방해다.
+    directEndpoint?: boolean;
     timeoutMs?: number;
 }
 
@@ -90,6 +94,12 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
     // 후보 주소를 차례로 확인해 살아 있는 엔드포인트와 쓸 모델을 정한다. 한 번 찾으면 캐시한다.
     async function resolveEndpoint(): Promise<ResolvedEndpoint | null> {
         if (resolved) return resolved;
+
+        if (config.directEndpoint && config.model && config.baseUrls[0]) {
+            assertAllowedBaseUrl(config.baseUrls[0], config.allowRemoteHost);
+            resolved = { baseUrl: config.baseUrls[0], model: config.model };
+            return resolved;
+        }
 
         for (const baseUrl of config.baseUrls) {
             let url: URL;

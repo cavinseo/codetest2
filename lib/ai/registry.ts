@@ -2,6 +2,8 @@
 // 어떤 이유로든 선택한 엔진이 실패하면 규칙 기반 엔진 결과를 돌려주고, degraded 플래그로 알린다.
 import { createLogger } from '../logger';
 import { getAiSettings } from '../service-settings';
+import { AiProviderError } from './openai-compatible';
+import { createPersonalProvider, type PersonalAiConnection } from './personal';
 import { createProvider } from './providers';
 import { ruleProvider } from './provider-rule';
 import type { AiProvider, AiProviderId, AiTaskOutcome } from './types';
@@ -10,6 +12,9 @@ const log = createLogger('lib/ai/registry');
 
 export interface RunAiTaskOptions {
     requested?: AiProviderId;
+    // requested 가 'personal' 일 때 쓸, 요청한 사용자 본인의 복호화된 연결.
+    // 라우트가 세션의 userId 로 읽어 넘긴다 — 다른 사용자의 키가 올 수 없는 구조다.
+    personalConnection?: PersonalAiConnection | null;
     // 테스트에서 프로바이더를 주입하기 위한 확장점
     resolveProvider?: (id: AiProviderId) => AiProvider;
 }
@@ -21,7 +26,16 @@ export async function runAiTask<T>(
     // 설정 조회는 여기서 한 번만 한다. 아래 resolve 는 계속 동기라
     // 테스트의 resolveProvider 주입 방식이 그대로 유지된다.
     const settings = await getAiSettings();
-    const resolve = options.resolveProvider ?? ((id: AiProviderId) => createProvider(id, settings));
+    const resolve = options.resolveProvider ?? ((id: AiProviderId) => {
+        if (id === 'personal') {
+            if (!options.personalConnection) {
+                // resolve 는 try 안에서 불리므로 이 throw 는 기존 degrade 경로를 탄다.
+                throw new AiProviderError('등록된 개인 AI 키가 없습니다. 사용자 정보에서 키를 등록하세요.');
+            }
+            return createPersonalProvider(options.personalConnection);
+        }
+        return createProvider(id, settings);
+    });
     const requested = options.requested ?? settings.provider;
 
     if (requested === 'rule') {

@@ -49,6 +49,11 @@ export function createProvider(id: AiProviderId, settings: AiSettings): AiProvid
                 allowRemoteHost: true,
             });
 
+        case 'personal':
+            // 개인 프로바이더는 사용자별 키가 필요해 전역 설정으로는 만들 수 없다.
+            // registry 가 personalConnection 으로 직접 만들므로 여기 오면 배선 버그다.
+            throw new Error('personal 프로바이더는 registry 의 personalConnection 으로만 생성됩니다.');
+
         case 'rule':
         default:
             return ruleProvider;
