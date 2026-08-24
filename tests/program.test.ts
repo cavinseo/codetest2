@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canManageThisProgram, canOwnProjectIn, isValidProgramPeriod } from '../lib/program';
+import { canManageThisProgram, canOwnProjectIn, isValidProgramPeriod, projectImportOutcome } from '../lib/program';
 
 describe('canManageThisProgram', () => {
     it('관리자는 어떤 프로그램이든 만질 수 있다', () => {
@@ -64,5 +64,21 @@ describe('isValidProgramPeriod', () => {
 
     it('종료가 시작보다 앞이면 무효하다', () => {
         expect(isValidProgramPeriod(new Date('2026-06-30'), new Date('2026-01-01'))).toBe(false);
+    });
+});
+
+describe('projectImportOutcome', () => {
+    it('이미 이 프로그램 소속이면 already-here', () => {
+        expect(projectImportOutcome({ programId: 'prog_1' }, 'prog_1', false)).toBe('already-here');
+        // 이미 여기 있으므로 confirmed 값과 무관하게 already-here 다.
+        expect(projectImportOutcome({ programId: 'prog_1' }, 'prog_1', true)).toBe('already-here');
+    });
+
+    it('다른 프로그램 소속인데 확인을 안 받았으면 needs-confirm', () => {
+        expect(projectImportOutcome({ programId: 'prog_1' }, 'prog_2', false)).toBe('needs-confirm');
+    });
+
+    it('다른 프로그램 소속이어도 확인을 받았으면 ok', () => {
+        expect(projectImportOutcome({ programId: 'prog_1' }, 'prog_2', true)).toBe('ok');
     });
 });

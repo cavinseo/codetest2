@@ -16,6 +16,13 @@ interface ProgramRow {
     menteeCount: number;
 }
 
+interface ProjectOption {
+    id: string;
+    name: string;
+    programId: string;
+    programName: string;
+}
+
 const EMPTY_FORM = { name: '', organization: '', startsAt: '', endsAt: '' };
 
 export default function ProgramsTab() {
@@ -24,6 +31,13 @@ export default function ProgramsTab() {
     const [showCreate, setShowCreate] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [isBusy, setIsBusy] = useState(false);
+
+    // 프로젝트 불러오기: 프로그램마다 패널을 따로 열고 닫으므로 programId 로 키를 잡는다.
+    const [openImport, setOpenImport] = useState<Record<string, boolean>>({});
+    // null = 아직 안 받아왔다. 여러 프로그램이 같은 전체 목록을 공유해서 한 번만 받는다.
+    const [allProjects, setAllProjects] = useState<ProjectOption[] | null>(null);
+    const [importSelection, setImportSelection] = useState<Record<string, string>>({});
+    const [importBusy, setImportBusy] = useState<Record<string, boolean>>({});
 
     const load = useCallback(async () => {
         const res = await fetch('/api/programs');
@@ -61,6 +75,52 @@ export default function ProgramsTab() {
     };
 
     const canSubmit = form.name && form.organization && form.startsAt && form.endsAt;
+
+    // 목록은 패널을 처음 열 때만 받는다 — 아무도 안 쓰면 그 API 를 부르지 않는다.
+    const toggleImport = async (programId: string) => {
+        setOpenImport((prev) => ({ ...prev, [programId]: !prev[programId] }));
+        if (allProjects !== null) return;
+        const res = await fetch('/api/projects');
+        setAllProjects(res.ok ? (await res.json()).projects : []);
+    };
+
+    const importProject = async (programId: string) => {
+        const projectId = importSelection[programId];
+        if (!projectId) return;
+
+        setImportBusy((prev) => ({ ...prev, [programId]: true }));
+        setMessage(null);
+        try {
+            const attempt = (confirmReassign: boolean) => fetch(`/api/programs/${programId}/projects`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ projectId, ...(confirmReassign ? { confirmReassign: true } : {}) }),
+            });
+
+            let res = await attempt(false);
+            let data = await res.json().catch(() => null);
+
+            // 이미 다른 프로그램 소속이면 서버가 409 로 멈춘다. 여기서 한 번 더 물어보고,
+            // 승낙하면 confirmReassign 을 실어 같은 요청을 다시 보낸다.
+            if (res.status === 409 && data?.needsReassignConfirm) {
+                if (!window.confirm(data.error)) return;
+                res = await attempt(true);
+                data = await res.json().catch(() => null);
+            }
+
+            if (!res.ok) throw new Error(data?.error || '프로젝트를 불러오지 못했습니다.');
+
+            setMessage({ type: 'success', text: `"${data.project.name}" 프로젝트를 불러왔습니다.` });
+            setImportSelection((prev) => ({ ...prev, [programId]: '' }));
+            // 방금 옮긴 프로젝트의 programId 가 바뀌었으니 후보 목록을 다시 받는다.
+            setAllProjects(null);
+            await load();
+        } catch (error) {
+            setMessage({ type: 'error', text: error instanceof Error ? error.message : '프로젝트를 불러오지 못했습니다.' });
+        } finally {
+            setImportBusy((prev) => ({ ...prev, [programId]: false }));
+        }
+    };
 
     return (
         <div className="space-y-4">
@@ -122,28 +182,80 @@ export default function ProgramsTab() {
                 </div>
             ) : (
                 <div className="space-y-3">
-                    {programs.map((p) => (
-                        <div key={p.id} className="card">
-                            <div className="flex items-start justify-between gap-4">
-                                <div>
-                                    <h4 className="text-sm font-semibold text-white">{p.name}</h4>
-                                    <p className="text-xs text-gray-500 mt-0.5">{p.organization}</p>
-                                    <p className="text-[11px] text-gray-600 mt-1">
-                                        {p.startsAt.slice(0, 10)} ~ {p.endsAt.slice(0, 10)}
-                                    </p>
+                    {programs.map((p) => {
+                        // 이미 이 프로그램 소속인 것을 골라 봐야 서버가 400 을 줄 뿐이라 미리 뺀다.
+                        const candidates = (allProjects ?? []).filter((proj) => proj.programId !== p.id);
+                        return (
+                            <div key={p.id} className="card">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-white">{p.name}</h4>
+                                        <p className="text-xs text-gray-500 mt-0.5">{p.organization}</p>
+                                        <p className="text-[11px] text-gray-600 mt-1">
+                                            {p.startsAt.slice(0, 10)} ~ {p.endsAt.slice(0, 10)}
+                                        </p>
+                                    </div>
+                                    <div className="text-right flex-shrink-0">
+                                        <p className="text-xs text-gray-400">{p.managerName}</p>
+                                        <p className="text-[11px] text-gray-600">{p.managerEmail}</p>
+                                    </div>
                                 </div>
-                                <div className="text-right flex-shrink-0">
-                                    <p className="text-xs text-gray-400">{p.managerName}</p>
-                                    <p className="text-[11px] text-gray-600">{p.managerEmail}</p>
+                                <div className="divider my-3" />
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-4 text-[11px] text-gray-500">
+                                        <span>멘티 {p.menteeCount}명</span>
+                                        <span>프로젝트 {p.projectCount}개</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleImport(p.id)}
+                                        className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] transition-colors"
+                                        id={`programs-import-toggle-${p.id}`}
+                                    >
+                                        {openImport[p.id] ? '닫기' : '프로젝트 불러오기'}
+                                    </button>
                                 </div>
+
+                                {openImport[p.id] && (
+                                    <div className="mt-3 pt-3 border-t border-white/[0.06] flex flex-wrap items-end gap-3">
+                                        {allProjects === null ? (
+                                            <p className="text-xs text-gray-500">불러오는 중...</p>
+                                        ) : candidates.length === 0 ? (
+                                            <p className="text-xs text-gray-500">불러올 수 있는 다른 프로젝트가 없습니다.</p>
+                                        ) : (
+                                            <>
+                                                <label className="block text-sm font-medium text-gray-400 flex-1 min-w-[220px]">
+                                                    프로젝트
+                                                    <select
+                                                        className="input mt-2"
+                                                        value={importSelection[p.id] ?? ''}
+                                                        onChange={(e) => setImportSelection((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                                        id={`programs-import-select-${p.id}`}
+                                                    >
+                                                        <option value="">선택하세요</option>
+                                                        {candidates.map((proj) => (
+                                                            <option key={proj.id} value={proj.id}>
+                                                                {proj.name} (현재: {proj.programName})
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => importProject(p.id)}
+                                                    disabled={importBusy[p.id] || !importSelection[p.id]}
+                                                    className="btn-primary text-sm disabled:opacity-50"
+                                                    id={`programs-import-submit-${p.id}`}
+                                                >
+                                                    {importBusy[p.id] ? '불러오는 중...' : '불러오기'}
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
                             </div>
-                            <div className="divider my-3" />
-                            <div className="flex items-center gap-4 text-[11px] text-gray-500">
-                                <span>멘티 {p.menteeCount}명</span>
-                                <span>프로젝트 {p.projectCount}개</span>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>

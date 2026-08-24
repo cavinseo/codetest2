@@ -40,3 +40,35 @@ export function canOwnProjectIn(mentee: { role: MemberRole; programId: string | 
 export function isValidProgramPeriod(startsAt: Date, endsAt: Date): boolean {
     return endsAt.getTime() > startsAt.getTime();
 }
+
+// ─── 프로젝트 불러오기(다른 프로그램에서 이관) ──────────────────────────
+
+/**
+ * `already-here`  이미 이 프로그램 소속이다. 옮길 것이 없다.
+ * `needs-confirm` 다른 프로그램 소속이라, 옮기기 전에 한 번 더 확인받아야 한다.
+ * `ok`            확인을 받았거나(또는 원래 어디에도 안 걸렸거나) 옮겨도 된다.
+ */
+export type ProjectImportOutcome = 'already-here' | 'needs-confirm' | 'ok';
+
+/**
+ * 기존 프로젝트를 이 프로그램으로 불러올 때 무엇을 해야 하는지 정한다.
+ *
+ * Project.programId 는 필수 컬럼이라 모든 프로젝트가 이미 어딘가에 속해
+ * 있다 — "프로그램 없음" 상태가 없다. 그래서 이 판정은 사실상 "재배정"이고,
+ * 다른 프로그램 소속을 조용히 가로채지 않도록 confirmed 플래그 없이는
+ * 항상 한 번 멈춘다.
+ *
+ * 소유자(멘티)가 이 프로그램 소속인지는 여기서 확인하지 않는다. 이 기능의
+ * 주 용도가 예전 모델(관리자·매니저가 소유하던 프로젝트)이나 「미분류」
+ * 프로그램에 쌓인 프로젝트를 정리해 넣는 것이라, 소유자 일관성까지 강제하면
+ * 정작 옮기려는 프로젝트 대부분을 못 옮기게 된다.
+ */
+export function projectImportOutcome(
+    project: { programId: string },
+    targetProgramId: string,
+    confirmed: boolean
+): ProjectImportOutcome {
+    if (project.programId === targetProgramId) return 'already-here';
+    if (!confirmed) return 'needs-confirm';
+    return 'ok';
+}

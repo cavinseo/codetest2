@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
                 ownerId: true,
                 createdAt: true,
                 updatedAt: true,
+                programId: true,
                 program: { select: { name: true } },
                 members: {
                     where: { userId: userId },
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
                 detailedDescription: p.detailedDescription,
                 createdAt: p.createdAt.toISOString(),
                 updatedAt: p.updatedAt.toISOString(),
+                programId: p.programId,
                 programName: p.program.name,
                 memberCount: p._count.members + 1, // 소유자 포함
                 role: resolveProjectRole({
