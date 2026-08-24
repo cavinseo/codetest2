@@ -1061,7 +1061,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Consumes: Task 3 `RunAiTaskOptions.personalConnection`, Task 4 `loadPersonalConnection`
 - Produces: `PROJECT_AI_MODES = ['rule','local','personal']` — 대시보드 모달과 프로젝트 설정 화면은 이 배열을 순회하므로 자동으로 세 번째 선택지가 나타난다
 
-- [ ] **Step 1: project-ai-mode.ts 확장**
+- [x] **Step 1: project-ai-mode.ts 확장**
 
 ```ts
 export const PROJECT_AI_MODES = ['rule', 'local', 'personal'] as const;
@@ -1085,7 +1085,7 @@ export const PROJECT_AI_MODE_DESCRIPTIONS: Record<ProjectAiMode, string> = {
 
 `schema.prisma` 의 `Project.aiMode` 주석을 `// AI 에이전트 연결 방식: "rule" | "local" | "personal"` 로 갱신 (주석만 — 컬럼 변화 없음).
 
-- [ ] **Step 2: attributes/mentor 라우트 배선**
+- [x] **Step 2: attributes/mentor 라우트 배선**
 
 임포트 추가: `parseProjectAiMode`(lib/ai/project-ai-mode), `loadPersonalConnection`(lib/ai/personal-store).
 
@@ -1105,7 +1105,7 @@ prisma select 에 `aiMode: true,` 추가. `projectContext` 정의 아래에:
 
 두 `runAiTask(...)` 호출에 둘째 인자 `{ requested, personalConnection }` 를 추가.
 
-- [ ] **Step 3: spec/generate 라우트 배선**
+- [x] **Step 3: spec/generate 라우트 배선**
 
 임포트 추가: `loadPersonalConnection`(lib/ai/personal-store). 기존 `const requested = ...` 줄을 다음으로 교체:
 
@@ -1120,12 +1120,12 @@ prisma select 에 `aiMode: true,` 추가. `projectContext` 정의 아래에:
 
 `runAiTask(...)` 호출의 옵션을 `{ requested, personalConnection }` 로. `shouldOfferRelay` 조건은 그대로 둔다(로컬 전용 — personal 실패는 폴백 결과가 이미 담겨 있다).
 
-- [ ] **Step 4: 선택 UI 자동 반영 확인**
+- [x] **Step 4: 선택 UI 자동 반영 확인**
 
 Run: `grep -rn "PROJECT_AI_MODES" app/ components/`
 확인: 대시보드 모달과 프로젝트 설정 화면이 배열을 순회(map)하고 있으면 코드 수정 없이 세 선택지가 나온다. 순회하지 않고 두 개를 하드코딩한 곳이 있으면 배열 순회로 바꾼다.
 
-- [ ] **Step 5: 실패하는 테스트 작성** — `tests/api-ai-personal-mode.test.ts`
+- [x] **Step 5: 실패하는 테스트 작성** — `tests/api-ai-personal-mode.test.ts`
 
 `runAiTask` 와 `loadPersonalConnection` 을 mock 해 라우트가 올바른 옵션을 넘기는지 잠근다:
 
@@ -1207,7 +1207,7 @@ describe('attributes/mentor 의 personal 모드', () => {
 
 `lib/ai/project-ai-mode` 확장에 대한 단위 케이스도 추가: `parseProjectAiMode('personal') === 'personal'`, 모르는 값은 `'rule'`.
 
-- [ ] **Step 6: 실패 확인 → 통과 → 전체 검증 → 커밋**
+- [x] **Step 6: 실패 확인 → 통과 → 전체 검증 → 커밋**
 
 Run: `npx vitest run tests/api-ai-personal-mode.test.ts` → PASS. `npx tsc --noEmit` / `npx vitest run` / `npx next lint` 통과.
 

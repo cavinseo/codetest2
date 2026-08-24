@@ -11,6 +11,7 @@ import {
     type SpecAiStructuredInput,
 } from '@/lib/spec-ai-agent';
 import { runAiTask } from '@/lib/ai/registry';
+import { loadPersonalConnection } from '@/lib/ai/personal-store';
 import { buildSpecDraftPrompts } from '@/lib/ai/prompts';
 import { parseProjectAiMode } from '@/lib/ai/project-ai-mode';
 import { getAiSettings } from '@/lib/service-settings';
@@ -119,9 +120,17 @@ export async function POST(
         // 로컬 개발에서는 서버와 브라우저가 같은 PC라 서버측이 늘 성공해 버려서
         // 브라우저 경유 경로를 시험할 수 없다. 이 스위치로 서버측을 건너뛴다.
         const serverLocalDisabled = process.env.AI_LOCAL_SERVER_DISABLED === '1';
-        const requested = aiMode === 'local' && !serverLocalDisabled ? 'local' : 'rule';
+        const personalConnection = aiMode === 'personal'
+            ? await loadPersonalConnection(accessResult.user.userId)
+            : null;
+        const requested = aiMode === 'personal'
+            ? 'personal' as const
+            : aiMode === 'local' && !serverLocalDisabled ? 'local' as const : 'rule' as const;
 
-        const outcome = await runAiTask((provider) => provider.specDraft(context), { requested });
+        const outcome = await runAiTask(
+            (provider) => provider.specDraft(context),
+            { requested, personalConnection }
+        );
         const result = composeSpecDraftFromCores(outcome.result.cores, context);
 
         // 로컬을 원했는데 서버에서 못 붙었으면, 브라우저가 자기 PC의 LLM 을 직접
