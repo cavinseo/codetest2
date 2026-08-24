@@ -40,13 +40,17 @@ export default function ProgramsTab() {
     const [importBusy, setImportBusy] = useState<Record<string, boolean>>({});
 
     const load = useCallback(async () => {
-        const res = await fetch('/api/programs');
-        if (!res.ok) {
-            setMessage({ type: 'error', text: '프로그램 목록을 불러오지 못했습니다.' });
-            return;
+        try {
+            const res = await fetch('/api/programs');
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data) {
+                setMessage({ type: 'error', text: data?.error || '프로그램 목록을 불러오지 못했습니다.' });
+                return;
+            }
+            setPrograms(data.programs);
+        } catch {
+            setMessage({ type: 'error', text: '프로그램 목록을 불러오지 못했습니다. 연결을 확인하세요.' });
         }
-        const data = await res.json();
-        setPrograms(data.programs);
     }, []);
 
     useEffect(() => { load(); }, [load]);
@@ -76,12 +80,28 @@ export default function ProgramsTab() {
 
     const canSubmit = form.name && form.organization && form.startsAt && form.endsAt;
 
+    // 후보 목록을 받아 온다. 실패해도 반드시 null 을 벗어나야 한다 — null 로
+    // 남으면 화면이 "불러오는 중..." 에 영원히 갇힌다.
+    const loadCandidates = useCallback(async () => {
+        try {
+            const res = await fetch('/api/projects');
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data) {
+                setMessage({ type: 'error', text: data?.error || '프로젝트 목록을 불러오지 못했습니다.' });
+                setAllProjects([]);
+                return;
+            }
+            setAllProjects(data.projects);
+        } catch {
+            setMessage({ type: 'error', text: '프로젝트 목록을 불러오지 못했습니다. 연결을 확인하세요.' });
+            setAllProjects([]);
+        }
+    }, []);
+
     // 목록은 패널을 처음 열 때만 받는다 — 아무도 안 쓰면 그 API 를 부르지 않는다.
-    const toggleImport = async (programId: string) => {
+    const toggleImport = (programId: string) => {
         setOpenImport((prev) => ({ ...prev, [programId]: !prev[programId] }));
-        if (allProjects !== null) return;
-        const res = await fetch('/api/projects');
-        setAllProjects(res.ok ? (await res.json()).projects : []);
+        if (allProjects === null) loadCandidates();
     };
 
     const importProject = async (programId: string) => {
@@ -112,9 +132,11 @@ export default function ProgramsTab() {
 
             setMessage({ type: 'success', text: `"${data.project.name}" 프로젝트를 불러왔습니다.` });
             setImportSelection((prev) => ({ ...prev, [programId]: '' }));
-            // 방금 옮긴 프로젝트의 programId 가 바뀌었으니 후보 목록을 다시 받는다.
-            setAllProjects(null);
-            await load();
+            // 방금 옮긴 프로젝트의 programId 가 바뀌었으니 후보 목록을 실제로 다시
+            // 받아 온다. 여기서 null 로만 되돌리면 다시 받는 쪽(toggleImport)은
+            // 패널을 여는 순간에만 도는데 패널은 이미 열려 있어, 화면이
+            // "불러오는 중..." 에 그대로 갇힌다.
+            await Promise.all([loadCandidates(), load()]);
         } catch (error) {
             setMessage({ type: 'error', text: error instanceof Error ? error.message : '프로젝트를 불러오지 못했습니다.' });
         } finally {
