@@ -7,6 +7,10 @@
 //
 //   node scripts/seed-admin.mjs                     .env 의 ADMIN_EMAILS 첫 주소를 쓴다
 //   node scripts/seed-admin.mjs admin@example.com   주소를 직접 지정한다
+//   node scripts/seed-admin.mjs --reset-password    기존 계정의 비밀번호도 새로 발급한다
+//
+// 기존 계정은 권한만 올리고 비밀번호는 건드리지 않는다. 남의 비밀번호를 말없이
+// 갈아치우지 않기 위해서다. 비밀번호를 잊었으면 --reset-password 를 준다.
 //
 // 실제로 쓰기 전에는 대상 DB 를 보여주고 확인을 받는다. --yes 를 주면 건너뛴다.
 import { createInterface } from 'node:readline/promises';
@@ -81,6 +85,11 @@ async function main() {
     console.log('  대상 계정: ' + email);
     console.log('');
 
+    if (process.argv.includes('--reset-password')) {
+        console.log('  ! 비밀번호를 새로 발급하고 기존 로그인 세션을 모두 끊습니다.');
+        console.log('');
+    }
+
     const skipPrompt = process.argv.includes('--yes');
     if (!skipPrompt) {
         const ok = await confirm('이 DB 의 계정을 관리자로 만듭니다. 계속할까요? (y/N) ');
@@ -103,9 +112,24 @@ async function main() {
 
         if (existing) {
             userId = existing.id;
+            const resetPassword = process.argv.includes('--reset-password');
+            if (resetPassword) tempPassword = generateTempPassword();
+
             await prisma.user.update({
                 where: { id: existing.id },
-                data: { status: 'APPROVED', isAdmin: true, role: 'ADMIN' },
+                data: {
+                    status: 'APPROVED',
+                    isAdmin: true,
+                    role: 'ADMIN',
+                    // 비밀번호를 새로 발급하면 이미 발급된 세션도 끊는다.
+                    // 그러지 않으면 예전 쿠키로 계속 들어올 수 있다.
+                    ...(tempPassword
+                        ? {
+                            passwordHash: await bcrypt.hash(tempPassword, BCRYPT_ROUNDS),
+                            sessionVersion: { increment: 1 },
+                        }
+                        : {}),
+                },
             });
             console.log('기존 계정을 관리자로 올렸습니다.');
             console.log(`  이전 상태: status=${existing.status} isAdmin=${existing.isAdmin} role=${existing.role}`);
@@ -153,6 +177,7 @@ async function main() {
             console.log('  이 값은 여기에만 표시됩니다. 로그인 후 바로 바꾸세요.');
         } else {
             console.log('  비밀번호는 그대로입니다. 기존 비밀번호로 로그인하세요.');
+            console.log('  잊었다면 --reset-password 를 붙여 다시 실행하세요.');
         }
 
         console.log('');
