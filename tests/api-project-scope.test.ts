@@ -39,10 +39,11 @@ function postRequest(body: unknown): NextRequest {
 const validCreateBody = { name: '새 과제', programId: 'prog_1', ownerMenteeId: 'mentee_1' };
 
 // GET 라우트의 select 모양을 그대로 흉내낸 목록 행. role 계산은 ownerId/members 만
-// 보므로 나머지 필드는 고정값으로 채운다.
+// 보므로 나머지 필드는 고정값으로 채운다. _count 는 통계 테스트가 덮어쓸 수 있다.
 function projectRow(overrides: {
     ownerId: string;
     members: Array<{ role: string }>;
+    _count?: { members: number; kanoInvitations: number; qfdMatrices: number };
 }) {
     return {
         id: 'proj_1',
