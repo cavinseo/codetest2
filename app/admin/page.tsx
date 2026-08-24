@@ -203,19 +203,32 @@ export default function AdminModePage() {
     };
 
     const handleDeleteProject = async (projectId: string) => {
-        const res = await fetch('/api/admin/projects', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectId }),
-        });
-        if (res.ok) {
+        try {
+            const res = await fetch('/api/admin/projects', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ projectId }),
+            });
+            const data = await res.json().catch(() => null);
+
+            if (!res.ok) {
+                // 서버가 준 이유(404·403·500)를 그대로 보여준다. "삭제 실패" 한 줄로
+                // 뭉개면 세션이 끊긴 것인지 이미 지워진 것인지 구분할 수 없다.
+                showMsg('error', data?.error || '프로젝트 삭제에 실패했습니다.');
+                return;
+            }
+
             setProjects((prev) => prev.filter((p) => p.id !== projectId));
             if (stats) setStats((prev) => prev ? { ...prev, totalProjects: prev.totalProjects - 1 } : prev);
-            showMsg('success', '프로젝트와 모든 연관 데이터가 삭제되었습니다.');
-        } else {
-            showMsg('error', '삭제 실패');
+            showMsg('success', data?.deletedProject
+                ? `"${data.deletedProject}"와 모든 연관 데이터를 삭제했습니다.`
+                : '프로젝트와 모든 연관 데이터가 삭제되었습니다.');
+        } catch {
+            // 통신 자체가 실패해도 모달은 닫아야 한다. 안 닫으면 화면이 잠긴다.
+            showMsg('error', '프로젝트 삭제에 실패했습니다. 연결을 확인하세요.');
+        } finally {
+            setConfirmDelete(null);
         }
-        setConfirmDelete(null);
     };
 
     const handleChangePassword = async (event: React.FormEvent) => {
