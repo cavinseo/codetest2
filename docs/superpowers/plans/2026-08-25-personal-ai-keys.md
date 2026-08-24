@@ -540,7 +540,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - API: `GET/PUT/DELETE /api/me/ai-connection`, `POST /api/me/ai-connection/verify`
   - GET 응답: `{ connection: { vendor, model, updatedAt } | null }` — **키는 어떤 형태로도 응답에 담지 않는다**
 
-- [ ] **Step 1: lib/ai/personal-store.ts 작성**
+- [x] **Step 1: lib/ai/personal-store.ts 작성**
 
 ```ts
 // 개인 AI 키의 DB 저장·조회. 키는 암호화된 형태로만 저장되고, 복호화는
@@ -599,7 +599,7 @@ export async function deletePersonalConnection(userId: string): Promise<void> {
 }
 ```
 
-- [ ] **Step 2: app/api/me/ai-connection/route.ts 작성**
+- [x] **Step 2: app/api/me/ai-connection/route.ts 작성**
 
 ```ts
 // 본인 AI 키 연결의 조회·저장·삭제. /api/me/profile 과 같은 원칙 —
@@ -685,7 +685,7 @@ export async function DELETE(request: NextRequest) {
 }
 ```
 
-- [ ] **Step 3: app/api/me/ai-connection/verify/route.ts 작성**
+- [x] **Step 3: app/api/me/ai-connection/verify/route.ts 작성**
 
 ```ts
 // 등록된 본인 키가 실제로 통하는지 확인한다(짧은 요청 1회 — 비용은 사실상 0원).
@@ -720,7 +720,7 @@ export async function POST(request: NextRequest) {
 }
 ```
 
-- [ ] **Step 4: 실패하는 테스트 작성** — `tests/api-me-ai-connection.test.ts`
+- [x] **Step 4: 실패하는 테스트 작성** — `tests/api-me-ai-connection.test.ts`
 
 mock 패턴은 `tests/api-me-profile.test.ts` 를 따른다. 필수 케이스:
 
@@ -828,11 +828,11 @@ describe('조회·삭제', () => {
 
 verify 라우트 테스트도 같은 파일에 추가: 등록 없음 → 400 / `verifyPersonalConnection` mock(`vi.mock('../lib/ai/personal', ...)`) 이 `{ ok: false, message: ... }` 를 주면 그대로 전달되는지.
 
-- [ ] **Step 5: 실패 확인 → 통과 확인 → 전체 검증**
+- [x] **Step 5: 실패 확인 → 통과 확인 → 전체 검증**
 
 Run: `npx vitest run tests/api-me-ai-connection.test.ts` → PASS. 이어서 `npx tsc --noEmit`, `npx vitest run`, `npx next lint` 통과.
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add lib/ai/personal-store.ts app/api/me/ai-connection tests/api-me-ai-connection.test.ts
