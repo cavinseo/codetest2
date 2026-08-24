@@ -43,6 +43,7 @@ model User {
   issuedInviteCodes   InviteCode[]           @relation("InviteIssuer")
   usedInviteCode      InviteCode?            @relation("InviteRedeemer")
   profile             MemberProfile?
+  aiConnection        UserAiConnection?
 
   @@map("users")
 }
@@ -577,4 +578,20 @@ model MemberProfile {
   updatedAt DateTime @updatedAt
 
   @@map("member_profiles")
+}
+
+/// 회원이 등록한 개인 AI 키. 본인의 AI 작업에만 쓰이고 절대 공유되지 않는다.
+/// apiKey 는 lib/settings-crypto 로 암호화된 값(enc:v1: 접두)만 저장한다.
+model UserAiConnection {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 'openai' | 'anthropic' | 'gemini' — lib/ai/personal-vendors.ts 가 정본
+  vendor    String
+  apiKey    String
+  // 비우면 벤더 기본 모델을 쓴다
+  model     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_ai_connections")
 }
