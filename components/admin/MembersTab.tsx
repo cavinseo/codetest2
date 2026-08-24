@@ -79,7 +79,7 @@ export default function MembersTab({
                     <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                     <input
                         type="text"
-                        placeholder="이름 또는 이메일 검색..."
+                        placeholder="이름 또는 ID 검색..."
                         value={searchMember}
                         onChange={(e) => setSearchMember(e.target.value)}
                         className="input pl-10 w-full"
@@ -107,7 +107,7 @@ export default function MembersTab({
                                 onChange={(e) => setNewMember({ ...newMember, name: e.target.value })} />
                         </label>
                         <label className="block text-sm font-medium text-gray-400">
-                            이메일
+                            ID
                             <input type="email" className="input mt-2" value={newMember.email}
                                 onChange={(e) => setNewMember({ ...newMember, email: e.target.value })} />
                         </label>

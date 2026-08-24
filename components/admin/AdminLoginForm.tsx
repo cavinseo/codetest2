@@ -83,7 +83,7 @@ export default function AdminLoginForm({ onAuthenticated }: AdminLoginFormProps)
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div>
                             <label htmlFor="admin-email" className={`block text-sm font-medium mb-2 transition-colors duration-200 ${focusedField === 'email' ? 'text-amber-300' : 'text-gray-400'}`}>
-                                관리자 이메일
+                                관리자 ID
                             </label>
                             <div className="relative">
                                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
