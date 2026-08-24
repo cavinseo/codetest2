@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-policy';
+import AdminLoginForm from '@/components/admin/AdminLoginForm';
 import MembersTab, { type User } from '@/components/admin/MembersTab';
 import InvitesTab from '@/components/admin/InvitesTab';
 import MentorAssign from '@/components/admin/MentorAssign';
@@ -39,7 +39,6 @@ type Tab = 'overview' | 'members' | 'invites' | 'projects' | 'password';
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function AdminModePage() {
-    const router = useRouter();
     const [tab, setTab] = useState<Tab>('overview');
     const [stats, setStats] = useState<Stats | null>(null);
     const [users, setUsers] = useState<User[]>([]);
@@ -49,6 +48,7 @@ export default function AdminModePage() {
     const [confirmDelete, setConfirmDelete] = useState<{ type: 'user' | 'project'; id: string; name: string } | null>(null);
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [accessDenied, setAccessDenied] = useState(false);
+    const [needsLogin, setNeedsLogin] = useState(false);
     const [passwordForm, setPasswordForm] = useState({
         currentPassword: '',
         newPassword: '',
@@ -70,9 +70,10 @@ export default function AdminModePage() {
                 fetch('/api/me/profile'),
             ]);
 
-            // 미로그인은 관리자 로그인창으로, 로그인은 했지만 권한이 없으면 안내 화면으로 보낸다.
+            // 미로그인이면 이 자리에서 로그인 화면을 띄운다. 다른 주소로 넘기면
+            // 관리자 진입점이 /admin 과 /admin/login 두 개로 갈라진다.
             if (statsRes.status === 401) {
-                router.replace('/admin/login');
+                setNeedsLogin(true);
                 return;
             }
             if (statsRes.status === 403) {
@@ -93,7 +94,7 @@ export default function AdminModePage() {
             // 부르면 서버가 찍은 시각이 HTML 에 박혀 hydration 이 어긋난다.
             setLoadedAt(new Date().toLocaleString('ko-KR'));
         }
-    }, [router]);
+    }, []);
 
     useEffect(() => { load(); }, [load]);
 
@@ -308,6 +309,18 @@ export default function AdminModePage() {
         R: { label: 'Reverse', color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/20' },
         Q: { label: 'Question', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
     };
+
+    if (needsLogin) {
+        // 로그인에 성공하면 주소를 바꾸지 않고 그대로 다시 불러온다.
+        return (
+            <AdminLoginForm
+                onAuthenticated={() => {
+                    setNeedsLogin(false);
+                    load();
+                }}
+            />
+        );
+    }
 
     if (accessDenied) {
         return (
