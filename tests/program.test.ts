@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canManageThisProgram, canOwnProjectIn, isValidProgramPeriod, projectImportOutcome } from '../lib/program';
+import { canManageThisProgram, canOwnProjectIn, isValidProgramPeriod, programMoveOutcome } from '../lib/program';
 
 describe('canManageThisProgram', () => {
     it('관리자는 어떤 프로그램이든 만질 수 있다', () => {
@@ -67,18 +67,25 @@ describe('isValidProgramPeriod', () => {
     });
 });
 
-describe('projectImportOutcome', () => {
+describe('programMoveOutcome', () => {
     it('이미 이 프로그램 소속이면 already-here', () => {
-        expect(projectImportOutcome({ programId: 'prog_1' }, 'prog_1', false)).toBe('already-here');
+        expect(programMoveOutcome('prog_1', 'prog_1', false)).toBe('already-here');
         // 이미 여기 있으므로 confirmed 값과 무관하게 already-here 다.
-        expect(projectImportOutcome({ programId: 'prog_1' }, 'prog_1', true)).toBe('already-here');
+        expect(programMoveOutcome('prog_1', 'prog_1', true)).toBe('already-here');
     });
 
     it('다른 프로그램 소속인데 확인을 안 받았으면 needs-confirm', () => {
-        expect(projectImportOutcome({ programId: 'prog_1' }, 'prog_2', false)).toBe('needs-confirm');
+        expect(programMoveOutcome('prog_1', 'prog_2', false)).toBe('needs-confirm');
     });
 
     it('다른 프로그램 소속이어도 확인을 받았으면 ok', () => {
-        expect(projectImportOutcome({ programId: 'prog_1' }, 'prog_2', true)).toBe('ok');
+        expect(programMoveOutcome('prog_1', 'prog_2', true)).toBe('ok');
+    });
+
+    it('어디에도 안 속해 있으면 확인 없이 ok', () => {
+        // 빼앗는 것이 아니라서 확인을 받을 상대가 없다. 초대 코드 없이 가입한
+        // 멘티(User.programId = null)가 이 갈래를 탄다.
+        expect(programMoveOutcome(null, 'prog_1', false)).toBe('ok');
+        expect(programMoveOutcome(null, 'prog_1', true)).toBe('ok');
     });
 });

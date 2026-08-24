@@ -11,7 +11,7 @@ import { requireAuth } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { canManagePrograms } from '@/lib/member-roles';
-import { canManageThisProgram, projectImportOutcome } from '@/lib/program';
+import { canManageThisProgram, programMoveOutcome } from '@/lib/program';
 
 const log = createLogger('api/programs/projects');
 
@@ -59,7 +59,7 @@ export async function POST(
             return NextResponse.json({ error: '프로젝트를 찾을 수 없습니다.' }, { status: 404 });
         }
 
-        const outcome = projectImportOutcome(project, programId, parsed.data.confirmReassign === true);
+        const outcome = programMoveOutcome(project.programId, programId, parsed.data.confirmReassign === true);
 
         if (outcome === 'already-here') {
             return NextResponse.json({ error: '이미 이 프로그램에 속한 프로젝트입니다.' }, { status: 400 });

@@ -23,6 +23,15 @@ interface ProjectOption {
     programName: string;
 }
 
+interface MenteeCandidate {
+    id: string;
+    name: string;
+    email: string;
+    programId: string | null;
+    /** 아직 어느 프로그램에도 안 속한 멘티는 null 이다. */
+    programName: string | null;
+}
+
 const EMPTY_FORM = { name: '', organization: '', startsAt: '', endsAt: '' };
 
 export default function ProgramsTab() {
@@ -38,6 +47,13 @@ export default function ProgramsTab() {
     const [allProjects, setAllProjects] = useState<ProjectOption[] | null>(null);
     const [importSelection, setImportSelection] = useState<Record<string, string>>({});
     const [importBusy, setImportBusy] = useState<Record<string, boolean>>({});
+
+    // 멘티 배정. 후보는 "이 프로그램에 아직 없는 멘티"라 프로그램마다 달라서
+    // 프로젝트 후보와 달리 programId 별로 따로 담는다.
+    const [openAssign, setOpenAssign] = useState<Record<string, boolean>>({});
+    const [menteeCandidates, setMenteeCandidates] = useState<Record<string, MenteeCandidate[] | null>>({});
+    const [assignSelection, setAssignSelection] = useState<Record<string, string>>({});
+    const [assignBusy, setAssignBusy] = useState<Record<string, boolean>>({});
 
     const load = useCallback(async () => {
         try {
@@ -102,6 +118,67 @@ export default function ProgramsTab() {
     const toggleImport = (programId: string) => {
         setOpenImport((prev) => ({ ...prev, [programId]: !prev[programId] }));
         if (allProjects === null) loadCandidates();
+    };
+
+    // 멘티 후보. 실패해도 반드시 null 을 벗어나야 한다(위 loadCandidates 와 같은 이유).
+    const loadMenteeCandidates = useCallback(async (programId: string) => {
+        try {
+            const res = await fetch(`/api/programs/${programId}/mentees?candidates=1`);
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data) {
+                setMessage({ type: 'error', text: data?.error || '멘티 목록을 불러오지 못했습니다.' });
+                setMenteeCandidates((prev) => ({ ...prev, [programId]: [] }));
+                return;
+            }
+            setMenteeCandidates((prev) => ({ ...prev, [programId]: data.candidates }));
+        } catch {
+            setMessage({ type: 'error', text: '멘티 목록을 불러오지 못했습니다. 연결을 확인하세요.' });
+            setMenteeCandidates((prev) => ({ ...prev, [programId]: [] }));
+        }
+    }, []);
+
+    const toggleAssign = (programId: string) => {
+        setOpenAssign((prev) => ({ ...prev, [programId]: !prev[programId] }));
+        if (menteeCandidates[programId] == null) loadMenteeCandidates(programId);
+    };
+
+    const assignMentee = async (programId: string) => {
+        const userId = assignSelection[programId];
+        if (!userId) return;
+
+        setAssignBusy((prev) => ({ ...prev, [programId]: true }));
+        setMessage(null);
+        try {
+            const attempt = (confirmReassign: boolean) => fetch(`/api/programs/${programId}/mentees`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, ...(confirmReassign ? { confirmReassign: true } : {}) }),
+            });
+
+            let res = await attempt(false);
+            let data = await res.json().catch(() => null);
+
+            // 이미 다른 프로그램 소속이면 서버가 409 로 멈춘다. 어디에도 안 속한
+            // 멘티는 빼앗는 것이 아니므로 이 갈래를 타지 않고 바로 배정된다.
+            if (res.status === 409 && data?.needsReassignConfirm) {
+                if (!window.confirm(data.error)) return;
+                res = await attempt(true);
+                data = await res.json().catch(() => null);
+            }
+
+            if (!res.ok) throw new Error(data?.error || '멘티를 배정하지 못했습니다.');
+
+            setMessage({ type: 'success', text: `${data.mentee.name} 님을 배정했습니다.` });
+            setAssignSelection((prev) => ({ ...prev, [programId]: '' }));
+            // 방금 배정한 멘티가 후보에서 빠져야 하고, 카드의 멘티 수도 늘어난다.
+            // 다른 프로그램의 후보 목록에도 소속이 바뀐 것이 반영돼야 하므로 전부 비운다.
+            setMenteeCandidates({});
+            await Promise.all([loadMenteeCandidates(programId), load()]);
+        } catch (error) {
+            setMessage({ type: 'error', text: error instanceof Error ? error.message : '멘티를 배정하지 못했습니다.' });
+        } finally {
+            setAssignBusy((prev) => ({ ...prev, [programId]: false }));
+        }
     };
 
     const importProject = async (programId: string) => {
@@ -228,15 +305,64 @@ export default function ProgramsTab() {
                                         <span>멘티 {p.menteeCount}명</span>
                                         <span>프로젝트 {p.projectCount}개</span>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleImport(p.id)}
-                                        className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] transition-colors"
-                                        id={`programs-import-toggle-${p.id}`}
-                                    >
-                                        {openImport[p.id] ? '닫기' : '프로젝트 불러오기'}
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleAssign(p.id)}
+                                            className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] transition-colors"
+                                            id={`programs-assign-toggle-${p.id}`}
+                                        >
+                                            {openAssign[p.id] ? '닫기' : '멘티 배정'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleImport(p.id)}
+                                            className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] transition-colors"
+                                            id={`programs-import-toggle-${p.id}`}
+                                        >
+                                            {openImport[p.id] ? '닫기' : '프로젝트 불러오기'}
+                                        </button>
+                                    </div>
                                 </div>
+
+                                {openAssign[p.id] && (
+                                    <div className="mt-3 pt-3 border-t border-white/[0.06] flex flex-wrap items-end gap-3">
+                                        {menteeCandidates[p.id] == null ? (
+                                            <p className="text-xs text-gray-500">불러오는 중...</p>
+                                        ) : menteeCandidates[p.id]!.length === 0 ? (
+                                            <p className="text-xs text-gray-500">배정할 수 있는 멘티가 없습니다.</p>
+                                        ) : (
+                                            <>
+                                                <label className="block text-sm font-medium text-gray-400 flex-1 min-w-[220px]">
+                                                    멘티
+                                                    <select
+                                                        className="input mt-2"
+                                                        value={assignSelection[p.id] ?? ''}
+                                                        onChange={(e) => setAssignSelection((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                                        id={`programs-assign-select-${p.id}`}
+                                                    >
+                                                        <option value="">선택하세요</option>
+                                                        {menteeCandidates[p.id]!.map((m) => (
+                                                            <option key={m.id} value={m.id}>
+                                                                {m.name} ({m.email})
+                                                                {m.programName ? ` — 현재: ${m.programName}` : ' — 소속 없음'}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => assignMentee(p.id)}
+                                                    disabled={assignBusy[p.id] || !assignSelection[p.id]}
+                                                    className="btn-primary text-sm disabled:opacity-50"
+                                                    id={`programs-assign-submit-${p.id}`}
+                                                >
+                                                    {assignBusy[p.id] ? '배정 중...' : '배정'}
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
 
                                 {openImport[p.id] && (
                                     <div className="mt-3 pt-3 border-t border-white/[0.06] flex flex-wrap items-end gap-3">
