@@ -5,6 +5,7 @@
     "scripts": {
         "dev": "next dev --turbopack",
         "check:encoding": "node scripts/check-text-encoding.mjs",
+        "seed:admin": "node scripts/seed-admin.mjs",
         "pretest": "npm run check:encoding",
         "prebuild": "npm run check:encoding",
         "build": "prisma generate && next build",
