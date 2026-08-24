@@ -32,6 +32,7 @@ export default function ProfilePage() {
     const [account, setAccount] = useState<Account | null>(null);
     const [affiliation, setAffiliation] = useState<Affiliation | null>(null);
     const [profile, setProfile] = useState<ProfileValue>(EMPTY_PROFILE);
+    const [name, setName] = useState('');
     const [loading, setLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -55,6 +56,7 @@ export default function ProfilePage() {
                 return;
             }
             setAccount({ name: profileData.name ?? null, email: profileData.email, role: profileData.role });
+            setName(profileData.name ?? '');
             setProfile(fromProfileRecord(profileData.profile));
 
             const affiliationData = await affiliationRes.json().catch(() => null);
@@ -77,10 +79,12 @@ export default function ProfilePage() {
             const res = await fetch('/api/me/profile', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(toProfilePayload(profile, account.role)),
+                body: JSON.stringify({ ...toProfilePayload(profile, account.role), name }),
             });
             const data = await res.json().catch(() => null);
             if (!res.ok) throw new Error(data?.error || '저장에 실패했습니다.');
+            // 헤더는 대시보드에서 다시 받아 가므로, 여기서는 이 화면의 표시만 맞춘다.
+            setAccount((prev) => (prev ? { ...prev, name: data?.name ?? prev.name } : prev));
             setMessage({ type: 'success', text: '저장했습니다.' });
         } catch (error) {
             setMessage({ type: 'error', text: error instanceof Error ? error.message : '저장에 실패했습니다.' });
@@ -116,11 +120,19 @@ export default function ProfilePage() {
                         {/* ── 기본 정보 ───────────────────────────────── */}
                         <section className="card">
                             <h2 className="text-sm font-bold text-white mb-4">기본 정보</h2>
+
+                            <label className="block text-sm font-medium text-gray-400 mb-4">
+                                이름
+                                <input
+                                    className="input mt-2"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    placeholder="홍길동"
+                                    id="profile-name"
+                                />
+                            </label>
+
                             <dl className="space-y-2.5 text-sm">
-                                <div className="flex gap-4">
-                                    <dt className="w-20 flex-shrink-0 text-gray-500">이름</dt>
-                                    <dd className="text-white">{account.name ?? '—'}</dd>
-                                </div>
                                 <div className="flex gap-4">
                                     <dt className="w-20 flex-shrink-0 text-gray-500">ID</dt>
                                     <dd className="text-white">{account.email}</dd>
@@ -131,7 +143,7 @@ export default function ProfilePage() {
                                 </div>
                             </dl>
                             <p className="mt-4 text-[11px] text-gray-600">
-                                이름·ID·역할은 관리자만 바꿀 수 있습니다.
+                                ID 와 역할은 바꿀 수 없습니다. 변경이 필요하면 관리자에게 문의하세요.
                             </p>
                         </section>
 

@@ -5,11 +5,14 @@ import { NextRequest } from 'next/server';
 const findUniqueProfile = vi.fn();
 const upsertProfile = vi.fn();
 const findUniqueUser = vi.fn();
+const updateUser = vi.fn();
+const transaction = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
         memberProfile: { findUnique: findUniqueProfile, upsert: upsertProfile },
-        user: { findUnique: findUniqueUser },
+        user: { findUnique: findUniqueUser, update: updateUser },
+        $transaction: (ops: unknown) => transaction(ops),
     },
 }));
 
@@ -39,6 +42,10 @@ beforeEach(() => {
     findUniqueProfile.mockResolvedValue(null);
     upsertProfile.mockResolvedValue({ userId: 'user_1' });
     findUniqueUser.mockResolvedValue({ mustChangePassword: false });
+    updateUser.mockResolvedValue({ id: 'user_1' });
+    // 배열 형태(prisma.$transaction([...]))로 호출한다. 각 원소는 이미 호출된
+    // 쿼리의 Promise 라 그대로 기다리기만 하면 실제 트랜잭션과 같은 결과다.
+    transaction.mockImplementation(async (ops: unknown) => Promise.all(ops as Promise<unknown>[]));
 });
 
 afterEach(() => {
@@ -197,5 +204,86 @@ describe('프로필 저장', () => {
         expect(update.companyName).toBeNull();
         expect(update.industry).toBeNull();
         expect(update.foundedYear).toBeNull();
+    });
+});
+
+describe('이름 수정', () => {
+    const menteeProfile = {
+        organization: '가나대', phone: '010-0000-0000', privacyConsent: true,
+        companyName: '가나테크', industry: '제조',
+    };
+
+    beforeEach(() => authAs('MENTEE'));
+
+    it('name 을 보내면 계정 이름을 바꾼다', async () => {
+        const res = await PUT(putRequest({ ...menteeProfile, name: '김명숙' }));
+
+        expect(res.status).toBe(200);
+        expect(updateUser).toHaveBeenCalledWith({ where: { id: 'user_1' }, data: { name: '김명숙' } });
+    });
+
+    it('name 을 안 보내면 이름을 건드리지 않는다', async () => {
+        // 온보딩 화면은 프로필만 보낸다. 그때 이름이 지워지면 안 된다.
+        const res = await PUT(putRequest(menteeProfile));
+
+        expect(res.status).toBe(200);
+        expect(updateUser).not.toHaveBeenCalled();
+    });
+
+    it('앞뒤 공백을 다듬어 저장한다', async () => {
+        await PUT(putRequest({ ...menteeProfile, name: '  김명숙  ' }));
+
+        expect(updateUser.mock.calls[0][0].data.name).toBe('김명숙');
+    });
+
+    it('빈 이름은 막는다', async () => {
+        const res = await PUT(putRequest({ ...menteeProfile, name: '' }));
+
+        expect(res.status).toBe(400);
+        expect(updateUser).not.toHaveBeenCalled();
+    });
+
+    it('공백만 친 이름도 막는다', async () => {
+        // 이름이 비면 회원 목록·프로젝트 소유자 표시가 전부 빈칸이 된다.
+        const res = await PUT(putRequest({ ...menteeProfile, name: '   ' }));
+
+        expect(res.status).toBe(400);
+        expect(updateUser).not.toHaveBeenCalled();
+    });
+
+    it('너무 긴 이름은 막는다', async () => {
+        const res = await PUT(putRequest({ ...menteeProfile, name: '가'.repeat(51) }));
+
+        expect(res.status).toBe(400);
+        expect(updateUser).not.toHaveBeenCalled();
+    });
+
+    it('50자까지는 받는다', async () => {
+        const res = await PUT(putRequest({ ...menteeProfile, name: '가'.repeat(50) }));
+
+        expect(res.status).toBe(200);
+    });
+
+    it('문자열이 아닌 name 은 막는다', async () => {
+        const res = await PUT(putRequest({ ...menteeProfile, name: 123 }));
+
+        expect(res.status).toBe(400);
+        expect(updateUser).not.toHaveBeenCalled();
+    });
+
+    it('name 이 섞여 있어도 프로필 검증이 깨지지 않는다', async () => {
+        // 프로필 스키마는 strict 라, name 을 떼어내지 않고 넘기면 "알 수 없는
+        // 항목" 으로 거부되어 정상적인 저장이 통째로 막힌다.
+        const res = await PUT(putRequest({ ...menteeProfile, name: '김명숙' }));
+
+        expect(res.status).toBe(200);
+        expect(upsertProfile).toHaveBeenCalled();
+    });
+
+    it('이름이 잘못되면 프로필도 저장하지 않는다', async () => {
+        const res = await PUT(putRequest({ ...menteeProfile, name: '' }));
+
+        expect(res.status).toBe(400);
+        expect(upsertProfile).not.toHaveBeenCalled();
     });
 });
