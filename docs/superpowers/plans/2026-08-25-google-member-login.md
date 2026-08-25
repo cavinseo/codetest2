@@ -59,7 +59,7 @@
 - `getGoogleLoginAuthUrl(redirectUri: string, state: string): Promise<string>`
 - `exchangeLoginCodeForEmail(code: string, redirectUri: string): Promise<{ email: string; verified: boolean }>`
 
-- [ ] **Step 1: `lib/login-state.ts`** — lib/oauth-nonce.ts 의 구조를 따르되 익명이다:
+- [x] **Step 1: `lib/login-state.ts`** — lib/oauth-nonce.ts 의 구조를 따르되 익명이다:
 
 ```ts
 // Google 로그인 흐름의 CSRF state 서명.
@@ -118,7 +118,7 @@ export function verifyLoginState(value: string | undefined): boolean {
 }
 ```
 
-- [ ] **Step 2: `lib/google-auth.ts` 끝에 추가** (기존 함수·SCOPES 는 건드리지 않는다):
+- [x] **Step 2: `lib/google-auth.ts` 끝에 추가** (기존 함수·SCOPES 는 건드리지 않는다):
 
 ```ts
 // ─── 회원 로그인용 (관리자 서비스 연동과 별개 흐름) ─────────────────
@@ -184,7 +184,7 @@ export async function exchangeLoginCodeForEmail(
 }
 ```
 
-- [ ] **Step 3: 테스트 (RED→GREEN)**
+- [x] **Step 3: 테스트 (RED→GREEN)**
   - `tests/login-state.test.ts`: 발급→검증 왕복 / 서명 변조 거부 / 만료 거부
     (vi.useFakeTimers 로 301초 진행) / undefined·빈문자열·점 없는 값 거부 /
     **세션 쿠키 모양의 값(auth.ts encodeSessionCookie 산출물)이 state 로
@@ -195,10 +195,10 @@ export async function exchangeLoginCodeForEmail(
     scope=openid+email·prompt=select_account·state 포함 / 교환 성공 시
     email·verified 반환 / id_token 없음·형식 오류·email 없음 각각 throw /
     교환 실패(response !ok) throw.
-- [ ] **Step 4: stryker** — mutate 배열의 `"lib/ai/url-guard.ts",` 아래에
+- [x] **Step 4: stryker** — mutate 배열의 `"lib/ai/url-guard.ts",` 아래에
   `"lib/login-state.ts",` 추가, `npx stryker run ... --mutate lib/login-state.ts`
   → 100% (미달 시 보강).
-- [ ] **Step 5: 전체 게이트 → 작업 커밋 1개**
+- [x] **Step 5: 전체 게이트 → 작업 커밋 1개**
   ("feat: Google 로그인용 서명 state 와 인증 헬퍼를 추가한다" — 본문에 컨텍스트
   3중 분리 이유) → 보고서 커밋.
 
