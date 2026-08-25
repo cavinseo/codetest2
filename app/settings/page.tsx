@@ -486,9 +486,10 @@ export default function ServiceSettingsPage() {
                                 <PersonalAiConnection />
 
                                 {/* 아래 전역 엔진 설정은 관리자 전용 API(/api/settings)가
-                                    데이터를 준 경우에만 보인다. 일반 회원에게는 위의
-                                    개인 연결 카드만 보이는 것이 정상이다. */}
-                                {currentSettings?.ai && (
+                                    데이터를 준 경우에만 편집할 수 있다. 일반 회원에게는
+                                    빈자리 대신 "어디로 갔는지"를 설명하는 안내를 남긴다 —
+                                    말없이 숨기면 기능이 사라진 것처럼 보인다. */}
+                                {currentSettings?.ai ? (
                                 <>
                                 {/* 엔진별 연결 상태 */}
                                 <div className="card">
@@ -613,6 +614,18 @@ export default function ServiceSettingsPage() {
                                     </div>
                                 )}
                                 </>
+                                ) : (
+                                    <div className="card">
+                                        <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                                            <span>⚡</span> 서비스 전역 AI 엔진 <span className="text-xs font-normal text-gray-500">(관리자)</span>
+                                        </h2>
+                                        <p className="text-sm text-gray-400">
+                                            규칙 기반 · 로컬 AI(Ollama · LM Studio) · 헤르메스 · 클라우드 API 등
+                                            서비스 공통 엔진 설정은 그대로 있습니다. <span className="text-gray-300">관리자
+                                            계정으로 로그인하면</span> 이 자리에 표시됩니다. 일반 회원은 위의
+                                            「내 AI 연결」로 본인 키를 등록해 쓸 수 있습니다.
+                                        </p>
+                                    </div>
                                 )}
                             </>
                         )}
