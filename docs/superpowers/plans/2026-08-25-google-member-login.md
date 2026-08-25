@@ -210,7 +210,7 @@ export async function exchangeLoginCodeForEmail(
 
 **Interfaces:** GET `/api/auth/google/login`, GET `/api/auth/google/login/callback`.
 
-- [ ] **Step 1: 시작 라우트** `app/api/auth/google/login/route.ts`:
+- [x] **Step 1: 시작 라우트** `app/api/auth/google/login/route.ts`:
 
 ```ts
 // Google 회원 로그인 시작. 관리자 서비스 연동(app/api/auth/google)과 별개 흐름이다.
@@ -245,7 +245,7 @@ export async function GET(request: NextRequest) {
 }
 ```
 
-- [ ] **Step 2: 콜백 라우트** `app/api/auth/google/login/callback/route.ts`:
+- [x] **Step 2: 콜백 라우트** `app/api/auth/google/login/callback/route.ts`:
 
 ```ts
 // Google 회원 로그인 콜백. 승인된 기존 회원만 로그인시킨다 — 자동 가입 없음.
@@ -336,14 +336,14 @@ export async function GET(request: NextRequest) {
 확인하고 위 코드를 맞춰라(비밀번호 로그인 라우트 app/api/auth/login/route.ts 94~105행이
 정본 사용례다). 다르면 그 사용례를 따르고 DEVIATIONS 에 적어라.
 
-- [ ] **Step 3: 테스트** `tests/api-google-login.test.ts` (RED→GREEN, mock 패턴은
+- [x] **Step 3: 테스트** `tests/api-google-login.test.ts` (RED→GREEN, mock 패턴은
   tests/api-google-callback-auth.test.ts 참조): 시작 — 미설정 시 error 리디렉트 /
   설정 시 Google URL 로 리디렉트 + state 쿠키. 콜백 — state 파라미터·쿠키 불일치
   각각 거부 / 세션 쿠키 값이 state 로 통과 안 됨 / 미가입 no_account (user.create
   호출 없음 단언 — 자동 가입 금지 증명) / PENDING·만료 각각 차단 + 세션 쿠키
   미발급 단언 / 대소문자 무시 조회(findFirst 인자 mode:'insensitive' 단언) /
   성공 시 세션 쿠키 발급 + sessionVersion 반영 / email_verified 아니면 거부.
-- [ ] **Step 4: 전체 게이트 → 작업 커밋**
+- [x] **Step 4: 전체 게이트 → 작업 커밋**
   ("feat: Google 계정으로 회원 로그인을 추가한다" — 본문에 자동 가입을 막은 이유)
   → 보고서 커밋.
 
