@@ -36,6 +36,20 @@ npx tsc --noEmit && npx vitest run && npx next lint
 - 각 Task 완료 기준: `npx tsc --noEmit` 통과 + `npx vitest run` 전체 통과 +
   (해당 시) `npx next lint` 통과.
 
+## 결과 보고서 관례
+
+- 실행 AI 는 Task 완료 보고서를 채팅이 아니라 **저장소 파일**로 남긴다:
+  `docs/superpowers/reports/<계획서-슬러그>/task-<식별자>.md`
+  (예: `docs/superpowers/reports/2026-08-25-member-ai-modes/task-b.md`)
+- 보고서 형식은 위임 프롬프트의 `[산출물·보고]` 절 그대로
+  (RESULT / FILES CHANGED / COMMIT / VERIFIED BY / DEVIATIONS / RISKS / QUESTIONS).
+  VERIFIED BY 에는 각 게이트의 실행 명령과 출력 마지막 줄을 원문으로 담는다.
+- 보고서는 **작업 커밋과 별도의 둘째 커밋**으로 남긴다
+  (`docs: Task <식별자> 결과 보고서`). 작업 커밋 해시가 보고서 본문에 들어가야
+  하므로 순서를 바꿀 수 없다. 두 커밋 후 `git status` 는 깨끗해야 한다.
+- 감리자는 채팅 붙여넣기 대신 이 파일을 직접 읽어 판정한다. 사용자는
+  "Task <식별자> 완료"라고만 알리면 된다.
+
 ## 저장소 관례
 
 - 커밋 메시지는 한국어, 본문에 "왜"를 적는다. 트레일러: `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
