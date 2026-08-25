@@ -1,4 +1,4 @@
-// 등록된 본인 키가 실제로 통하는지 확인한다(짧은 요청 1회 — 비용은 사실상 0원).
+// 본인의 AI 연결을 확인한다. rule 모드는 외부 요청 없이 즉시 성공한다.
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
@@ -13,13 +13,16 @@ export async function POST(request: NextRequest) {
     if (authResult instanceof NextResponse) return authResult;
 
     try {
-        const connection = await loadPersonalConnection(authResult.userId);
-        if (!connection) {
-            return NextResponse.json(
-                { error: '등록된 AI 키가 없습니다. 먼저 키를 저장하세요.' },
-                { status: 400 }
-            );
-        }
+        const connection = await loadPersonalConnection(authResult.userId) ?? {
+            mode: 'rule' as const,
+            vendor: null,
+            apiKey: null,
+            model: null,
+            mcpBaseUrl: null,
+            mcpModel: null,
+            localBaseUrl: null,
+            localModel: null,
+        };
 
         const result = await verifyPersonalConnection(connection);
         log.info('개인 AI 연결 확인', { userId: authResult.userId, ok: result.ok });

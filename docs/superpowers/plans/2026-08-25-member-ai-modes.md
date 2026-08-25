@@ -295,7 +295,7 @@ export function createPersonalProvider(conn: PersonalAiConnection): AiProvider {
 - verify: 저장된 연결로 `verifyPersonalConnection`. 연결 행이 없으면 rule 취급으로 ok 응답.
 - 보안 불변식 4종(암호화 저장·응답 무키·로그 무키·세션 userId만)은 기존 테스트 유지 + mcp 키에도 동일 적용 케이스 추가.
 
-- [ ] RED → GREEN → 전체 게이트 → 커밋: `feat: AI 연결 API 를 4모드로 확장한다`
+- [x] RED → GREEN → 전체 게이트 → 커밋: `feat: AI 연결 API 를 4모드로 확장한다`
 
 ---
 
