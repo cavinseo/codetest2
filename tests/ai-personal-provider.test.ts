@@ -38,7 +38,16 @@ describe('runAiTask personal', () => {
             (p) => p.mentorQuestions({ project: { name: 'T' } }),
             {
                 requested: 'personal',
-                personalConnection: { vendor: 'openai', apiKey: 'sk-test', model: null },
+                personalConnection: {
+                    mode: 'api',
+                    vendor: 'openai',
+                    apiKey: 'sk-test',
+                    model: null,
+                    mcpBaseUrl: null,
+                    mcpModel: null,
+                    localBaseUrl: null,
+                    localModel: null,
+                },
             }
         );
         expect(outcome.provider).toBe('personal');
@@ -51,7 +60,16 @@ describe('runAiTask personal', () => {
             (p) => p.mentorQuestions({ project: { name: 'T' } }),
             {
                 requested: 'personal',
-                personalConnection: { vendor: 'openai', apiKey: 'sk-test', model: null },
+                personalConnection: {
+                    mode: 'api',
+                    vendor: 'openai',
+                    apiKey: 'sk-test',
+                    model: null,
+                    mcpBaseUrl: null,
+                    mcpModel: null,
+                    localBaseUrl: null,
+                    localModel: null,
+                },
             }
         );
         expect(outcome.provider).toBe('rule');
@@ -76,7 +94,16 @@ describe('createPersonalProvider', () => {
             }), { status: 200 });
         }));
 
-        await createPersonalProvider({ vendor: 'gemini', apiKey: 'g-key', model: null })
+        await createPersonalProvider({
+            mode: 'api',
+            vendor: 'gemini',
+            apiKey: 'g-key',
+            model: null,
+            mcpBaseUrl: null,
+            mcpModel: null,
+            localBaseUrl: null,
+            localModel: null,
+        })
             .mentorQuestions({ project: { name: 'T' } });
 
         expect(calls[0].url).toBe(
@@ -91,13 +118,31 @@ describe('createPersonalProvider', () => {
 describe('verifyPersonalConnection', () => {
     it('200 이면 성공이다', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
-        expect((await verifyPersonalConnection({ vendor: 'openai', apiKey: 'k', model: null })).ok)
+        expect((await verifyPersonalConnection({
+            mode: 'api',
+            vendor: 'openai',
+            apiKey: 'k',
+            model: null,
+            mcpBaseUrl: null,
+            mcpModel: null,
+            localBaseUrl: null,
+            localModel: null,
+        })).ok)
             .toBe(true);
     });
 
     it('401 은 키 오류 메시지를 준다', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401 })));
-        const result = await verifyPersonalConnection({ vendor: 'openai', apiKey: 'bad', model: null });
+        const result = await verifyPersonalConnection({
+            mode: 'api',
+            vendor: 'openai',
+            apiKey: 'bad',
+            model: null,
+            mcpBaseUrl: null,
+            mcpModel: null,
+            localBaseUrl: null,
+            localModel: null,
+        });
         expect(result.ok).toBe(false);
         expect(result.message).toContain('키가 유효하지 않습니다');
     });
@@ -106,7 +151,16 @@ describe('verifyPersonalConnection', () => {
         vi.stubGlobal('fetch', vi.fn(async () => {
             throw new Error('ECONNREFUSED');
         }));
-        const result = await verifyPersonalConnection({ vendor: 'anthropic', apiKey: 'k', model: null });
+        const result = await verifyPersonalConnection({
+            mode: 'api',
+            vendor: 'anthropic',
+            apiKey: 'k',
+            model: null,
+            mcpBaseUrl: null,
+            mcpModel: null,
+            localBaseUrl: null,
+            localModel: null,
+        });
         expect(result.ok).toBe(false);
     });
 });

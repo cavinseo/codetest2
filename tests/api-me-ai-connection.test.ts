@@ -179,9 +179,14 @@ describe('연결 확인', () => {
         const result = { ok: false, message: 'API 키가 유효하지 않습니다.' };
         findUniqueConn.mockResolvedValue({
             userId: 'user_1',
+            mode: 'api',
             vendor: 'anthropic',
             apiKey: encryptSettingsValue('stored-secret'),
             model: 'claude-haiku-4-5',
+            mcpBaseUrl: null,
+            mcpModel: null,
+            localBaseUrl: null,
+            localModel: null,
             createdAt: new Date(),
             updatedAt: new Date(),
         });
@@ -192,9 +197,14 @@ describe('연결 확인', () => {
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual(result);
         expect(verifyPersonalConnection).toHaveBeenCalledWith({
+            mode: 'api',
             vendor: 'anthropic',
             apiKey: 'stored-secret',
             model: 'claude-haiku-4-5',
+            mcpBaseUrl: null,
+            mcpModel: null,
+            localBaseUrl: null,
+            localModel: null,
         });
     });
 });

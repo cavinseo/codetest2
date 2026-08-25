@@ -32,3 +32,26 @@ export function resolvePersonalModel(vendor: PersonalAiVendor, model: string | n
     const trimmed = model?.trim();
     return trimmed || PERSONAL_AI_VENDOR_PRESETS[vendor].defaultModel;
 }
+
+// ─── 회원 AI 연결 모드 ─────────────────────────────────────────
+
+export const MEMBER_AI_MODES = ['rule', 'api', 'mcp', 'local'] as const;
+export type MemberAiMode = (typeof MEMBER_AI_MODES)[number];
+
+export const MEMBER_AI_MODE_LABELS: Record<MemberAiMode, string> = {
+    rule: '규칙 기반',
+    api: 'API 연결 (OpenAI · Claude · Gemini)',
+    mcp: '원격 MCP (Remote/HTTP)',
+    local: '로컬 AI (Ollama · LM Studio)',
+};
+
+export const MEMBER_AI_MODE_DESCRIPTIONS: Record<MemberAiMode, string> = {
+    rule: '설정 없이 바로 씁니다. 프로젝트 문맥으로 초안을 조립합니다.',
+    api: '본인의 벤더 API 키로 호출합니다. 요금은 본인 벤더 계정에 청구됩니다.',
+    mcp: '본인이 운영하는 원격 OpenAI 호환 엔드포인트(https)로 호출합니다.',
+    local: '내 PC의 로컬 LLM을 씁니다. 온라인 서버에서는 연결되지 않을 수 있으며, 그 경우 규칙 기반으로 자동 전환됩니다.',
+};
+
+export function parseMemberAiMode(value: unknown): MemberAiMode | null {
+    return MEMBER_AI_MODES.includes(value as MemberAiMode) ? (value as MemberAiMode) : null;
+}

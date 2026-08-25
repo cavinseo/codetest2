@@ -17,6 +17,7 @@
         "lib/affiliation.ts",
     "lib/member-profile-payload.ts",
     "lib/ai/personal-vendors.ts",
+    "lib/ai/url-guard.ts",
         "lib/invite-code.ts",
         "lib/member-profile.ts",
         "lib/temp-password-email.ts"

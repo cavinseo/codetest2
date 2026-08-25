@@ -3,16 +3,25 @@
 import { prisma } from '../prisma';
 import { createLogger } from '../logger';
 import { decryptSettingsValue, encryptSettingsValue } from '../settings-crypto';
-import { parsePersonalAiVendor } from './personal-vendors';
+import { parseMemberAiMode, parsePersonalAiVendor } from './personal-vendors';
 import type { PersonalAiConnection } from './personal';
 
 const log = createLogger('lib/ai/personal-store');
 
-/** 화면에 보여줄 요약. 키는 존재 여부조차 값으로 싣지 않는다(행이 있으면 키가 있는 것). */
+/** 화면에 보여줄 요약. 인증 키는 어떤 형태로도 싣지 않는다. */
 export async function getPersonalConnectionSummary(userId: string) {
     const row = await prisma.userAiConnection.findUnique({
         where: { userId },
-        select: { vendor: true, model: true, updatedAt: true },
+        select: {
+            mode: true,
+            vendor: true,
+            model: true,
+            mcpBaseUrl: true,
+            mcpModel: true,
+            localBaseUrl: true,
+            localModel: true,
+            updatedAt: true,
+        },
     });
     return row ?? null;
 }
@@ -22,34 +31,65 @@ export async function loadPersonalConnection(userId: string): Promise<PersonalAi
     const row = await prisma.userAiConnection.findUnique({ where: { userId } });
     if (!row) return null;
 
+    const mode = parseMemberAiMode(row.mode);
+    if (!mode) return null;
+
     const vendor = parsePersonalAiVendor(row.vendor);
-    if (!vendor) return null;
-
-    // Task B(4모드) 전까지의 다리: 확장 전에는 키 없는 행이 없었다.
-    // 스키마가 먼저 nullable 이 되면서 생긴 타입 구멍만 막는다(동작 동일).
-    if (!row.apiKey) return null;
-    const apiKey = decryptSettingsValue(row.apiKey);
-    if (apiKey === null) {
+    const apiKey = row.apiKey ? decryptSettingsValue(row.apiKey) : null;
+    if (row.apiKey && apiKey === null) {
         // 암호화 키가 바뀌었거나 값이 손상됐다. 키 내용 없이 사실만 남긴다.
-        log.warn('개인 AI 키를 복호화하지 못해 미등록으로 처리합니다.', { userId });
-        return null;
+        log.warn('개인 AI 키를 복호화하지 못했습니다.', { userId });
     }
+    if (mode === 'api' && (!vendor || !apiKey)) return null;
 
-    return { vendor, apiKey, model: row.model };
+    return {
+        mode,
+        vendor,
+        apiKey,
+        model: row.model,
+        mcpBaseUrl: row.mcpBaseUrl,
+        mcpModel: row.mcpModel,
+        localBaseUrl: row.localBaseUrl,
+        localModel: row.localModel,
+    };
 }
 
 export async function upsertPersonalConnection(
     userId: string,
-    input: { vendor: PersonalAiConnection['vendor']; apiKey?: string; model: string | null }
+    input: {
+        mode?: PersonalAiConnection['mode'];
+        vendor?: PersonalAiConnection['vendor'];
+        apiKey?: string;
+        model?: string | null;
+        mcpBaseUrl?: string | null;
+        mcpModel?: string | null;
+        localBaseUrl?: string | null;
+        localModel?: string | null;
+    }
 ): Promise<void> {
     const encrypted = input.apiKey ? encryptSettingsValue(input.apiKey) : undefined;
+    const mode = input.mode ?? 'api';
     await prisma.userAiConnection.upsert({
         where: { userId },
-        // 새로 만들 때는 키가 반드시 있어야 한다 — 라우트가 먼저 검증한다.
-        create: { userId, vendor: input.vendor, apiKey: encrypted ?? '', model: input.model },
+        create: {
+            userId,
+            mode,
+            vendor: input.vendor ?? null,
+            apiKey: encrypted ?? null,
+            model: input.model ?? null,
+            mcpBaseUrl: input.mcpBaseUrl ?? null,
+            mcpModel: input.mcpModel ?? null,
+            localBaseUrl: input.localBaseUrl ?? null,
+            localModel: input.localModel ?? null,
+        },
         update: {
-            vendor: input.vendor,
-            model: input.model,
+            mode,
+            ...(input.vendor !== undefined ? { vendor: input.vendor } : {}),
+            ...(input.model !== undefined ? { model: input.model } : {}),
+            ...(input.mcpBaseUrl !== undefined ? { mcpBaseUrl: input.mcpBaseUrl } : {}),
+            ...(input.mcpModel !== undefined ? { mcpModel: input.mcpModel } : {}),
+            ...(input.localBaseUrl !== undefined ? { localBaseUrl: input.localBaseUrl } : {}),
+            ...(input.localModel !== undefined ? { localModel: input.localModel } : {}),
             ...(encrypted ? { apiKey: encrypted } : {}),
         },
     });

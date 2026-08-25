@@ -274,7 +274,7 @@ export function createPersonalProvider(conn: PersonalAiConnection): AiProvider {
 - `stryker.crap.config.json` mutate 에 `"lib/ai/url-guard.ts",` 추가, 100% 요구.
 - 기존 테스트 갱신: `tests/ai-personal-provider.test.ts` 의 연결 객체에 `mode: 'api'` 와 null 필드들을 채워 통과시켜라(단언 약화 금지).
 
-- [ ] RED → GREEN → stryker(url-guard 100%) → 전체 게이트 → 커밋:
+- [x] RED → GREEN → stryker(url-guard 100%) → 전체 게이트 → 커밋:
   `feat: 회원 AI 연결을 4모드 프로바이더로 확장한다` (본문에 SSRF 가드 이유 포함)
 
 ---
