@@ -19,6 +19,21 @@ export default function LoginPage() {
         if (params.get('signup') === 'pending') {
             setNotice('가입이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.');
         }
+
+        const googleLoginErrors: Record<string, string> = {
+            google_unconfigured: 'Google 로그인이 아직 설정되지 않았습니다. 관리자에게 문의하세요.',
+            google_denied: 'Google 로그인을 취소했습니다.',
+            google_state: '로그인 시도가 만료되었습니다. 다시 시도하세요.',
+            google_unverified: '확인되지 않은 Google 이메일입니다.',
+            no_account: '이 Google 계정으로 가입된 회원이 없습니다. 먼저 회원가입을 해주세요.',
+            pending: '가입 승인 대기 중입니다. 관리자 승인 후 이용할 수 있습니다.',
+            expired: '이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.',
+            google_failed: 'Google 로그인에 실패했습니다. 다시 시도하세요.',
+        };
+        const googleLoginError = params.get('error');
+        if (googleLoginError && googleLoginErrors[googleLoginError]) {
+            setError(googleLoginErrors[googleLoginError]);
+        }
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -142,6 +157,19 @@ export default function LoginPage() {
                             ) : '로그인'}
                         </button>
                     </form>
+
+                    <div className="flex items-center gap-4 my-6">
+                        <div className="h-px flex-1 bg-white/10" />
+                        <span className="text-xs text-gray-500">또는</span>
+                        <div className="h-px flex-1 bg-white/10" />
+                    </div>
+
+                    <a
+                        href="/api/auth/google/login"
+                        className="w-full btn-secondary py-3.5 text-base font-semibold flex items-center justify-center"
+                    >
+                        Google 계정으로 로그인
+                    </a>
 
                     <div className="mt-6 text-center">
                         <p className="text-gray-500 text-sm">

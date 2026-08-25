@@ -353,10 +353,10 @@ export async function GET(request: NextRequest) {
 
 **Files:** `app/login/page.tsx`
 
-- [ ] 로그인 버튼 아래에 구분선("또는")과 Google 버튼 추가 —
+- [x] 로그인 버튼 아래에 구분선("또는")과 Google 버튼 추가 —
   `<a href="/api/auth/google/login" className="w-full btn-secondary py-3.5 …">`
   형태(전체 페이지 이동이므로 fetch 아님). 문구: "Google 계정으로 로그인".
-- [ ] useEffect 의 URLSearchParams 처리에 error 코드 → 문구 매핑 추가:
+- [x] useEffect 의 URLSearchParams 처리에 error 코드 → 문구 매핑 추가:
   google_unconfigured("Google 로그인이 아직 설정되지 않았습니다. 관리자에게 문의하세요.") /
   google_denied("Google 로그인을 취소했습니다.") / google_state("로그인 시도가 만료되었습니다. 다시 시도하세요.") /
   google_unverified("확인되지 않은 Google 이메일입니다.") /
@@ -365,7 +365,7 @@ export async function GET(request: NextRequest) {
   expired("이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.") /
   google_failed("Google 로그인에 실패했습니다. 다시 시도하세요.")
   — error 는 기존 `error` state(빨간 박스)로 표시.
-- [ ] 게이트(tsc·vitest·lint) → 작업 커밋("feat: 로그인 화면에 Google 로그인을 붙인다")
+- [x] 게이트(tsc·vitest·lint) → 작업 커밋("feat: 로그인 화면에 Google 로그인을 붙인다")
   → 보고서 커밋.
 
 ---
