@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import PersonalAiConnection from '@/components/member/PersonalAiConnection';
 
 interface SettingsData {
     google: {
@@ -481,13 +482,21 @@ export default function ServiceSettingsPage() {
 
                         {activeTab === 'ai' && (
                             <>
+                                {/* 내 AI 연결 — 모든 회원. 프로필 화면과 같은 카드다. */}
+                                <PersonalAiConnection />
+
+                                {/* 아래 전역 엔진 설정은 관리자 전용 API(/api/settings)가
+                                    데이터를 준 경우에만 보인다. 일반 회원에게는 위의
+                                    개인 연결 카드만 보이는 것이 정상이다. */}
+                                {currentSettings?.ai && (
+                                <>
                                 {/* 엔진별 연결 상태 */}
                                 <div className="card">
                                     <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                                        <span>⚡</span> AI 엔진 상태
+                                        <span>⚡</span> 서비스 전역 AI 엔진 <span className="text-xs font-normal text-gray-500">(관리자)</span>
                                     </h2>
                                     <p className="text-sm text-gray-400 mb-4">
-                                        WS-3 제품속성서의 AI 멘토링이 사용할 엔진입니다.
+                                        개인 키를 등록하지 않은 회원의 AI 멘토링이 사용할 기본 엔진입니다.
                                         선택한 엔진에 연결되지 않으면 기본 엔진으로 자동 폴백되므로 기능이 멈추지는 않습니다.
                                     </p>
                                     {isLoading ? (
@@ -602,6 +611,8 @@ export default function ServiceSettingsPage() {
                                             </button>
                                         </form>
                                     </div>
+                                )}
+                                </>
                                 )}
                             </>
                         )}
