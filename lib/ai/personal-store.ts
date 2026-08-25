@@ -25,6 +25,9 @@ export async function loadPersonalConnection(userId: string): Promise<PersonalAi
     const vendor = parsePersonalAiVendor(row.vendor);
     if (!vendor) return null;
 
+    // Task B(4모드) 전까지의 다리: 확장 전에는 키 없는 행이 없었다.
+    // 스키마가 먼저 nullable 이 되면서 생긴 타입 구멍만 막는다(동작 동일).
+    if (!row.apiKey) return null;
     const apiKey = decryptSettingsValue(row.apiKey);
     if (apiKey === null) {
         // 암호화 키가 바뀌었거나 값이 손상됐다. 키 내용 없이 사실만 남긴다.

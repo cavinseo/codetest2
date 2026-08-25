@@ -57,7 +57,7 @@
 **Interfaces:**
 - Produces: `UserAiConnection { userId PK, mode, vendor?, apiKey?, model?, mcpBaseUrl?, mcpModel?, localBaseUrl?, localModel?, createdAt, updatedAt }`
 
-- [ ] **Step 1: 모델 교체** — schema.prisma 의 UserAiConnection 을 다음으로 교체
+- [x] **Step 1: 모델 교체** — schema.prisma 의 UserAiConnection 을 다음으로 교체
   (문서 주석 포함, User 관계·@@map 은 그대로):
 
 ```prisma
@@ -88,9 +88,9 @@ model UserAiConnection {
 }
 ```
 
-- [ ] **Step 2: `npx prisma validate`** → "is valid"
+- [x] **Step 2: `npx prisma validate`** → "is valid"
 
-- [ ] **Step 3: 마이그레이션 SQL 작성 (적용 금지)** — `prisma/migrations/20260825120000_member_ai_modes/migration.sql`:
+- [x] **Step 3: 마이그레이션 SQL 작성 (적용 금지)** — `prisma/migrations/20260825120000_member_ai_modes/migration.sql`:
 
 ```sql
 -- 회원 AI 연결을 4모드로 확장한다. 기존 행은 전부 벤더 키 등록분이므로
@@ -109,12 +109,12 @@ ALTER TABLE "user_ai_connections" ADD COLUMN "localBaseUrl" TEXT;
 ALTER TABLE "user_ai_connections" ADD COLUMN "localModel" TEXT;
 ```
 
-- [ ] **Step 4: `npx prisma generate`** (EPERM 이면 BLOCKED 보고) → **Step 5: tsc·vitest 확인**
+- [x] **Step 4: `npx prisma generate`** (EPERM 이면 BLOCKED 보고) → **Step 5: tsc·vitest 확인**
   — 주의: `lib/ai/personal-store.ts` 가 `PersonalAiConnection['vendor']`(non-null) 를
   받으므로 vendor nullable 화로 tsc 가 깨질 수 있다. 깨지면 이 Task 에서 고치지 말고
   **BLOCKED + QUESTIONS 로 보고**하라(Task B 의 몫이다). 깨지지 않으면 그대로 진행.
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add prisma/schema.prisma "prisma/migrations/20260825120000_member_ai_modes/migration.sql"

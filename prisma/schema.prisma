@@ -580,16 +580,26 @@ model MemberProfile {
   @@map("member_profiles")
 }
 
-/// 회원이 등록한 개인 AI 키. 본인의 AI 작업에만 쓰이고 절대 공유되지 않는다.
+/// 회원의 AI 연결 설정. 본인의 AI 작업에만 쓰이고 절대 공유되지 않는다.
+/// mode 가 연결 방식을 정한다: rule(기본)·api(벤더 키)·mcp(원격 HTTP)·local(내 PC).
 /// apiKey 는 lib/settings-crypto 로 암호화된 값(enc:v1: 접두)만 저장한다.
 model UserAiConnection {
   userId    String   @id
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  // 'openai' | 'anthropic' | 'gemini' — lib/ai/personal-vendors.ts 가 정본
-  vendor    String
-  apiKey    String
-  // 비우면 벤더 기본 모델을 쓴다
+  // 'rule' | 'api' | 'mcp' | 'local' — lib/ai/personal-vendors.ts 가 정본
+  mode      String   @default("rule")
+  // api 모드: 'openai' | 'anthropic' | 'gemini'
+  vendor    String?
+  // api·mcp 모드의 인증 키(암호화). rule·local 은 없다
+  apiKey    String?
+  // api 모드의 모델. 비우면 벤더 기본
   model     String?
+  // mcp 모드: 원격 OpenAI 호환 엔드포인트. https 공인 호스트만 허용된다
+  mcpBaseUrl String?
+  mcpModel   String?
+  // local 모드: 비우면 Ollama·LM Studio 기본 후보 주소를 차례로 두드린다
+  localBaseUrl String?
+  localModel   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
