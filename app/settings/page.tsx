@@ -15,24 +15,7 @@ interface SettingsData {
         user: string;
         configured: boolean;
     };
-    ai?: AiSettingsData;
 }
-
-interface AiSettingsData {
-    provider: 'rule' | 'local' | 'hermes' | 'api';
-    localBaseUrl: string;
-    localModel: string;
-    hermesBaseUrl: string;
-    hermesModel: string;
-    providers: Array<{ id: string; label: string; available: boolean }>;
-}
-
-const AI_PROVIDER_GUIDE: Record<string, string> = {
-    rule: '외부 연결 없이 항상 동작합니다. 다른 엔진이 실패하면 자동으로 여기로 넘어갑니다.',
-    local: 'Ollama·LM Studio 등 로컬 서버를 사용합니다. 주소를 비워 두면 알려진 포트를 자동으로 찾습니다.',
-    hermes: '헤르메스 에이전트가 설치돼 있으면 사용합니다. 자체 서버·Ollama·LM Studio 순으로 자동 탐지합니다.',
-    api: '클라우드 LLM API 를 사용합니다. 주소와 키는 환경 변수로 설정합니다.',
-};
 
 export default function ServiceSettingsPage() {
     const [activeTab, setActiveTab] = useState<'google' | 'smtp' | 'ai'>('google');
@@ -43,9 +26,6 @@ export default function ServiceSettingsPage() {
     const [smtpPort, setSmtpPort] = useState('587');
     const [smtpUser, setSmtpUser] = useState('');
     const [smtpPass, setSmtpPass] = useState('');
-
-    // AI 엔진 상태
-    const [aiForm, setAiForm] = useState<Omit<AiSettingsData, 'providers'> | null>(null);
 
     const [currentSettings, setCurrentSettings] = useState<SettingsData | null>(null);
     const [isSaving, setIsSaving] = useState(false);
@@ -62,11 +42,6 @@ export default function ServiceSettingsPage() {
             if (res.ok) {
                 const data = await res.json();
                 setCurrentSettings(data);
-                if (data.ai) {
-                    const { providers: _providers, ...form } = data.ai as AiSettingsData;
-                    void _providers;
-                    setAiForm(form);
-                }
             }
         } catch (error) {
             console.error('설정 로드 실패:', error);
@@ -98,38 +73,6 @@ export default function ServiceSettingsPage() {
                 setMessage({ type: 'success', text: '✅ Google OAuth 설정이 저장되었습니다.' });
                 setGoogleClientId('');
                 setGoogleClientSecret('');
-                await loadSettings();
-            } else {
-                setMessage({ type: 'error', text: data.error || '저장 실패' });
-            }
-        } catch {
-            setMessage({ type: 'error', text: '서버 연결 실패' });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const handleSaveAi = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!aiForm) return;
-
-        setIsSaving(true);
-        setMessage(null);
-
-        try {
-            const res = await fetch('/api/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ai: aiForm }),
-            });
-
-            const data = await res.json();
-
-            if (res.ok) {
-                const selected = data.ai?.providers?.find((p: { id: string }) => p.id === aiForm.provider);
-                setMessage(selected && !selected.available && aiForm.provider !== 'rule'
-                    ? { type: 'error', text: `⚠️ 저장했지만 ${selected.label} 에 연결되지 않습니다. 기본 엔진으로 자동 폴백됩니다.` }
-                    : { type: 'success', text: '✅ AI 엔진 설정이 저장되었습니다.' });
                 await loadSettings();
             } else {
                 setMessage({ type: 'error', text: data.error || '저장 실패' });
@@ -250,9 +193,6 @@ export default function ServiceSettingsPage() {
                                     <p className="font-medium text-sm">AI 엔진</p>
                                     <p className="text-xs opacity-70">멘토링 기능</p>
                                 </div>
-                                {currentSettings?.ai && (
-                                    <span className="ml-auto w-2 h-2 bg-green-500 rounded-full" />
-                                )}
                             </button>
                         </nav>
                     </aside>
@@ -481,153 +421,7 @@ export default function ServiceSettingsPage() {
                         )}
 
                         {activeTab === 'ai' && (
-                            <>
-                                {/* 내 AI 연결 — 모든 회원. 프로필 화면과 같은 카드다. */}
-                                <PersonalAiConnection />
-
-                                {/* 아래 전역 엔진 설정은 관리자 전용 API(/api/settings)가
-                                    데이터를 준 경우에만 편집할 수 있다. 일반 회원에게는
-                                    빈자리 대신 "어디로 갔는지"를 설명하는 안내를 남긴다 —
-                                    말없이 숨기면 기능이 사라진 것처럼 보인다. */}
-                                {currentSettings?.ai ? (
-                                <>
-                                {/* 엔진별 연결 상태 */}
-                                <div className="card">
-                                    <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                                        <span>⚡</span> 서비스 전역 AI 엔진 <span className="text-xs font-normal text-gray-500">(관리자)</span>
-                                    </h2>
-                                    <p className="text-sm text-gray-400 mb-4">
-                                        개인 키를 등록하지 않은 회원의 AI 멘토링이 사용할 기본 엔진입니다.
-                                        선택한 엔진에 연결되지 않으면 기본 엔진으로 자동 폴백되므로 기능이 멈추지는 않습니다.
-                                    </p>
-                                    {isLoading ? (
-                                        <span className="text-gray-400">로딩 중...</span>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {currentSettings?.ai?.providers.map((provider) => (
-                                                <div
-                                                    key={provider.id}
-                                                    className="flex items-center gap-3 p-3 rounded-lg bg-gray-700/30"
-                                                >
-                                                    <div className={`w-3 h-3 rounded-full ${provider.available ? 'bg-green-500' : 'bg-gray-600'}`} />
-                                                    <span className="text-white font-medium">{provider.label}</span>
-                                                    {currentSettings.ai?.provider === provider.id && (
-                                                        <span className="text-xs px-2 py-0.5 rounded bg-blue-600/20 text-blue-300 border border-blue-500/30">
-                                                            사용 중
-                                                        </span>
-                                                    )}
-                                                    <span className="ml-auto text-sm text-gray-400">
-                                                        {provider.available ? '연결됨' : '연결 안 됨'}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* 엔진 선택 및 주소 설정 */}
-                                {aiForm && (
-                                    <div className="card">
-                                        <h2 className="text-xl font-bold text-white mb-4">엔진 선택</h2>
-                                        <form onSubmit={handleSaveAi} className="space-y-5">
-                                            <div className="space-y-2">
-                                                {(['rule', 'local', 'hermes', 'api'] as const).map((id) => (
-                                                    <label
-                                                        key={id}
-                                                        className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${aiForm.provider === id
-                                                            ? 'border-blue-500/40 bg-blue-600/10'
-                                                            : 'border-gray-700 hover:bg-gray-800/50'
-                                                            }`}
-                                                    >
-                                                        <input
-                                                            type="radio"
-                                                            name="ai-provider"
-                                                            value={id}
-                                                            checked={aiForm.provider === id}
-                                                            onChange={() => setAiForm({ ...aiForm, provider: id })}
-                                                            className="mt-1"
-                                                        />
-                                                        <div>
-                                                            <p className="text-white font-medium text-sm">
-                                                                {currentSettings?.ai?.providers.find((p) => p.id === id)?.label ?? id}
-                                                            </p>
-                                                            <p className="text-xs text-gray-400 mt-0.5">{AI_PROVIDER_GUIDE[id]}</p>
-                                                        </div>
-                                                    </label>
-                                                ))}
-                                            </div>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="block text-sm text-gray-400 mb-1">로컬 AI 주소</label>
-                                                    <input
-                                                        type="text"
-                                                        value={aiForm.localBaseUrl}
-                                                        onChange={(e) => setAiForm({ ...aiForm, localBaseUrl: e.target.value })}
-                                                        className="input w-full"
-                                                        placeholder="http://localhost:11434/v1"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm text-gray-400 mb-1">로컬 AI 모델</label>
-                                                    <input
-                                                        type="text"
-                                                        value={aiForm.localModel}
-                                                        onChange={(e) => setAiForm({ ...aiForm, localModel: e.target.value })}
-                                                        className="input w-full"
-                                                        placeholder="비우면 설치된 모델 중 자동 선택"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm text-gray-400 mb-1">헤르메스 주소</label>
-                                                    <input
-                                                        type="text"
-                                                        value={aiForm.hermesBaseUrl}
-                                                        onChange={(e) => setAiForm({ ...aiForm, hermesBaseUrl: e.target.value })}
-                                                        className="input w-full"
-                                                        placeholder="http://localhost:8080/v1"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm text-gray-400 mb-1">헤르메스 모델</label>
-                                                    <input
-                                                        type="text"
-                                                        value={aiForm.hermesModel}
-                                                        onChange={(e) => setAiForm({ ...aiForm, hermesModel: e.target.value })}
-                                                        className="input w-full"
-                                                        placeholder="비우면 hermes 가 포함된 모델 자동 선택"
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            <div className="p-4 rounded-lg bg-blue-900/20 border border-blue-500/20">
-                                                <p className="text-xs text-blue-200">
-                                                    로컬 AI 와 헤르메스는 이 앱이 실행 중인 컴퓨터에서만 연결됩니다.
-                                                    Vercel 배포 환경에서는 기본 엔진 또는 클라우드 API 만 동작합니다.
-                                                </p>
-                                            </div>
-
-                                            <button type="submit" disabled={isSaving} className="btn-primary disabled:opacity-50">
-                                                {isSaving ? '저장 중...' : 'AI 엔진 설정 저장'}
-                                            </button>
-                                        </form>
-                                    </div>
-                                )}
-                                </>
-                                ) : (
-                                    <div className="card">
-                                        <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                                            <span>⚡</span> 서비스 전역 AI 엔진 <span className="text-xs font-normal text-gray-500">(관리자)</span>
-                                        </h2>
-                                        <p className="text-sm text-gray-400">
-                                            규칙 기반 · 로컬 AI(Ollama · LM Studio) · 헤르메스 · 클라우드 API 등
-                                            서비스 공통 엔진 설정은 그대로 있습니다. <span className="text-gray-300">관리자
-                                            계정으로 로그인하면</span> 이 자리에 표시됩니다. 일반 회원은 위의
-                                            「내 AI 연결」로 본인 키를 등록해 쓸 수 있습니다.
-                                        </p>
-                                    </div>
-                                )}
-                            </>
+                            <PersonalAiConnection />
                         )}
                     </div>
                 </div>

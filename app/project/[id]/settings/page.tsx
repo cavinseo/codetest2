@@ -3,14 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import {
-    DEFAULT_PROJECT_AI_MODE,
-    PROJECT_AI_MODES,
-    PROJECT_AI_MODE_DESCRIPTIONS,
-    PROJECT_AI_MODE_LABELS,
-    parseProjectAiMode,
-    type ProjectAiMode,
-} from '@/lib/ai/project-ai-mode';
 
 interface Member {
     id: string;
@@ -40,15 +32,10 @@ export default function ProjectSettingsPage() {
     const [inviteRole, setInviteRole] = useState<'EDITOR' | 'COACH'>('EDITOR');
     const [inviteError, setInviteError] = useState('');
     const [isInviting, setIsInviting] = useState(false);
-    const [activeTab, setActiveTab] = useState<'members' | 'data' | 'ai'>('members');
+    const [activeTab, setActiveTab] = useState<'members' | 'data'>('members');
     const [isExporting, setIsExporting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [importFile, setImportFile] = useState<File | null>(null);
-    const [aiMode, setAiMode] = useState<ProjectAiMode>(DEFAULT_PROJECT_AI_MODE);
-    const [serverLocalAvailable, setServerLocalAvailable] = useState<boolean | null>(null);
-    const [isSavingAiMode, setIsSavingAiMode] = useState(false);
-    const [aiModeMessage, setAiModeMessage] = useState('');
-    const [aiModeError, setAiModeError] = useState('');
 
     const loadProject = useCallback(async () => {
         setProjectError('');
@@ -67,43 +54,6 @@ export default function ProjectSettingsPage() {
         }
     }, [projectId]);
 
-    const loadAiMode = useCallback(async () => {
-        try {
-            const response = await fetch(`/api/projects/${projectId}/ai-mode`);
-            if (!response.ok) return;
-            const data = await response.json();
-            setAiMode(parseProjectAiMode(data.aiMode));
-            setServerLocalAvailable(Boolean(data.serverLocalAvailable));
-        } catch (error) {
-            console.error('AI 연결 방식 로드 실패:', error);
-        }
-    }, [projectId]);
-
-    const handleAiModeChange = async (nextMode: ProjectAiMode) => {
-        const previousMode = aiMode;
-        setAiMode(nextMode);
-        setAiModeError('');
-        setAiModeMessage('');
-        setIsSavingAiMode(true);
-        try {
-            const response = await fetch(`/api/projects/${projectId}/ai-mode`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ aiMode: nextMode }),
-            });
-            const data = await response.json().catch(() => null);
-            if (!response.ok) throw new Error(data?.error || 'AI 연결 방식을 저장하지 못했습니다.');
-            setAiMode(parseProjectAiMode(data.aiMode));
-            setAiModeMessage('저장했습니다.');
-        } catch (error) {
-            // 저장에 실패하면 화면 값을 되돌려, 저장되지 않은 선택이 남지 않게 한다.
-            setAiMode(previousMode);
-            setAiModeError(error instanceof Error ? error.message : 'AI 연결 방식을 저장하지 못했습니다.');
-        } finally {
-            setIsSavingAiMode(false);
-        }
-    };
-
     const loadMembers = useCallback(async () => {
         try {
             const response = await fetch(`/api/projects/${projectId}/members`);
@@ -121,8 +71,7 @@ export default function ProjectSettingsPage() {
     useEffect(() => {
         loadProject();
         loadMembers();
-        loadAiMode();
-    }, [loadAiMode, loadMembers, loadProject]);
+    }, [loadMembers, loadProject]);
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -320,15 +269,6 @@ export default function ProjectSettingsPage() {
                             >
                                 💾 데이터 관리
                             </button>
-                            <button
-                                onClick={() => setActiveTab('ai')}
-                                className={`w-full text-left px-4 py-2 rounded-lg font-medium ${activeTab === 'ai'
-                                    ? 'bg-gray-800 text-white'
-                                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                                    }`}
-                            >
-                                🤖 AI 엔진
-                            </button>
                         </nav>
                     </div>
 
@@ -521,94 +461,6 @@ export default function ProjectSettingsPage() {
                             </>
                         )}
 
-                        {activeTab === 'ai' && (
-                            <>
-                                <div>
-                                    <h2 className="text-2xl font-bold text-white">AI 엔진</h2>
-                                    <p className="mt-1 text-gray-400">
-                                        이 프로젝트의 AI 에이전트가 어떤 엔진을 쓸지 정합니다.
-                                    </p>
-                                </div>
-
-                                {aiModeError && (
-                                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                                        {aiModeError}
-                                    </div>
-                                )}
-                                {aiModeMessage && !aiModeError && (
-                                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-                                        {aiModeMessage}
-                                    </div>
-                                )}
-
-                                <div className="card space-y-3">
-                                    {PROJECT_AI_MODES.map((mode) => (
-                                        <label
-                                            key={mode}
-                                            className={`flex cursor-pointer gap-3 rounded-xl border p-4 transition-colors ${aiMode === mode
-                                                ? 'border-primary-500/30 bg-primary-500/5'
-                                                : 'border-white/[0.08] bg-white/[0.02] hover:border-white/[0.15]'
-                                                }`}
-                                        >
-                                            <input
-                                                type="radio"
-                                                name="project-ai-mode"
-                                                value={mode}
-                                                checked={aiMode === mode}
-                                                onChange={() => handleAiModeChange(mode)}
-                                                disabled={isSavingAiMode}
-                                                className="mt-1 flex-shrink-0"
-                                            />
-                                            <span className="min-w-0">
-                                                <span className="block text-sm font-medium text-white">
-                                                    {PROJECT_AI_MODE_LABELS[mode]}
-                                                </span>
-                                                <span className="mt-1 block text-xs text-gray-500">
-                                                    {PROJECT_AI_MODE_DESCRIPTIONS[mode]}
-                                                </span>
-                                            </span>
-                                        </label>
-                                    ))}
-                                </div>
-
-                                {aiMode === 'local' && (
-                                    <div className="card space-y-4">
-                                        <div className="flex items-center gap-2">
-                                            <span
-                                                className={`h-2 w-2 rounded-full ${serverLocalAvailable ? 'bg-emerald-400' : 'bg-gray-500'}`}
-                                            />
-                                            <p className="text-sm text-gray-300">
-                                                {serverLocalAvailable === null
-                                                    ? '서버측 로컬 AI 상태 확인 중...'
-                                                    : serverLocalAvailable
-                                                        ? '서버에서 로컬 AI를 찾았습니다. 서버가 직접 호출합니다.'
-                                                        : '서버에서 로컬 AI를 찾지 못했습니다. 내 PC의 브라우저가 직접 호출합니다.'}
-                                            </p>
-                                        </div>
-
-                                        <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4 text-xs leading-6 text-gray-400">
-                                            <p className="mb-2 font-semibold text-gray-300">
-                                                브라우저에서 내 PC의 LLM을 호출하려면
-                                            </p>
-                                            <p>
-                                                브라우저가 다른 주소의 페이지에서 로컬 LLM을 부르려면 LLM 쪽에서 이 앱의
-                                                주소를 허용해 줘야 합니다.
-                                            </p>
-                                            <ul className="mt-2 list-disc space-y-1 pl-4">
-                                                <li>
-                                                    Ollama: 환경변수 <code className="text-gray-300">OLLAMA_ORIGINS</code> 에 이 앱
-                                                    주소를 넣고 다시 실행하세요.
-                                                </li>
-                                                <li>LM Studio: 로컬 서버 설정에서 CORS 허용을 켜세요.</li>
-                                            </ul>
-                                            <p className="mt-2">
-                                                설정하지 않아도 규칙 기반으로 자동 전환되므로 작업은 계속할 수 있습니다.
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-                            </>
-                        )}
                     </div>
                 </div>
             </main>

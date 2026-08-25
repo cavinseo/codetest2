@@ -347,7 +347,7 @@ const requested = personalConnection && personalConnection.mode !== 'rule'
 - lib/ai/project-ai-mode.ts 와 registry·getProviderStatuses 등 서버 잔여물은 이번에
   지우지 않는다(죽은 코드 정리는 후속) — 단 라우트·UI 참조는 위대로 끊는다.
 
-- [ ] RED(라우트 테스트 갱신 먼저) → GREEN → 전체 게이트 → 커밋:
+- [x] RED(라우트 테스트 갱신 먼저) → GREEN → 전체 게이트 → 커밋:
   `feat: AI 실행을 회원 연결 설정으로 일원화한다` (본문에 전역·프로젝트 선택 제거 이유)
 
 ---

@@ -1,4 +1,4 @@
-// 프로젝트 personal AI 모드가 요청자 본인의 연결만 사용하고 폴백 옵션을 전달하는지 확인한다.
+// AI 라우트가 프로젝트 설정 대신 요청자 본인의 연결 모드만 따르는지 확인한다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
@@ -22,18 +22,55 @@ vi.mock('../lib/prisma', () => ({
     prisma: { project: { findUnique: findUniqueProject } },
 }));
 
-const { POST } = await import('../app/api/projects/[id]/attributes/mentor/route');
-const { parseProjectAiMode } = await import('../lib/ai/project-ai-mode');
+const getAiSettings = vi.fn();
+vi.mock('../lib/service-settings', () => ({
+    getAiSettings: (...args: unknown[]) => getAiSettings(...(args as [])),
+}));
 
-const CONN = { vendor: 'openai', apiKey: 'sk-x', model: null };
+const { POST: mentorPost } = await import('../app/api/projects/[id]/attributes/mentor/route');
+const { POST: specPost } = await import('../app/api/projects/[id]/spec/generate/route');
 
-function call(body: unknown = {}) {
+const API_CONNECTION = {
+    mode: 'api',
+    vendor: 'openai',
+    apiKey: 'sk-x',
+    model: null,
+    mcpBaseUrl: null,
+    mcpModel: null,
+    localBaseUrl: null,
+    localModel: null,
+};
+
+const RULE_CONNECTION = {
+    ...API_CONNECTION,
+    mode: 'rule',
+    vendor: null,
+    apiKey: null,
+};
+
+const LOCAL_CONNECTION = {
+    ...RULE_CONNECTION,
+    mode: 'local',
+    localBaseUrl: 'http://localhost:11434/v1',
+    localModel: 'llama3',
+};
+
+function callMentor(body: unknown = {}) {
     const request = new NextRequest('http://localhost/api/projects/proj_1/attributes/mentor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
-    return POST(request, { params: Promise.resolve({ id: 'proj_1' }) });
+    return mentorPost(request, { params: Promise.resolve({ id: 'proj_1' }) });
+}
+
+function callSpec(body: unknown = {}) {
+    const request = new NextRequest('http://localhost/api/projects/proj_1/spec/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    return specPost(request, { params: Promise.resolve({ id: 'proj_1' }) });
 }
 
 beforeEach(() => {
@@ -52,60 +89,95 @@ beforeEach(() => {
         name: 'P',
         description: null,
         detailedDescription: null,
-        aiMode: 'personal',
         productAttributes: [],
+        specFunctions: [],
+        requirements: [],
+        technicalCharacteristics: [],
+        targetSpecs: [],
     });
-    loadPersonalConnection.mockResolvedValue(CONN);
+    loadPersonalConnection.mockResolvedValue(API_CONNECTION);
+    getAiSettings.mockResolvedValue({
+        localBaseUrl: 'http://localhost:11434/v1',
+        localModel: 'llama3',
+    });
     runAiTask.mockResolvedValue({
         result: { questions: [], focus: '' },
-        provider: 'personal',
-        requestedProvider: 'personal',
+        provider: 'rule',
+        requestedProvider: 'rule',
         degraded: false,
     });
 });
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+});
 
-describe('attributes/mentor 의 personal 모드', () => {
-    it('버튼을 누른 본인의 연결을 읽어 personal 로 요청한다', async () => {
-        await call({ userId: 'body_user' });
-        expect(loadPersonalConnection).toHaveBeenCalledWith('user_9');
-        expect(runAiTask.mock.calls[0][1]).toMatchObject({
-            requested: 'personal',
-            personalConnection: CONN,
-        });
-    });
-
-    it('rule 모드에서는 개인 연결을 조회하지 않는다', async () => {
-        findUniqueProject.mockResolvedValue({
-            name: 'P',
-            description: null,
-            detailedDescription: null,
-            aiMode: 'rule',
-            productAttributes: [],
-        });
-        await call();
-        expect(loadPersonalConnection).not.toHaveBeenCalled();
-        expect(runAiTask.mock.calls[0][1]).toMatchObject({ requested: 'rule' });
-    });
-
-    it('키 미등록이어도 500 이 나지 않는다(null 이 그대로 넘어가 폴백을 탄다)', async () => {
+describe('회원 AI 연결 기반 라우팅', () => {
+    it('연결이 없으면 오류나 강등 없이 rule 을 요청한다', async () => {
         loadPersonalConnection.mockResolvedValue(null);
-        const response = await call();
+
+        const response = await callMentor();
+        const body = await response.json();
+
         expect(response.status).toBe(200);
+        expect(body).toMatchObject({ requestedProvider: 'rule', degraded: false });
         expect(runAiTask.mock.calls[0][1]).toMatchObject({
-            requested: 'personal',
+            requested: 'rule',
             personalConnection: null,
         });
     });
-});
 
-describe('프로젝트 AI 모드 파싱', () => {
-    it('personal 을 personal 로 유지한다', () => {
-        expect(parseProjectAiMode('personal')).toBe('personal');
+    it("mode:'rule' 연결은 기본 선택인 rule 을 요청한다", async () => {
+        loadPersonalConnection.mockResolvedValue(RULE_CONNECTION);
+
+        await callMentor();
+
+        expect(runAiTask.mock.calls[0][1]).toMatchObject({
+            requested: 'rule',
+            personalConnection: RULE_CONNECTION,
+        });
     });
 
-    it('모르는 값은 rule 로 폴백한다', () => {
-        expect(parseProjectAiMode('unknown')).toBe('rule');
+    it("mode:'api' 연결은 personal 과 연결을 함께 전달한다", async () => {
+        await callMentor();
+
+        expect(runAiTask.mock.calls[0][1]).toMatchObject({
+            requested: 'personal',
+            personalConnection: API_CONNECTION,
+        });
+    });
+
+    it('본문 userId 대신 접근 세션의 userId 로만 연결을 읽는다', async () => {
+        await callMentor({ userId: 'body_user' });
+
+        expect(loadPersonalConnection).toHaveBeenCalledTimes(1);
+        expect(loadPersonalConnection).toHaveBeenCalledWith('user_9');
+        expect(loadPersonalConnection).not.toHaveBeenCalledWith('body_user');
+    });
+
+    it("mode:'local' 연결이고 서버 로컬 실행이 꺼지면 spec 브라우저 relay 를 제안한다", async () => {
+        vi.stubEnv('AI_LOCAL_SERVER_DISABLED', '1');
+        loadPersonalConnection.mockResolvedValue(LOCAL_CONNECTION);
+        runAiTask.mockResolvedValue({
+            result: { cores: [] },
+            provider: 'rule',
+            requestedProvider: 'rule',
+            degraded: false,
+        });
+
+        const response = await callSpec();
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(loadPersonalConnection).toHaveBeenCalledWith('user_9');
+        expect(runAiTask.mock.calls[0][1]).toMatchObject({
+            requested: 'rule',
+            personalConnection: LOCAL_CONNECTION,
+        });
+        expect(body.browserRelay).toMatchObject({
+            task: 'specDraft',
+            preferredModel: 'llama3',
+        });
     });
 });
