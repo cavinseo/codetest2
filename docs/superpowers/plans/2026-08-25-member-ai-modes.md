@@ -316,7 +316,7 @@ export function createPersonalProvider(conn: PersonalAiConnection): AiProvider {
 - 저장 버튼 활성 조건: rule → 항상 / api → 기존 규칙 / mcp → mcpBaseUrl 입력 시 / local → 항상.
 - GET 응답으로 폼 초기값 복원(mode 포함). 키 입력칸 비우기·password 타입·busy 탈출 계약은 그대로.
 
-- [ ] tsc·vitest·lint → 커밋: `feat: AI 연결 카드에 4모드 선택을 붙인다`
+- [x] tsc·vitest·lint → 커밋: `feat: AI 연결 카드에 4모드 선택을 붙인다`
 
 ---
 
