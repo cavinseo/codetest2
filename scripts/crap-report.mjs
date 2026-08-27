@@ -194,6 +194,26 @@ function crapSection(rows, unmatched) {
 const KILLED = new Set(['Killed', 'Timeout']);
 const SURVIVED = new Set(['Survived', 'NoCoverage']);
 
+// 뮤테이터 이름과 줄 번호만으로는 한 줄에 하위식이 여럿일 때 무엇이 바뀐 건지
+// 가릴 수 없다. 스트라이커 리포트의 원본 소스에서 해당 구간을 그대로 떠 온다.
+function sliceSource(source, location) {
+    if (typeof source !== 'string' || !location?.start || !location?.end) return '';
+
+    const lines = source.split('\n');
+    const { start, end } = location;
+    if (start.line < 1 || start.line > lines.length) return '';
+
+    const text = start.line === end.line
+        ? lines[start.line - 1].slice(start.column - 1, end.column - 1)
+        : [
+            lines[start.line - 1].slice(start.column - 1),
+            ...lines.slice(start.line, end.line - 1),
+            (lines[end.line - 1] ?? '').slice(0, end.column - 1),
+        ].join(' ');
+
+    return text.replace(/\s+/g, ' ').trim();
+}
+
 function collectMutationRows(report) {
     const rows = [];
     const survivors = [];
@@ -213,6 +233,7 @@ function collectMutationRows(report) {
                     line: mutant.location?.start?.line,
                     mutator: mutant.mutatorName,
                     status: mutant.status,
+                    original: sliceSource(file.source, mutant.location).slice(0, 70),
                     replacement: (mutant.replacement ?? '').replace(/\s+/g, ' ').slice(0, 60),
                 });
             } else ignored += 1;
@@ -260,10 +281,12 @@ function mutationSection(rows, survivors) {
     if (survivors.length > 0) {
         lines.push('### 살아남은 뮤턴트');
         lines.push('');
-        lines.push('| 위치 | 상태 | 뮤테이터 | 치환 |');
-        lines.push('| --- | --- | --- | --- |');
+        lines.push('| 위치 | 상태 | 뮤테이터 | 원본 | 치환 |');
+        lines.push('| --- | --- | --- | --- | --- |');
         for (const survivor of survivors) {
-            lines.push(`| \`${survivor.file}:${survivor.line}\` | ${survivor.status} | ${survivor.mutator} | \`${survivor.replacement}\` |`);
+            const original = survivor.original ? `\`${survivor.original.replace(/\|/g, '\\|')}\`` : '-';
+            const replacement = `\`${survivor.replacement.replace(/\|/g, '\\|')}\``;
+            lines.push(`| \`${survivor.file}:${survivor.line}\` | ${survivor.status} | ${survivor.mutator} | ${original} | ${replacement} |`);
         }
         lines.push('');
     } else {
