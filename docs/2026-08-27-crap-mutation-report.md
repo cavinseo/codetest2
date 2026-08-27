@@ -314,3 +314,16 @@ CRAP_MUTATION=./stryker-crap-report.json node scripts/crap-report.mjs
 ```
 
 산출물은 `crap-report.md`(사람이 읽는 표)와 `crap-report.json`(원본 수치)이다.
+
+## 부록 — 이번 변경의 게이트 검증
+
+`ci.yml` 은 `main` 과 PR 에서만 도는 탓에 기능 브랜치의 변경이 저장소 게이트를 깨는지
+확인할 경로가 없다. 이번에 추가한 `scripts/crap-report.mjs` 를 검증하려고 게이트를
+워크플로에 임시로 붙여 실행한 뒤 제거했다.
+
+```
+npm run lint && npx tsc --noEmit    → success (run 33070146280)
+```
+
+`npx vitest run` 은 위 측정 과정에서 커버리지 수집과 함께 통과했다.
+
