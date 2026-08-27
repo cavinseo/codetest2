@@ -4,11 +4,17 @@ import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 
 const ROOT = process.cwd();
-const COVERAGE_PATH = process.env.CRAP_COVERAGE ?? 'coverage/coverage-final.json';
-const COMPLEXITY_PATH = process.env.CRAP_COMPLEXITY ?? 'eslint-complexity.json';
-const MUTATION_PATH = process.env.CRAP_MUTATION ?? 'reports/mutation/stryker-crap-report.json';
-const OUT_MARKDOWN = process.env.CRAP_OUT ?? 'crap-report.md';
-const OUT_JSON = process.env.CRAP_OUT_JSON ?? 'crap-report.json';
+// CI 가 경로를 못 찾으면 빈 문자열을 넘겨줄 수 있다. 빈 값은 미지정으로 본다.
+function envPath(name, fallback) {
+    const value = process.env[name];
+    return value && value.trim() !== '' ? value : fallback;
+}
+
+const COVERAGE_PATH = envPath('CRAP_COVERAGE', 'coverage/coverage-final.json');
+const COMPLEXITY_PATH = envPath('CRAP_COMPLEXITY', 'eslint-complexity.json');
+const MUTATION_PATH = envPath('CRAP_MUTATION', 'reports/mutation/stryker-crap-report.json');
+const OUT_MARKDOWN = envPath('CRAP_OUT', 'crap-report.md');
+const OUT_JSON = envPath('CRAP_OUT_JSON', 'crap-report.json');
 
 // CRAP 원 논문의 기준선이다. 복잡도 5 짜리 함수가 커버리지 0% 일 때 30 을 처음
 // 넘기므로, "복잡한데 안 덮인" 함수만 정확히 걸러내는 값으로 쓰인다.
@@ -25,7 +31,8 @@ async function readJson(filePath) {
     try {
         return JSON.parse(await readFile(path.resolve(ROOT, filePath), 'utf8'));
     } catch (error) {
-        if (error.code === 'ENOENT') return null;
+        // EISDIR 은 경로가 비어 저장소 루트로 해석된 경우다. 둘 다 "입력 없음" 으로 다룬다.
+        if (error.code === 'ENOENT' || error.code === 'EISDIR') return null;
         throw error;
     }
 }
@@ -301,7 +308,7 @@ await writeFile(path.resolve(ROOT, OUT_JSON), JSON.stringify(payload), 'utf8');
 console.log(markdown);
 
 // CI 아티팩트를 내려받지 못하는 환경에서도 원본 수치를 되살릴 수 있게 로그에 싣는다.
-const encoded = gzipSync(Buffer.from(JSON.stringify(payload), 'utf8')).toString('base64');
+const encoded = gzipSync(JSON.stringify(payload)).toString('base64');
 console.log('=== BEGIN CRAP_PAYLOAD_B64 ===');
 for (let index = 0; index < encoded.length; index += 500) {
     console.log(encoded.slice(index, index + 500));

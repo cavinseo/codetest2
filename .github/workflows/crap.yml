@@ -27,9 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # StrykerJS 10 은 Node >= 22 를 요구한다. ci.yml 의 20 을 그대로 쓰면
+      # 뮤테이션 단계가 시작조차 못 하고 죽는다.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -63,7 +65,7 @@ jobs:
           ls -la eslint-complexity.json 2>/dev/null || echo "no eslint-complexity.json"
           find . -name 'stryker-crap-report.json' -not -path './node_modules/*' 2>/dev/null
           found=$(find . -name 'stryker-crap-report.json' -not -path './node_modules/*' | head -1)
-          echo "CRAP_MUTATION=$found" >> "$GITHUB_ENV"
+          if [ -n "$found" ]; then echo "CRAP_MUTATION=$found" >> "$GITHUB_ENV"; fi
 
       - name: Build report
         if: always()
