@@ -1,0 +1,84 @@
+name: CRAP / Mutation
+
+# 로컬에서 npm 레지스트리가 막힌 환경에서도 CRAP 지수와 뮤테이션 점수를 실측하려고
+# 둔 워크플로다. 기본 CI 와 달리 커버리지 수집이 필요해 별도 잡으로 나눈다.
+on:
+  push:
+    branches: ['claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crap:
+    name: CRAP index / Mutation score
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    # ci.yml 과 같은 더미 값이다. 테스트는 Prisma 를 mock 하므로 실제 DB 에 접속하지 않는다.
+    env:
+      NODE_ENV: test
+      SESSION_SECRET: ci-dummy-secret-32-chars-minimum!
+      ALLOW_DEV_ADMIN: "false"
+      POSTGRES_PRISMA_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      POSTGRES_URL_NON_POOLING: postgresql://ci:ci@localhost:5432/ci?schema=public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install coverage provider
+        run: npm install --no-save "@vitest/coverage-v8@$(node -p "require('./node_modules/vitest/package.json').version")"
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Cyclomatic complexity (ESLint)
+        continue-on-error: true
+        run: npx eslint lib --rule '{"complexity":["warn",{"max":0}]}' -f json -o eslint-complexity.json || true
+
+      - name: Coverage
+        continue-on-error: true
+        run: npx vitest run --pool=threads --coverage.enabled --coverage.provider=v8 --coverage.reporter=json --coverage.reporter=text-summary --coverage.include='lib/**/*.ts' --coverage.reportsDirectory=coverage
+
+      - name: Mutation testing
+        continue-on-error: true
+        run: npm run test:mutation
+
+      - name: Locate inputs
+        if: always()
+        run: |
+          echo "--- vitest/stryker versions ---"
+          node -p "require('./node_modules/vitest/package.json').version"
+          echo "--- produced files ---"
+          ls -la coverage 2>/dev/null || echo "no coverage dir"
+          ls -la eslint-complexity.json 2>/dev/null || echo "no eslint-complexity.json"
+          find . -name 'stryker-crap-report.json' -not -path './node_modules/*' 2>/dev/null
+          found=$(find . -name 'stryker-crap-report.json' -not -path './node_modules/*' | head -1)
+          echo "CRAP_MUTATION=$found" >> "$GITHUB_ENV"
+
+      - name: Build report
+        if: always()
+        run: node scripts/crap-report.mjs
+
+      - name: Upload raw reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crap-reports
+          path: |
+            coverage/coverage-final.json
+            eslint-complexity.json
+            crap-report.md
+            crap-report.json
+            reports/**
+            stryker-crap-report.json
+          if-no-files-found: warn
