@@ -1,7 +1,6 @@
 // 함수별 CRAP 지수와 뮤테이션 점수를 하나의 마크다운 보고서로 합치는 스크립트입니다.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { gzipSync } from 'node:zlib';
 
 const ROOT = process.cwd();
 // CI 가 경로를 못 찾으면 빈 문자열을 넘겨줄 수 있다. 빈 값은 미지정으로 본다.
@@ -306,11 +305,3 @@ await writeFile(path.resolve(ROOT, OUT_MARKDOWN), markdown, 'utf8');
 await writeFile(path.resolve(ROOT, OUT_JSON), JSON.stringify(payload), 'utf8');
 
 console.log(markdown);
-
-// CI 아티팩트를 내려받지 못하는 환경에서도 원본 수치를 되살릴 수 있게 로그에 싣는다.
-const encoded = gzipSync(JSON.stringify(payload)).toString('base64');
-console.log('=== BEGIN CRAP_PAYLOAD_B64 ===');
-for (let index = 0; index < encoded.length; index += 500) {
-    console.log(encoded.slice(index, index + 500));
-}
-console.log('=== END CRAP_PAYLOAD_B64 ===');

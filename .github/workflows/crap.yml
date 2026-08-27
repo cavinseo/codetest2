@@ -84,3 +84,9 @@ jobs:
             reports/**
             stryker-crap-report.json
           if-no-files-found: warn
+
+      # 아티팩트 저장소에 닿지 못하는 환경에서도 결과를 읽을 수 있게, 로그의 맨
+      # 마지막에 보고서 전문을 한 번 더 싣는다.
+      - name: Print report
+        if: always()
+        run: cat crap-report.md
