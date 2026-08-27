@@ -89,4 +89,9 @@ jobs:
       # 마지막에 보고서 전문을 한 번 더 싣는다.
       - name: Print report
         if: always()
-        run: cat crap-report.md
+        run: |
+          cat crap-report.md
+          # 로그 조회는 뒤에서부터 잘리므로, 창 밖으로 밀려나기 쉬운 앞부분(요약과
+          # 위험 목록)만 맨 끝에 한 번 더 싣는다.
+          echo '=== CRAP 요약 재출력 ==='
+          sed -n '1,/^### 주의/p' crap-report.md
