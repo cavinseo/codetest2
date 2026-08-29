@@ -151,7 +151,7 @@ const EXEMPT_PATHS = ['/onboarding', '/login', '/signup'];
 
 export function isOnboardingBlock(status: number, body: unknown): boolean {
     if (status !== 403) return false;
-    if (typeof body !== 'object' || body === null || Array.isArray(body)) return false;
+    if (typeof body !== 'object' || body === null) return false;
     return (body as { code?: unknown }).code === ONBOARDING_CODE;
 }
 
@@ -171,7 +171,7 @@ export function shouldRedirectToOnboarding(
 - [ ] **Step 4: 통과를 확인한다**
 
 Run: `npx vitest run tests/onboarding-redirect.test.ts`
-Expected: PASS (12개)
+Expected: PASS (10개)
 
 - [ ] **Step 5: stryker 대상에 등록하고 100% 를 확인한다**
 
@@ -253,7 +253,7 @@ npx vitest run
 npx next lint
 ```
 
-Expected: tsc 출력 없음 / vitest 전체 통과, 테스트 수 **1045 + 12 = 1057 이상** /
+Expected: tsc 출력 없음 / vitest 전체 통과, 테스트 수 **1045 + 10 = 1055 이상** /
 lint `✔ No ESLint warnings or errors`.
 
 - [ ] **Step 9: 커밋한다**
@@ -287,7 +287,7 @@ COMMIT / VERIFIED BY / DEVIATIONS / RISKS / QUESTIONS.
 3. 컴포넌트가 `response.clone()` 에서 읽는가 — 원본을 읽으면 호출부가 빈 본문을 받는다
 4. `useEffect` cleanup 이 원래 `fetch` 를 복원하는가
 5. `lib/onboarding-redirect.ts` 가 stryker `mutate` 목록에 있고 점수가 100% 인가
-6. 감리자 직접 재실행: tsc 0 · vitest 전체(1057 이상) · lint 0
+6. 감리자 직접 재실행: tsc 0 · vitest 전체(1055 이상) · lint 0
 
 ## 계획 밖 (사람이 하는 일)
 
