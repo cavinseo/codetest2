@@ -240,7 +240,7 @@ export function resolvePersonalModel(vendor: PersonalAiVendor, model: string | n
 
 - [ ] **Step 4: 통과 확인** — Run: `npx vitest run tests/ai-personal-vendors.test.ts` → PASS
 
-- [ ] **Step 5: stryker 대상 추가** — `stryker.crap.config.json` 의 `"mutate"` 배열에서 `"lib/member-profile-payload.ts",` 줄 아래에 `"lib/ai/personal-vendors.ts",` 추가. Run: `npx stryker run stryker.crap.config.json --mutate lib/ai/personal-vendors.ts` → 점수 100% 확인 (미달이면 생존 뮤턴트를 죽이는 테스트를 보강).
+- [x] **Step 5: stryker 대상 추가** — `stryker.crap.config.json` 의 `"mutate"` 배열에서 `"lib/member-profile-payload.ts",` 줄 아래에 `"lib/ai/personal-vendors.ts",` 추가. Run: `npx stryker run stryker.crap.config.json --mutate lib/ai/personal-vendors.ts` → 점수 100% 확인 (미달이면 생존 뮤턴트를 죽이는 테스트를 보강). (2026-08-30-mutation-hardening Task 2 에서 달성)
 
 - [ ] **Step 6: 커밋**
 
