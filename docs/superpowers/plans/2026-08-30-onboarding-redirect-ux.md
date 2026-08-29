@@ -65,7 +65,7 @@
 - Consumes: `lib/auth.ts` 의 `requireAuth` 가 내는 403 응답 본문
   `{ error: string, code: 'onboarding_required' }` (커밋 `19c202c` 에서 도입).
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다** — `tests/onboarding-redirect.test.ts`
+- [x] **Step 1: 실패하는 테스트를 쓴다** — `tests/onboarding-redirect.test.ts`
 
 ```typescript
 // 온보딩 관문이 낸 403 만 골라내고, 이미 온보딩 화면이면 다시 보내지 않는지 확인한다.
@@ -129,12 +129,12 @@ describe('shouldRedirectToOnboarding', () => {
 });
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 Run: `npx vitest run tests/onboarding-redirect.test.ts`
 Expected: FAIL — `Cannot find module '../lib/onboarding-redirect'`
 
-- [ ] **Step 3: 순수 모듈을 만든다** — `lib/onboarding-redirect.ts`
+- [x] **Step 3: 순수 모듈을 만든다** — `lib/onboarding-redirect.ts`
 
 ```typescript
 // 온보딩 관문이 막은 응답인지 판정한다.
@@ -168,12 +168,12 @@ export function shouldRedirectToOnboarding(
 }
 ```
 
-- [ ] **Step 4: 통과를 확인한다**
+- [x] **Step 4: 통과를 확인한다**
 
 Run: `npx vitest run tests/onboarding-redirect.test.ts`
 Expected: PASS (10개)
 
-- [ ] **Step 5: stryker 대상에 등록하고 100% 를 확인한다**
+- [x] **Step 5: stryker 대상에 등록하고 100% 를 확인한다**
 
 `stryker.crap.config.json` 의 `mutate` 배열에서 `"lib/login-state.ts",` 줄 아래에
 `"lib/onboarding-redirect.ts",` 를 추가한다.
@@ -185,7 +185,7 @@ Expected: `onboarding-redirect.ts | 100.00`
 disable 주석으로 넘기기 전에 중단하고 보고하라** — 이 모듈은 분기가 단순해 등가가
 나올 자리가 거의 없다.
 
-- [ ] **Step 6: 컴포넌트를 만든다** — `components/OnboardingRedirect.tsx`
+- [x] **Step 6: 컴포넌트를 만든다** — `components/OnboardingRedirect.tsx`
 
 ```tsx
 'use client';
@@ -227,7 +227,7 @@ export default function OnboardingRedirect() {
 }
 ```
 
-- [ ] **Step 7: 루트 레이아웃에 마운트한다** — `app/layout.tsx`
+- [x] **Step 7: 루트 레이아웃에 마운트한다** — `app/layout.tsx`
 
 `ThemeToggle` import 아래에 한 줄을 더한다.
 
@@ -245,7 +245,7 @@ import OnboardingRedirect from "@/components/OnboardingRedirect";
             </body>
 ```
 
-- [ ] **Step 8: 전체 게이트를 돌린다**
+- [x] **Step 8: 전체 게이트를 돌린다**
 
 ```sh
 npx tsc --noEmit
@@ -256,7 +256,7 @@ npx next lint
 Expected: tsc 출력 없음 / vitest 전체 통과, 테스트 수 **1045 + 10 = 1055 이상** /
 lint `✔ No ESLint warnings or errors`.
 
-- [ ] **Step 9: 커밋한다**
+- [x] **Step 9: 커밋한다**
 
 계획서 체크박스 `[x]` 갱신을 포함한다.
 
