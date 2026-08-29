@@ -21,7 +21,8 @@ const changePasswordSchema = z.object({
 export async function POST(request: NextRequest) {
     // 본인 비밀번호 변경은 관리자 전용이 아니다. 관리자가 만든 회원이 메일로 받은
     // 임시 비밀번호를 스스로 바꿀 수 있어야 하므로 requireAuth 로 연다.
-    const authResult = await requireAuth(request);
+    // 온보딩 게이트도 열어 둔다 — 이 경로가 막히면 임시 비밀번호를 바꿀 수 없다.
+    const authResult = await requireAuth(request, { allowIncompleteOnboarding: true });
     if (authResult instanceof NextResponse) return authResult;
 
     try {

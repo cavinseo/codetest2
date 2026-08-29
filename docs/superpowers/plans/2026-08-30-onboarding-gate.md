@@ -60,7 +60,7 @@
 - Consumes: `isProfileCompleteForRole(role: MemberRole, profile: {...} | null): boolean`
   (`lib/member-profile.ts:57`), `parseMemberRole` (`lib/member-roles.ts`).
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다** — `tests/api-onboarding-gate.test.ts` 를 만든다.
+- [x] **Step 1: 실패하는 테스트를 쓴다** — `tests/api-onboarding-gate.test.ts` 를 만든다.
 
 ```typescript
 // 온보딩(임시 비밀번호 변경 + 프로필 작성)을 마치기 전에는 API 를 쓸 수 없어야 한다.
@@ -296,13 +296,13 @@ describe('온보딩 관문', () => {
 });
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 Run: `npx vitest run tests/api-onboarding-gate.test.ts`
 Expected: FAIL. 차단 테스트들이 403 대신 통과 객체를 받는다(게이트가 아직 없다).
 `allowIncompleteOnboarding` 테스트는 타입 오류로 실패한다(옵션이 아직 없다).
 
-- [ ] **Step 3: `lib/auth.ts` 에 import 와 옵션 타입을 추가한다**
+- [x] **Step 3: `lib/auth.ts` 에 import 와 옵션 타입을 추가한다**
 
 5행 import 아래에 한 줄을 더한다. `lib/member-profile.ts` 는 `zod` 와
 `member-roles` 의 타입만 쓰므로 순환 참조가 생기지 않는다.
@@ -326,7 +326,7 @@ export interface RequireAuthOptions {
 }
 ```
 
-- [ ] **Step 4: `requireAuth` 시그니처와 `select` 를 넓힌다**
+- [x] **Step 4: `requireAuth` 시그니처와 `select` 를 넓힌다**
 
 118행 시그니처를 바꾼다. 두 번째 인자에 기본값이 있으므로 기존 호출부는 그대로 돈다.
 
@@ -354,7 +354,7 @@ export async function requireAuth(
         },
 ```
 
-- [ ] **Step 5: 게이트를 넣는다**
+- [x] **Step 5: 게이트를 넣는다**
 
 `isAccessExpired` 검사 블록 **뒤**, `return { ... }` **앞**에 넣는다. 순서가 이래야
 승인 대기·세션 만료·기간 만료가 각자의 메시지를 먼저 낸다.
@@ -390,7 +390,7 @@ export async function requireAuth(
     };
 ```
 
-- [ ] **Step 6: 예외 3경로에 옵트인을 준다**
+- [x] **Step 6: 예외 3경로에 옵트인을 준다**
 
 `app/api/me/profile/route.ts` 24행과 59행:
 
@@ -408,7 +408,7 @@ export async function requireAuth(
     const authResult = await requireAuth(request, { allowIncompleteOnboarding: true });
 ```
 
-- [ ] **Step 7: 기존 픽스처 두 개를 넓힌다**
+- [x] **Step 7: 기존 픽스처 두 개를 넓힌다**
 
 `tests/auth.test.ts:31` 의 `approvedUser` 에 두 항목을 더한다.
 
@@ -445,12 +445,12 @@ function approvedUser(overrides: Record<string, unknown> = {}) {
         },
 ```
 
-- [ ] **Step 8: 테스트가 통과하는지 확인한다**
+- [x] **Step 8: 테스트가 통과하는지 확인한다**
 
 Run: `npx vitest run tests/api-onboarding-gate.test.ts tests/auth.test.ts tests/authorization.test.ts`
 Expected: PASS (신규 11개 포함 전부).
 
-- [ ] **Step 9: 전체 게이트를 돌린다**
+- [x] **Step 9: 전체 게이트를 돌린다**
 
 ```sh
 npx tsc --noEmit
@@ -466,7 +466,7 @@ vitest 가 신규 11개 말고 다른 곳에서 깨지면 그 라우트 테스�
 두 항목을 더하고, **어느 파일이었는지 보고서 DEVIATIONS 에 적어라** — 감리자가
 "영향 테스트는 2개뿐"으로 계획을 세웠으므로 어긋난 사실이 기록돼야 한다.
 
-- [ ] **Step 10: 커밋한다**
+- [x] **Step 10: 커밋한다**
 
 계획서 체크박스 `[x]` 갱신을 포함한다.
 

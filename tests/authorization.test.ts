@@ -53,6 +53,14 @@ function approvedRow(userId: string, overrides: Record<string, unknown> = {}) {
         // 명시하지 않으면 시스템 역할 관련 테스트가 undefined 를 보고 조용히 틀릴 수 있다.
         role: 'MENTEE',
         accessExpiresAt: null,
+        // requireAuth 가 온보딩까지 보므로 어떤 역할로 불러도 완성으로 판정되도록
+        // 역할별 필수 항목을 모두 채워 둔다.
+        mustChangePassword: false,
+        profile: {
+            organization: '기관', phone: '010-0000-0000',
+            expertise: '제조', careerYears: 10,
+            companyName: '회사', industry: '제조',
+        },
         ...overrides,
     };
 }

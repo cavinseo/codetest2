@@ -21,7 +21,9 @@ const nameSchema = z
     .max(50, '이름은 50자를 넘을 수 없습니다.');
 
 export async function GET(request: NextRequest) {
-    const authResult = await requireAuth(request);
+    // 온보딩 화면이 이 경로로 프로필을 읽고 쓴다. 게이트를 걸면 온보딩을 끝낼
+    // 방법이 없어져 전원이 잠긴다.
+    const authResult = await requireAuth(request, { allowIncompleteOnboarding: true });
     if (authResult instanceof NextResponse) return authResult;
 
     try {
@@ -56,7 +58,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-    const authResult = await requireAuth(request);
+    // 온보딩 화면이 이 경로로 프로필을 읽고 쓴다. 게이트를 걸면 온보딩을 끝낼
+    // 방법이 없어져 전원이 잠긴다.
+    const authResult = await requireAuth(request, { allowIncompleteOnboarding: true });
     if (authResult instanceof NextResponse) return authResult;
 
     try {
