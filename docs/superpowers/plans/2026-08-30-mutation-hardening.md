@@ -72,7 +72,7 @@ Task B(커밋 `c6b2992`)가 같은 파일에 4모드 상수를 얹으면서 점�
 
 **Files:** `tests/oauth-nonce.test.ts`(보강), `lib/oauth-nonce.ts`(주석만)
 
-- [ ] **Step 1: RED — 실패 테스트 4개를 먼저 추가** (`tests/oauth-nonce.test.ts`).
+- [x] **Step 1: RED — 실패 테스트 4개를 먼저 추가** (`tests/oauth-nonce.test.ts`).
   기존 7개 테스트는 **하나도 수정·삭제하지 마라**. 아래를 덧붙인다:
   1. `userId 가 없는 서명 payload 를 거부한다` — 기존 테스트(34~46행)의 수동 서명
      패턴을 그대로 재사용하되 payload 에서 `userId` 를 뺀다.
@@ -84,19 +84,19 @@ Task B(커밋 `c6b2992`)가 같은 파일에 4모드 상수를 얹으면서 점�
   네 테스트 모두 `expect(verifyOAuthNonce(...)).toBeNull()` 로 단언한다
   (`toBeNull` 이어야 catch 를 `{}` 로 만든 뮤턴트가 `undefined` 로 죽는다 —
   `toBeFalsy` 로 쓰면 안 죽는다).
-- [ ] **Step 2: 실패 확인** — Run: `npx vitest run tests/oauth-nonce.test.ts`.
+- [x] **Step 2: 실패 확인** — Run: `npx vitest run tests/oauth-nonce.test.ts`.
   4번은 현재 소스에서도 통과할 수 있다(정상 동작). 1·2·3 은 소스가 이미 올바르므로
   역시 통과한다 — 이 Task 의 RED 판정 기준은 vitest 가 아니라 **stryker 생존
   뮤턴트 수**다. Step 3 전후의 stryker 출력을 비교해 보고서에 담아라.
-- [ ] **Step 3: 등가 뮤턴트 4곳에 disable 주석 추가** (`lib/oauth-nonce.ts`).
+- [x] **Step 3: 등가 뮤턴트 4곳에 disable 주석 추가** (`lib/oauth-nonce.ts`).
   형식: `// Stryker disable next-line <Mutator[,Mutator]>: <한국어 이유>`.
   이유에는 위 표의 실측 근거를 담는다. 40행 `StringLiteral`, 48행
   `ConditionalExpression,LogicalOperator`, 54행 `ConditionalExpression`,
   61행 `OptionalChaining` — **61행에 `ConditionalExpression` 을 넣지 마라.**
-- [ ] **Step 4: 100% 확인** — Run:
+- [x] **Step 4: 100% 확인** — Run:
   `npx stryker run stryker.crap.config.json --mutate lib/oauth-nonce.ts`
   → `oauth-nonce.ts | 100.00`. 미달이면 생존 뮤턴트를 보고서에 적고 보강한다.
-- [ ] **Step 5: 전체 게이트 → 작업 커밋 1개**
+- [x] **Step 5: 전체 게이트 → 작업 커밋 1개**
   (`test: OAuth nonce 검증 가드를 뮤테이션으로 못 박는다`) → 보고서 커밋.
 
 ---
@@ -107,23 +107,23 @@ Task B(커밋 `c6b2992`)가 같은 파일에 4모드 상수를 얹으면서 점�
 
 `lib/ai/personal-vendors.ts` 는 **수정하지 않는다.** 생존 10개 전부 테스트로 죽는다.
 
-- [ ] **Step 1: RED — 상수 단언 추가** (`tests/ai-personal-vendors.test.ts`).
+- [x] **Step 1: RED — 상수 단언 추가** (`tests/ai-personal-vendors.test.ts`).
   기존 테스트는 수정하지 않는다. `MEMBER_AI_MODE_LABELS` 와
   `MEMBER_AI_MODE_DESCRIPTIONS` 각각에 대해:
   - `MEMBER_AI_MODES` 4개 키가 모두 존재한다 (`ObjectLiteral → {}` 를 죽인다)
   - 4개 값이 소스의 문자열과 **정확히** 일치한다 (`StringLiteral → ""` 를 죽인다).
     값은 `lib/ai/personal-vendors.ts:42~45`, `49~52` 에서 그대로 옮긴다.
   - 어떤 값도 빈 문자열이 아니다
-- [ ] **Step 2: 통과 확인** — Run: `npx vitest run tests/ai-personal-vendors.test.ts`
-- [ ] **Step 3: 100% 확인** — Run:
+- [x] **Step 2: 통과 확인** — Run: `npx vitest run tests/ai-personal-vendors.test.ts`
+- [x] **Step 3: 100% 확인** — Run:
   `npx stryker run stryker.crap.config.json --mutate lib/ai/personal-vendors.ts`
   → `personal-vendors.ts | 100.00`
-- [ ] **Step 4: 선행 계획서 체크박스 정리** —
+- [x] **Step 4: 선행 계획서 체크박스 정리** —
   `docs/superpowers/plans/2026-08-25-personal-ai-keys.md:243` 의 Task 2 Step 5
   체크박스를 `- [x]` 로 갱신하고, 그 줄 뒤에
   `(2026-08-30-mutation-hardening Task 2 에서 달성)` 을 덧붙인다. 같은 파일의
   나머지 열린 체크박스는 **건드리지 마라.**
-- [ ] **Step 5: 전체 게이트 → 작업 커밋 1개**
+- [x] **Step 5: 전체 게이트 → 작업 커밋 1개**
   (`test: 회원 AI 모드 라벨·설명을 뮤테이션으로 못 박는다`) → 보고서 커밋.
 
 ---
