@@ -79,6 +79,85 @@ describe('workbook importer', () => {
         expect(result.warnings).toEqual([]);
     });
 
+    it('QFD·로드맵·자산·자금 시트를 레코드로 옮긴다', () => {
+        // 이 다섯 시트가 기존 픽스처에 없어 담당 파서가 한 번도 실행되지 않았다.
+        // 커버리지 0% 라 파서가 조용히 틀린 값을 만들어도 드러나지 않으므로,
+        // 건수만 세지 말고 실제 필드까지 고정한다.
+        const parsed = workbook([
+            sheet('QFD', [
+                ['품질기능전개 (QFD)'],
+                ['Spec', '응답시간', '가동률', '측정단위'],
+                ['', 'ms', '%', ''],
+                [],
+                ['', '200', '99.9', ''],
+            ]),
+            sheet('향후목표고객LIST', [
+                ['향후 목표고객 LIST'],
+                ['순위', '개선방향', '개선기능', '구현가능성', '목표고객'],
+                [1, '자동화', '초기설정 단축', '높음', 'SMB'],
+                [2, '연동', '외부 API 연계', '보통', '엔터프라이즈'],
+            ]),
+            sheet('핵심자산과 보완자산표', [
+                ['핵심자산과 보완자산 도출표'],
+                ['핵심자산'],
+                ['특허', '온보딩 자동화 특허'],
+                ['보완자산'],
+                ['채널', '리셀러 네트워크'],
+            ]),
+            sheet('자금소요계획표', [
+                ['자금 소요 계획'],
+                ['구분', '항목', '1년차', '2년차', '3년차'],
+                ['인건비', '개발자 2명', '1,200', '1,400', '1,600'],
+                ['', '', '', '', ''],
+                ['외주비', '디자인', 300, 0, 0],
+            ]),
+            sheet('자금조달계획표', [
+                ['구분', '1년차', '', '2년차', '', '3년차', ''],
+                ['', '조달처', '금액', '조달처', '금액', '조달처', '금액'],
+                ['자기자금', '대표 출자', '500', '대표 출자', '300', '', ''],
+                ['합계', '', '500', '', '300', '', ''],
+            ]),
+        ]);
+
+        const result = parseWorkbookImport(parsed);
+
+        expect(result.unknownSheets).toEqual([]);
+        expect(result.warnings).toEqual([]);
+
+        // QFD 는 'Spec' 행을 이름 행으로 잡고 +1 을 단위, +3 을 목표값으로 읽는다.
+        // '측정단위' 열은 특성이 아니라 라벨이므로 빠져야 한다.
+        expect(result.records.technicalCharacteristics).toEqual([
+            { name: '응답시간', unit: 'ms', targetValue: '200' },
+            { name: '가동률', unit: '%', targetValue: '99.9' },
+        ]);
+
+        expect(result.records.techRoadmaps).toEqual([
+            { category: '자동화', techItem: '초기설정 단축', currentLevel: '높음', owner: 'SMB', order: 0 },
+            { category: '연동', techItem: '외부 API 연계', currentLevel: '보통', owner: '엔터프라이즈', order: 1 },
+        ]);
+
+        // '보완자산' 행을 지나면 그 뒤 항목의 타입이 COMPLEMENTARY 로 바뀐다.
+        // 구획 제목 행 자체도 content 가 빈 레코드로 들어오는데, 현재 동작을 그대로
+        // 고정해 둔다. 이 테스트에서 파서를 바꾸지는 않는다.
+        expect(result.records.assetItems).toEqual([
+            { type: 'CORE', category: '핵심자산', content: null, order: 0 },
+            { type: 'CORE', category: '특허', content: '온보딩 자동화 특허', order: 1 },
+            { type: 'COMPLEMENTARY', category: '보완자산', content: null, order: 2 },
+            { type: 'COMPLEMENTARY', category: '채널', content: '리셀러 네트워크', order: 3 },
+        ]);
+
+        // 금액의 천 단위 쉼표는 숫자로 변환되고, 구분·항목이 모두 빈 행은 건너뛴다.
+        expect(result.records.fundingPlans).toEqual([
+            { category: '인건비', item: '개발자 2명', year1: 1200, year2: 1400, year3: 1600, order: 0 },
+            { category: '외주비', item: '디자인', year1: 300, year2: 0, year3: 0, order: 1 },
+        ]);
+
+        // 조달계획은 연차마다 조달처와 금액 두 열을 ':' 로 묶고, 합계 행은 뺀다.
+        expect(result.records.fundingSources).toEqual([
+            { category: '자기자금', year1: '대표 출자:500', year2: '대표 출자:300', year3: null, order: 0 },
+        ]);
+    });
+
     it('maps a three-column AS-IS sheet technical characteristic into spec technology', () => {
         const parsed = workbook([
             sheet('AS-IS스펙표', [
