@@ -25,7 +25,11 @@ describe('countCascadeImpact', () => {
         const impact = await countCascadeImpact(db, 'project_1', { replacesCustomerRequirements: true });
 
         expect(impact).toEqual({ kanoResponses: 42, benchmarks: 3, qfdMatrices: 17 });
+        // 세 조회 모두 프로젝트로 한정해야 한다. 스텁이 인자를 보지 않으면 where 절이
+        // 통째로 사라져도 통과하는데, 실제로는 다른 프로젝트의 건수까지 세게 된다.
         expect(db.kanoResponse.count).toHaveBeenCalledWith({ where: { projectId: 'project_1' } });
+        expect(db.benchmark.count).toHaveBeenCalledWith({ where: { projectId: 'project_1' } });
+        expect(db.qFDMatrix.count).toHaveBeenCalledWith({ where: { projectId: 'project_1' } });
     });
 
     it('고객요구사항을 건드리지 않으면 세지 않는다', async () => {
@@ -33,8 +37,16 @@ describe('countCascadeImpact', () => {
 
         const impact = await countCascadeImpact(db, 'project_1', { replacesCustomerRequirements: false });
 
-        expect(impact).toEqual(EMPTY_CASCADE_IMPACT);
+        // 상수와 비교하면 상수 자체가 비어도 양쪽이 같이 비어 통과한다. 값을 직접 적는다.
+        expect(impact).toEqual({ kanoResponses: 0, benchmarks: 0, qfdMatrices: 0 });
         expect(db.kanoResponse.count).not.toHaveBeenCalled();
+    });
+});
+
+describe('EMPTY_CASCADE_IMPACT', () => {
+    it('세 항목이 모두 0 인 형태다', () => {
+        // "영향 없음" 의 모양 그 자체라, 항목이 빠지면 호출부가 undefined 를 건수로 읽는다.
+        expect(EMPTY_CASCADE_IMPACT).toEqual({ kanoResponses: 0, benchmarks: 0, qfdMatrices: 0 });
     });
 });
 
@@ -56,8 +68,9 @@ describe('describeCascadeImpact', () => {
     it('0 인 항목은 문구에서 뺀다', () => {
         const text = describeCascadeImpact({ kanoResponses: 12, benchmarks: 0, qfdMatrices: 4 });
 
-        expect(text).toContain('Kano 설문 응답 12건');
-        expect(text).toContain('QFD 관계 4건');
+        // 항목을 잇는 구분자가 사라지면 "…12건QFD 관계 4건" 이 되는데, 항목별로만
+        // 확인하면 그것이 잡히지 않는다. 이어진 형태로 본다.
+        expect(text).toContain('Kano 설문 응답 12건, QFD 관계 4건');
         expect(text).not.toContain('벤치마크');
     });
 
