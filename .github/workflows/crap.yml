@@ -1,8 +1,13 @@
 name: CRAP / Mutation
 
-# 로컬에서 npm 레지스트리가 막힌 환경에서도 CRAP 지수와 뮤테이션 점수를 실측하려고
-# 둔 워크플로다. 기본 CI 와 달리 커버리지 수집이 필요해 별도 잡으로 나눈다.
+# CRAP 지수와 뮤테이션 점수를 재는 워크플로다. 기본 CI 와 달리 커버리지 수집이 필요해
+# 별도 잡으로 나눈다.
+#
+# PR 에서만 도는 이유(D-3): 회귀는 결국 코드가 main 으로 들어올 때 생기고 그 관문이
+# PR 이다. ci.yml 에 합치면 모든 푸시가 약 4분 길어지는데, 거기서 얻는 것이 없다.
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: ['claude/**']
   workflow_dispatch:
@@ -67,9 +72,12 @@ jobs:
           found=$(find . -name 'stryker-crap-report.json' -not -path './node_modules/*' | head -1)
           if [ -n "$found" ]; then echo "CRAP_MUTATION=$found" >> "$GITHUB_ENV"; fi
 
+      # --fail-over=30 은 CRAP 원 논문의 기준선이다. Phase 2 에서 위험을 0건으로
+      # 만들었으므로 그 상태가 그대로 기준선이 된다. 숫자만 남기면 바쁜 날에는
+      # 아무도 보지 않아 위험 함수가 조용히 다시 쌓인다.
       - name: Build report
         if: always()
-        run: node scripts/crap-report.mjs
+        run: node scripts/crap-report.mjs --fail-over=30
 
       - name: Upload raw reports
         if: always()

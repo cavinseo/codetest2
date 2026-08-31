@@ -328,3 +328,30 @@ await writeFile(path.resolve(ROOT, OUT_MARKDOWN), markdown, 'utf8');
 await writeFile(path.resolve(ROOT, OUT_JSON), JSON.stringify(payload), 'utf8');
 
 console.log(markdown);
+
+// `--fail-over=<임계값>` 이 오면 숫자를 보여주는 데서 그치지 않고 CI 를 세운다.
+// 숫자만 남기면 바쁜 날에는 아무도 보지 않아, 위험 함수가 조용히 다시 쌓인다.
+const failOverArgument = process.argv.find((argument) => argument.startsWith('--fail-over='));
+
+if (failOverArgument) {
+    const threshold = Number(failOverArgument.slice('--fail-over='.length));
+
+    if (!Number.isFinite(threshold)) {
+        console.error(`--fail-over 값이 숫자가 아니다: ${failOverArgument}`);
+        process.exitCode = 1;
+    } else if (!payload.crap) {
+        // 측정이 없었는데 통과시키면 게이트가 있으나 마나다. 닫는 쪽으로 실패한다.
+        console.error('CRAP 측정 결과가 없어 --fail-over 를 판정할 수 없다.');
+        process.exitCode = 1;
+    } else {
+        const over = payload.crap.rows.filter((row) => row.crap > threshold);
+
+        if (over.length > 0) {
+            console.error(`\nCRAP 이 ${threshold} 을 넘는 함수가 ${over.length}개 있다.`);
+            for (const row of over) {
+                console.error(`  ${row.crap.toFixed(1)}  ${row.file}:${row.line}  ${row.name}`);
+            }
+            process.exitCode = 1;
+        }
+    }
+}
