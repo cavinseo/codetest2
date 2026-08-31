@@ -51,3 +51,15 @@ jobs:
         run: npm run build 2>&1 | tail -4
         env:
           NODE_ENV: production
+
+      # Task 7 Step 2 — oauth-nonce 의 형태 가드 뮤턴트가 죽었는지 본다.
+      - name: Task 7 — oauth-nonce 뮤테이션
+        if: always()
+        run: npx stryker run stryker.crap.config.json --mutate lib/oauth-nonce.ts 2>&1 | tail -60
+
+      # Task 7 Step 1 — import-json-schema 의 rows 뮤턴트가 왜 살아남는지 조사한다.
+      # 모듈 최상위에서 rows(...) 를 부르므로 undefined.optional() 로 죽어야 정상이다.
+      # clear-text 출력의 "Tests ran:" 목록이 실제로 무엇이 돌았는지 보여준다.
+      - name: Task 7 — import-json-schema 조사
+        if: always()
+        run: npx stryker run stryker.crap.config.json --mutate lib/import-json-schema.ts 2>&1 | tail -60
