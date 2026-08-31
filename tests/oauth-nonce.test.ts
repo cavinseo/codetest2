@@ -6,6 +6,21 @@ import { issueOAuthNonce, verifyOAuthNonce } from '../lib/oauth-nonce';
 // nonce 서명에 묶이는 컨텍스트. 세션 쿠키 서명(컨텍스트 없음)과 분리되어야 한다.
 const NONCE_CONTEXT = 'google-oauth-nonce.v1';
 
+// 서명은 유효하지만 payload 의 형태가 어긋난 nonce 를 만든다.
+//
+// 공격자는 HMAC 을 위조할 수 없으므로 지금 악용할 수 있는 경로는 아니다. 다만
+// payload 구조를 손대는 리팩터링에서 형태 가드가 무증상으로 무력화될 수 있어,
+// 서명 검증을 통과한 뒤의 검사들을 따로 고정해 둔다.
+function nonceWithPayload(json: string): string {
+    const { createHmac } = require('crypto') as typeof import('crypto');
+    const payload = Buffer.from(json, 'utf8').toString('base64url');
+    const signature = createHmac('sha256', 'test-secret')
+        .update(`${NONCE_CONTEXT}.${payload}`)
+        .digest('base64url');
+
+    return `${payload}.${signature}`;
+}
+
 beforeEach(() => {
     vi.stubEnv('SESSION_SECRET', 'test-secret');
 });
@@ -81,5 +96,41 @@ describe('OAuth nonce', () => {
 
     it('빈 문자열을 거부한다', () => {
         expect(verifyOAuthNonce('')).toBeNull();
+    });
+
+    it('payload 가 JSON 이 아니면 예외를 삼키고 null 을 돌려준다', () => {
+        // 서명은 맞지만 본문이 JSON 이 아니라 JSON.parse 가 던진다. 이 경로가 예외를
+        // 밖으로 흘리면 콜백이 500 으로 죽는다.
+        expect(verifyOAuthNonce(nonceWithPayload('not json'))).toBeNull();
+    });
+
+    it('userId 가 없는 payload 는 서명이 맞아도 거부한다', () => {
+        const exp = Math.floor(Date.now() / 1000) + 300;
+
+        expect(verifyOAuthNonce(nonceWithPayload(JSON.stringify({ nonce: 'x', exp })))).toBeNull();
+    });
+
+    it('exp 가 숫자가 아니면 거부한다', () => {
+        // 문자열 exp 를 그대로 비교하면 JS 가 숫자로 바꿔 통과시킨다. 타입 검사가
+        // 빠지면 만료가 사실상 사라지므로 따로 확인한다.
+        const nonce = nonceWithPayload(JSON.stringify({ userId: 'admin_1', nonce: 'x', exp: '9999999999' }));
+
+        expect(verifyOAuthNonce(nonce)).toBeNull();
+    });
+
+    it('exp 가 현재 시각과 같은 순간도 거부한다', () => {
+        // 경계값이다. 비교가 <= 가 아니라 < 가 되면 만료된 nonce 가 한 순간 통과한다.
+        vi.useFakeTimers();
+        try {
+            const nowMs = 1_800_000_000_000;
+            vi.setSystemTime(nowMs);
+            const nonce = nonceWithPayload(
+                JSON.stringify({ userId: 'admin_1', nonce: 'x', exp: Math.floor(nowMs / 1000) })
+            );
+
+            expect(verifyOAuthNonce(nonce)).toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
