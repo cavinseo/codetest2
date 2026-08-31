@@ -25,7 +25,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # StrykerJS 10 이 Node >= 22 를 요구한다. 20 에서는 npm run test:mutation 이
+          # 기동조차 못 해, 뮤테이션 게이트가 이 환경에서 성립하지 않았다.
+          node-version: 22
           cache: npm
 
       - name: Install dependencies

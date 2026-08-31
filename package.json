@@ -2,6 +2,9 @@
     "name": "kano-qfd-webapp",
     "version": "0.1.0",
     "private": true,
+    "engines": {
+        "node": ">=22"
+    },
     "scripts": {
         "dev": "next dev --turbopack",
         "check:encoding": "node scripts/check-text-encoding.mjs",
