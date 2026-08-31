@@ -209,7 +209,7 @@ Expected: Node 22 에서 전부 통과. 통과 수는 Task 1 기준선과 같아
 - Consumes: `parseWorkbookImport(parsedData, options?)` → `ParsedWorkbookImport`
 - 기존 헬퍼 `sheet(name, data, formulas?)` 와 `workbook(sheets)` 를 그대로 쓴다.
 
-- [ ] **Step 1: 다섯 시트의 파싱 규칙 확인**
+- [x] **Step 1: 다섯 시트의 파싱 규칙 확인**
 
 각 파서가 시트에서 무엇을 찾는지 먼저 읽는다. 픽스처를 잘못 만들면 파서가 빈 배열을
 돌려주고 **테스트는 통과하지만 커버리지는 그대로**가 된다. 규칙은 다음과 같다.
@@ -223,7 +223,7 @@ Expected: Node 22 에서 전부 통과. 통과 수는 Task 1 기준선과 같아
 - `parseFundingPlans` — `구분`·`항목` 헤더. 이후 행은 0열 구분, 1열 항목, 2~4열 연차 금액.
 - `parseFundingSources` — `구분` 헤더. 데이터는 헤더 **+2행**부터. `합계` 행은 건너뛴다.
 
-- [ ] **Step 2: 다섯 시트를 픽스처에 추가**
+- [x] **Step 2: 다섯 시트를 픽스처에 추가**
 
 기존 `it('maps a filled workbook into importable project records', ...)` 의 워크북에
 이어 붙이거나 새 `it` 으로 나눈다. 새 `it` 을 권한다 — 기존 케이스의 `totalImported`
@@ -274,14 +274,14 @@ Expected: Node 22 에서 전부 통과. 통과 수는 Task 1 기준선과 같아
 > 동작에 맞게 조정한다. 특히 `parseFundingSources` 의 "헤더 +2행" 과
 > `parseQfdTechnicals` 의 "+3행" 오프셋은 빈 행 위치에 민감하다.
 
-- [ ] **Step 3: 값 단언으로 바꾸기**
+- [x] **Step 3: 값 단언으로 바꾸기**
 
 `toBeGreaterThan(0)` 만으로는 파서가 **틀린 값**을 만들어도 통과한다. 각 시트마다
 적어도 한 레코드의 실제 필드를 단언한다. 예를 들어 자금소요계획은 `1,200` 이 숫자
 `1200` 으로 들어갔는지(`numberValue` 가 쉼표를 지운다), 자산은 `보완자산` 뒤 행의
 `type` 이 `COMPLEMENTARY` 인지 확인한다.
 
-- [ ] **Step 4: 커버리지로 확인**
+- [x] **Step 4: 커버리지로 확인**
 
 ```sh
 npx vitest run --pool=threads --coverage.enabled --coverage.provider=v8 \
@@ -324,7 +324,7 @@ Expected: 위험 목록에서 위 5개 함수가 사라진다.
 - 외부 의존은 전역 `fetch` 4곳과 `./utils/korean-utils` 뿐이다. Prisma·Next 의존이
   없으므로 `vi.stubGlobal('fetch', ...)` 만으로 전부 덮인다.
 
-- [ ] **Step 1: fetch 스텁 골격**
+- [x] **Step 1: fetch 스텁 골격**
 
 ```typescript
 // Google Forms API 래퍼가 외부 응답을 Kano 형식으로 옮기는 과정을 확인한다.
@@ -351,14 +351,14 @@ function jsonResponse(body: unknown, ok = true) {
 }
 ```
 
-- [ ] **Step 2: `createKanoForm` — 정상 경로와 실패 경로**
+- [x] **Step 2: `createKanoForm` — 정상 경로와 실패 경로**
 
 `fetchMock` 을 호출 순서대로 `mockResolvedValueOnce` 로 채운다. 확인할 것은
 (1) 반환된 `formId`·`formUrl`·`editUrl`, (2) 요청에 `Authorization: Bearer <token>` 이
 실렸는지, (3) 요구사항 개수만큼 질문이 만들어졌는지, (4) 중간 호출이 실패하면
 어떻게 되는지다.
 
-- [ ] **Step 3: `getFormResponses` — 응답 파싱 (CRAP 306 구간)**
+- [x] **Step 3: `getFormResponses` — 응답 파싱 (CRAP 306 구간)**
 
 여기가 이 Task 의 핵심이다. 최소 세 가지를 덮는다.
 
@@ -371,7 +371,7 @@ function jsonResponse(body: unknown, ok = true) {
    아니라 기록이다. 만약 현재 동작이 명백히 잘못됐다고 판단되면 **고치지 말고**
    보고서 QUESTIONS 에 올린다.
 
-- [ ] **Step 4: 재측정**
+- [x] **Step 4: 재측정**
 
 Task 3 Step 4 와 같은 명령. Expected: 위험 목록에서 위 3건이 사라진다.
 
@@ -391,17 +391,17 @@ Task 3 Step 4 와 같은 명령. Expected: 위험 목록에서 위 3건이 사�
 | 42.0 | 6 | `lib/email.ts:68` `sendSurveyInvitation` | 메일 본문 조립 + 발송 |
 | 42.0 | 6 | `lib/excel-parser.ts:109` `getCellValue` | 셀 값 정규화 |
 
-- [ ] **Step 1: `translateKanoCategory` — 7분기 전수 단언**
+- [x] **Step 1: `translateKanoCategory` — 7분기 전수 단언**
 
 `tests/kano-algorithm.test.ts` 에 케이스를 더한다. 사용자에게 그대로 보이는 한글
 라벨이므로 값을 직접 단언한다. `M`·`O`·`A`·`I`·`R`·`Q` 여섯과 default 하나다.
 
-- [ ] **Step 2: `getCellValue` — 정규화 규칙 고정**
+- [x] **Step 2: `getCellValue` — 정규화 규칙 고정**
 
 `lib/excel-parser.ts` 의 export 함수라 직접 부를 수 있다. 범위 밖 인덱스, 빈 셀,
 숫자/문자 혼재를 덮는다. 새 파일 `tests/excel-parser.test.ts` 를 만든다.
 
-- [ ] **Step 3: `sendSurveyInvitation` — 이스케이프 단언**
+- [x] **Step 3: `sendSurveyInvitation` — 이스케이프 단언**
 
 기존 `tests/email-send.test.ts` 는 `sendMail` 만 덮고 있다. 이 함수는 주석이 밝힌 대로
 **프로젝트 이름을 이스케이프하지 않으면 외부 응답자에게 가는 메일에 피싱 링크를 심을
@@ -409,7 +409,7 @@ Task 3 Step 4 와 같은 명령. Expected: 위험 목록에서 위 3건이 사�
 확인한다. `lib/logger.ts` 규칙에 따라 **수신자 주소가 로그·반환값에 남지 않는지**도
 함께 단언한다.
 
-- [ ] **Step 4: `buildAttributeDraftPrompts` — 판단**
+- [x] **Step 4: `buildAttributeDraftPrompts` — 판단**
 
 이 함수는 **분기가 없다.** 복잡도 7 은 `??` 6개를 McCabe 가 분기로 센 결과이고
 문장은 1개다. CRAP 56 은 구조적으로 부풀려진 값이라, 테스트를 넣어도 얻는 것이 적다.
