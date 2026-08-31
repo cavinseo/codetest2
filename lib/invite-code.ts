@@ -60,12 +60,17 @@ export type InviteCodeRejection =
     | 'EXPIRED'
     | 'EMAIL_MISMATCH';
 
+// 화면에 그대로 나가는 UX 카피다. 문구를 테스트로 고정하면 카피를 고칠 때마다
+// 테스트가 깨지기만 하고 잡히는 결함이 없어, 뮤테이션 대상에서 뺀다.
+// 어떤 거절 사유에 어떤 문구가 붙는지(키 매핑)는 호출부 테스트가 이미 지킨다.
+// Stryker disable all
 export const INVITE_CODE_MESSAGES: Record<InviteCodeRejection, string> = {
     NOT_FOUND: '유효하지 않은 초대 코드입니다.',
     ALREADY_USED: '이미 사용된 초대 코드입니다.',
     EXPIRED: '기한이 지난 초대 코드입니다. 재발급을 요청하세요.',
     EMAIL_MISMATCH: '초대 코드를 받은 이메일로만 가입할 수 있습니다.',
 };
+// Stryker restore all
 
 /**
  * 코드를 쓸 수 있는지 본다. 문제가 없으면 null.

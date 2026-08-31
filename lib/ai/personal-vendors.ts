@@ -38,6 +38,10 @@ export function resolvePersonalModel(vendor: PersonalAiVendor, model: string | n
 export const MEMBER_AI_MODES = ['rule', 'api', 'mcp', 'local'] as const;
 export type MemberAiMode = (typeof MEMBER_AI_MODES)[number];
 
+// 아래 두 맵은 화면에 그대로 나가는 UX 카피다. 문구를 테스트로 고정하면 카피를
+// 고칠 때마다 테스트가 깨지기만 하고 잡히는 결함이 없어, 뮤테이션 대상에서 뺀다.
+// 값이 비었는지는 화면에서 눈으로 검수한다.
+// Stryker disable all
 export const MEMBER_AI_MODE_LABELS: Record<MemberAiMode, string> = {
     rule: '규칙 기반',
     api: 'API 연결 (OpenAI · Claude · Gemini)',
@@ -51,6 +55,7 @@ export const MEMBER_AI_MODE_DESCRIPTIONS: Record<MemberAiMode, string> = {
     mcp: '본인이 운영하는 원격 OpenAI 호환 엔드포인트(https)로 호출합니다.',
     local: '내 PC의 로컬 LLM을 씁니다. 온라인 서버에서는 연결되지 않을 수 있으며, 그 경우 규칙 기반으로 자동 전환됩니다.',
 };
+// Stryker restore all
 
 export function parseMemberAiMode(value: unknown): MemberAiMode | null {
     return MEMBER_AI_MODES.includes(value as MemberAiMode) ? (value as MemberAiMode) : null;
