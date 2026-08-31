@@ -38,9 +38,12 @@ TypeScript 5 strict, Vitest 4, StrykerJS 10, zod 3
 
 ## 재측정 방법
 
-로컬 npm 레지스트리가 조직 egress 정책으로 차단된 환경에서는 `claude/**` 브랜치에
-push 하면 `.github/workflows/crap.yml` 이 자동 실행된다. npm 접근이 가능한 환경이라면
-보고서 부록의 명령을 그대로 쓴다. **뮤테이션은 Node >= 22 가 필요하다.**
+`.github/workflows/crap.yml` 이 **main 으로 가는 PR** 에서 자동 실행된다(Task 8, D-3).
+PR 없이 손으로 돌리려면 `workflow_dispatch` 를 쓴다. npm 접근이 가능한 환경이라면
+점검 보고서 부록의 명령을 그대로 쓴다. **뮤테이션은 Node >= 22 가 필요하다.**
+
+> 계획 진행 중에는 `push: branches: ['claude/**']` 트리거를 함께 두어 작업 브랜치에서
+> 매번 측정했다. Task 8 에서 D-3 결정에 따라 PR 전용으로 좁혔다.
 
 ## 사용자 판단이 필요한 것 (코드로 대신할 수 없음)
 
@@ -88,6 +91,16 @@ Task 6 의 전제이므로 착수 전에 확정해야 한다.
 
 지금은 `claude/**` 브랜치에서만 측정된다. `ci.yml` 에 합쳐 상시 게이트로 만들면
 회귀를 막을 수 있지만 CI 시간이 늘어난다(뮤테이션 약 2분, 커버리지 약 1분). Task 8 참조.
+
+> **결정 (2026-08-31, 사용자):** PR 트리거 + 위험 시 CI 실패.
+>
+> `crap.yml` 을 `pull_request: branches: [main]` 로 옮긴다. 회귀는 코드가 main 으로
+> 들어올 때 생기고 그 관문이 PR 이라, 거기서만 재도 목적은 달성된다. `ci.yml` 에
+> 합치는 안은 모든 푸시가 약 4분 길어지는 대가로 얻는 것이 없어 택하지 않았다.
+>
+> 그리고 숫자만 남기지 않는다. `scripts/crap-report.mjs --fail-over=30` 으로 위험
+> 함수가 하나라도 있으면 CI 를 세운다. 측정 결과가 아예 없을 때도 닫는 쪽으로
+> 실패시켜, 게이트가 있으나 마나가 되는 것을 막는다.
 
 ---
 
@@ -558,7 +571,7 @@ userId 가 빠진 정상 서명(`:61`), exp 가 숫자가 아닌 정상 서명(`
 
 ## Task 8: CRAP 상시화 (D-3 결정 필요)
 
-- [ ] **Step 1: 회귀 방지 방식 결정**
+- [x] **Step 1: 회귀 방지 방식 결정**
 
 지금은 `claude/**` 브랜치에서만 측정된다. main 으로 합쳐지고 나면 다시 회귀한다.
 선택지는 셋이다.
@@ -568,7 +581,7 @@ userId 가 빠진 정상 서명(`:61`), exp 가 숫자가 아닌 정상 서명(`
   main 푸시는 빨라진다. **권고안이다.**
 - **(다) 주 1회 `schedule` 로 돌린다** — 가장 싸지만 회귀를 늦게 안다.
 
-- [ ] **Step 2: 임계값 설정**
+- [x] **Step 2: 임계값 설정**
 
 방식을 정했으면 실패 조건을 넣는다. `scripts/crap-report.mjs` 는 현재 항상 성공으로
 끝난다. `CRAP > 30` 인 함수가 하나라도 있으면 0 이 아닌 코드로 끝내는 옵션
@@ -581,8 +594,8 @@ userId 가 빠진 정상 서명(`:61`), exp 가 숫자가 아닌 정상 서명(`
 
 ## 완료 기준
 
-- [ ] CRAP 위험(> 30) **0건**
-- [ ] 뮤테이션 전체 점수 **95.18% 이상**, 대상 파일 21개 이상
-- [ ] `npm run test:mutation` 이 `ci.yml` 환경에서 기동
-- [ ] `npx tsc --noEmit && npx vitest run && npx next lint` 통과, 테스트 수가 기준선보다 증가
-- [ ] Task 별 보고서가 `docs/superpowers/reports/2026-08-27-crap-remediation/` 에 존재
+- [x] CRAP 위험(> 30) **0건**
+- [x] 뮤테이션 전체 점수 **95.18% 이상**, 대상 파일 21개 이상
+- [x] `npm run test:mutation` 이 `ci.yml` 환경에서 기동
+- [x] `npx tsc --noEmit && npx vitest run && npx next lint` 통과, 테스트 수가 기준선보다 증가
+- [x] Task 별 보고서가 `docs/superpowers/reports/2026-08-27-crap-remediation/` 에 존재

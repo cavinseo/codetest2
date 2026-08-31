@@ -8,8 +8,6 @@ name: CRAP / Mutation
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: ['claude/**']
   workflow_dispatch:
 
 permissions:
