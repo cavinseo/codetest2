@@ -98,7 +98,7 @@ H-3·H-4 가 세운 방어가 무증상으로 뚫리는 경로다.
 - Modify 없음: `lib/import-cascade-guard.ts` 는 **고치지 않는다.** 코드는 정상이고
   빠진 것은 단언이다.
 
-- [ ] **Step 1: 기준선 기록**
+- [x] **Step 1: 기준선 기록**
 
 ```sh
 npx vitest run
@@ -106,7 +106,7 @@ npx vitest run
 
 통과 수와 파일 수를 Task 1 보고서 VERIFIED BY 에 적는다. 이후 Task 의 기준선이 된다.
 
-- [ ] **Step 2: 벤치마크 단독 케이스 추가**
+- [x] **Step 2: 벤치마크 단독 케이스 추가**
 
 `tests/import-cascade-guard.test.ts` 의 `it('하나라도 0 이 아니면 true', ...)` 안에
 한 줄을 더한다. 세 항 모두 독립적으로 true 를 만들어야 뮤테이션이 죽는다.
@@ -117,7 +117,7 @@ npx vitest run
         expect(hasCascadeImpact({ kanoResponses: 0, benchmarks: 3, qfdMatrices: 0 })).toBe(true);
 ```
 
-- [ ] **Step 3: 뮤턴트가 죽었는지 확인** *(Node >= 22 필요)*
+- [x] **Step 3: 뮤턴트가 죽었는지 확인** *(Node >= 22 필요)*
 
 ```sh
 npx stryker run stryker.crap.config.json --mutate lib/import-cascade-guard.ts
@@ -143,7 +143,7 @@ match >=22.0.0` 로 즉사했다. 즉 **`npm run test:mutation` 은 프로젝트
 - Modify: `.github/workflows/ci.yml` (`node-version: 20` → `22`)
 - Modify: `package.json` (`engines` 추가)
 
-- [ ] **Step 1: CI Node 버전 상향**
+- [x] **Step 1: CI Node 버전 상향**
 
 `.github/workflows/ci.yml` 의 `actions/setup-node` 블록을 고친다.
 
@@ -155,7 +155,7 @@ match >=22.0.0` 로 즉사했다. 즉 **`npm run test:mutation` 은 프로젝트
           cache: npm
 ```
 
-- [ ] **Step 2: engines 명시**
+- [x] **Step 2: engines 명시**
 
 `package.json` 에 최상위 필드를 더한다. 로컬에서 Node 20 을 쓰면 `npm install` 이
 경고하도록 만들어, 같은 사고가 조용히 반복되지 않게 한다.
@@ -166,7 +166,7 @@ match >=22.0.0` 로 즉사했다. 즉 **`npm run test:mutation` 은 프로젝트
     },
 ```
 
-- [ ] **Step 3: 로컬 게이트 재확인**
+- [x] **Step 3: 로컬 게이트 재확인**
 
 ```sh
 npx tsc --noEmit && npx vitest run && npx next lint
