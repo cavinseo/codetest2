@@ -445,7 +445,7 @@ Task 3 Step 4 와 같은 명령. Expected: 위험 목록에서 위 3건이 사�
   `lib/import-cascade-guard.ts` (D-1 에서 (나)를 택한 경우 주석만)
 - Modify: `tests/import-cascade-guard.test.ts`
 
-- [ ] **Step 1: 대상 확대**
+- [x] **Step 1: 대상 확대**
 
 Prisma·Next 에 의존하지 않는 순수 모듈은 71개인데 대상은 15개(21%)다. 아래 6개는
 **전용 테스트를 이미 갖추고 있어** 추가 비용 없이 대상에 넣을 수 있다. 종합검진이
@@ -466,7 +466,7 @@ Task 4 가 끝났다면 `lib/google-forms.ts` 도 순수 모듈이므로 함께 
 > 4칸, 나머지는 8칸). 이 Task 에서 어차피 배열을 건드리므로 **그때 함께 8칸으로
 > 맞춘다.** 무관한 줄을 정리하는 것이 아니라 편집하는 배열 안의 일이다.
 
-- [ ] **Step 2: 표시 문자열 정책 적용 (D-1 결정 필요)**
+- [x] **Step 2: 표시 문자열 정책 적용 (D-1 결정 필요)**
 
 (나)를 택했다면 상수 맵 위에 이유와 함께 주석을 둔다.
 
@@ -480,7 +480,7 @@ export const MEMBER_AI_MODE_LABELS: Record<MemberAiMode, string> = {
 대상: `lib/ai/personal-vendors.ts` 의 `MEMBER_AI_MODE_LABELS`·
 `MEMBER_AI_MODE_DESCRIPTIONS`, `lib/invite-code.ts` 의 `INVITE_CODE_MESSAGES`.
 
-- [ ] **Step 3: mock 흡수 해소**
+- [x] **Step 3: mock 흡수 해소**
 
 `import-cascade-guard.ts:50-51` 의 `{ where: { projectId } }` → `{}` 4건이 살아남는다.
 테스트의 `CascadeCounter` 스텁이 인자를 보지 않기 때문이다. 설정 주석이 "라우트
@@ -494,7 +494,7 @@ export const MEMBER_AI_MODE_LABELS: Record<MemberAiMode, string> = {
         expect(counter.benchmark.count).toHaveBeenCalledWith({ where: { projectId: 'proj_1' } });
 ```
 
-- [ ] **Step 4: 전체 재측정**
+- [x] **Step 4: 전체 재측정**
 
 ```sh
 npm run test:mutation
