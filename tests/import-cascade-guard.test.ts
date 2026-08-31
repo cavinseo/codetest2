@@ -42,6 +42,9 @@ describe('hasCascadeImpact', () => {
     it('하나라도 0 이 아니면 true', () => {
         expect(hasCascadeImpact({ kanoResponses: 1, benchmarks: 0, qfdMatrices: 0 })).toBe(true);
         expect(hasCascadeImpact({ kanoResponses: 0, benchmarks: 0, qfdMatrices: 5 })).toBe(true);
+        // 벤치마크만 있는 프로젝트가 "삭제될 데이터 없음"으로 판정되면 확인 절차 없이
+        // 덮어써진다. 세 항을 각각 단독으로 확인해야 이 분기가 지켜진다.
+        expect(hasCascadeImpact({ kanoResponses: 0, benchmarks: 3, qfdMatrices: 0 })).toBe(true);
     });
 
     it('전부 0 이면 false', () => {
