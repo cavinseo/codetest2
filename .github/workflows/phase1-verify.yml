@@ -49,13 +49,13 @@ jobs:
           git checkout HEAD -- tests/import-cascade-guard.test.ts
 
       - name: Gate — tsc
-        run: npx tsc --noEmit && echo "tsc: no errors"
+        run: npx tsc --noEmit && echo "tsc OK"
 
       - name: Gate — vitest
         run: npx vitest run 2>&1 | tail -8
 
       - name: Gate — npm run lint
-        run: npm run lint && echo "lint: no errors"
+        run: npm run lint && echo "lint OK"
 
       - name: Gate — next lint
         run: npx next lint
