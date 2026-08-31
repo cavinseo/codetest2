@@ -511,7 +511,7 @@ Task 에서 전부 잡으려 하지 않는다. 결과를 보고서 RESULT 에 �
 
 ## Task 7: 남은 두 건 규명
 
-- [ ] **Step 1: `import-json-schema.ts:21` 생존 원인**
+- [x] **Step 1: `import-json-schema.ts:21` 생존 원인**
 
 `rows` 헬퍼(`<T>(schema: T) => z.array(schema).max(MAX_IMPORT_ROWS)`)가
 `() => undefined` 로 바뀌었는데 살아남았다. 그런데 `tests/api-import-json-guards.test.ts:138`
@@ -527,7 +527,7 @@ Task 에서 전부 잡으려 하지 않는다. 결과를 보고서 RESULT 에 �
 
 결론이 "도구 한계"면 보고서에 남기고 끝낸다. "테스트 공백"이면 테스트를 더한다.
 
-- [ ] **Step 2: `oauth-nonce` payload 형태 가드**
+- [x] **Step 2: `oauth-nonce` payload 형태 가드**
 
 생존 7건이 nonce payload 의 **형태 계약**을 지키는 가드다 — `.` 없는 값(`:48`),
 userId 가 빠진 정상 서명(`:61`), exp 가 숫자가 아닌 정상 서명(`:62`),
@@ -541,7 +541,7 @@ userId 가 빠진 정상 서명(`:61`), exp 가 숫자가 아닌 정상 서명(`
 붙여 서명하는 방식)를 그대로 쓴다. 만료 검증 자체는 이미 테스트가 있고 정상 동작하므로
 **건드리지 않는다.**
 
-- [ ] **Step 3: 등가 뮤턴트 기록**
+- [x] **Step 3: 등가 뮤턴트 기록**
 
 아래 둘은 테스트로 죽일 수 없다. 없애려면 코드를 고쳐야 하는데, 그건 이 계획의
 범위가 아니다. **보고서에 기록만 하고 넘어간다.**
