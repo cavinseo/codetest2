@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, KeyboardEvent } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import Link from 'next/link';
 import {
     shouldShowPrimaryGroup,
@@ -52,6 +53,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValues, setEditValues] = useState<Partial<Requirement>>({});
+    const { markClean } = useUnsavedChanges(requirements);
 
     // 새 행 입력 상태
     const [newRow, setNewRow] = useState({ category: '', subcategory: '', requirement: '' });
@@ -140,20 +142,20 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             if (res.ok) {
                 const data = await res.json();
                 // 엑셀 업로드로 들어온 행은 2차 분류가 비어 있으면 null 이므로 빈 문자열로 맞춰 둔다.
-                setRequirements((data.requirements || []).map((row: Partial<Requirement>) => ({
+                setRequirements(markClean((data.requirements || []).map((row: Partial<Requirement>) => ({
                     id: row.id ?? '',
                     category: row.category ?? '',
                     subcategory: row.subcategory ?? '',
                     requirement: row.requirement ?? '',
                     order: row.order ?? 0,
-                })));
+                }))));
             }
         } catch (e) {
             console.error('요구사항 로딩 실패:', e);
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     useEffect(() => {
         loadRequirements();
@@ -184,6 +186,9 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             }
 
             if (res.ok) {
+                // 이 라우트는 저장 결과 행을 돌려주지 않는다. 보낸 값이 곧 저장된
+                // 값이므로 그것을 기준선으로 굳힌다.
+                markClean(requirements);
                 showToast('저장되었습니다.', 'success');
                 setEditingId(null);
                 setEditValues({});

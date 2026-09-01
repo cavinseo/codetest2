@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 
 type SalesPeriod = 'Y' | 'Y_PLUS_1';
 
@@ -61,6 +62,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
     const [toast, setToast] = useState<string | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const { markClean } = useUnsavedChanges(rows);
 
     const rowsByPeriod = useMemo(() => {
         const grouped: Record<SalesPeriod, SalesRow[]> = { Y: [], Y_PLUS_1: [] };
@@ -119,18 +121,18 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                     }
                     const hasY = loadedRows.some((row) => row.period === 'Y');
                     const hasFuture = loadedRows.some((row) => row.period === 'Y_PLUS_1');
-                    setRows([
+                    setRows(markClean([
                         ...loadedRows,
                         ...(hasY ? [] : [createRow('Y')]),
                         ...(hasFuture ? [] : [createRow('Y_PLUS_1')]),
-                    ]);
+                    ]));
                 } else {
-                    setRows([createRow('Y'), createRow('Y_PLUS_1')]);
+                    setRows(markClean([createRow('Y'), createRow('Y_PLUS_1')]));
                 }
             })
             .catch(console.error)
             .finally(() => setIsLoading(false));
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     const addRow = (period: SalesPeriod) => {
         setRows((current) => {
@@ -172,14 +174,14 @@ export default function SalesTable({ projectId, onSaved }: Props) {
 
             if (res.ok) {
                 const data = await res.json();
-                setRows(data.rows.map((r: any) => ({
+                setRows(markClean(data.rows.map((r: any) => ({
                     id: r.id,
                     period: r.period === 'Y_PLUS_1' ? 'Y_PLUS_1' : 'Y',
                     customer: r.customer ?? '',
                     amount: Number(r.amount) || 0,
                     competitor: r.competitor ?? '',
                     order: r.order,
-                })));
+                }))));
                 showToast('저장되었습니다. 다음 워크시트로 이동합니다.');
                 setTimeout(() => onSaved?.(), 1000);
             } else {
@@ -201,7 +203,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                 body: JSON.stringify({ rows: [] }),
             });
             if (res.ok) {
-                setRows([createRow('Y'), createRow('Y_PLUS_1')]);
+                setRows(markClean([createRow('Y'), createRow('Y_PLUS_1')]));
                 setShowResetConfirm(false);
                 showToast('초기화되었습니다.');
             }

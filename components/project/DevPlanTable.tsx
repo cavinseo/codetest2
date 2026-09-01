@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 
 interface DevPlanRow {
     id: string; phase: string; task: string; description: string;
@@ -22,6 +23,7 @@ export default function DevPlanTable({ projectId }: Props) {
     const [toast, setToast] = useState<string | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const { markClean } = useUnsavedChanges(rows);
 
     const showToast = (msg: string) => {
         if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -32,13 +34,13 @@ export default function DevPlanTable({ projectId }: Props) {
         fetch(`/api/projects/${projectId}/dev-plan`)
             .then(r => r.ok ? r.json() : null)
             .then(data => {
-                if (data?.rows) setRows(data.rows.map((r: any) => ({
+                if (data?.rows) setRows(markClean(data.rows.map((r: any) => ({
                     id: r.id, phase: r.phase ?? '', task: r.task ?? '', description: r.description ?? '',
                     start: r.startDate ?? '', end: r.endDate ?? '', owner: r.owner ?? '',
                     status: r.status ?? '미시작', order: r.order,
-                })));
+                }))));
             }).catch(console.error).finally(() => setIsLoading(false));
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     const addRow = () => setRows(prev => [...prev, { id: `new_${Date.now()}`, phase: '', task: '', description: '', start: '', end: '', owner: '', status: '미시작', order: prev.length }]);
     const updateRow = (id: string, field: keyof DevPlanRow, val: string) => setRows(rows.map(r => r.id === id ? { ...r, [field]: val } : r));
@@ -52,7 +54,7 @@ export default function DevPlanTable({ projectId }: Props) {
         });
         if (res.ok) {
             const d = await res.json();
-            setRows(d.rows.map((r: any) => ({ id: r.id, phase: r.phase ?? '', task: r.task ?? '', description: r.description ?? '', start: r.startDate ?? '', end: r.endDate ?? '', owner: r.owner ?? '', status: r.status ?? '미시작', order: r.order })));
+            setRows(markClean(d.rows.map((r: any) => ({ id: r.id, phase: r.phase ?? '', task: r.task ?? '', description: r.description ?? '', start: r.startDate ?? '', end: r.endDate ?? '', owner: r.owner ?? '', status: r.status ?? '미시작', order: r.order }))));
             return true;
         }
         return false;

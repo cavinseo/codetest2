@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 
 interface TargetSpecRow {
     id: string;
@@ -23,6 +24,7 @@ export default function TargetSpecTable({ projectId }: Props) {
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState<string | null>(null);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const { markClean } = useUnsavedChanges(rows);
 
     const showToast = (msg: string) => {
         if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -36,7 +38,7 @@ export default function TargetSpecTable({ projectId }: Props) {
             .then((data) => {
                 const sourceRows = data?.rows?.length > 0 ? data.rows : (data?.suggestions || []);
                 if (sourceRows) {
-                    setRows(sourceRows.map((r: any) => ({
+                    setRows(markClean(sourceRows.map((r: any) => ({
                         id: r.id,
                         category: r.category ?? '',
                         subCategory: r.subCategory ?? '',
@@ -45,12 +47,12 @@ export default function TargetSpecTable({ projectId }: Props) {
                         targetValue: r.targetValue ?? '',
                         note: r.note ?? '',
                         order: r.order,
-                    })));
+                    }))));
                 }
             })
             .catch(console.error)
             .finally(() => setIsLoading(false));
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     const addRow = () => {
         setRows((prev) => [...prev, {
@@ -98,7 +100,7 @@ export default function TargetSpecTable({ projectId }: Props) {
             }
 
             const data = await res.json();
-            setRows(data.rows.map((r: any) => ({
+            setRows(markClean(data.rows.map((r: any) => ({
                 id: r.id,
                 category: r.category ?? '',
                 subCategory: r.subCategory ?? '',
@@ -107,7 +109,7 @@ export default function TargetSpecTable({ projectId }: Props) {
                 targetValue: r.targetValue ?? '',
                 note: r.note ?? '',
                 order: r.order,
-            })));
+            }))));
             showToast('저장되었습니다.');
         } catch {
             showToast('저장에 실패했습니다.');

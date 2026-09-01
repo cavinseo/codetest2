@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 
 interface AssetItem {
     id: string;
@@ -18,6 +19,7 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
     const [assets, setAssets] = useState<AssetItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const { markClean } = useUnsavedChanges(assets);
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -25,14 +27,14 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
             const res = await fetch(`/api/projects/${projectId}/assets`);
             if (res.ok) {
                 const data = await res.json();
-                setAssets(data.assets || []);
+                setAssets(markClean(data.assets || []));
             }
         } catch (error) {
             console.error('Failed to load assets:', error);
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     useEffect(() => {
         loadData();

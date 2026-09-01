@@ -2,6 +2,7 @@
 // WS-11 개선포인트도출 표를 렌더링하는 클라이언트 컴포넌트입니다.
 
 import { useEffect, useRef, useState } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { buildImprovementSuggestionsFromQfd } from '@/lib/worksheet-links';
 
 interface ImprovementRow {
@@ -86,6 +87,8 @@ export default function ImprovementsTable({ projectId }: Props) {
     const [toast, setToast] = useState<string | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // 개선포인트는 니즈 표와 기능 표를 함께 저장하므로 둘을 한 값으로 본다.
+    const { markClean } = useUnsavedChanges({ rows, features });
 
     const showToast = (message: string) => {
         if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -106,8 +109,10 @@ export default function ImprovementsTable({ projectId }: Props) {
                 const savedFeatures = normalizeFeatures(data?.items || []);
                 const blankFeatures = savedFeatures.length > 0 ? savedFeatures : createBlankFeatures();
 
+                const loadedFeatures = syncFeaturesWithNeeds(savedRows, blankFeatures);
                 setRows(savedRows);
-                setFeatures(syncFeaturesWithNeeds(savedRows, blankFeatures));
+                setFeatures(loadedFeatures);
+                markClean({ rows: savedRows, features: loadedFeatures });
                 setQfdData(qfdAnalysis || data?.qfdAnalysis || null);
             })
             .catch((error) => {
@@ -115,7 +120,7 @@ export default function ImprovementsTable({ projectId }: Props) {
                 showToast('개선포인트 데이터를 불러오지 못했습니다.');
             })
             .finally(() => setIsLoading(false));
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     useEffect(() => {
         setFeatures((currentFeatures) => {
@@ -232,8 +237,10 @@ export default function ImprovementsTable({ projectId }: Props) {
     const applySavedItems = (items: SavedImprovementItem[]) => {
         const savedRows = normalizeRows(items);
         const savedFeatures = normalizeFeatures(items);
+        const nextFeatures = syncFeaturesWithNeeds(savedRows, savedFeatures.length > 0 ? savedFeatures : createBlankFeatures());
         setRows(savedRows);
-        setFeatures(syncFeaturesWithNeeds(savedRows, savedFeatures.length > 0 ? savedFeatures : createBlankFeatures()));
+        setFeatures(nextFeatures);
+        markClean({ rows: savedRows, features: nextFeatures });
     };
 
     const handleSave = async () => {
@@ -275,8 +282,10 @@ export default function ImprovementsTable({ projectId }: Props) {
                 return;
             }
 
+            const blankFeatures = createBlankFeatures();
             setRows([]);
-            setFeatures(createBlankFeatures());
+            setFeatures(blankFeatures);
+            markClean({ rows: [], features: blankFeatures });
             setShowResetConfirm(false);
             showToast('입력 내용이 초기화되었습니다.');
         } catch (error) {

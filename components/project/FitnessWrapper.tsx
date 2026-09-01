@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import {
     buildCustomerNamesByMarketSegment,
     dedupeByAttributeName,
@@ -137,6 +138,8 @@ export default function FitnessWrapper({ projectId }: Props) {
     const [savedConsultantComment, setSavedConsultantComment] = useState('');
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // 적합도는 시장 구성·매트릭스·담당자 코멘트를 한 번에 저장한다.
+    const { markClean } = useUnsavedChanges({ markets, matrix, managerComment });
 
     const showToast = (message: string, type: 'success' | 'error' = 'success') => {
         if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -198,6 +201,11 @@ export default function FitnessWrapper({ projectId }: Props) {
                 setMatrix(savedData.matrix || {});
                 if (savedData.managerComment) setManagerComment(savedData.managerComment);
                 if (savedData.consultantComment) setSavedConsultantComment(savedData.consultantComment);
+                markClean({
+                    markets: newMarkets,
+                    matrix: savedData.matrix || {},
+                    managerComment: savedData.managerComment || '',
+                });
             } else {
                 // 신규: 세분시장 자동 생성
                 const newMarkets: Market[] = [];
@@ -221,13 +229,14 @@ export default function FitnessWrapper({ projectId }: Props) {
                 }
                 setMarkets(newMarkets);
                 setMatrix({});
+                markClean({ markets: newMarkets, matrix: {}, managerComment: '' });
             }
         } catch (e) {
             console.error(e);
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -425,6 +434,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                 }),
             });
             if (res.ok) {
+                markClean({ markets, matrix, managerComment });
                 showToast('저장되었습니다. 컨설턴트 진단이 업데이트되었습니다.');
             } else {
                 showToast('저장에 실패했습니다.', 'error');

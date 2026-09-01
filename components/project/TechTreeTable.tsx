@@ -2,6 +2,7 @@
 // WS-10 기능기술체계도 표를 렌더링하는 클라이언트 컴포넌트입니다.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { getTopRankedQfdRequirements, type RankedTechTreeRequirement } from '@/lib/tech-tree-qfd';
 import { buildBlankTechTreeRows, buildTechTreeSpecOptions, type TechTreeSpecOption } from '@/lib/tech-tree-utils';
 
@@ -60,6 +61,7 @@ const normalizeRows = (entries: any[]): TechTreeRow[] =>
 
 export default function TechTreeTable({ projectId }: Props) {
     const [rows, setRows] = useState<TechTreeRow[]>([]);
+    const { markClean } = useUnsavedChanges(rows);
     const [specs, setSpecs] = useState<SpecFunction[]>([]);
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [qfdTopRequirements, setQfdTopRequirements] = useState<RankedTechTreeRequirement[]>([]);
@@ -112,7 +114,7 @@ export default function TechTreeTable({ projectId }: Props) {
             if (treeRes.ok) {
                 const data = await treeRes.json();
                 const savedRows = normalizeRows(data.entries || []);
-                setRows(savedRows.length > 0 ? savedRows : buildGeneratedRows(nextQfdTopRequirements, nextSpecs));
+                setRows(markClean(savedRows.length > 0 ? savedRows : buildGeneratedRows(nextQfdTopRequirements, nextSpecs)));
             }
         } catch (error) {
             console.error(error);
@@ -120,7 +122,7 @@ export default function TechTreeTable({ projectId }: Props) {
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     useEffect(() => {
         loadData();
@@ -144,7 +146,7 @@ export default function TechTreeTable({ projectId }: Props) {
         if (!response.ok) return false;
 
         const dataJson = await response.json();
-        setRows(normalizeRows(dataJson.entries || []));
+        setRows(markClean(normalizeRows(dataJson.entries || [])));
         return true;
     };
 
@@ -166,7 +168,7 @@ export default function TechTreeTable({ projectId }: Props) {
         try {
             const ok = await save([]);
             if (ok) {
-                setRows([]);
+                setRows(markClean([]));
                 setShowResetConfirm(false);
                 showToast('초기화되었습니다.');
             } else {

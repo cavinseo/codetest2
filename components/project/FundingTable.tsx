@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import {
     generateFundingAiDraft,
     parseSourceYear,
@@ -73,6 +74,8 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [aiMessage, setAiMessage] = useState<string | null>(null);
+    // 소요자금과 조달계획을 한 화면에서 함께 편집하므로 둘을 한 값으로 본다.
+    const { markClean } = useUnsavedChanges({ plans, sources });
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -80,15 +83,18 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
             const res = await fetch(`/api/projects/${projectId}/funding`);
             if (res.ok) {
                 const data = await res.json();
-                setPlans(data.plans || []);
-                setSources(data.sources || []);
+                const nextPlans = data.plans || [];
+                const nextSources = data.sources || [];
+                setPlans(nextPlans);
+                setSources(nextSources);
+                markClean({ plans: nextPlans, sources: nextSources });
             }
         } catch (error) {
             console.error('Failed to load funding data:', error);
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     useEffect(() => {
         loadData();

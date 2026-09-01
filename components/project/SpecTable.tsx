@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
@@ -93,6 +94,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=spec`;
     const [project, setProject] = useState<ProjectData | null>(null);
     const [rows, setRows] = useState<FlatSpecRow[]>([]);
+    const { markClean } = useUnsavedChanges(rows);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -149,7 +151,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                 if (specRes.ok) {
                     const specData = await specRes.json();
                     const loadedSpecs: SpecFunction[] = specData.specFunctions || [];
-                    setRows(buildRowsFromSpecs(loadedSpecs));
+                    setRows(markClean(buildRowsFromSpecs(loadedSpecs)));
                 }
             } catch (error) {
                 console.error('데이터 로딩 실패:', error);
@@ -158,7 +160,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
             }
         }
         loadData();
-    }, [buildRowsFromSpecs, projectId]);
+    }, [buildRowsFromSpecs, projectId, markClean]);
 
     const addRow = () => {
         setRows([...rows, { id: Math.random().toString(36).slice(2), core: '', sub: '', detail: '', technology: '' }]);
@@ -377,7 +379,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
             }
 
             const loadedSpecs: SpecFunction[] = data.specFunctions || [];
-            setRows(buildRowsFromSpecs(loadedSpecs));
+            setRows(markClean(buildRowsFromSpecs(loadedSpecs)));
             setActiveMode('manual');
             showToast(`${data.sheetName || '엑셀'}에서 AS-IS 스펙 ${data.specCount || loadedSpecs.length}개를 반영했습니다.`, 'success');
         } catch (error) {
@@ -701,6 +703,9 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                 body: JSON.stringify({ specFunctions: finalSpecs }),
             });
             if (res.ok) {
+                // 이 라우트는 저장된 행을 돌려주지만 화면 표는 임시 id 기반이라
+                // 그대로 되받지 않는다. 보낸 값이 곧 저장된 값이므로 현재 표를 굳힌다.
+                markClean(rows);
                 if (moveNext) {
                     showToast('저장되었습니다. 제품속성서로 이동합니다...', 'success');
                     setTimeout(() => {
@@ -733,7 +738,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                 throw new Error(errorData?.error || 'AS-IS spec reset failed.');
             }
 
-            setRows([]);
+            setRows(markClean([]));
             setShowResetConfirm(false);
             showToast('AS-IS 스펙표가 초기화되었습니다.', 'success');
         } catch (error) {

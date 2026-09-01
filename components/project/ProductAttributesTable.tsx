@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import AttributeMentorWizard from './AttributeMentorWizard';
 import type { MentorAppliedRow } from '@/lib/attribute-mentor-utils';
 import {
@@ -186,6 +187,8 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const [isSaving, setIsSaving] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [productName, setProductName] = useState('');
+    // 제품명·기술역량은 표 밖에 있지만 저장에 함께 실리므로 한 값으로 본다.
+    const { markClean } = useUnsavedChanges({ rows, productName, techCapability });
     const [importedFields, setImportedFields] = useState<Set<string>>(new Set());
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -221,7 +224,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             if (attrRes.ok) {
                 const data = await attrRes.json();
                 loadedAttrs = data.attributes || [];
-                setRows(loadedAttrs.map((a: any) => ({
+                setRows(markClean(loadedAttrs.map((a: any) => ({
                     id: a.id,
                     productName: a.productName || '',
                     customerName: a.customerName || '',
@@ -231,7 +234,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     attribute: a.attribute || '',
                     techCapability: a.techCapability || '',
                     order: a.order || 0,
-                })));
+                }))));
                 if (loadedAttrs.length > 0 && loadedAttrs[0].productName) {
                     setProductName(loadedAttrs[0].productName);
                 }
@@ -264,7 +267,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     useEffect(() => {
         loadData();
@@ -354,6 +357,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             }
 
             if (res.ok) {
+                // 응답의 attributes 로 표를 다시 그리지는 않는다. 보낸 값이 곧 저장된
+                // 값이므로 현재 화면을 기준선으로 굳힌다.
+                markClean({ rows, productName, techCapability });
                 showToast('저장되었습니다.', 'success');
                 onSaved?.();
             } else {
@@ -419,6 +425,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             await fetch(`/api/projects/${projectId}/attributes`, { method: 'DELETE' });
             setRows([]);
             setTechCapability('');
+            markClean({ rows: [], productName, techCapability: '' });
             setShowResetConfirm(false);
             showToast('초기화되었습니다.', 'success');
         } catch (error) {
