@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { readSignupEmail } from '@/lib/signup-prefill';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -12,6 +13,8 @@ export default function LoginPage() {
     const [notice, setNotice] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [focusedField, setFocusedField] = useState<string | null>(null);
+    // Google 로그인에서 "가입된 회원이 없음"으로 튕긴 경우, 그 이메일로 가입을 권한다.
+    const [signupEmail, setSignupEmail] = useState<string | null>(null);
 
     // 가입 직후 리다이렉트로 들어온 경우 승인 대기 안내를 보여준다.
     useEffect(() => {
@@ -33,6 +36,12 @@ export default function LoginPage() {
         const googleLoginError = params.get('error');
         if (googleLoginError && googleLoginErrors[googleLoginError]) {
             setError(googleLoginErrors[googleLoginError]);
+        }
+
+        // 가입을 권할 수 있는 것은 계정이 아예 없을 때뿐이다. 승인 대기·기한 만료는
+        // 이미 계정이 있는 경우라 콜백이 쿠키를 남기지 않는다.
+        if (googleLoginError === 'no_account') {
+            setSignupEmail(readSignupEmail(document.cookie));
         }
     }, []);
 
@@ -170,6 +179,24 @@ export default function LoginPage() {
                     >
                         Google 계정으로 로그인
                     </a>
+
+                    {signupEmail && (
+                        <div className="mt-6 rounded-lg border border-primary-500/25 bg-primary-500/[0.06] p-4 animate-fade-in">
+                            <p className="text-sm text-gray-300">
+                                <span className="font-semibold text-white">{signupEmail}</span>
+                                {' '}로 가입된 회원이 없습니다.
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                                가입 후 관리자 승인을 받아야 로그인할 수 있습니다.
+                            </p>
+                            <Link
+                                href="/signup"
+                                className="mt-3 w-full btn-primary py-2.5 text-sm font-semibold flex items-center justify-center"
+                            >
+                                이 계정으로 회원가입
+                            </Link>
+                        </div>
+                    )}
 
                     <div className="mt-6 text-center">
                         <p className="text-gray-500 text-sm">

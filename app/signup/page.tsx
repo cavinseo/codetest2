@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ProfileFields, { EMPTY_PROFILE, toProfilePayload, type ProfileValue } from '@/components/member/ProfileFields';
 import type { MemberRole } from '@/lib/member-roles';
+import { readSignupEmail, SIGNUP_EMAIL_COOKIE } from '@/lib/signup-prefill';
 
 export default function SignupPage() {
     const router = useRouter();
@@ -23,6 +24,21 @@ export default function SignupPage() {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [focusedField, setFocusedField] = useState<string | null>(null);
+    // Google 로그인에서 "가입된 회원이 없음"으로 넘어온 경우 이메일을 채워 준다.
+    // 편의일 뿐이다 — 서버는 이 값을 신뢰하지 않고, 이메일 검증도 승인 게이트도
+    // 그대로다. 사용자가 지우거나 다른 주소로 바꿔도 된다.
+    const [prefilledEmail, setPrefilledEmail] = useState<string | null>(null);
+
+    useEffect(() => {
+        const email = readSignupEmail(document.cookie);
+        if (!email) return;
+
+        setFormData((current) => (current.email ? current : { ...current, email }));
+        setPrefilledEmail(email);
+        // 한 번 쓰고 지운다. 남겨 두면 나중에 스스로 가입하러 온 사람의 입력란에도
+        // 엉뚱하게 채워진다.
+        document.cookie = `${SIGNUP_EMAIL_COOKIE}=; Max-Age=0; path=/`;
+    }, []);
 
     const passwordStrength = (pw: string): { level: number; label: string; color: string } => {
         if (pw.length === 0) return { level: 0, label: '', color: '' };
@@ -153,6 +169,13 @@ export default function SignupPage() {
                                         placeholder={field.placeholder}
                                     />
                                 </div>
+
+                                {/* Google 로그인에서 넘어왔을 때, 왜 이미 채워져 있는지 알린다. */}
+                                {field.id === 'email' && prefilledEmail && formData.email === prefilledEmail && (
+                                    <p className="mt-1.5 text-xs text-primary-300/80">
+                                        Google 계정에서 가져왔습니다. 다른 주소로 가입하려면 고쳐 주세요.
+                                    </p>
+                                )}
 
                                 {/* Password Strength Indicator */}
                                 {field.id === 'password' && formData.password.length > 0 && (
