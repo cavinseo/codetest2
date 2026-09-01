@@ -47,12 +47,6 @@ prisma/backup/
 # Tool state directories (not project source)
 .bkit/
 .claude/
-# 다만 프로젝트 스킬은 도구 상태가 아니라 프로젝트 소스다. CLAUDE.md 가
-# supervising-dual-ai-delivery 를 전제하고 있어, 추적하지 않으면 새로 받은 클론에서
-# 그 전제가 깨진다.
-!.claude/
-!.claude/skills/
-!.claude/skills/**
 testsprite_tests/
 docs/.pdca-status.json
 docs/.bkit-memory.json

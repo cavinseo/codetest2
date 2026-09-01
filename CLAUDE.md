@@ -5,10 +5,10 @@
 값을 그 스킬의 자리에 채워 넣는다. 실행 AI(코딩)는 계획서(`docs/superpowers/plans/`)와
 `AGENTS.md`를 따른다.
 
-스킬은 이 저장소에 함께 들어 있다 — `.claude/skills/supervising-dual-ai-delivery/`.
-`.gitignore` 가 `.claude/` 를 도구 상태로 무시하지만 이 경로만 예외로 두었다.
-프로젝트 스킬은 도구 상태가 아니라 프로젝트 소스이고, 추적하지 않으면 새로 받은
-클론에서 이 문단의 전제가 깨지기 때문이다.
+스킬 정본은 <https://github.com/cavinseo/skills>(`supervising-dual-ai-delivery/`)에 있다.
+이 저장소에 복사본을 두지 않는다 — 같은 이름의 스킬이 둘이면 프로젝트 쪽이 전역 설치를
+가려, 정본을 고쳐도 이 프로젝트에만 반영되지 않는다.
+설치: `cavinseo/skills` 를 클론해 해당 디렉터리를 `~/.claude/skills/` 로 복사한다.
 
 ## 검증 게이트 (스킬의 "게이트" 자리)
 
