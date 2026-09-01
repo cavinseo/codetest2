@@ -176,6 +176,41 @@ export function resolveRelatedTechnology(
     return '';
 }
 
+export interface SpecPickerGroupRowLike {
+    core: string;
+    sub: string;
+}
+
+// 스펙 선택기의 핵심기능·세부기능 열 병합.
+//
+// 숨김 판정과 계수 판정이 같은 기준을 써야 한다. 예전에는 숨기는 쪽에만 core 비교가
+// 빠져 있었다. core 가 다른데 sub 이름이 같은 인접 두 행에서, 위 행의 rowSpan 은
+// core 경계에서 멈춰 1 인데 아래 행은 0 을 받아 숨겨졌다. 그래서 그 칸을 아무도
+// 그리지 않고 오른쪽 열이 한 칸씩 밀렸다. 세부기능이 없는 core 는 sub 가 빈 문자열이라
+// 흔한 표에서도 바로 재현됐다.
+//
+// 같은 파일의 getSegmentScopedSpan 이 이미 양쪽에 같은 조건을 쓰는 형태다.
+export function getSpecPickerSpan(
+    rows: SpecPickerGroupRowLike[],
+    key: 'core' | 'sub',
+    index: number
+): number {
+    const current = rows[index];
+    if (!current) return 1;
+
+    const isSameGroup = (other: SpecPickerGroupRowLike) =>
+        other[key] === current[key] && (key === 'core' || other.core === current.core);
+
+    if (index > 0 && isSameGroup(rows[index - 1])) return 0;
+
+    let count = 1;
+    for (let i = index + 1; i < rows.length; i++) {
+        if (!isSameGroup(rows[i])) break;
+        count++;
+    }
+    return count;
+}
+
 export function getMarketSegmentSpan(rows: AttributeGroupingRowLike[], index: number): number {
     const segment = rows[index]?.marketSegment.trim();
     if (!segment) return 1;

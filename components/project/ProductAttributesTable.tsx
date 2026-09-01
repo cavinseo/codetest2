@@ -9,6 +9,7 @@ import {
     getCustomerNameSpan,
     getCustomerNeedSpan,
     getMarketSegmentSpan,
+    getSpecPickerSpan,
     resolveRelatedTechnology,
 } from '@/lib/product-attributes-utils';
 
@@ -68,16 +69,10 @@ function SpecSheetTable({
 }) {
     const flatRows = buildFlatRows(specFunctions, field);
 
-    // 행병합을 위한 헬퍼: 연속된 같은 값의 첫 행만 rowspan 계산
-    const getRowSpan = (arr: FlatRow[], key: 'core' | 'sub', index: number): number => {
-        if (index > 0 && arr[index][key] === arr[index - 1][key]) return 0; // 0이면 td 숨김
-        let count = 1;
-        for (let i = index + 1; i < arr.length; i++) {
-            if (arr[i][key] === arr[index][key] && (key === 'core' || arr[i].core === arr[index].core)) count++;
-            else break;
-        }
-        return count;
-    };
+    // 행병합 계산은 lib 으로 옮겼다. 컴포넌트 안 클로저로 두었더니 숨김 판정에서만
+    // core 비교가 빠진 것을 아무 테스트도 잡지 못했다.
+    const getRowSpan = (arr: FlatRow[], key: 'core' | 'sub', index: number): number =>
+        getSpecPickerSpan(arr, key, index);
 
     const isHighlighted = field === 'attribute';
 

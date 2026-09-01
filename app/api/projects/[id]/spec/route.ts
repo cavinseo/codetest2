@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
+import { specBodySchema } from '@/lib/bulk-save-schemas';
 
 const log = createLogger('api/spec');
 
@@ -64,22 +66,15 @@ export async function POST(
             );
         }
 
-        const body = await request.json();
-        const newSpecs: Array<{
-            id?: string;
-            level: string;
-            name: string;
-            parentId?: string;
-            technology?: string;
-            order: number;
-        }> = body.specFunctions || [];
+        // 예전에는 body.specFunctions || [] 로 받아, 배열이 아닌 본문이 조용히 [] 로
+        // 강등됐다. 아래 조기 반환이 없어진 지금은 그 강등이 곧 전량 삭제라서,
+        // 검증 없이는 오타 난 요청 하나가 스펙표를 통째로 지운다.
+        const { specFunctions: newSpecs } = specBodySchema.parse(await request.json());
 
-        if (newSpecs.length === 0) {
-            return NextResponse.json({
-                specFunctions: [],
-                message: '스펙이 저장되었습니다',
-            });
-        }
+        // 빈 배열에 조기 반환을 두었더니, 화면의 초기화 버튼이 보내는 신호가
+        // deleteMany 에 닿지 못했다. 200 과 "초기화되었습니다" 토스트가 나가는데
+        // DB 는 그대로여서, 새로고침하면 전부 되살아났다. 빈 배열은 "저장할 게 없다"가
+        // 아니라 "전부 지워라"는 뜻이므로 그대로 트랜잭션으로 내려보낸다.
 
         // 삭제와 삽입을 하나의 트랜잭션으로 묶어 중간 실패 시 롤백
         const updatedSpecs = await prisma.$transaction(async (tx) => {
@@ -153,6 +148,14 @@ export async function POST(
             message: '스펙이 저장되었습니다',
         });
     } catch (error: unknown) {
+        // 검증 실패는 서버 오류가 아니다. toErrorResponse 는 무엇이든 500 으로 만들어
+        // 버리므로 그 앞에서 갈라낸다. 어느 항목이 잘못됐는지 알려주지 않으면
+        // 사용자는 저장이 왜 막혔는지 알 수 없다(requirements 라우트와 같은 형태다).
+        if (error instanceof z.ZodError) {
+            const firstIssue = error.errors[0];
+            log.warn('스펙 검증 오류 (Zod)', { path: firstIssue?.path.join('.'), code: firstIssue?.code });
+            return NextResponse.json({ error: firstIssue.message }, { status: 400 });
+        }
         return toErrorResponse(error, { log, message: '스펙 저장에 실패했습니다.' });
     }
 }

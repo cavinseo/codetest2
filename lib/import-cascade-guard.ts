@@ -77,14 +77,37 @@ export interface AttributeCascadeImpact {
 }
 
 export interface AttributeCascadeCounter {
-    attributeFitness: { count: (args: { where: { projectId: string } }) => Promise<number> };
+    attributeFitness: {
+        count: (args: {
+            where: { projectId: string; attributeId?: { notIn: string[] } };
+        }) => Promise<number>;
+    };
 }
 
+/**
+ * 제품 속성을 덮어쓸 때 캐스케이드로 함께 사라질 적합도의 건수를 센다.
+ *
+ * `survivingAttributeIds` 는 이번 저장에서 살아남을 속성 id 다. 그 속성에 달린
+ * 적합도는 지워지지 않으므로 세지 않는다. 예전에는 이 인자가 없어 프로젝트의 모든
+ * 적합도를 셌고, 그래서 오타 한 글자를 고치는 저장에도 "적합도 N건이 삭제됩니다"가
+ * 떴다. 늘 뜨는 경고는 읽히지 않는다 — 사용자가 확인을 습관적으로 누르게 되어,
+ * 손실을 막으라고 만든 장치가 오히려 손실을 훈련시켰다.
+ *
+ * 인자를 주지 않거나 빈 배열이면 전량 삭제로 본다. import 계열처럼 실제로 전부
+ * 지우는 경로가 그렇고, 빈 제출("전부 지워라") 또한 그렇다.
+ */
 export async function countAttributeCascadeImpact(
     db: AttributeCascadeCounter,
-    projectId: string
+    projectId: string,
+    survivingAttributeIds?: string[]
 ): Promise<AttributeCascadeImpact> {
-    const fitnesses = await db.attributeFitness.count({ where: { projectId } });
+    // notIn: [] 은 "아무것도 제외하지 않음"이 아니라 전체 일치다. 빈 배열을 그대로
+    // 넘기면 우연히 맞는 결과가 나오지만 의도가 드러나지 않으므로 갈라 둔다.
+    const where = survivingAttributeIds && survivingAttributeIds.length > 0
+        ? { projectId, attributeId: { notIn: survivingAttributeIds } }
+        : { projectId };
+
+    const fitnesses = await db.attributeFitness.count({ where });
     return { fitnesses };
 }
 

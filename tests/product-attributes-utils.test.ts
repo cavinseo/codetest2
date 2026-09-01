@@ -7,6 +7,7 @@ import {
     getCustomerNameSpan,
     getCustomerNeedSpan,
     getMarketSegmentSpan,
+    getSpecPickerSpan,
     resolveRelatedTechnology,
 } from '../lib/product-attributes-utils';
 
@@ -152,5 +153,76 @@ describe('product attribute technology linking', () => {
         ];
 
         expect(dedupeByAttributeName(rows).map((row) => row.id)).toEqual(['a1', 'a3']);
+    });
+});
+
+describe('getSpecPickerSpan', () => {
+    it('core 가 다르면 sub 이름이 같아도 두 행 모두 칸을 그린다', () => {
+        // 회귀 본체. 예전에는 아래 행이 0 을 받아 숨겨졌는데 위 행의 rowSpan 은
+        // core 경계에서 멈춘 1 이라, 그 칸을 아무도 그리지 않고 열이 밀렸다.
+        const rows = [
+            { core: 'A', sub: '설치' },
+            { core: 'B', sub: '설치' },
+        ];
+
+        expect(getSpecPickerSpan(rows, 'sub', 0)).toBe(1);
+        expect(getSpecPickerSpan(rows, 'sub', 1)).toBe(1);
+    });
+
+    it('세부기능이 없어 sub 가 빈 문자열인 인접 행도 마찬가지다', () => {
+        // buildSpecPickerRows 는 하위가 없는 core 에 sub: '' 를 넣는다.
+        // 가장 흔하게 밟히는 경로였다.
+        const rows = [
+            { core: 'A', sub: '' },
+            { core: 'B', sub: '' },
+        ];
+
+        expect(getSpecPickerSpan(rows, 'sub', 0)).toBe(1);
+        expect(getSpecPickerSpan(rows, 'sub', 1)).toBe(1);
+    });
+
+    it('같은 core 안에서 연속된 같은 sub 는 첫 행이 개수를 갖고 나머지는 숨는다', () => {
+        const rows = [
+            { core: 'A', sub: '설치' },
+            { core: 'A', sub: '설치' },
+            { core: 'A', sub: '관리' },
+        ];
+
+        expect(getSpecPickerSpan(rows, 'sub', 0)).toBe(2);
+        expect(getSpecPickerSpan(rows, 'sub', 1)).toBe(0);
+        expect(getSpecPickerSpan(rows, 'sub', 2)).toBe(1);
+    });
+
+    it("key 가 'core' 면 core 만 본다", () => {
+        const rows = [
+            { core: 'A', sub: '설치' },
+            { core: 'A', sub: '관리' },
+            { core: 'B', sub: '설치' },
+        ];
+
+        expect(getSpecPickerSpan(rows, 'core', 0)).toBe(2);
+        expect(getSpecPickerSpan(rows, 'core', 1)).toBe(0);
+        expect(getSpecPickerSpan(rows, 'core', 2)).toBe(1);
+    });
+
+    it('떨어져 있는 같은 값은 병합하지 않는다', () => {
+        const rows = [
+            { core: 'A', sub: '설치' },
+            { core: 'A', sub: '관리' },
+            { core: 'A', sub: '설치' },
+        ];
+
+        expect(getSpecPickerSpan(rows, 'sub', 0)).toBe(1);
+        expect(getSpecPickerSpan(rows, 'sub', 2)).toBe(1);
+    });
+
+    it('빈 배열과 범위 밖 index 는 1 이다', () => {
+        expect(getSpecPickerSpan([], 'sub', 0)).toBe(1);
+        expect(getSpecPickerSpan([{ core: 'A', sub: 'x' }], 'sub', 5)).toBe(1);
+    });
+
+    it('단일 행은 1 이다', () => {
+        expect(getSpecPickerSpan([{ core: 'A', sub: 'x' }], 'sub', 0)).toBe(1);
+        expect(getSpecPickerSpan([{ core: 'A', sub: 'x' }], 'core', 0)).toBe(1);
     });
 });

@@ -152,6 +152,28 @@ export const fundingBodySchema = z.object({
     sources: z.array(fundingSourceRowSchema).optional(),
 });
 
+// ── spec functions (WS-2) ─────────────────────────────────────
+// level 은 화면이 CORE/SUB/DETAIL 세 갈래로만 렌더링하므로 화이트리스트로 고정한다.
+//
+// id 와 parentId 는 저장하지 않는다. SpecTable.serializeSpecs 가 매 저장마다 새로
+// 만드는 임시 id(core_0, sub_1)이고, 라우트는 그것을 실제 cuid 로 재매핑하는 데만
+// 쓴다. SpecFunction 에는 이 id 를 참조하는 FK 가 없어 보존할 이유도 없다.
+//
+// name 에 min(1) 을 걸어도 안전하다. serializeSpecs 는 빈 이름을 만들지 않는다 —
+// core 가 빈 행은 건너뛰고, 빈 sub·detail 은 아예 push 하지 않는다.
+export const specFunctionRowSchema = z.object({
+    id: z.string().optional(),
+    level: z.enum(['CORE', 'SUB', 'DETAIL']),
+    name: z.string().trim().min(1).max(200),
+    parentId: z.string().optional(),
+    technology: optionalText,
+    order: z.coerce.number(),
+});
+// 상한이 없으면 잘못된 요청 하나가 트랜잭션 안에서 create 를 무한정 돌린다.
+export const specBodySchema = z.object({
+    specFunctions: z.array(specFunctionRowSchema).max(2000),
+});
+
 export type TargetSpecRow = z.infer<typeof targetSpecRowSchema>;
 export type SalesRow = z.infer<typeof salesRowSchema>;
 export type TechRoadmapRow = z.infer<typeof techRoadmapRowSchema>;
@@ -163,3 +185,4 @@ export type ImprovementRow = z.infer<typeof improvementRowSchema>;
 export type AssetRow = z.infer<typeof assetRowSchema>;
 export type FundingPlanRow = z.infer<typeof fundingPlanRowSchema>;
 export type FundingSourceRow = z.infer<typeof fundingSourceRowSchema>;
+export type SpecFunctionRow = z.infer<typeof specFunctionRowSchema>;

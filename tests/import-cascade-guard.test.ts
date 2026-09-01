@@ -113,6 +113,28 @@ describe('countAttributeCascadeImpact', () => {
 
         expect(await countAttributeCascadeImpact(db, 'project_1')).toEqual({ fitnesses: 0 });
     });
+
+    it('살아남을 속성 id 를 주면 그 속성의 적합도는 세지 않는다', async () => {
+        const db = attrCounterWith(2);
+
+        const impact = await countAttributeCascadeImpact(db, 'project_1', ['attr_a', 'attr_b']);
+
+        expect(impact).toEqual({ fitnesses: 2 });
+        expect(db.attributeFitness.count).toHaveBeenCalledWith({
+            where: { projectId: 'project_1', attributeId: { notIn: ['attr_a', 'attr_b'] } },
+        });
+    });
+
+    it('빈 배열은 전량 삭제로 보고 필터 없이 센다', async () => {
+        const db = attrCounterWith(7);
+
+        // notIn: [] 은 전체 일치라 결과는 같지만, 그 우연에 기대지 않는다는 것을
+        // 호출 인자로 고정한다.
+        const impact = await countAttributeCascadeImpact(db, 'project_1', []);
+
+        expect(impact).toEqual({ fitnesses: 7 });
+        expect(db.attributeFitness.count).toHaveBeenCalledWith({ where: { projectId: 'project_1' } });
+    });
 });
 
 describe('describeAttributeCascadeImpact', () => {
