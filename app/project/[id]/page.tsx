@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import ProductAttributesTable from '@/components/project/ProductAttributesTable';
@@ -25,6 +25,8 @@ import {
     readAndSerializeBusinessPlanFile,
 } from '@/lib/business-plan-file';
 import { useRouter } from 'next/navigation';
+import { UnsavedChangesProvider, type UnsavedChangesRegistry } from '@/lib/unsaved-changes-context';
+import { applyDirtyReport, hasUnsavedWork, LEAVE_WORKSHEET_CONFIRM } from '@/lib/unsaved-changes';
 
 function isExcelFileName(fileName: string) {
     return /\.(xlsx|xls)$/i.test(fileName.trim());
@@ -391,6 +393,22 @@ export default function ProjectDetailPage() {
 
     const router = useRouter();
 
+    // 열려 있는 워크시트가 저장 안 된 상태인지 모아 둔다. ref 인 이유는 이 값이 바뀔
+    // 때마다 페이지 전체를 다시 그릴 필요가 없어서다 — 타이핑 한 글자마다 프로젝트
+    // 화면 전체가 리렌더되면 그게 더 비싸다. 탭을 옮기려는 순간에만 읽으면 된다.
+    const dirtyWorksheets = useRef<Set<string>>(new Set());
+
+    const unsavedRegistry = useMemo<UnsavedChangesRegistry>(() => ({
+        setDirty: (key, dirty) => applyDirtyReport(dirtyWorksheets.current, key, dirty),
+    }), []);
+
+    // 탭 전환은 라우터 이동이 아니라 언마운트라 beforeunload 가 걸리지 않는다.
+    // 실사용에서 표를 잃는 가장 흔한 경로가 여기이므로 직접 되묻는다.
+    const navigateToTab = useCallback((tabId: string) => {
+        if (hasUnsavedWork(dirtyWorksheets.current) && !window.confirm(LEAVE_WORKSHEET_CONFIRM)) return;
+        setActiveTab(tabId);
+    }, []);
+
     const tabComponents: Record<string, React.ReactNode> = {
         attributes: <ProductAttributesTable projectId={projectId} />,
         spec: <SpecTable projectId={projectId} onSaved={() => setActiveTab('attributes')} />,
@@ -534,7 +552,7 @@ export default function ProjectDetailPage() {
                         {tabs.map((tab) => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => navigateToTab(tab.id)}
                                 className={activeTab === tab.id ? 'nav-tab-active' : 'nav-tab'}
                             >
                                 <span className="flex items-center gap-2">
@@ -743,7 +761,7 @@ export default function ProjectDetailPage() {
                                 {worksheetCompleteness.nextAction && (
                                     <button
                                         type="button"
-                                        onClick={() => setActiveTab(worksheetCompleteness.nextAction?.worksheetKey || 'overview')}
+                                        onClick={() => navigateToTab(worksheetCompleteness.nextAction?.worksheetKey || 'overview')}
                                         className="mt-5 w-full text-left rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors"
                                     >
                                         <div className="flex items-center justify-between gap-4">
@@ -765,7 +783,7 @@ export default function ProjectDetailPage() {
                                             <button
                                                 key={item.key}
                                                 type="button"
-                                                onClick={() => setActiveTab(item.worksheetKey)}
+                                                onClick={() => navigateToTab(item.worksheetKey)}
                                                 className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-3 text-left hover:bg-amber-500/[0.08] transition-colors"
                                             >
                                                 <div className="flex items-center justify-between gap-2">
@@ -852,7 +870,7 @@ export default function ProjectDetailPage() {
                                             ? 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06] hover:border-white/[0.12] cursor-pointer'
                                             : 'bg-white/[0.01] border-white/[0.04] opacity-50'
                                             }`}
-                                        onClick={() => item.active && setActiveTab(item.tab)}
+                                        onClick={() => item.active && navigateToTab(item.tab)}
                                     >
                                         <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${item.gradient} flex items-center justify-center text-sm font-bold text-white flex-shrink-0`}>
                                             {item.step}
@@ -873,7 +891,11 @@ export default function ProjectDetailPage() {
                     </div>
                 )}
 
-                {activeTab !== 'overview' && renderTabContent(activeTab)}
+                {activeTab !== 'overview' && (
+                    <UnsavedChangesProvider value={unsavedRegistry}>
+                        {renderTabContent(activeTab)}
+                    </UnsavedChangesProvider>
+                )}
             </main>
         </div>
     );

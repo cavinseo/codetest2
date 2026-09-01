@@ -3,7 +3,13 @@
 // 여기서 틀리면 두 방향으로 나빠진다. 헐거우면 경고가 안 떠 표가 사라지고,
 // 빡빡하면 저장이 끝났는데도 경고가 떠 사용자가 그다음부터 경고를 읽지 않는다.
 import { describe, expect, it } from 'vitest';
-import { isDirty, snapshotOf } from '../lib/unsaved-changes';
+import {
+    applyDirtyReport,
+    hasUnsavedWork,
+    isDirty,
+    LEAVE_WORKSHEET_CONFIRM,
+    snapshotOf,
+} from '../lib/unsaved-changes';
 
 const rows = [
     { id: 'a', name: '가', order: 0 },
@@ -65,5 +71,64 @@ describe('snapshotOf', () => {
         const withHeader = { productName: '제품', rows };
 
         expect(isDirty(snapshotOf(withHeader), { productName: '제품2', rows })).toBe(true);
+    });
+});
+
+describe('탭 전환 가로채기 — dirty 목록', () => {
+    it('저장 안 된 워크시트가 없으면 이동을 막지 않는다', () => {
+        expect(hasUnsavedWork(new Set())).toBe(false);
+    });
+
+    it('워크시트가 dirty 를 보고하면 이동을 막는다', () => {
+        const keys = new Set<string>();
+
+        applyDirtyReport(keys, 'ws-3', true);
+
+        expect(hasUnsavedWork(keys)).toBe(true);
+    });
+
+    it('같은 워크시트가 여러 번 보고해도 한 번만 센다', () => {
+        // 타이핑마다 이펙트가 도므로 같은 키가 계속 들어온다.
+        const keys = new Set<string>();
+
+        applyDirtyReport(keys, 'ws-3', true);
+        applyDirtyReport(keys, 'ws-3', true);
+        applyDirtyReport(keys, 'ws-3', true);
+
+        expect(keys.size).toBe(1);
+    });
+
+    it('저장하거나 언마운트되면 목록에서 빠지고 이동이 풀린다', () => {
+        // 훅의 정리 함수가 하는 일이다. 탭을 옮기면 워크시트는 언마운트되는데, 그때
+        // dirty 로 남겨 두면 경고가 다음 이동까지 따라다녀 저장했는데도 되묻게 된다.
+        const keys = new Set<string>();
+        applyDirtyReport(keys, 'ws-3', true);
+
+        applyDirtyReport(keys, 'ws-3', false);
+
+        expect(hasUnsavedWork(keys)).toBe(false);
+    });
+
+    it('없는 키를 지워도 문제없다', () => {
+        const keys = new Set<string>();
+
+        applyDirtyReport(keys, 'ws-3', false);
+
+        expect(hasUnsavedWork(keys)).toBe(false);
+    });
+
+    it('워크시트가 둘 이상 dirty 면 하나만 저장해도 여전히 막는다', () => {
+        const keys = new Set<string>();
+        applyDirtyReport(keys, 'ws-3', true);
+        applyDirtyReport(keys, 'ws-5', true);
+
+        applyDirtyReport(keys, 'ws-3', false);
+
+        expect(hasUnsavedWork(keys)).toBe(true);
+    });
+
+    it('확인 문구는 무엇이 사라지는지 먼저 말한다', () => {
+        expect(LEAVE_WORKSHEET_CONFIRM).toContain('사라집니다');
+        expect(LEAVE_WORKSHEET_CONFIRM).toContain('이동');
     });
 });

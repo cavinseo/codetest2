@@ -42,7 +42,8 @@
 | **B** | WS-3 를 WS-5 패턴으로 전환 | 반나절~1일 | 0 |
 | **C** | WS-3 스펙 선택기 병합 버그 | 0.5일 | 없음 |
 | **D** | 미저장 이탈 경고 (저장 버튼 계열 12개) | 1~2일 | 없음 |
-| 이월 | 붙여넣기 · 키보드 이동 · 병합 그룹화 · 낙관적 잠금 | — | — |
+| **E** | 탭 전환 경고 (감리자 결정으로 추가) | 반나절~1일 | D |
+| 이월 | 붙여넣기 · 키보드 이동 · 병합 그룹화 · 낙관적 잠금 · AI 위저드 409 · WS-2 N+1 | — | — |
 
 A·B·C 는 서로 독립이라 순서를 바꿔도 되고 병렬로 위임해도 된다. **D 는 A·B 뒤에** 둔다 —
 저장이 아직 손실을 일으키는 상태에서 "저장 안 했다" 경고만 붙이면 잘못된 안심을 준다.
@@ -404,9 +405,57 @@ if (index > 0 && sameGroup(arr[index], arr[index - 1])) return 0;
 
 ---
 
+## Task E — 탭 전환 경고 (감리자 결정으로 추가)
+
+### 배경
+
+Task D 가 막은 것은 "브라우저 창 닫기·새로고침"뿐이다. 워크시트 사이의 탭 전환은
+`setActiveTab` 에 의한 언마운트라 `beforeunload` 가 걸리지 않는다.
+
+**이 앱에서 실제로 가장 흔한 이탈 경로가 그쪽이다.** WS-1 부터 WS-17 까지 순서대로
+채워 나가는 구조라, 사용자가 반복하는 행동이 "이 표 채우다가 다음 표로 넘어가기"다.
+창을 닫는 일은 그보다 드물다.
+
+### 설계
+
+탭을 쥔 쪽(`app/project/[id]/page.tsx`)이 "지금 열린 워크시트가 저장 안 된 상태인가"를
+알아야 한다. 워크시트 12개에 props 를 뚫어 내리는 대신 컨텍스트로 받는다.
+
+```
+useUnsavedChanges (워크시트 12개)
+      ↓ setDirty(key, dirty)   ← 이펙트, 정리 함수가 언마운트 시 false 로 지운다
+UnsavedChangesProvider (page.tsx)
+      ↓ dirtyWorksheets: Set<string>   ← ref. 타이핑마다 페이지를 다시 그리지 않는다
+navigateToTab(tabId)   ← 비어 있지 않으면 window.confirm
+```
+
+- [x] E-1. `lib/unsaved-changes.ts` 에 `applyDirtyReport`·`hasUnsavedWork`·
+      `LEAVE_WORKSHEET_CONFIRM` 추가 (순수 부분이라 단언할 수 있다)
+- [x] E-2. `lib/unsaved-changes-context.tsx` 신규. Provider 가 없어도 동작해야 한다 —
+      워크시트는 프로젝트 페이지 밖에서도 쓰일 수 있고, 그때는 창 닫기 경고만 걸리면 된다
+- [x] E-3. `useUnsavedChanges` 가 `useId()` 키로 자기 상태를 보고한다.
+      **정리 함수가 핵심이다** — 탭을 옮기면 언마운트되는데 dirty 로 남으면 경고가
+      다음 이동까지 따라다닌다
+- [x] E-4. `page.tsx` 에 `navigateToTab` 을 두고 이동 버튼 4곳을 그리로 돌린다.
+      `onSaved` 콜백 2곳은 **그대로 둔다** — 저장이 막 끝난 뒤라 되물으면 안 된다
+- [x] E-5. 테스트 7건, 게이트 통과
+
+### 하지 말 것
+
+- dirty 를 state 로 들기 — 타이핑 한 글자마다 프로젝트 화면 전체가 리렌더된다
+- `onSaved` 콜백을 가로채기 — 저장 직후 이동인데 되물으면 오탐이다
+
+---
+
 ## 감리자 결정이 필요한 항목
 
-- [ ] **D-A. `tests/integration/` 을 게이트에 넣을지.** `tests/integration/db-cascade.integration.test.ts`
+- [x] **D-A. `tests/integration/` — 결정: 감리자가 수동으로 한 번 돌린다.**
+      절차는 `docs/superpowers/reports/2026-08-31-worksheet-input-remediation/통합테스트-수동실행.md`.
+      **정정:** 이 테스트는 실데이터 DB에 붙지 않는다. 별도 `INTEGRATION_DATABASE_URL`
+      을 요구하고 앱 URL과 같으면 실패하는 안전장치가 코드에 있다. 판단을 요청할 때
+      그 점을 정확히 전하지 못했다.
+
+- [ ] ~~**D-A(원문). `tests/integration/` 을 게이트에 넣을지.**~~ `tests/integration/db-cascade.integration.test.ts`
       가 있고 전용 설정(`vitest.integration.config.ts`)과 스크립트(`npm run test:integration`)
       까지 있는데, `vitest.config.ts:exclude` 가 기본 실행에서 빼고 `ci.yml` 은
       `npm test` 만 부른다. **결과적으로 CI 에서 한 번도 돌지 않는다.**

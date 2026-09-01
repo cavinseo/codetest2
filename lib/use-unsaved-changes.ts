@@ -9,14 +9,17 @@
 // WS-9 QFD 관계 셀(클릭 즉시 POST)에 걸면, 저장이 이미 끝난 상태에서도 경고가 떠
 // 오탐이 된다.
 //
-// 워크시트 사이의 탭 전환은 이 훅으로 막을 수 없다. 라우터 이동이 아니라
-// setActiveTab 에 의한 언마운트라 beforeunload 가 걸리지 않는다. 그 경로를 막으려면
-// 탭 컨테이너가 dirty 상태를 알아야 하므로 별건으로 둔다.
-import { useCallback, useEffect, useRef } from 'react';
+// 워크시트 사이의 탭 전환은 beforeunload 로 막을 수 없다. 라우터 이동이 아니라
+// setActiveTab 에 의한 언마운트이기 때문이다. 그래서 dirty 여부를 탭 컨테이너에도
+// 보고한다(UnsavedChangesProvider). Provider 가 없으면 창 닫기 경고만 걸린다.
+import { useCallback, useEffect, useId, useRef } from 'react';
 import { isDirty, snapshotOf } from './unsaved-changes';
+import { useUnsavedChangesRegistry } from './unsaved-changes-context';
 
 export function useUnsavedChanges<T>(value: T): { markClean: <V>(saved: V) => V } {
     const baseline = useRef<string | null>(null);
+    const registry = useUnsavedChangesRegistry();
+    const registryKey = useId();
 
     // 서버와 값을 맞춘 직후(로드 성공·저장 성공·초기화 성공) 부른다.
     //
@@ -51,6 +54,14 @@ export function useUnsavedChanges<T>(value: T): { markClean: <V>(saved: V) => V 
         window.addEventListener('beforeunload', handleBeforeUnload);
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }, [dirty]);
+
+    // 탭 컨테이너에도 알린다. 정리 함수가 중요하다 — 탭을 옮기면 이 워크시트는
+    // 언마운트되는데, 그때 dirty 로 남아 있으면 다음 이동까지 경고가 따라다닌다.
+    useEffect(() => {
+        if (!registry) return;
+        registry.setDirty(registryKey, dirty);
+        return () => registry.setDirty(registryKey, false);
+    }, [registry, registryKey, dirty]);
 
     return { markClean };
 }
