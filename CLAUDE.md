@@ -5,6 +5,11 @@
 값을 그 스킬의 자리에 채워 넣는다. 실행 AI(코딩)는 계획서(`docs/superpowers/plans/`)와
 `AGENTS.md`를 따른다.
 
+스킬은 이 저장소에 함께 들어 있다 — `.claude/skills/supervising-dual-ai-delivery/`.
+`.gitignore` 가 `.claude/` 를 도구 상태로 무시하지만 이 경로만 예외로 두었다.
+프로젝트 스킬은 도구 상태가 아니라 프로젝트 소스이고, 추적하지 않으면 새로 받은
+클론에서 이 문단의 전제가 깨지기 때문이다.
+
 ## 검증 게이트 (스킬의 "게이트" 자리)
 
 ```sh
