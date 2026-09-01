@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import Link from 'next/link';
 import KanoSurveyPreview from '@/components/KanoSurveyPreview';
 import Kano2DChart from '@/components/Kano2DChart';
@@ -114,6 +115,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
 
     // Kano 질문 직접 입력 관리
     const [kanoQuestions, setKanoQuestions] = useState<Record<string, { positive: string; negative: string }>>({});
+    // WS-6 은 Kano 질문을 로컬 state 로 편집하고 저장 버튼으로만 영속화한다.
+    // 같은 화면의 초대·응답 관리는 즉시 반영이라 추적 대상이 아니다.
+    const { markClean } = useUnsavedChanges(kanoQuestions);
     const [isSavingQuestions, setIsSavingQuestions] = useState(false);
 
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -149,7 +153,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                         negative: r.kanoNegativeQ || `${topic}(이)가 아니라면 어떻게 생각하십니까?`,
                     };
                 }
-                setKanoQuestions(qMap);
+                setKanoQuestions(markClean(qMap));
             }
 
             const invRes = await fetch(`/api/projects/${projectId}/kano/invitations`);
@@ -180,7 +184,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -467,6 +471,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 throw new Error(errorData.error || errorData.message || '\uc800\uc7a5 \uc2e4\ud328');
             }
             
+            markClean(kanoQuestions);
             showToast('Kano \uc124\ubb38 \uc9c8\ubb38\uc774 \uc800\uc7a5\ub418\uc5c8\uc2b5\ub2c8\ub2e4!', 'success');
             await loadData(); // \ucd5c\uc2e0 \ub370\uc774\ud130 \ub2e4\uc2dc \ubd88\ub7ec\uc624\uae30
         } catch (error: any) {

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { dedupeByAttributeName } from '@/lib/product-attributes-utils';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 
 interface ProductAttribute {
     id: string;
@@ -125,6 +126,9 @@ export default function AttributeFitnessPage() {
     const [savedAt, setSavedAt] = useState<string | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // 이 화면은 공용 워크시트 컴포넌트를 쓰지 않고 표를 직접 그린다. 그래서 Task D 가
+    // components/project 만 훑었을 때 빠졌다. 저장 대상은 fitnessMap 하나다.
+    const { markClean } = useUnsavedChanges(fitnessMap);
 
     const showToast = (message: string, type: ToastType = 'success') => {
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -153,7 +157,7 @@ export default function AttributeFitnessPage() {
                     const fitnesses: AttributeFitness[] = data.fitnesses || [];
                     const map: Record<string, AttributeFitness> = {};
                     fitnesses.forEach(f => { map[f.attributeId] = f; });
-                    setFitnessMap(map);
+                    setFitnessMap(markClean(map));
                     if (fitnesses.length > 0) {
                         setSavedAt('저장됨');
                     }
@@ -165,7 +169,7 @@ export default function AttributeFitnessPage() {
             }
         }
         loadData();
-    }, [projectId]);
+    }, [projectId, markClean]);
 
     const handleFitnessChange = (attrId: string, field: keyof AttributeFitness, value: any) => {
         setFitnessMap(prev => {
@@ -193,6 +197,8 @@ export default function AttributeFitnessPage() {
                 body: JSON.stringify({ fitnesses }),
             });
             if (response.ok) {
+                // 이 라우트는 저장 결과를 돌려주지 않는다. 보낸 값이 곧 저장된 값이다.
+                markClean(fitnessMap);
                 setSavedAt('저장됨');
                 showToast('적합도 분석이 저장되었습니다.', 'success');
             } else {

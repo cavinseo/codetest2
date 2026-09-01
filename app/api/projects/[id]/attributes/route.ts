@@ -166,6 +166,14 @@ export async function POST(
 }
 
 // DELETE: 제품 속성 리셋
+//
+// 저장(POST)보다 파괴적인데 경고는 더 약했다. 저장은 "적합도 N건이 함께 삭제됩니다"를
+// 띄우는데 전량 삭제인 이쪽은 가드가 아예 없어, 사용자가 적합도가 함께 사라진다는 것을
+// 모른 채 눌렀다. 같은 가드를 태운다 — 리셋은 진짜 전량 삭제라 살아남을 id 가 없으므로
+// 인자 없이 부른다.
+//
+// 확인 신호는 쿼리스트링으로 받는다. DELETE 본문은 fetch·프록시·서버 구현에 따라
+// 실려 가지 않는 경우가 있어, 확인이 조용히 유실되면 막아야 할 삭제가 통과한다.
 export async function DELETE(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -174,6 +182,21 @@ export async function DELETE(
         const { id: projectId } = await params;
         const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
         if (accessResult instanceof NextResponse) return accessResult;
+
+        const confirmed = new URL(request.url).searchParams.get('confirmCascade') === 'true';
+        const impact = await countAttributeCascadeImpact(prisma, projectId);
+        if (impact.fitnesses > 0 && !confirmed) {
+            // 응답 형태를 POST 쪽과 맞춘다. 화면이 같은 코드로 두 경로를 다룰 수 있다.
+            return NextResponse.json(
+                {
+                    error: describeAttributeCascadeImpact(impact),
+                    needsCascadeConfirm: true,
+                    cascadeImpact: impact,
+                },
+                { status: 409 }
+            );
+        }
+
         const deleteResult = await prisma.productAttribute.deleteMany({
             where: { projectId },
         });

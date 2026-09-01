@@ -420,9 +420,28 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         }
     };
 
-    const handleReset = async () => {
+    const handleReset = async (options: { confirmCascade?: boolean } = {}) => {
         try {
-            await fetch(`/api/projects/${projectId}/attributes`, { method: 'DELETE' });
+            const query = options.confirmCascade ? '?confirmCascade=true' : '';
+            const res = await fetch(`/api/projects/${projectId}/attributes${query}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => null);
+
+            // 저장과 같은 규칙이다. 속성을 지우면 적합도가 캐스케이드로 함께 사라지므로,
+            // 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
+                    await handleReset({ confirmCascade: true });
+                    return;
+                }
+                showToast('초기화를 취소했습니다.', 'error');
+                return;
+            }
+
+            if (!res.ok) {
+                showToast('초기화에 실패했습니다.', 'error');
+                return;
+            }
+
             setRows([]);
             setTechCapability('');
             markClean({ rows: [], productName, techCapability: '' });
@@ -728,12 +747,12 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                             </div>
                             <div>
                                 <p className="text-white text-sm font-semibold">제품속성서 초기화</p>
-                                <p className="text-rose-300/70 text-xs mt-0.5">모든 데이터가 삭제됩니다. 되돌릴 수 없습니다.</p>
+                                <p className="text-rose-300/70 text-xs mt-0.5">모든 속성이 삭제됩니다. 제품속성적합도(WS-4)도 함께 사라집니다. 되돌릴 수 없습니다.</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
                             <button onClick={() => setShowResetConfirm(false)} className="btn-secondary text-sm">취소</button>
-                            <button onClick={handleReset} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded-lg transition-colors font-medium">초기화</button>
+                            <button onClick={() => handleReset()} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded-lg transition-colors font-medium">초기화</button>
                         </div>
                     </div>
                 </div>

@@ -41,7 +41,7 @@
 | **A** | WS-2 초기화 결함 수정 **+ zod 검증** | 반나절~1일 | 0 |
 | **B** | WS-3 를 WS-5 패턴으로 전환 | 반나절~1일 | 0 |
 | **C** | WS-3 스펙 선택기 병합 버그 | 0.5일 | 없음 |
-| **D** | 미저장 이탈 경고 (저장 버튼 계열 12개) | 1~2일 | 없음 |
+| **D** | 미저장 이탈 경고 (저장 버튼 계열 14개) | 1~2일 | 없음 |
 | **E** | 탭 전환 경고 (감리자 결정으로 추가) | 반나절~1일 | D |
 | 이월 | 붙여넣기 · 키보드 이동 · 병합 그룹화 · 낙관적 잠금 · AI 위저드 409 · WS-2 N+1 | — | — |
 
@@ -339,7 +339,7 @@ if (index > 0 && sameGroup(arr[index], arr[index - 1])) return 0;
 
 ---
 
-## Task D — 미저장 이탈 경고 (저장 버튼 계열 12개)
+## Task D — 미저장 이탈 경고 (저장 버튼 계열 14개)
 
 ### 배경
 
@@ -350,7 +350,7 @@ if (index > 0 && sameGroup(arr[index], arr[index - 1])) return 0;
 
 | 워크시트 | 저장 시점 | 경고 |
 | --- | --- | --- |
-| WS-2·3·5 및 팩토리 계열 12개 | 저장 버튼 | **건다** |
+| WS-2·3·5·6 및 팩토리 계열 14개 | 저장 버튼 | **건다** |
 | WS-7 Kano 가중치 | `onBlur` 즉시 저장 (`KanoAggregationTable.tsx:157`) | 걸지 않는다 |
 | WS-9 QFD 관계 셀 | 클릭 즉시 POST (`QFDMatrix.tsx:276`) | 걸지 않는다 |
 
@@ -369,9 +369,13 @@ if (index > 0 && sameGroup(arr[index], arr[index - 1])) return 0;
       마지막 저장 성공 시점의 스냅샷과 현재 rows 를 비교한다. `onChange` 마다 플래그를
       세우는 방식은 "고쳤다가 되돌린" 경우에 오탐한다
 
-- [x] D-3. 12개 컴포넌트에 적용 — 검토서 §1-3 표 첫 줄을 실제로 세어 12개였다.
-      Sales·DevPlan·TechRoadmap·TechTree·TargetSpec·Assets·Improvements·Funding·
-      Requirements·Spec·ProductAttributes·Fitness
+- [x] D-3. **14개**에 적용. 세 번 세어 세 번 다른 수가 나왔다 — 그 이력을 남긴다.
+      - 초판 검토서: 13개
+      - Task D: `components/project/*.tsx` 만 훑어 **12개**로 "정정"(틀렸다)
+      - Task F: 저장 요청을 직접 보내는 화면을 전수 조사해 **14개**
+      빠졌던 둘: `app/project/[id]/attributes/fitness/page.tsx`(457줄 자체 구현),
+      `components/project/KanoManager.tsx`(WS-6 Kano 질문 편집).
+      둘 다 공용 컴포넌트를 쓰지 않아 디렉터리 기준 세기에서 새어 나갔다.
 
 - [x] D-4. 훅 테스트. 훅은 DOM 이벤트를 다루므로 순수 부분(dirty 판정)을 분리해
       `lib/` 에 두고 그쪽을 테스트한다
@@ -380,7 +384,7 @@ if (index > 0 && sameGroup(arr[index], arr[index - 1])) return 0;
 
 ### 완료 기준
 
-- 12개 워크시트에서 미저장 상태로 닫으면 브라우저 확인이 뜬다
+- 14개 워크시트에서 미저장 상태로 닫으면 브라우저 확인이 뜬다
 - WS-7·WS-9 에는 **붙지 않는다**
 - 게이트 3종 통과
 
@@ -419,10 +423,10 @@ Task D 가 막은 것은 "브라우저 창 닫기·새로고침"뿐이다. 워�
 ### 설계
 
 탭을 쥔 쪽(`app/project/[id]/page.tsx`)이 "지금 열린 워크시트가 저장 안 된 상태인가"를
-알아야 한다. 워크시트 12개에 props 를 뚫어 내리는 대신 컨텍스트로 받는다.
+알아야 한다. 워크시트 14개에 props 를 뚫어 내리는 대신 컨텍스트로 받는다.
 
 ```
-useUnsavedChanges (워크시트 12개)
+useUnsavedChanges (워크시트 14개)
       ↓ setDirty(key, dirty)   ← 이펙트, 정리 함수가 언마운트 시 false 로 지운다
 UnsavedChangesProvider (page.tsx)
       ↓ dirtyWorksheets: Set<string>   ← ref. 타이핑마다 페이지를 다시 그리지 않는다

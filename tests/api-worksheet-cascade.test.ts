@@ -6,6 +6,7 @@ const countKanoResponse = vi.fn();
 const countBenchmark = vi.fn();
 const countQfd = vi.fn();
 const countFitness = vi.fn();
+const resetDeleteMany = vi.fn();
 const countCustomerRequirement = vi.fn();
 const findProject = vi.fn();
 const transaction = vi.fn();
@@ -31,6 +32,7 @@ vi.mock('../lib/prisma', () => ({
         benchmark: { count: countBenchmark },
         qFDMatrix: { count: countQfd },
         attributeFitness: { count: countFitness },
+        productAttribute: { deleteMany: (...args: unknown[]) => resetDeleteMany(...(args as [])) },
         customerRequirement: { count: countCustomerRequirement },
         project: { findUnique: findProject },
         $transaction: (...args: unknown[]) => transaction(...(args as [])),
@@ -43,7 +45,7 @@ vi.mock('../lib/authorization', () => ({
 }));
 
 const { POST: saveRequirements } = await import('../app/api/projects/[id]/requirements/route');
-const { POST: saveAttributes } = await import('../app/api/projects/[id]/attributes/route');
+const { POST: saveAttributes, DELETE: resetAttributes } = await import('../app/api/projects/[id]/attributes/route');
 
 const params = Promise.resolve({ id: 'proj_1' });
 
@@ -76,6 +78,7 @@ beforeEach(() => {
         Promise.resolve(args?.where?.id?.notIn ? 0 : 5)
     );
     findProject.mockResolvedValue({ id: 'proj_1' });
+    resetDeleteMany.mockResolvedValue({ count: 3 });
     // tx 는 모듈 수준의 고정 객체다. 트랜잭션 안에서 어떤 where 로 지웠는지까지
     // 단언하려면 매번 새로 만든 vi.fn() 이 아니라 같은 참조를 봐야 한다.
     tx.customerRequirement.deleteMany.mockResolvedValue({ count: 0 });
@@ -367,5 +370,65 @@ describe('attributes 저장 — 행 단위 upsert', () => {
         const [{ data }] = tx.productAttribute.create.mock.calls[0];
         expect(data.projectId).toBe('proj_1');
         expect(data).not.toHaveProperty('bogus');
+    });
+});
+
+describe('attributes 리셋(DELETE) 캐스케이드', () => {
+    function deleteRequest(query = ''): NextRequest {
+        return new NextRequest(`http://localhost/api/projects/proj_1/attributes${query}`, {
+            method: 'DELETE',
+        });
+    }
+
+    it('적합도가 있으면 409 로 막고 아무것도 지우지 않는다', async () => {
+        // 저장(POST)보다 파괴적인데 예전에는 가드가 아예 없었다. 사용자는 적합도가
+        // 함께 사라진다는 것을 모른 채 눌렀다.
+        countFitness.mockResolvedValue(9);
+
+        const res = await resetAttributes(deleteRequest(), { params });
+        const body = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(body.needsCascadeConfirm).toBe(true);
+        expect(body.error).toContain('9');
+        expect(resetDeleteMany).not.toHaveBeenCalled();
+    });
+
+    it('확인 신호가 오면 진행한다', async () => {
+        countFitness.mockResolvedValue(9);
+
+        const res = await resetAttributes(deleteRequest('?confirmCascade=true'), { params });
+
+        expect(res.status).toBe(200);
+        expect(resetDeleteMany).toHaveBeenCalledWith({ where: { projectId: 'proj_1' } });
+    });
+
+    it('적합도가 없으면 확인 없이 통과한다', async () => {
+        countFitness.mockResolvedValue(0);
+
+        const res = await resetAttributes(deleteRequest(), { params });
+
+        expect(res.status).toBe(200);
+        expect(resetDeleteMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('리셋은 전량 삭제이므로 살아남을 id 를 세지 않는다', async () => {
+        // 인자를 주면 notIn 필터가 붙어 지워질 적합도를 실제보다 적게 센다.
+        countFitness.mockResolvedValue(0);
+
+        await resetAttributes(deleteRequest(), { params });
+
+        expect(countFitness).toHaveBeenCalledWith({ where: { projectId: 'proj_1' } });
+    });
+
+    it('권한이 없으면 403 이고 아무것도 지우지 않는다', async () => {
+        requireProjectAccess.mockResolvedValue(
+            NextResponse.json({ error: 'forbidden' }, { status: 403 }) as never
+        );
+
+        const res = await resetAttributes(deleteRequest(), { params });
+
+        expect(res.status).toBe(403);
+        expect(resetDeleteMany).not.toHaveBeenCalled();
     });
 });
