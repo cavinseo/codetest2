@@ -44,7 +44,7 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Test
-        run: npx vitest run --pool=threads
+        run: npx vitest run --pool=threads 2>&1 | tee vitest.log
 
       - name: Lint
         run: npm run lint
@@ -77,3 +77,9 @@ jobs:
             console.log('killed=' + killed + ' survived=' + survived + ' other=' + other);
             for (const line of alive) console.log('SURVIVED ' + line);
           "
+
+      # 로그 조회는 뒤에서부터 잘리는데 뮤테이션 출력이 길어 테스트 요약이 창 밖으로
+      # 밀린다. 맨 끝에 한 번 더 싣는다.
+      - name: Reprint test summary
+        if: always()
+        run: grep -E "Test Files|Tests " vitest.log || echo "요약을 찾지 못했다"

@@ -41,7 +41,7 @@
 | **A** | WS-2 초기화 결함 수정 **+ zod 검증** | 반나절~1일 | 0 |
 | **B** | WS-3 를 WS-5 패턴으로 전환 | 반나절~1일 | 0 |
 | **C** | WS-3 스펙 선택기 병합 버그 | 0.5일 | 없음 |
-| **D** | 미저장 이탈 경고 (저장 버튼 계열 13개) | 1~2일 | 없음 |
+| **D** | 미저장 이탈 경고 (저장 버튼 계열 12개) | 1~2일 | 없음 |
 | 이월 | 붙여넣기 · 키보드 이동 · 병합 그룹화 · 낙관적 잠금 | — | — |
 
 A·B·C 는 서로 독립이라 순서를 바꿔도 되고 병렬로 위임해도 된다. **D 는 A·B 뒤에** 둔다 —
@@ -91,7 +91,7 @@ spec 라우트는 **저장소에서 유일하게 zod 검증이 없다** — `bod
 
 ### Step
 
-- [ ] A-1. `lib/bulk-save-schemas.ts` 에 spec 스키마를 더한다. 다른 워크시트와 같은 자리다.
+- [x] A-1. `lib/bulk-save-schemas.ts` 에 spec 스키마를 더한다. 다른 워크시트와 같은 자리다.
 
 ```ts
 // ── spec functions (WS-2) ─────────────────────────────────────
@@ -116,7 +116,7 @@ export const specBodySchema = z.object({
     (`improvementRowSchema` 의 `type` 과 같은 이유).
   - `.max(2000)` 은 행수 상한이다. 지금은 상한이 없다.
 
-- [ ] A-2. `app/api/projects/[id]/spec/route.ts`
+- [x] A-2. `app/api/projects/[id]/spec/route.ts`
 
 ```ts
 const { specFunctions: newSpecs } = specBodySchema.parse(await request.json());
@@ -131,22 +131,22 @@ const { specFunctions: newSpecs } = specBodySchema.parse(await request.json());
     뭉개지 않는다 — 그쪽은 어느 행이 잘못됐는지 알 수 없어 검토서 §1-6 이 지적한 문제다.
   - 트랜잭션 안 3단계 루프는 **이번에 건드리지 않는다**(WS-2-3 N+1 은 이월).
 
-- [ ] A-3. `tests/api-spec-save.test.ts` 신규. spec 라우트는 지금 **라우트 테스트가 0건**이다.
+- [x] A-3. `tests/api-spec-save.test.ts` 신규. spec 라우트는 지금 **라우트 테스트가 0건**이다.
       Prisma 는 `vi.mock('../lib/prisma', ...)` 로 전부 mock 한다.
 
-  - [ ] 빈 배열을 보내면 `tx.specFunction.deleteMany` 가 **호출된다**(회귀 방지 본체)
-  - [ ] 빈 배열 응답이 200 이고 `specFunctions: []` 다
-  - [ ] `specFunctions` 가 배열이 아니면 **400 이고 `deleteMany` 가 호출되지 않는다**
+  - [x] 빈 배열을 보내면 `tx.specFunction.deleteMany` 가 **호출된다**(회귀 방지 본체)
+  - [x] 빈 배열 응답이 200 이고 `specFunctions: []` 다
+  - [x] `specFunctions` 가 배열이 아니면 **400 이고 `deleteMany` 가 호출되지 않는다**
         (← improvements 사고의 재발 방지)
-  - [ ] `specFunctions` 키가 아예 없으면 400
-  - [ ] `level` 이 화이트리스트 밖이면 400
-  - [ ] `name` 이 빈 문자열이면 400
-  - [ ] 정상 저장 시 CORE → SUB → DETAIL 순서로 `create` 가 불리고 `parentId` 가
+  - [x] `specFunctions` 키가 아예 없으면 400
+  - [x] `level` 이 화이트리스트 밖이면 400
+  - [x] `name` 이 빈 문자열이면 400
+  - [x] 정상 저장 시 CORE → SUB → DETAIL 순서로 `create` 가 불리고 `parentId` 가
         실제 생성 id 로 재매핑된다
-  - [ ] 권한이 없으면 403 이고 `deleteMany` 가 호출되지 않는다
+  - [x] 권한이 없으면 403 이고 `deleteMany` 가 호출되지 않는다
         (`api-bulk-save-guards.test.ts` 의 같은 단언을 참고)
 
-- [ ] A-4. 게이트 통과 확인
+- [x] A-4. 게이트 통과 확인
 
 ### 완료 기준
 
@@ -211,17 +211,22 @@ throw 하고, `where` 에 `projectId` 를 함께 걸어야 **남의 프로젝트
 
 ### Step
 
-- [ ] B-1. `lib/import-cascade-guard.ts` — `countAttributeCascadeImpact` 에 제출 id 를 받는다.
+- [x] B-1. `lib/import-cascade-guard.ts` — `countAttributeCascadeImpact` 에 제출 id 를 받는다.
 
 ```ts
 export interface AttributeCascadeCounter {
-    attributeFitness: { count: (args: { where: { projectId: string } }) => Promise<number> };
-    // 제출 id 로 살아남을 속성을 빼고 세려면 속성 쪽 count 도 필요하다
-    productAttribute: { count: (args: {
-        where: { projectId: string; id?: { notIn: string[] } };
-    }) => Promise<number> };
+    attributeFitness: {
+        count: (args: {
+            where: { projectId: string; attributeId?: { notIn: string[] } };
+        }) => Promise<number>;
+    };
 }
 ```
+
+**실제 구현은 계획보다 한 단계 정확하다.** 처음에는 requirements 처럼 "지워질 부모 행
+수"를 먼저 세고 그때만 적합도 전량을 세려 했는데, 그러면 속성 한 줄을 지울 때도
+"적합도 40건이 삭제됩니다"가 떠 숫자가 실제와 다르다. `attributeId: { notIn }` 으로
+**죽을 적합도만** 직접 세면 쿼리도 하나로 줄고 문구도 정확해진다.
 
   - 시그니처를 `(db, projectId, submittedIds?: string[])` 로 넓힌다.
   - **기존 호출부를 깨지 않는다** — `submittedIds` 를 안 주면 지금과 같이 전량을 센다.
@@ -229,7 +234,7 @@ export interface AttributeCascadeCounter {
   - 이 파일은 순수 모듈이고 이미 stryker 대상이다(`stryker.crap.config.json`).
     **mutation score 100% 를 유지해야 한다.**
 
-- [ ] B-2. `app/api/projects/[id]/attributes/route.ts` — 위 정본을 이식한다.
+- [x] B-2. `app/api/projects/[id]/attributes/route.ts` — 위 정본을 이식한다.
 
   - `submittedIds` 계산 → 지워질 기존 행 수 count → **0건이면 409 를 건너뛴다**
   - 트랜잭션: `deleteMany({ id: { notIn } })` → `updateMany` 시도 → 실패 시 `create`
@@ -237,23 +242,23 @@ export interface AttributeCascadeCounter {
   - 새 행 id 는 클라이언트가 `attr_<ts>_<rand>`(`ProductAttributesTable.tsx:279`)로
     이미 만들어 보낸다. 없을 때만 서버가 `generateId('attr')` 로 채운다
 
-- [ ] B-3. `tests/api-worksheet-cascade.test.ts` 의 attributes 절(`:162-230`)을 고친다.
+- [x] B-3. `tests/api-worksheet-cascade.test.ts` 의 attributes 절(`:162-230`)을 고친다.
 
-  - [ ] **`:185 '속성이 비어있지 않아도(전체 교체) 적합도가 있으면 409 로 막는다'` 를
+  - [x] **`:185 '속성이 비어있지 않아도(전체 교체) 적합도가 있으면 409 로 막는다'` 를
         뒤집는다.** 이 단언은 고치려는 동작 그 자체다. 새 이름:
         `'id 를 유지한 정상 편집은 적합도가 있어도 통과한다'`
-  - [ ] 유지: 빈 배열 전량 삭제는 적합도가 있으면 409
-  - [ ] 유지: `confirmCascade` 면 진행
-  - [ ] 신규: **새 id 로 전체 교체**(AI 위저드 등)는 기존 행이 지워지므로 409
+  - [x] 유지: 빈 배열 전량 삭제는 적합도가 있으면 409
+  - [x] 유지: `confirmCascade` 면 진행
+  - [x] 신규: **새 id 로 전체 교체**(AI 위저드 등)는 기존 행이 지워지므로 409
         (requirements 쪽 `:127` 과 대칭)
-  - [ ] 신규: `deleteMany` 가 `{ projectId, id: { notIn: submittedIds } }` 로 불린다
-  - [ ] 신규: 기존 id 는 `updateMany`, 새 id 는 `create` 로 간다
-  - [ ] 신규: `updateMany` 의 `where` 에 `projectId` 가 들어 있다(교차 프로젝트 방지)
+  - [x] 신규: `deleteMany` 가 `{ projectId, id: { notIn: submittedIds } }` 로 불린다
+  - [x] 신규: 기존 id 는 `updateMany`, 새 id 는 `create` 로 간다
+  - [x] 신규: `updateMany` 의 `where` 에 `projectId` 가 들어 있다(교차 프로젝트 방지)
 
-- [ ] B-4. `npx stryker run stryker.crap.config.json --mutate lib/import-cascade-guard.ts`
+- [x] B-4. `npx stryker run stryker.crap.config.json --mutate lib/import-cascade-guard.ts`
       — score 100%
 
-- [ ] B-5. 게이트 통과 확인
+- [x] B-5. 게이트 통과 확인
 
 ### 완료 기준
 
@@ -293,7 +298,7 @@ core 가 다른데 sub 이름이 같은 **인접** 두 행에서 위 행의 `cou
 
 ### Step
 
-- [ ] C-1. 숨김 판정에 같은 조건을 더한다.
+- [x] C-1. 숨김 판정에 같은 조건을 더한다.
 
 ```ts
 // 숨김 판정과 계수 판정의 기준이 같아야 한다. core 가 다른데 sub 이름만 같은 인접 행을
@@ -303,22 +308,22 @@ const sameGroup = (a: FlatRow, b: FlatRow) =>
 if (index > 0 && sameGroup(arr[index], arr[index - 1])) return 0;
 ```
 
-- [ ] C-2. 순수 함수로 뽑아 테스트한다. `getRowSpan` 은 지금 컴포넌트 안 클로저라
+- [x] C-2. 순수 함수로 뽑아 테스트한다. `getRowSpan` 은 지금 컴포넌트 안 클로저라
       테스트할 수 없다. `lib/product-attributes-utils.ts` 로 옮기고
       `(rows, key, index) => number` 시그니처로 export 한다.
 
-- [ ] C-3. `tests/product-attributes-utils.test.ts` 에 추가
+- [x] C-3. `tests/product-attributes-utils.test.ts` 에 추가
 
-  - [ ] core 가 다르고 sub 이름이 같은 인접 두 행 → **두 행 모두 span ≥ 1**(회귀 본체)
-  - [ ] 같은 core 안 연속 sub → 첫 행이 개수, 나머지 0
-  - [ ] `key: 'core'` 는 core 만 본다
-  - [ ] 빈 배열·단일 행
+  - [x] core 가 다르고 sub 이름이 같은 인접 두 행 → **두 행 모두 span ≥ 1**(회귀 본체)
+  - [x] 같은 core 안 연속 sub → 첫 행이 개수, 나머지 0
+  - [x] `key: 'core'` 는 core 만 본다
+  - [x] 빈 배열·단일 행
 
-- [ ] C-4. **CRAP 게이트 확인.** `buildSpecPickerRows` 가 CRAP 29.5 로 `--fail-over=30`
+- [x] C-4. **CRAP 게이트 확인.** `buildSpecPickerRows` 가 CRAP 29.5 로 `--fail-over=30`
       까지 여유가 **0.5** 뿐이다(`.github/workflows/crap.yml:78`). 같은 파일에 분기를
       더하므로, 새 함수가 테스트로 완전히 덮이는지 반드시 확인한다.
 
-- [ ] C-5. 게이트 통과 확인
+- [x] C-5. 게이트 통과 확인
 
 ### 완료 기준
 
@@ -333,7 +338,7 @@ if (index > 0 && sameGroup(arr[index], arr[index - 1])) return 0;
 
 ---
 
-## Task D — 미저장 이탈 경고 (저장 버튼 계열 13개)
+## Task D — 미저장 이탈 경고 (저장 버튼 계열 12개)
 
 ### 배경
 
@@ -344,7 +349,7 @@ if (index > 0 && sameGroup(arr[index], arr[index - 1])) return 0;
 
 | 워크시트 | 저장 시점 | 경고 |
 | --- | --- | --- |
-| WS-2·3·5 및 팩토리 계열 13개 | 저장 버튼 | **건다** |
+| WS-2·3·5 및 팩토리 계열 12개 | 저장 버튼 | **건다** |
 | WS-7 Kano 가중치 | `onBlur` 즉시 저장 (`KanoAggregationTable.tsx:157`) | 걸지 않는다 |
 | WS-9 QFD 관계 셀 | 클릭 즉시 POST (`QFDMatrix.tsx:276`) | 걸지 않는다 |
 
@@ -354,25 +359,27 @@ if (index > 0 && sameGroup(arr[index], arr[index - 1])) return 0;
 
 ### Step
 
-- [ ] D-1. `lib/use-unsaved-changes.ts` (또는 `hooks/`) 신규 — `useUnsavedChanges(isDirty: boolean)`
+- [x] D-1. `lib/use-unsaved-changes.ts` (또는 `hooks/`) 신규 — `useUnsavedChanges(isDirty: boolean)`
 
   - `beforeunload` 등록/해제만 한다. 브라우저가 커스텀 문구를 무시하므로 문구는 넣지 않는다
   - `isDirty === false` 면 리스너를 아예 걸지 않는다
 
-- [ ] D-2. dirty 판정을 각 컴포넌트에 붙인다. **직렬화 결과 비교**로 한다 —
+- [x] D-2. dirty 판정을 각 컴포넌트에 붙인다. **직렬화 결과 비교**로 한다 —
       마지막 저장 성공 시점의 스냅샷과 현재 rows 를 비교한다. `onChange` 마다 플래그를
       세우는 방식은 "고쳤다가 되돌린" 경우에 오탐한다
 
-- [ ] D-3. 13개 컴포넌트에 적용. 목록은 검토서 §1-3 표 첫 줄
+- [x] D-3. 12개 컴포넌트에 적용 — 검토서 §1-3 표 첫 줄을 실제로 세어 12개였다.
+      Sales·DevPlan·TechRoadmap·TechTree·TargetSpec·Assets·Improvements·Funding·
+      Requirements·Spec·ProductAttributes·Fitness
 
-- [ ] D-4. 훅 테스트. 훅은 DOM 이벤트를 다루므로 순수 부분(dirty 판정)을 분리해
+- [x] D-4. 훅 테스트. 훅은 DOM 이벤트를 다루므로 순수 부분(dirty 판정)을 분리해
       `lib/` 에 두고 그쪽을 테스트한다
 
-- [ ] D-5. 게이트 통과 확인
+- [x] D-5. 게이트 통과 확인
 
 ### 완료 기준
 
-- 13개 워크시트에서 미저장 상태로 닫으면 브라우저 확인이 뜬다
+- 12개 워크시트에서 미저장 상태로 닫으면 브라우저 확인이 뜬다
 - WS-7·WS-9 에는 **붙지 않는다**
 - 게이트 3종 통과
 
