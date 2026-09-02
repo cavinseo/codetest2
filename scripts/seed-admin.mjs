@@ -17,6 +17,7 @@ import { createInterface } from 'node:readline/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
+import { describeDatabase } from './admin-recovery.mjs';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -35,17 +36,6 @@ function generateTempPassword(length = 16) {
 
 function shortId(prefix) {
     return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
-}
-
-/** 접속 문자열에서 비밀번호를 지우고 어느 DB 인지만 보여준다. */
-function describeDatabase(url) {
-    if (!url) return '(설정되지 않음)';
-    try {
-        const parsed = new URL(url);
-        return `${parsed.hostname}${parsed.port ? ':' + parsed.port : ''}${parsed.pathname}`;
-    } catch {
-        return '(형식을 알 수 없는 접속 문자열)';
-    }
 }
 
 function resolveEmail() {
