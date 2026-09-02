@@ -16,6 +16,7 @@ import { PrismaClient } from '@prisma/client';
 import {
     describeDatabase,
     findMissingAdminEmails,
+    loadEnvFileIfPresent,
     parseAdminEmails,
     summarizeAdminCandidates,
 } from './admin-recovery.mjs';
@@ -35,6 +36,8 @@ function formatCandidate(candidate) {
 }
 
 async function main() {
+    loadEnvFileIfPresent();
+
     const adminEmails = parseAdminEmails(process.env.ADMIN_EMAILS);
 
     console.log('');

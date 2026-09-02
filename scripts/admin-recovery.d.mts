@@ -14,6 +14,7 @@ export interface AdminAccessDiagnosis {
     blockers: string[];
 }
 
+export declare function loadEnvFileIfPresent(): void;
 export declare function parseAdminEmails(raw: string | null | undefined): string[];
 export declare function diagnoseAdminAccess(
     user: AdminCandidateInput,

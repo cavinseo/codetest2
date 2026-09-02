@@ -1,7 +1,27 @@
-// 관리자 계정을 잃었을 때 "누가 관리자인가, 왜 못 들어가는가"를 판정하는 순수 로직입니다.
+// 관리자 계정을 잃었을 때 "누가 관리자인가, 왜 못 들어가는가"를 판정하는 로직입니다.
 //
-// DB 도 환경 변수도 여기서 읽지 않는다. 값을 받아 판정만 하므로 테스트가 실DB 없이 돈다.
-// 실제 조회와 출력은 scripts/find-admin.mjs 가 맡는다.
+// 판정 함수는 DB 도 환경 변수도 읽지 않는다. 값을 받아 판정만 하므로 테스트가 실DB 없이
+// 돈다. 실제 조회와 출력은 scripts/find-admin.mjs 가 맡는다.
+// 예외는 아래 loadEnvFileIfPresent 하나뿐이며, 복구 스크립트 둘이 같이 쓴다.
+
+/**
+ * .env 를 직접 읽어 온다.
+ *
+ * 복구 스크립트는 Prisma 클라이언트를 만들기 전에 ADMIN_EMAILS 와 접속 문자열을 먼저
+ * 본다(어느 DB 를 건드리는지 보여 주고 확인을 받는 자리다). 로딩 시점을 Prisma 에
+ * 맡기면 그 값들이 비어 보일 수 있어 여기서 직접 챙긴다.
+ *
+ * 이미 셸에 있는 값은 Node 가 덮어쓰지 않으므로 실제 환경 변수가 .env 보다 우선한다.
+ */
+export function loadEnvFileIfPresent() {
+    // Node 20.12 미만에는 이 API 가 없다. 그 경우 Prisma 가 읽어 주는 값에 기댄다.
+    if (typeof process.loadEnvFile !== 'function') return;
+    try {
+        process.loadEnvFile();
+    } catch {
+        // .env 가 없으면 셸에 있는 환경 변수만으로 돈다.
+    }
+}
 
 /** ADMIN_EMAILS 환경 변수를 소문자 주소 배열로 바꾼다. 비교를 소문자로 고정한다. */
 export function parseAdminEmails(raw) {

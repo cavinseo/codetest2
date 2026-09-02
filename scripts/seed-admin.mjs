@@ -17,7 +17,7 @@ import { createInterface } from 'node:readline/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
-import { describeDatabase } from './admin-recovery.mjs';
+import { describeDatabase, loadEnvFileIfPresent } from './admin-recovery.mjs';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -60,6 +60,10 @@ async function confirm(question) {
 }
 
 async function main() {
+    // 어느 DB 를 건드리는지 보여 주고 확인을 받는 자리가 아래에 있다. 그 줄이
+    // 비어 보이면 확인의 뜻이 없으므로, Prisma 를 만들기 전에 .env 를 직접 읽는다.
+    loadEnvFileIfPresent();
+
     const email = resolveEmail();
     if (!email) {
         console.error('관리자 이메일을 찾지 못했습니다.');
