@@ -19,6 +19,8 @@
 - 테스트는 `tests/` 평면 배치, Prisma 는 `vi.mock('../lib/prisma', ...)` 로 전부 mock.
 - 커밋 메시지는 한국어, 본문에 "왜"를 적는다. 트레일러 `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
 - 각 Task 완료 기준: `npx tsc --noEmit` 통과 + `npx vitest run` 전체 통과 + `npx next lint` 통과.
+- **뮤테이션 회귀 방지**(2026-09-03 CLAUDE.md 갱신): `stryker.crap.config.json` 의 `mutate` 목록에 이미 있는 파일을 고친 Task 는 그 파일에 stryker 를 재실행하고 점수를 보고한다. 게이트 3종은 뮤테이션 점수 하락을 잡지 못한다. 이 계획에서는 **Task 3 이 `lib/delete-confirmation.ts`** 를 건드리므로 해당된다(주석만 고쳐 점수는 그대로여야 하며, 그 사실을 확인해 보고하는 것이 요구사항이다).
+- 신규 순수 모듈 `lib/account-deletion.ts`(Task 2)는 `mutate` 목록에 올리고 **mutation score 100%** 를 기준으로 삼는다. 등가 뮤턴트는 테스트를 비틀지 말고 이유를 적은 `// Stryker disable next-line` 으로 제외하며, disable 후 총 뮤턴트 수가 의도한 만큼만 줄었는지 세어 본다.
 
 ## 설계 요약 (모든 Task 의 공통 문맥)
 
@@ -614,7 +616,7 @@ describe('멘티 삭제: 지우기 전에 무엇이 벌어지는지 보여 준�
 npx tsc --noEmit && npx vitest run && npx next lint
 ```
 
-`lib/account-deletion.ts` 는 순수 모듈이라 mutation 검사도 돌릴 수 있다.
+`lib/account-deletion.ts` 를 `stryker.crap.config.json` 의 `mutate` 목록에 추가하고 100% 를 확인한다. 목록에 올려야 이후 다른 Task 가 이 파일을 고칠 때 회귀 방지 규칙이 걸린다.
 
 ```sh
 npx stryker run stryker.crap.config.json --mutate lib/account-deletion.ts
