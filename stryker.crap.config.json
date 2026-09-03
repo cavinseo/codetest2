@@ -23,7 +23,8 @@
         "lib/invite-code.ts",
         "lib/member-profile.ts",
         "lib/temp-password-email.ts",
-        "lib/account-deletion.ts"
+        "lib/account-deletion.ts",
+        "lib/kano-survey-document.ts"
     ],
     "ignorePatterns": [
         ".claude/**",
