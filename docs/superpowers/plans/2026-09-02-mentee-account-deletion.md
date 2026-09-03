@@ -158,11 +158,19 @@ npx tsc --noEmit && npx vitest run && npx next lint
 
 `npx prisma generate` 가 실패하면 Task 2 의 타입이 맞지 않으므로 여기서 멈추고 보고한다.
 
-**2026-09-03 결과 — 게이트 미검증.** 원격 세션은 npm 레지스트리가 막혀 게이트를 돌리지 못했다. 사용자가 로컬에서 돌린 통과 기록(테스트 1055건, ESLint 무경고)이 있으나 **그 트리에는 이 Task 의 커밋이 없었다** — `npx prisma migrate deploy` 가 마이그레이션을 10개만 찾았고, 이 Task 의 것을 더하면 11개다. 따라서 그 결과는 이 Task 의 검증이 아니다.
+**2026-09-03 게이트 통과.** 원격 세션은 npm 레지스트리가 막혀 게이트를 돌리지 못한다. 사용자가 이 브랜치를 받은 트리에서 실행해 확인했다.
 
-원격에서 확인한 것은 하나뿐이다. 새 테스트의 단언 7개를 실제 `prisma/schema.prisma` 에 대해 node 로 직접 돌려 7/7 통과를 봤다. `modelBlock` 추출과 정규식이 의도대로 동작한다는 뜻이지, `tsc`·`vitest`·`lint`·`prisma validate` 를 대신하지 못한다.
+```
+The schema at prisma\schema.prisma is valid
+✔ Generated Prisma Client (v6.19.3)
+Test Files  94 passed (94)
+     Tests  1080 passed (1080)
+✔ No ESLint warnings or errors
+```
 
-**Task 2 착수 전에 사용자가 이 Task 의 커밋을 받은 트리에서 게이트를 다시 돌려야 한다.**
+`tsc` 는 `&&` 체인이라 뒤가 돌았다는 사실이 통과를 뜻한다. `prisma generate` 가 `EPERM` 없이 끝나 dev 서버 잠금도 없었다.
+
+한 번 헛짚었던 기록을 남긴다. 그 전에 보고된 통과(테스트 1055건)는 이 Task 의 커밋이 없는 트리의 결과였다. `migrate deploy` 가 마이그레이션을 10개만 찾은 것이 근거였고, 이 Task 의 것을 더하면 11개다. **다른 사람의 게이트 결과를 받을 때는 그 트리가 이 작업을 담고 있는지부터 확인해야 한다.**
 
 커밋 후 **사용자에게 마이그레이션 적용을 요청한다.**
 
