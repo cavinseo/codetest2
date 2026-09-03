@@ -634,7 +634,7 @@ describe('멘티 삭제: 지우기 전에 무엇이 벌어지는지 보여 준�
     });
 ```
 
-- [ ] **Step 6: 검증하고 커밋한다**
+- [x] **Step 6: 검증하고 커밋한다**
 
 ```sh
 npx tsc --noEmit && npx vitest run && npx next lint
@@ -644,6 +644,17 @@ npx tsc --noEmit && npx vitest run && npx next lint
 
 ```sh
 npx stryker run stryker.crap.config.json --mutate lib/account-deletion.ts
+```
+
+**2026-09-03 결과.** 게이트는 사용자가 로컬에서 돌려 통과했다.
+
+```
+Test Files  95 passed (95)
+     Tests  1099 passed (1099)
+✔ No ESLint warnings or errors
+
+File                | % Mutation score | # killed | # survived | # no cov
+account-deletion.ts |           100.00 |       33 |          0 |        0
 ```
 
 ---
