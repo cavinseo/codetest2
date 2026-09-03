@@ -46,7 +46,8 @@ prisma/backup/
 
 # Tool state directories (not project source)
 .bkit/
-.claude/
+.claude/*
+!.claude/skills/
 testsprite_tests/
 docs/.pdca-status.json
 docs/.bkit-memory.json
