@@ -180,6 +180,19 @@ npx prisma migrate deploy
 
 적용 결과를 확인한 뒤 Task 2 로 넘어간다. 적용 전에 Task 2 를 배포하면 활동한 멘티의 삭제는 여전히 막힌다.
 
+**2026-09-03 적용 완료.** `migrate status` 의 "up to date" 는 `_prisma_migrations` 기록만 보므로 믿지 않고, `npm run check:history-fk` 로 실제 컬럼을 확인했다.
+
+```
+[정상] kano_survey_invitations.invitedBy   NULL 허용 : YES   삭제 규칙 : SET NULL
+[정상] migration_histories.userId          NULL 허용 : YES   삭제 규칙 : SET NULL
+마이그레이션 기록 : 20260902000000_anonymize_deleted_user_history
+    적용 완료 : Thu Sep 03 2026 15:06:13 GMT+0900   되돌림 : 없음   실행 단계 : 1
+```
+
+기록 시각이 게이트 실행(15:06:28)보다 15초 앞선다. 앞서 "입력으로 빨려 들어가 실행되지 않았다"고 판단한 붙여넣기가 실제로는 실행됐고, 스크린샷이 출력 직전을 잡은 것이다. **터미널 화면에 출력이 없다는 것만으로 명령이 실행되지 않았다고 단정하면 안 된다.**
+
+**Task 1 완료.**
+
 ---
 
 ### Task 2: 사전 점검·사유·초대 코드 정리를 담은 삭제 API
@@ -194,7 +207,7 @@ npx prisma migrate deploy
 - Produces: `DELETION_REASONS`, `parseDeletionReason`, `DELETION_REASON_LABELS`, `describeMenteeDeletion`, `MenteeDeletionPreview` — Task 3 의 확인창이 그대로 가져다 쓴다.
 - Produces: `DELETE /api/admin/users` 가 멘티에 대해 409 + `{ needsCascadeConfirm, preview }`, 확정 시 200 + `{ transferredProjects, anonymizedInvitations, anonymizedMigrations, deletedInviteCodes }`.
 
-- [ ] **Step 1: 순수 모듈 `lib/account-deletion.ts` 를 만든다**
+- [x] **Step 1: 순수 모듈 `lib/account-deletion.ts` 를 만든다**
 
 ```ts
 // 계정 삭제의 사유와 사전 점검 안내를 정하는 규칙. API 와 화면이 같은 문구를
@@ -235,7 +248,10 @@ export function describeMenteeDeletion(preview: MenteeDeletionPreview): string[]
     const lines: string[] = [];
 
     for (const project of preview.transferProjects) {
-        lines.push(`프로젝트 "${project.name}" 의 소유자가 ${project.managerName ?? '프로그램 매니저'} 로 바뀝니다.`);
+        // User.name 은 nullable 이고 공백만 들어올 수도 있다. 어느 쪽이든 사람 이름
+        // 자리가 비면 "소유자가  로 바뀝니다" 가 되므로 역할 이름으로 대신한다.
+        const managerName = project.managerName?.trim() || '프로그램 매니저';
+        lines.push(`프로젝트 "${project.name}" 의 소유자가 ${managerName} 로 바뀝니다.`);
     }
     if (preview.invitations > 0) {
         lines.push(`설문 초대 ${preview.invitations}건은 남고 발송자만 비워집니다.`);
@@ -251,7 +267,7 @@ export function describeMenteeDeletion(preview: MenteeDeletionPreview): string[]
 }
 ```
 
-- [ ] **Step 2: `tests/account-deletion.test.ts` 를 쓴다**
+- [x] **Step 2: `tests/account-deletion.test.ts` 를 쓴다**
 
 ```ts
 // 삭제 사유 판정과 사전 점검 문구가 규칙대로인지 확인하는 테스트입니다.
@@ -330,7 +346,7 @@ describe('describeMenteeDeletion', () => {
 });
 ```
 
-- [ ] **Step 3: 라우트의 멘티 분기를 바꾼다**
+- [x] **Step 3: 라우트의 멘티 분기를 바꾼다**
 
 `app/api/admin/users/route.ts` 상단 import 에 더한다.
 
@@ -426,7 +442,7 @@ import { describeMenteeDeletion, parseDeletionReason } from '@/lib/account-delet
         }
 ```
 
-- [ ] **Step 4: `P2003` 문구를 원인별로 나눈다**
+- [x] **Step 4: `P2003` 문구를 원인별로 나눈다**
 
 catch 절의 `P2003` 처리를 바꾼다.
 
@@ -450,7 +466,7 @@ catch 절의 `P2003` 처리를 바꾼다.
         }
 ```
 
-- [ ] **Step 5: 테스트를 갱신한다**
+- [x] **Step 5: 테스트를 갱신한다**
 
 `tests/api-admin-user-delete.test.ts` 를 고친다.
 

@@ -13,11 +13,18 @@ const findManyProject = vi.fn();
 const updateProject = vi.fn();
 const deleteUser = vi.fn();
 const transaction = vi.fn();
+const countInvitation = vi.fn();
+const countMigration = vi.fn();
+const countInviteCode = vi.fn();
+const deleteManyInviteCode = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
         user: { findUnique: findUser, count: countUser, delete: deleteUser },
         project: { count: countProject, findMany: findManyProject, update: updateProject },
+        kanoSurveyInvitation: { count: countInvitation },
+        migrationHistory: { count: countMigration },
+        inviteCode: { count: countInviteCode, deleteMany: deleteManyInviteCode },
         $transaction: (arg: unknown) => transaction(arg),
     },
 }));
@@ -47,6 +54,10 @@ beforeEach(() => {
     findManyProject.mockResolvedValue([]);
     updateProject.mockResolvedValue({});
     deleteUser.mockResolvedValue({ id: 'user_2' });
+    countInvitation.mockResolvedValue(0);
+    countMigration.mockResolvedValue(0);
+    countInviteCode.mockResolvedValue(0);
+    deleteManyInviteCode.mockResolvedValue({ count: 0 });
     // 배열 형태(prisma.$transaction([...]))로 호출한다. 각 원소는 이미 호출된
     // 쿼리의 Promise 이므로 그대로 기다리기만 하면 실제 트랜잭션과 같은 결과다.
     transaction.mockImplementation(async (ops: unknown) => Promise.all(ops as Promise<unknown>[]));
@@ -119,14 +130,30 @@ describe('admin users DELETE', () => {
         expect(deleteUser).toHaveBeenCalled();
     });
 
-    it('FK 제약에 걸리면 500 이 아니라 409 로 이유를 알려준다', async () => {
+    it('담당 프로그램 때문에 막히면 담당자 이관을 안내한다', async () => {
+        // 사람을 지우는 게 아니라 담당자를 옮겨야 풀리는 경우다. 예전에는 원인과
+        // 무관하게 설문 이력을 탓해 엉뚱한 곳을 보게 했다.
+        deleteUser.mockRejectedValue(Object.assign(new Error('FK'), {
+            code: 'P2003',
+            meta: { field_name: 'programs_managerId_fkey (index)' },
+        }));
+
+        const res = await DELETE(deleteRequest({ userId: 'user_2' }));
+        const body = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(body.error).toContain('담당자');
+        expect(body.error).not.toContain('설문 발송');
+    });
+
+    it('그 밖의 FK 제약은 500 이 아니라 409 로 알린다', async () => {
         deleteUser.mockRejectedValue(Object.assign(new Error('FK'), { code: 'P2003' }));
 
         const res = await DELETE(deleteRequest({ userId: 'user_2' }));
         const body = await res.json();
 
         expect(res.status).toBe(409);
-        expect(body.error).toContain('설문 발송');
+        expect(body.error).toContain('승인을 취소');
     });
 
     it('관리자가 아니면 삭제 경로에 들어가지 못한다', async () => {
@@ -139,31 +166,96 @@ describe('admin users DELETE', () => {
     });
 });
 
-describe('멘티 삭제: 프로젝트는 지워지지 않고 프로그램 매니저에게 넘어간다', () => {
+describe('멘티 삭제: 지우기 전에 무엇이 벌어지는지 보여 준다', () => {
+    const CONFIRMED = { userId: 'user_2', confirmCascade: true, reason: 'self_request' };
+
     beforeEach(() => {
-        findUser.mockResolvedValue({ id: 'user_2', email: 'mentee@x.com', isAdmin: false, role: 'MENTEE' });
+        findUser.mockResolvedValue({ id: 'user_2', email: 'Mentee@x.com', isAdmin: false, role: 'MENTEE' });
+        findManyProject.mockResolvedValue([
+            { id: 'proj_a', name: '스마트팜', program: { managerId: 'pm_a', manager: { name: '김매니저' } } },
+        ]);
     });
 
-    it('소유한 프로젝트를 그 프로그램의 매니저에게 넘긴다', async () => {
-        findManyProject.mockResolvedValue([
-            { id: 'proj_a', program: { managerId: 'pm_a' } },
-            { id: 'proj_b', program: { managerId: 'pm_b' } },
-        ]);
+    it('확인 없이는 지우지 않고 사전 점검 결과를 돌려준다', async () => {
+        countInvitation.mockResolvedValue(3);
+        countMigration.mockResolvedValue(2);
+        countInviteCode.mockResolvedValue(1);
 
         const res = await DELETE(deleteRequest({ userId: 'user_2' }));
         const body = await res.json();
 
+        expect(res.status).toBe(409);
+        expect(body.needsCascadeConfirm).toBe(true);
+        expect(body.preview.transferProjects).toEqual([
+            { id: 'proj_a', name: '스마트팜', managerName: '김매니저' },
+        ]);
+        expect(body.preview.invitations).toBe(3);
+        expect(body.preview.migrations).toBe(2);
+        expect(body.preview.inviteCodes).toBe(1);
+        expect(deleteUser).not.toHaveBeenCalled();
+        expect(updateProject).not.toHaveBeenCalled();
+        expect(deleteManyInviteCode).not.toHaveBeenCalled();
+    });
+
+    it('사유가 없으면 확인했더라도 지우지 않는다', async () => {
+        // 사유는 파기의 증빙이다. 없이 지우면 나중에 왜 지웠는지 답할 수 없다.
+        const res = await DELETE(deleteRequest({ userId: 'user_2', confirmCascade: true }));
+
+        expect(res.status).toBe(400);
+        expect(deleteUser).not.toHaveBeenCalled();
+    });
+
+    it('알 수 없는 사유도 거부한다', async () => {
+        const res = await DELETE(deleteRequest({ userId: 'user_2', confirmCascade: true, reason: '그냥' }));
+
+        expect(res.status).toBe(400);
+        expect(deleteUser).not.toHaveBeenCalled();
+    });
+
+    it('확인과 사유가 있으면 프로젝트를 넘기고 초대 코드를 지운 뒤 삭제한다', async () => {
+        const res = await DELETE(deleteRequest(CONFIRMED));
+        const body = await res.json();
+
         expect(res.status).toBe(200);
-        expect(body.transferredProjects).toBe(2);
+        expect(body.transferredProjects).toBe(1);
         expect(updateProject).toHaveBeenCalledWith({ where: { id: 'proj_a' }, data: { ownerId: 'pm_a' } });
-        expect(updateProject).toHaveBeenCalledWith({ where: { id: 'proj_b' }, data: { ownerId: 'pm_b' } });
+        expect(deleteManyInviteCode).toHaveBeenCalledWith({
+            where: { email: { equals: 'Mentee@x.com', mode: 'insensitive' } },
+        });
         expect(deleteUser).toHaveBeenCalledWith({ where: { id: 'user_2' } });
     });
 
-    it('소유한 프로젝트가 없어도 정상적으로 삭제한다', async () => {
+    it('초대 코드 삭제가 사용자 삭제보다 먼저다', async () => {
+        // 순서가 뒤집히면 usedById 가 먼저 SetNull 이 돼 어느 코드가 그 사람의
+        // 것이었는지 알 수 없게 된다. 트랜잭션 배열의 순서로 고정한다.
+        await DELETE(deleteRequest(CONFIRMED));
+
+        const ops = transaction.mock.calls[0][0] as unknown[];
+        expect(ops).toHaveLength(3);
+        const [transferAt] = updateProject.mock.invocationCallOrder;
+        const [codesAt] = deleteManyInviteCode.mock.invocationCallOrder;
+        const [userAt] = deleteUser.mock.invocationCallOrder;
+        expect(transferAt).toBeLessThan(codesAt);
+        expect(codesAt).toBeLessThan(userAt);
+    });
+
+    it('이력 건수를 응답에 담아 무엇이 익명화됐는지 알린다', async () => {
+        countInvitation.mockResolvedValue(3);
+        countMigration.mockResolvedValue(2);
+        countInviteCode.mockResolvedValue(1);
+
+        const res = await DELETE(deleteRequest(CONFIRMED));
+        const body = await res.json();
+
+        expect(body.anonymizedInvitations).toBe(3);
+        expect(body.anonymizedMigrations).toBe(2);
+        expect(body.deletedInviteCodes).toBe(1);
+    });
+
+    it('소유한 프로젝트가 없어도 삭제한다', async () => {
         findManyProject.mockResolvedValue([]);
 
-        const res = await DELETE(deleteRequest({ userId: 'user_2' }));
+        const res = await DELETE(deleteRequest(CONFIRMED));
         const body = await res.json();
 
         expect(res.status).toBe(200);
@@ -172,16 +264,11 @@ describe('멘티 삭제: 프로젝트는 지워지지 않고 프로그램 매니
         expect(deleteUser).toHaveBeenCalled();
     });
 
-    it('확인을 요구하지 않고 바로 처리한다', async () => {
-        // 파괴적인 조작이 아니다 — 프로젝트가 사라지는 게 아니라 소유자만
-        // 바뀐다. 그래서 다른 역할과 달리 confirmCascade 를 요구하지 않는다.
-        findManyProject.mockResolvedValue([{ id: 'proj_a', program: { managerId: 'pm_a' } }]);
+    it('응답에 이메일을 담지 않는다', async () => {
+        const res = await DELETE(deleteRequest(CONFIRMED));
+        const text = await res.text();
 
-        const res = await DELETE(deleteRequest({ userId: 'user_2' }));
-
-        expect(res.status).not.toBe(409);
-        const body = await res.json();
-        expect(body.needsCascadeConfirm).toBeUndefined();
+        expect(text).not.toContain('Mentee@x.com');
     });
 
     it('멘티가 아닌 역할은 이 경로를 타지 않는다', async () => {
@@ -195,7 +282,7 @@ describe('멘티 삭제: 프로젝트는 지워지지 않고 프로그램 매니
 
         expect(res.status).toBe(409);
         expect(body.needsCascadeConfirm).toBe(true);
-        expect(updateProject).not.toHaveBeenCalled();
+        expect(body.preview).toBeUndefined();
         expect(deleteUser).not.toHaveBeenCalled();
     });
 });

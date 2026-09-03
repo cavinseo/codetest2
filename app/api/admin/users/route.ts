@@ -12,6 +12,7 @@ import { sendMail } from '@/lib/email';
 import { escapeHtml } from '@/lib/html-escape';
 import { buildTempPasswordEmail } from '@/lib/temp-password-email';
 import { memberProfileSchemaFor } from '@/lib/member-profile';
+import { describeMenteeDeletion, parseDeletionReason } from '@/lib/account-deletion';
 import {
     accessExpiryFrom, canTransitionRole, parseDirectCreateRole,
     parseMemberRole, MEMBER_ROLE_LABELS, type MemberRole,
@@ -393,26 +394,88 @@ export async function DELETE(request: NextRequest) {
 
         // 멘티는 다르게 다룬다: 소유한 프로젝트가 사라지는 게 아니라 그 프로그램의
         // 매니저에게 넘어간다. 프로그램은 "참여 멘티들의 프로젝트로 구성"되므로,
-        // 멘티 계정이 없어졌다고 그 프로젝트까지 함께 없어지면 안 된다. 파괴적인
-        // 조작이 아니라서 다른 역할처럼 confirmCascade 를 요구하지 않는다.
+        // 멘티 계정이 없어졌다고 그 프로젝트까지 함께 없어지면 안 된다.
         if (parseMemberRole(target.role) === 'MENTEE') {
             const ownedProjects = await prisma.project.findMany({
                 where: { ownerId: userId },
-                select: { id: true, program: { select: { managerId: true } } },
+                select: {
+                    id: true,
+                    name: true,
+                    program: { select: { managerId: true, manager: { select: { name: true } } } },
+                },
             });
+
+            // 이력은 남기되 주인만 비운다(스키마의 SetNull). 몇 건이 그렇게 되는지는
+            // 확인창에도 보여 주고 로그에도 남겨야 하므로 두 갈래 모두에서 미리 센다.
+            const [invitations, migrations, inviteCodes] = await Promise.all([
+                prisma.kanoSurveyInvitation.count({ where: { invitedBy: userId } }),
+                prisma.migrationHistory.count({ where: { userId } }),
+                // 가입 때 저장된 주소와 코드 발급 때 입력한 주소의 대소문자가 다를 수 있다.
+                prisma.inviteCode.count({ where: { email: { equals: target.email, mode: 'insensitive' } } }),
+            ]);
+
+            const preview = {
+                transferProjects: ownedProjects.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    managerName: p.program.manager.name,
+                })),
+                invitations,
+                migrations,
+                inviteCodes,
+            };
+
+            // 지우기 전에 무엇이 벌어지는지 보여 주고 사유를 받는다. 예전에는 멘티만
+            // 확인 없이 지웠는데, 개인정보 파기가 끼는 순간 "파괴적이지 않다"는
+            // 근거가 성립하지 않는다.
+            if (body?.confirmCascade !== true) {
+                return NextResponse.json(
+                    {
+                        error: describeMenteeDeletion(preview).join(' ') || '이 작업은 되돌릴 수 없습니다.',
+                        needsCascadeConfirm: true,
+                        preview,
+                    },
+                    { status: 409 }
+                );
+            }
+
+            // 사유는 파기의 증빙이다. 없이 지우면 나중에 왜 지웠는지 답할 수 없다.
+            const reason = parseDeletionReason(body?.reason);
+            if (!reason) {
+                return NextResponse.json({ error: '삭제 사유를 고르세요.' }, { status: 400 });
+            }
 
             await prisma.$transaction([
                 ...ownedProjects.map((p) => prisma.project.update({
                     where: { id: p.id },
                     data: { ownerId: p.program.managerId },
                 })),
+                // 이 사람에게 발급된 초대 코드는 목적을 다했다. 계정을 지워도
+                // email 이 남는 유일한 자리라, 사용 여부와 무관하게 함께 지운다.
+                // 사용자보다 먼저 지워야 한다 — 순서가 뒤집히면 usedById 가 먼저
+                // SetNull 이 돼 어느 코드가 그 사람의 것이었는지 알 수 없게 된다.
+                prisma.inviteCode.deleteMany({
+                    where: { email: { equals: target.email, mode: 'insensitive' } },
+                }),
                 prisma.user.delete({ where: { id: userId } }),
             ]);
 
-            log.info('멘티 삭제, 소유 프로젝트를 프로그램 매니저에게 이전', {
-                userId, transferredProjects: ownedProjects.length,
+            // 이메일은 남기지 않는다. 파기의 증빙은 지워진 정보가 아니라 이 기록이다.
+            log.info('멘티 삭제', {
+                userId,
+                reason,
+                transferredProjects: ownedProjects.length,
+                anonymizedInvitations: invitations,
+                anonymizedMigrations: migrations,
+                deletedInviteCodes: inviteCodes,
             });
-            return NextResponse.json({ success: true, transferredProjects: ownedProjects.length });
+            return NextResponse.json({
+                success: true,
+                transferredProjects: ownedProjects.length,
+                anonymizedInvitations: invitations,
+                anonymizedMigrations: migrations,
+                deletedInviteCodes: inviteCodes,
+            });
         }
 
         // User 삭제는 Project.ownerId 의 onDelete: Cascade 를 타고 그 사람이 소유한
@@ -438,11 +501,21 @@ export async function DELETE(request: NextRequest) {
         log.info('사용자 삭제', { userId, ownedProjects });
         return NextResponse.json({ success: true, ownedProjects });
     } catch (error: unknown) {
-        // 설문을 발송했거나 엑셀을 import 한 이력이 있으면 FK 제약(Restrict)에 걸린다.
-        // 예전에는 이것도 뭉뚱그려 500 이라 원인을 알 수 없었다.
+        // 삭제를 막는 FK 가 아직 남아 있는 경우다. 설문·가져오기 이력은 SetNull 이
+        // 됐으니 여기 걸리지 않는다. 남은 것은 담당 중인 프로그램이고, 그건 사람을
+        // 지우는 게 아니라 담당자를 옮겨야 풀린다. 예전에는 원인과 무관하게 설문
+        // 이력을 탓해, 매니저를 겸하는 계정이 막힐 때 엉뚱한 곳을 보게 했다.
         if (typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2003') {
+            const field = (error as { meta?: { field_name?: string } }).meta?.field_name ?? '';
+            log.warn('사용자 삭제가 FK 제약에 막혔다', { field });
+
+            const blockedByProgram = field.includes('managerId') || field.includes('programs');
             return NextResponse.json(
-                { error: '이 사용자는 설문 발송·가져오기 이력이 있어 삭제할 수 없습니다. 승인을 취소해 접근만 막아 주세요.' },
+                {
+                    error: blockedByProgram
+                        ? '담당 중인 프로그램이 있어 삭제할 수 없습니다. 프로그램 담당자를 먼저 다른 사람으로 옮기세요.'
+                        : '삭제를 막는 연결이 남아 있습니다. 승인을 취소해 접근만 막고 개발자에게 알려 주세요.',
+                },
                 { status: 409 }
             );
         }

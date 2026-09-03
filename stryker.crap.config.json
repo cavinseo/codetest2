@@ -22,7 +22,8 @@
     "lib/onboarding-redirect.ts",
         "lib/invite-code.ts",
         "lib/member-profile.ts",
-        "lib/temp-password-email.ts"
+        "lib/temp-password-email.ts",
+        "lib/account-deletion.ts"
     ],
     "ignorePatterns": [
         ".claude/**",
