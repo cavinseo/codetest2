@@ -36,6 +36,13 @@ function approvedUser(overrides: Record<string, unknown> = {}) {
         status: 'APPROVED',
         isAdmin: false,
         sessionVersion: 0,
+        // requireAuth 가 온보딩까지 보므로 기본값을 완료 상태로 둔다.
+        // 없으면 기존 테스트가 전부 403 onboarding_required 로 떨어진다.
+        mustChangePassword: false,
+        profile: {
+            organization: '기관', phone: '010-0000-0000',
+            companyName: '회사', industry: '제조',
+        },
         ...overrides,
     };
 }

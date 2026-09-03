@@ -37,6 +37,7 @@ export function issueOAuthNonce(userId: string): string {
         nonce: randomUUID(),
         exp: nowInSeconds() + NONCE_MAX_AGE_SECONDS,
     };
+    // Stryker disable next-line StringLiteral: 빈 인코딩은 utf8로 폴백해 바이트가 완전히 같으므로 등가다.
     const payload = Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
     return `${payload}.${signPayload(payload)}`;
 }
@@ -45,12 +46,14 @@ export function verifyOAuthNonce(value: string | undefined): { userId: string } 
     if (!value) return null;
 
     const [payload, signature] = value.split('.');
+    // Stryker disable next-line ConditionalExpression,LogicalOperator: 가드를 없애도 undefined base64url 변환 오류나 길이 불일치가 catch에서 같은 null을 반환하므로 등가다.
     if (!payload || !signature) return null;
 
     try {
         const expected = signPayload(payload);
         const actualBuffer = Buffer.from(signature, 'base64url');
         const expectedBuffer = Buffer.from(expected, 'base64url');
+        // Stryker disable next-line ConditionalExpression: 길이 비교를 없애면 timingSafeEqual이 길이 불일치 오류를 던져 catch에서 같은 null을 반환하므로 등가다.
         if (actualBuffer.length !== expectedBuffer.length) return null;
         if (!timingSafeEqual(actualBuffer, expectedBuffer)) return null;
 
@@ -58,6 +61,7 @@ export function verifyOAuthNonce(value: string | undefined): { userId: string } 
             Buffer.from(payload, 'base64url').toString('utf8')
         ) as Partial<OAuthNoncePayload>;
 
+        // Stryker disable next-line OptionalChaining: JSON.parse('null')의 null에 직접 접근하면 TypeError가 나 catch에서 같은 null을 반환하므로 등가다.
         if (!parsed?.userId) return null;
         if (typeof parsed.exp !== 'number' || parsed.exp <= nowInSeconds()) return null;
 

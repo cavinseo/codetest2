@@ -19,6 +19,7 @@
     "lib/ai/personal-vendors.ts",
     "lib/ai/url-guard.ts",
     "lib/login-state.ts",
+    "lib/onboarding-redirect.ts",
         "lib/invite-code.ts",
         "lib/member-profile.ts",
         "lib/temp-password-email.ts"

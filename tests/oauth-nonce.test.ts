@@ -14,6 +14,10 @@ afterEach(() => {
     vi.unstubAllEnvs();
 });
 
+afterEach(() => {
+    vi.useRealTimers();
+});
+
 describe('OAuth nonce', () => {
     it('발급한 nonce 를 검증하면 같은 userId 를 돌려준다', () => {
         const nonce = issueOAuthNonce('admin_1');
@@ -81,5 +85,58 @@ describe('OAuth nonce', () => {
 
     it('빈 문자열을 거부한다', () => {
         expect(verifyOAuthNonce('')).toBeNull();
+    });
+
+    it('userId 가 없는 서명 payload 를 거부한다', () => {
+        const payload = Buffer.from(
+            JSON.stringify({ nonce: 'x', exp: Math.floor(Date.now() / 1000) + 300 }),
+            'utf8'
+        ).toString('base64url');
+        const { createHmac } = require('crypto') as typeof import('crypto');
+        const signature = createHmac('sha256', 'test-secret')
+            .update(`${NONCE_CONTEXT}.${payload}`)
+            .digest('base64url');
+
+        expect(verifyOAuthNonce(`${payload}.${signature}`)).toBeNull();
+    });
+
+    it('exp 가 숫자가 아니면 거부한다', () => {
+        const payload = Buffer.from(
+            JSON.stringify({ userId: 'admin_1', nonce: 'x', exp: 'abc' }),
+            'utf8'
+        ).toString('base64url');
+        const { createHmac } = require('crypto') as typeof import('crypto');
+        const signature = createHmac('sha256', 'test-secret')
+            .update(`${NONCE_CONTEXT}.${payload}`)
+            .digest('base64url');
+
+        expect(verifyOAuthNonce(`${payload}.${signature}`)).toBeNull();
+    });
+
+    it('exp 가 정확히 현재 초면 거부한다', () => {
+        const fixedTime = new Date('2026-08-30T00:00:00.000Z');
+        vi.useFakeTimers();
+        vi.setSystemTime(fixedTime);
+
+        const payload = Buffer.from(
+            JSON.stringify({ userId: 'admin_1', nonce: 'x', exp: Math.floor(fixedTime.getTime() / 1000) }),
+            'utf8'
+        ).toString('base64url');
+        const { createHmac } = require('crypto') as typeof import('crypto');
+        const signature = createHmac('sha256', 'test-secret')
+            .update(`${NONCE_CONTEXT}.${payload}`)
+            .digest('base64url');
+
+        expect(verifyOAuthNonce(`${payload}.${signature}`)).toBeNull();
+    });
+
+    it('payload 가 JSON 이 아니면 거부한다', () => {
+        const payload = Buffer.from('not-json', 'utf8').toString('base64url');
+        const { createHmac } = require('crypto') as typeof import('crypto');
+        const signature = createHmac('sha256', 'test-secret')
+            .update(`${NONCE_CONTEXT}.${payload}`)
+            .digest('base64url');
+
+        expect(verifyOAuthNonce(`${payload}.${signature}`)).toBeNull();
     });
 });

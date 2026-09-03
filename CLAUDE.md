@@ -13,6 +13,20 @@ npx tsc --noEmit && npx vitest run && npx next lint
 
 - 신규 순수 모듈에는 `npx stryker run stryker.crap.config.json --mutate <파일>`을
   추가로 요구할 수 있다 — mutation score 100%가 기준.
+- **뮤테이션 회귀 방지**: `stryker.crap.config.json` 의 `mutate` 목록에 이미 올라 있는
+  파일을 수정한 Task 는 그 파일에 stryker 를 재실행하고 점수를 보고서 VERIFIED BY 에
+  담는다. 게이트 3종(tsc·vitest·lint)은 뮤테이션 점수 하락을 잡지 못하기 때문이다 —
+  실제로 `lib/ai/personal-vendors.ts` 가 100%에서 68.75%로 떨어진 채 계획서 두 개를
+  통과했다(2026-08-30 감리 적발).
+- 등가 뮤턴트(동작이 동일해 어떤 테스트로도 죽일 수 없는 뮤턴트)는 테스트를 비틀어
+  맞추지 말고 `// Stryker disable next-line <Mutator>: <이유>` 주석으로 제외한다.
+  이유 없는 disable 은 금지 — 감리 표본 1순위다.
+  주의: `disable next-line` 은 **그 줄의 해당 뮤테이터 전체**를 끈다. 한 줄에 같은
+  뮤테이터의 다른 뮤턴트가 있으면 이미 죽고 있던 것까지 분모에서 빠진다
+  (`ConditionalExpression` 은 `true`/`false` 두 개를 만들고, 한 줄에 문자열이 둘이면
+  `StringLiteral` 은 둘 다 꺼진다). disable 을 건 뒤 총 뮤턴트 수가 몇 개 줄었는지
+  세어 의도한 개수와 맞는지 확인하고, 어긋나면 보고서에 적어라 — 100% 가 분모
+  축소로 만들어질 수 있다.
 
 ## ⚠️ 최우선 환경 제약 — 원격 실DB
 

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from './constants';
 import { isAccessExpired, parseMemberRole, type MemberRole } from './member-roles';
+import { isProfileCompleteForRole } from './member-profile';
 
 export interface SessionUser {
     userId: string;
@@ -108,6 +109,17 @@ export interface AuthenticatedUser extends SessionUser {
     accessExpiresAt: Date | null;
 }
 
+export interface RequireAuthOptions {
+    /**
+     * 온보딩 미완료 계정도 통과시킨다.
+     *
+     * 기본값이 "막힘"이라 새로 생기는 라우트는 아무것도 하지 않아도 게이트된다.
+     * 이 옵션은 온보딩 자체를 끝내는 경로에만 준다 — 하나 늘릴 때마다 임시
+     * 비밀번호로 닿을 수 있는 표면이 그만큼 넓어진다.
+     */
+    allowIncompleteOnboarding?: boolean;
+}
+
 /**
  * 서명·만료를 본 뒤 DB 로 계정 상태까지 확인한다.
  *
@@ -115,7 +127,10 @@ export interface AuthenticatedUser extends SessionUser {
  * 계속 살아 있다. 승인 게이트가 사후에 아무 소용이 없어지므로, 쓰기 경로가 쓰는
  * 이 함수는 매 요청 DB 를 확인한다(PK 조회 1회).
  */
-export async function requireAuth(request: NextRequest): Promise<AuthenticatedUser | NextResponse> {
+export async function requireAuth(
+    request: NextRequest,
+    options: RequireAuthOptions = {}
+): Promise<AuthenticatedUser | NextResponse> {
     const payload = verifySessionCookie(request.cookies.get(SESSION_COOKIE_NAME)?.value);
     if (!payload) {
         return NextResponse.json({ error: 'Login required.' }, { status: 401 });
@@ -126,6 +141,14 @@ export async function requireAuth(request: NextRequest): Promise<AuthenticatedUs
         select: {
             id: true, email: true, name: true, status: true, isAdmin: true,
             sessionVersion: true, role: true, accessExpiresAt: true,
+            mustChangePassword: true,
+            profile: {
+                select: {
+                    organization: true, phone: true,
+                    expertise: true, careerYears: true,
+                    companyName: true, industry: true,
+                },
+            },
         },
     });
 
@@ -152,13 +175,29 @@ export async function requireAuth(request: NextRequest): Promise<AuthenticatedUs
         );
     }
 
+    // 저장값이 깨져 있어도 최소 권한으로 떨어뜨린다.
+    const role = parseMemberRole(dbUser.role) ?? 'MENTEE';
+
+    // 임시 비밀번호와 미완성 프로필은 온보딩을 마치기 전까지 서비스 전체를 막는다.
+    // app/login/page.tsx 의 클라이언트 리디렉트는 주소창으로 우회되므로, 막는 일은
+    // 서버가 해야 한다. profile 에 ?? null 을 붙이는 이유는 isProfileCompleteForRole
+    // 이 null 만 걸러내기 때문이다 — undefined 가 들어가면 undefined.organization 에서
+    // TypeError 로 죽는다.
+    if (!options.allowIncompleteOnboarding
+        && (dbUser.mustChangePassword
+            || !isProfileCompleteForRole(role, dbUser.profile ?? null))) {
+        return NextResponse.json(
+            { error: '온보딩을 먼저 마쳐야 합니다.', code: 'onboarding_required' },
+            { status: 403 }
+        );
+    }
+
     return {
         userId: dbUser.id,
         email: dbUser.email,
         name: dbUser.name,
         isAdmin: dbUser.isAdmin,
-        // 저장값이 깨져 있어도 최소 권한으로 떨어뜨린다.
-        role: parseMemberRole(dbUser.role) ?? 'MENTEE',
+        role,
         accessExpiresAt: dbUser.accessExpiresAt,
     };
 }
