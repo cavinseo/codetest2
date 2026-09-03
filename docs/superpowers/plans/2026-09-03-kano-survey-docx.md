@@ -379,7 +379,7 @@ npx stryker run stryker.crap.config.json --mutate lib/kano-survey-document.ts
 - Consumes: `KanoSurveyDocumentModel`.
 - Produces: `renderKanoSurveyDocx(model): Promise<Buffer>`. Task 3 의 라우트가 쓴다.
 
-- [ ] **Step 1: 렌더러를 만든다**
+- [x] **Step 1: 렌더러를 만든다**
 
 `docx` 의 API 이름은 설치된 버전의 타입으로 확인한다(`node_modules/docx/build/index.d.ts`). 아래는 v9 기준이다.
 
@@ -463,7 +463,7 @@ export async function renderKanoSurveyDocx(model: KanoSurveyDocumentModel): Prom
 }
 ```
 
-- [ ] **Step 2: 스모크 테스트를 쓴다**
+- [x] **Step 2: 스모크 테스트를 쓴다**
 
 .docx 는 ZIP 이라 내용을 열어 보려면 ZIP 판독기가 더 필요하다. 문구와 행은 Task 1 이 고정하므로 여기서는 **파일이 만들어지는가**만 본다.
 
@@ -497,6 +497,8 @@ describe('renderKanoSurveyDocx', () => {
 ```
 
 - [ ] **Step 3: 검증하고 커밋한다**
+
+> 원격 세션은 npm 레지스트리가 막혀(`node_modules` 없음, `docx` 미설치) 게이트(tsc·vitest·lint)를 실행하지 못했다 — 사용자 로컬 확인 대기. Step 1~2 는 완료했고 감리 스텁으로 한 대체 검증 결과는 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-2.md` 에 있다.
 
 ```sh
 npx tsc --noEmit && npx vitest run && npx next lint
