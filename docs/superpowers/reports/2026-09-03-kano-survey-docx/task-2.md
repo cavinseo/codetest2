@@ -21,6 +21,8 @@
 - 보고서 커밋: 이 파일과 계획서 체크박스. 해시는 커밋 후 `git log` 로 확인한다(이 본문에 자기 자신의 해시를 넣을 수 없다).
 - 기준 커밋 `a7a2714`, 브랜치 `claude/admin-account-password-recovery-o93xgy`. **push 하지 않았다.** amend·재작업은 없었다.
 
+- **감리자 주(rebase, 2026-09-03)**: 위 두 커밋은 사용자의 lock 커밋 `447e6af` 위로 rebase 되어 `24aa178` → `e464028`(작업), `8d246eb` → `a0880bb`(보고서) 가 됐다. 내용은 바이트 동일하며, rebase 후 감리 하네스 14/14·이 테스트 3/3·Task 1 테스트 17/17 을 재확인했다. 보고서 본문의 옛 해시는 히스토리에 없으므로 이 대응표로 읽는다.
+
 ## VERIFIED BY
 
 이 환경에는 `node_modules` 가 없고 레지스트리가 403 이라 `npx tsc --noEmit`·`npx vitest run`·`npx next lint` 를 실행할 수 없다(시도하지 않았다). 아래는 감리자가 둔 docx v9 스텁·vitest 셰임·실행기로 **실제 커밋된 테스트 파일을 그대로 실행**한 원문 출력이다. `ExperimentalWarning`·`MODULE_TYPELESS_PACKAGE_JSON` 류 stderr 는 지시대로 걸러 냈다.

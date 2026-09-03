@@ -357,7 +357,7 @@ describe('kanoSurveyFileName', () => {
 
 - [ ] **Step 5: 검증하고 커밋한다**
 
-> 원격 세션은 npm 레지스트리가 막혀(`registry.npmjs.org` 403, `node_modules` 없음) 게이트·stryker 를 실행하지 못했다 — 사용자 로컬 확인 대기. Step 1~4 는 완료했고 대체 검증 결과는 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-1.md` 에 있다.
+> 감리 기록(2026-09-03): 사용자가 로컬에서 `npm install` 을 실행해 lock 파일을 커밋·push 했다(`447e6af`, docx 9.7.1 — `^9.5.0` 범위 안). 게이트 3종(tsc·vitest·lint) 통과는 사용자 보고로 받았고 감리자는 원격 HEAD 와 lock 내용을 확인했다. **stryker 점수(`lib/kano-survey-document.ts`, 기준 100%)는 아직 보고되지 않아 Step 5 를 닫지 않는다.** 대체 검증 결과는 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-1.md` 에 있다.
 
 ```sh
 npm install
