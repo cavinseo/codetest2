@@ -16,6 +16,7 @@ import { PrismaClient } from '@prisma/client';
 import {
     describeDatabase,
     findMissingAdminEmails,
+    isProfileComplete,
     loadEnvFileIfPresent,
     parseAdminEmails,
     summarizeAdminCandidates,
@@ -66,6 +67,15 @@ async function main() {
                 accessExpiresAt: true,
                 mustChangePassword: true,
                 createdAt: true,
+                // 온보딩 관문(lib/auth.ts 의 requireAuth)이 보는 항목이다. 관리자도
+                // 여기 걸리면 로그인은 되는데 관리자 화면이 403 이 된다.
+                profile: {
+                    select: {
+                        organization: true, phone: true,
+                        expertise: true, careerYears: true,
+                        companyName: true, industry: true,
+                    },
+                },
             },
         });
 
@@ -98,6 +108,18 @@ async function main() {
             console.log('  쓰던 계정을 관리자로 올린다. 계정이 없으면 새로 만든다.');
         }
         console.log('    npm run seed:admin -- <이메일> --reset-password');
+
+        // 온보딩 관문은 비밀번호 재발급으로 풀리지 않는다. 오히려 임시 비밀번호를
+        // 새로 받으면 그대로다 — 본인이 로그인해 온보딩을 끝내야 열린다.
+        const blockedByOnboarding = candidates.some(
+            (candidate) => candidate.mustChangePassword || !isProfileComplete(candidate.role, candidate.profile)
+        );
+        if (blockedByOnboarding) {
+            console.log('');
+            console.log('  온보딩 관문에 막힌 계정은 위 명령으로 풀리지 않는다.');
+            console.log('  그 사람이 로그인해 비밀번호 변경과 프로필 작성을 마쳐야 한다.');
+        }
+
         console.log('');
         console.log('  자세한 절차는 docs/2026-09-02-admin-account-recovery.md 를 본다.');
         console.log('');

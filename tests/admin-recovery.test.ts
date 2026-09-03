@@ -4,11 +4,13 @@ import {
     describeDatabase,
     diagnoseAdminAccess,
     findMissingAdminEmails,
+    isProfileComplete,
     parseAdminEmails,
     summarizeAdminCandidates,
 } from '../scripts/admin-recovery.mjs';
 import { hasAdminAccess } from '../lib/authorization';
-import { isAccessExpired, type MemberRole } from '../lib/member-roles';
+import { isAccessExpired, MEMBER_ROLES, type MemberRole } from '../lib/member-roles';
+import { isProfileCompleteForRole } from '../lib/member-profile';
 
 // lib/authorization 은 prisma 를 끌고 온다. 여기서는 순수 판정만 쓰므로 연결을 막는다.
 vi.mock('../lib/prisma', () => ({
@@ -25,6 +27,9 @@ function user(overrides: Partial<Parameters<typeof diagnoseAdminAccess>[0]> = {}
         isAdmin: true,
         role: 'ADMIN',
         accessExpiresAt: null,
+        mustChangePassword: false,
+        // 관리자는 공통 항목만 갖추면 온보딩 관문을 통과한다.
+        profile: { organization: '운영', phone: '000-0000-0000' },
         ...overrides,
     };
 }
@@ -99,6 +104,55 @@ describe('diagnoseAdminAccess', () => {
                 '이용 기간이 만료돼 로그인이 거부된다.'
             );
             expect(blocked, `accessExpiresAt=${accessExpiresAt}`).toBe(isAccessExpired(accessExpiresAt, NOW));
+        }
+    });
+
+    it('임시 비밀번호를 안 바꿨으면 온보딩 관문에 막힌다', () => {
+        // 관리자 화면에서 만든 계정은 mustChangePassword 로 시작한다. 로그인은 되는데
+        // /api/admin/* 이 403 이 되어 화면에는 "관리자 권한이 없습니다" 로 보인다.
+        const result = diagnoseAdminAccess(user({ mustChangePassword: true }), [], NOW);
+        expect(result.canEnterAdminMode).toBe(false);
+        expect(result.blockers).toContain('임시 비밀번호를 아직 바꾸지 않아 온보딩 관문에 막힌다.');
+    });
+
+    it('프로필이 없으면 온보딩 관문에 막힌다', () => {
+        const result = diagnoseAdminAccess(user({ profile: null }), [], NOW);
+        expect(result.canEnterAdminMode).toBe(false);
+        expect(result.blockers).toContain('회원 프로필이 미완성이라 온보딩 관문에 막힌다.');
+    });
+
+    it('프로필의 공통 항목이 비어 있으면 막힌다', () => {
+        const result = diagnoseAdminAccess(user({ profile: { organization: '운영', phone: '   ' } }), [], NOW);
+        expect(result.canEnterAdminMode).toBe(false);
+    });
+
+    it('프로필을 조회하지 않았으면 그 관문은 판정하지 않는다', () => {
+        // undefined 는 "행이 없다" 가 아니라 "select 에서 빠졌다" 는 뜻이다.
+        // 없는 근거로 막혔다고 말하면 엉뚱한 곳을 보게 한다.
+        const result = diagnoseAdminAccess(user({ profile: undefined }), [], NOW);
+        expect(result.canEnterAdminMode).toBe(true);
+    });
+
+    it('프로필 완성 판정이 lib/member-profile 의 isProfileCompleteForRole 과 같다', () => {
+        const profiles = [
+            null,
+            {},
+            { organization: '운영' },
+            { organization: '운영', phone: '010' },
+            { organization: '  ', phone: '010' },
+            { organization: '운영', phone: '010', expertise: '기획' },
+            { organization: '운영', phone: '010', expertise: '기획', careerYears: 0 },
+            { organization: '운영', phone: '010', companyName: '가' },
+            { organization: '운영', phone: '010', companyName: '가', industry: '제조' },
+        ];
+
+        for (const role of MEMBER_ROLES) {
+            for (const profile of profiles) {
+                expect(
+                    isProfileComplete(role, profile),
+                    `${role}/${JSON.stringify(profile)}`
+                ).toBe(isProfileCompleteForRole(role, profile));
+            }
         }
     });
 

@@ -35,12 +35,37 @@ function isAdminEmail(email, adminEmails) {
     return adminEmails.includes(email.toLowerCase());
 }
 
+/** 공백만 든 문자열을 값 없음으로 본다. */
+function hasText(value) {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * 저장된 프로필이 이 역할에 필요한 항목을 다 갖췄는가.
+ *
+ * lib/member-profile.ts 의 isProfileCompleteForRole 과 같은 규칙이다. 스크립트에서
+ * TS 를 그대로 불러 쓸 수 없어 다시 적었고, 어긋나지 않도록 테스트가 두 판정을
+ * 역할·항목 조합 전체에서 맞춰 본다.
+ */
+export function isProfileComplete(role, profile) {
+    if (profile === null) return false;
+    if (!hasText(profile.organization) || !hasText(profile.phone)) return false;
+
+    if (role === 'MENTOR' || role === 'PROGRAM_MANAGER') {
+        return hasText(profile.expertise) && profile.careerYears != null;
+    }
+    if (role === 'MENTEE') {
+        return hasText(profile.companyName) && hasText(profile.industry);
+    }
+    return true;
+}
+
 /**
  * 이 계정으로 관리자 모드에 들어갈 수 있는가. 못 들어가면 무엇이 막는지 함께 돌려준다.
  *
- * 관문이 둘이라 둘 다 본다 — 로그인(app/api/auth/login)과 관리자 게이트
- * (lib/authorization.ts 의 hasAdminAccess). 하나만 보면 "비밀번호는 맞는데 관리자
- * 화면이 안 열린다" 같은 상황의 원인을 짚지 못한다.
+ * 관문이 셋이라 셋 다 본다 — 로그인(app/api/auth/login), 온보딩 관문
+ * (lib/auth.ts 의 requireAuth), 관리자 게이트(lib/authorization.ts 의 hasAdminAccess).
+ * 하나만 보면 "비밀번호는 맞는데 관리자 화면이 안 열린다" 같은 상황의 원인을 짚지 못한다.
  *
  * ALLOW_DEV_ADMIN 우회는 일부러 셈하지 않는다. 복구는 배포된 사이트로 다시 들어가는
  * 일인데, 개발용 우회가 켜진 로컬 기준으로 "들어갈 수 있음"이라고 답하면 헛걸음이 된다.
@@ -56,6 +81,17 @@ export function diagnoseAdminAccess(user, adminEmails, now = new Date()) {
     // 불러 쓸 수 없어 여기에 다시 적었고, 어긋나지 않도록 테스트가 두 판정을 맞춰 본다.
     if (user.accessExpiresAt && user.accessExpiresAt.getTime() <= now.getTime()) {
         blockers.push('이용 기간이 만료돼 로그인이 거부된다.');
+    }
+
+    // 온보딩 관문(requireAuth)은 로그인 뒤 모든 API 를 막는다. 관리자도 예외가 아니라,
+    // 여기 걸리면 로그인은 되는데 /api/admin/* 이 403 이 되고 화면은 "관리자 권한이
+    // 없습니다" 로 보인다 — 원인과 전혀 다른 문구다.
+    if (user.mustChangePassword) {
+        blockers.push('임시 비밀번호를 아직 바꾸지 않아 온보딩 관문에 막힌다.');
+    }
+    // profile 이 undefined 면 조회에서 빠진 것이라 판정하지 않는다. 행이 없으면 null 이다.
+    if (user.profile !== undefined && !isProfileComplete(user.role, user.profile)) {
+        blockers.push('회원 프로필이 미완성이라 온보딩 관문에 막힌다.');
     }
 
     if (user.role !== 'ADMIN') {
