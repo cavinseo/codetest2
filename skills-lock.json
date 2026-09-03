@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "skills/supabase/SKILL.md",
       "computedHash": "c4cbf2d313f6afb1ff810623b732961752bb64638f648c7a355449eb6aac9530"
+    },
+    "supervising-dual-ai-delivery": {
+      "source": "cavinseo/skills",
+      "sourceType": "github",
+      "skillPath": "supervising-dual-ai-delivery/SKILL.md",
+      "computedHash": "27581527088d9c84dbc70a6af92c90e74df797773cfbed848de5fb4a9a05032b"
     }
   }
 }
