@@ -517,7 +517,7 @@ npx tsc --noEmit && npx vitest run && npx next lint
 **Interfaces:**
 - Produces: `GET /api/projects/{id}/kano/survey-document` → `.docx` 첨부 파일. 읽기 권한이면 된다(`requireProjectAccess` 기본).
 
-- [ ] **Step 1: 라우트를 만든다**
+- [x] **Step 1: 라우트를 만든다**
 
 `app/api/projects/[id]/kano/invite-template/route.ts` 와 같은 모양이다.
 
@@ -573,7 +573,7 @@ export async function GET(
 }
 ```
 
-- [ ] **Step 2: 라우트 테스트를 쓴다**
+- [x] **Step 2: 라우트 테스트를 쓴다**
 
 ```ts
 // 설문지 내려받기 라우트가 권한을 확인하고 올바른 첨부 응답을 내는지 확인하는 테스트입니다.
@@ -663,6 +663,8 @@ describe('GET /api/projects/[id]/kano/survey-document', () => {
 ```
 
 - [ ] **Step 3: 검증하고 커밋한다**
+
+> 원격 세션은 npm 레지스트리가 막혀(`node_modules` 없음, `next/server`·`@prisma/client` 미설치) 게이트(tsc·vitest·lint)를 실행하지 못했다 — 사용자 로컬 확인 대기. Step 1~2 는 완료했고 감리 하네스(스텁 경유 12/12)로 한 대체 검증 결과는 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-3.md` 에 있다.
 
 ```sh
 npx tsc --noEmit && npx vitest run && npx next lint
