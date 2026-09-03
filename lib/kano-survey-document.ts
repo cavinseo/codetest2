@@ -110,7 +110,6 @@ const FILE_NAME_MAX = 60;
  */
 export function kanoSurveyFileName(projectName: string | null | undefined): string {
     const cleaned = (projectName ?? '')
-        // eslint-disable-next-line no-control-regex -- 위 docblock 참고: 제어 문자 제거가 목적이다.
         .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
         .replace(/\s+/g, ' ')
         .trim()
