@@ -8,6 +8,7 @@ import CategoryPieChart from '@/components/CategoryPieChart';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import KanoRespondentTable from '@/components/project/KanoRespondentTable';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
+import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
 
 interface Requirement {
     id: string;
@@ -140,14 +141,11 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 const reqData = await reqRes.json();
                 const reqs = reqData.requirements || [];
                 setRequirements(reqs);
-                // Kano 질문 초기값 — DB에 저장된 값 우선, 없으면 getKanoTopic 기반 기본값
+                // Kano 질문 초기값 — 기본 문구의 정본은 lib/kano-survey-document 다. 화면이
+                // 인쇄물(Word 설문지)과 어긋나면 안 되므로 같은 규칙으로 채운다.
                 const qMap: Record<string, { positive: string; negative: string }> = {};
                 for (const r of reqs) {
-                    const topic = getKanoTopic(r.requirement);
-                    qMap[r.id] = {
-                        positive: r.kanoPositiveQ || `${topic}(이)라면 어떻게 생각하십니까?`,
-                        negative: r.kanoNegativeQ || `${topic}(이)가 아니라면 어떻게 생각하십니까?`,
-                    };
+                    qMap[r.id] = resolveKanoQuestionPair(r);
                 }
                 setKanoQuestions(qMap);
             }
@@ -876,20 +874,33 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                     </svg>
                                     설문 질문 구성 <span className="text-primary-400">({requirements.length}개 질문 세트)</span>
                                 </h2>
-                                <button
-                                    onClick={handleSaveKanoQuestions}
-                                    disabled={isSavingQuestions}
-                                    className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50"
-                                >
-                                    {isSavingQuestions ? (
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                    ) : (
+                                <div className="flex items-center gap-2">
+                                    <a
+                                        href={`/api/projects/${projectId}/kano/survey-document`}
+                                        className={`btn-secondary text-sm flex items-center gap-2${isSavingQuestions ? ' pointer-events-none opacity-50' : ''}`}
+                                        aria-disabled={isSavingQuestions}
+                                        title="저장된 질문으로 종이 설문지(.docx)를 만듭니다"
+                                    >
                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                         </svg>
-                                    )}
-                                    질문 저장
-                                </button>
+                                        설문지 Word 내려받기
+                                    </a>
+                                    <button
+                                        onClick={handleSaveKanoQuestions}
+                                        disabled={isSavingQuestions}
+                                        className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50"
+                                    >
+                                        {isSavingQuestions ? (
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        ) : (
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        )}
+                                        질문 저장
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="bg-amber-500/[0.06] border border-amber-500/20 rounded-xl p-4 mb-5">
@@ -900,7 +911,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                     <span>
                                         <strong className="text-amber-300">설문 주제</strong>는 자동 추출되며,
                                         <strong className="text-amber-300"> 긍정·부정 질문</strong>은 직접 수정하신 후 <strong className="text-white">「질문 저장」</strong> 버튼을 눌러주세요.
-                                        저장된 질문이 미리보기 및 Google Forms에 반영됩니다.
+                                        저장된 질문이 미리보기, Google Forms, Word 설문지에 반영됩니다. 저장하지 않은 수정은 인쇄물에 나가지 않습니다.
                                     </span>
                                 </p>
                             </div>
