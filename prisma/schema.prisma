@@ -243,13 +243,17 @@ model KanoSurveyInvitation {
   projectId   String
   email       String
   token       String         @unique
-  invitedBy   String
+  /// 이 초대를 보낸 사람. 계정이 파기되면 비워진다(SetNull).
+  /// 초대와 응답은 프로젝트의 자산이라 사람이 나가도 남아야 하고, "누가
+  /// 보냈는가"는 그 사람의 개인정보라 함께 사라져야 한다. NOT NULL 이던
+  /// 시절에는 설문을 한 번이라도 보낸 멘티를 영구히 지울 수 없었다.
+  invitedBy   String?
   expiresAt   DateTime
   respondedAt DateTime?
   isUsed      Boolean        @default(false)
   createdAt   DateTime       @default(now())
   responses   KanoResponse[]
-  inviter     User           @relation(fields: [invitedBy], references: [id])
+  inviter     User?          @relation(fields: [invitedBy], references: [id], onDelete: SetNull)
   project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, email])
@@ -357,14 +361,17 @@ model Benchmark {
 model MigrationHistory {
   id             String   @id @default(cuid())
   projectId      String
-  userId         String
+  /// 이 파일을 가져온 사람. 계정이 파기되면 비워진다(SetNull).
+  /// 무엇을 언제 가져왔는지는 프로젝트의 이력이라 남기고, 가져온 사람은
+  /// 개인정보라 지운다. KanoSurveyInvitation.invitedBy 와 같은 이유다.
+  userId         String?
   fileName       String
   fileSize       Int
   sheetsMigrated String
   status         String
   errorLog       String?
   migratedAt     DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id])
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])

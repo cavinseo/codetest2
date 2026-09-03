@@ -82,3 +82,41 @@ describe('MemberProfile 모델', () => {
         expect(schema).toMatch(/mustChangePassword\s+Boolean\s+@default\(false\)/);
     });
 });
+
+describe('계정 파기 시 이력 익명화', () => {
+    // 모델 블록만 떼어 검사한다. 스키마 전체에 걸면 다른 모델의 같은 이름
+    // 컬럼(예: ProjectMember.invitedBy)이 대신 통과시켜, 정작 이 두 FK 가
+    // NOT NULL 로 되돌아가도 테스트가 초록으로 남는다.
+    function modelBlock(name: string): string {
+        const match = schema.match(new RegExp(`model ${name} \\{[\\s\\S]*?\\n\\}`));
+        if (!match) throw new Error(`${name} 모델을 찾지 못했습니다`);
+        return match[0];
+    }
+
+    it('KanoSurveyInvitation.invitedBy 가 nullable + SetNull 이다', () => {
+        // 되돌아가면 설문을 한 번이라도 보낸 멘티를 다시 지울 수 없게 된다.
+        const block = modelBlock('KanoSurveyInvitation');
+        expect(block).toMatch(/invitedBy\s+String\?/);
+        expect(block).toMatch(/inviter\s+User\?\s+@relation\([^)]*onDelete: SetNull/);
+    });
+
+    it('MigrationHistory.userId 가 nullable + SetNull 이다', () => {
+        const block = modelBlock('MigrationHistory');
+        expect(block).toMatch(/userId\s+String\?/);
+        expect(block).toMatch(/user\s+User\?\s+@relation\([^)]*onDelete: SetNull/);
+    });
+
+    it('KanoResponse.invitationId 는 여전히 삭제를 막는다', () => {
+        // 응답이 초대 없이 남으면 안 된다. 이쪽까지 SetNull 로 풀면 설문
+        // 결과의 출처를 잃는다. 익명화 대상은 사람이지 데이터가 아니다.
+        const block = modelBlock('KanoResponse');
+        expect(block).toMatch(/invitationId\s+String\b/);
+        expect(block).not.toMatch(/invitation\s+KanoSurveyInvitation[^\n]*onDelete/);
+    });
+
+    it('Program.managerId 는 여전히 담당자 이관을 먼저 요구한다', () => {
+        // 사람 하나를 지우는 것으로 기관 단위 프로그램이 사라지면 안 된다.
+        const block = modelBlock('Program');
+        expect(block).toMatch(/manager\s+User\s+@relation\([^)]*onDelete: Restrict/);
+    });
+});

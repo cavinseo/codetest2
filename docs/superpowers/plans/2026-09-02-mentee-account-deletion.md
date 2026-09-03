@@ -39,11 +39,12 @@
 - Modify: `prisma/schema.prisma` (`KanoSurveyInvitation`, `MigrationHistory`)
 - Create: `prisma/migrations/20260902000000_anonymize_deleted_user_history/migration.sql`
 - Modify: `tests/db-migration-models.test.ts`
+- Modify: `app/api/projects/[id]/kano/form-responses/route.ts` (주석만 — 이 변경이 낡게 만든다)
 
 **Interfaces:**
 - Produces: `KanoSurveyInvitation.invitedBy: String?`, `MigrationHistory.userId: String?` — Task 2 의 `count({ where: { invitedBy: userId } })` 가 이 타입에 기댄다.
 
-- [ ] **Step 1: `KanoSurveyInvitation` 을 고친다**
+- [x] **Step 1: `KanoSurveyInvitation` 을 고친다**
 
 `prisma/schema.prisma` 의 `invitedBy   String` 과 `inviter     User` 두 줄을 바꾼다.
 
@@ -55,7 +56,7 @@
   inviter     User?          @relation(fields: [invitedBy], references: [id], onDelete: SetNull)
 ```
 
-- [ ] **Step 2: `MigrationHistory` 를 고친다**
+- [x] **Step 2: `MigrationHistory` 를 고친다**
 
 같은 이유로 `userId String` 과 `user User` 를 바꾼다.
 
@@ -76,7 +77,7 @@
 
 `KanoResponse.invitationId`, `Program.managerId`, `Project.programId` 의 `Restrict` 는 **건드리지 않는다.** 응답이 초대 없이 남으면 안 되고, 프로그램이 담당자 없이 남으면 안 된다.
 
-- [ ] **Step 3: 마이그레이션 SQL 을 쓴다**
+- [x] **Step 3: 마이그레이션 SQL 을 쓴다**
 
 `prisma/migrations/20260902000000_anonymize_deleted_user_history/migration.sql` 을 만든다. 실제 제약 이름은 `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma` 로 확인해도 되지만, 이 저장소의 기존 이름 규칙(`<table>_<column>_fkey`)을 따르면 아래가 맞다.
 
@@ -97,33 +98,53 @@ ALTER TABLE "migration_histories" ADD CONSTRAINT "migration_histories_userId_fke
     FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ```
 
-- [ ] **Step 4: 스키마 테스트를 추가한다**
+- [x] **Step 4: 스키마 테스트를 추가한다**
 
 `tests/db-migration-models.test.ts` 는 이미 `prisma/schema.prisma` 를 문자열로 읽는다. 파일 끝에 describe 를 하나 더한다.
 
 ```ts
 describe('계정 파기 시 이력 익명화', () => {
-    // 이 두 FK 가 NOT NULL + Restrict 로 되돌아가면 활동한 멘티를 다시 지울 수
-    // 없게 된다. 조용히 회귀하지 않도록 스키마 자체를 고정한다.
+    // 모델 블록만 떼어 검사한다. 스키마 전체에 걸면 다른 모델의 같은 이름
+    // 컬럼(예: ProjectMember.invitedBy)이 대신 통과시켜, 정작 이 두 FK 가
+    // NOT NULL 로 되돌아가도 테스트가 초록으로 남는다.
+    function modelBlock(name: string): string {
+        const match = schema.match(new RegExp(`model ${name} \\{[\\s\\S]*?\\n\\}`));
+        if (!match) throw new Error(`${name} 모델을 찾지 못했습니다`);
+        return match[0];
+    }
+
     it('KanoSurveyInvitation.invitedBy 가 nullable + SetNull 이다', () => {
-        expect(schema).toMatch(/invitedBy\s+String\?/);
-        expect(schema).toMatch(/inviter\s+User\?\s+@relation\([^)]*onDelete: SetNull/);
+        // 되돌아가면 설문을 한 번이라도 보낸 멘티를 다시 지울 수 없게 된다.
+        const block = modelBlock('KanoSurveyInvitation');
+        expect(block).toMatch(/invitedBy\s+String\?/);
+        expect(block).toMatch(/inviter\s+User\?\s+@relation\([^)]*onDelete: SetNull/);
     });
 
     it('MigrationHistory.userId 가 nullable + SetNull 이다', () => {
-        expect(schema).toMatch(/userId\s+String\?\s*\n\s*fileName/);
-        expect(schema).toMatch(/user\s+User\?\s+@relation\([^)]*onDelete: SetNull/);
+        const block = modelBlock('MigrationHistory');
+        expect(block).toMatch(/userId\s+String\?/);
+        expect(block).toMatch(/user\s+User\?\s+@relation\([^)]*onDelete: SetNull/);
     });
 
     it('KanoResponse.invitationId 는 여전히 삭제를 막는다', () => {
-        // 응답이 초대 없이 남으면 안 된다. 이쪽까지 SetNull 로 풀면
-        // 설문 결과의 출처를 잃는다.
-        expect(schema).toMatch(/invitation\s+KanoSurveyInvitation\s+@relation\(fields: \[invitationId\], references: \[id\]\)/);
+        // 응답이 초대 없이 남으면 안 된다. 이쪽까지 SetNull 로 풀면 설문
+        // 결과의 출처를 잃는다. 익명화 대상은 사람이지 데이터가 아니다.
+        const block = modelBlock('KanoResponse');
+        expect(block).toMatch(/invitationId\s+String\b/);
+        expect(block).not.toMatch(/invitation\s+KanoSurveyInvitation[^\n]*onDelete/);
+    });
+
+    it('Program.managerId 는 여전히 담당자 이관을 먼저 요구한다', () => {
+        // 사람 하나를 지우는 것으로 기관 단위 프로그램이 사라지면 안 된다.
+        const block = modelBlock('Program');
+        expect(block).toMatch(/manager\s+User\s+@relation\([^)]*onDelete: Restrict/);
     });
 });
 ```
 
-정규식이 다른 모델의 `userId` 와 겹치지 않도록 `MigrationHistory` 쪽은 뒤따르는 `fileName` 으로 고정한다. 통과하지 않으면 정규식을 스키마 실제 공백에 맞춰 조정한다.
+- [x] **Step 4b: `form-responses` 의 낡은 주석을 고친다**
+
+`app/api/projects/[id]/kano/form-responses/route.ts:84` 의 주석이 `invitedBy` 를 "필수 FK" 라고 설명한다. 이 Task 가 그 전제를 깨므로 함께 고친다. 컬럼이 nullable 이 됐다고 새 초대에 `null` 을 넣으면 안 된다는 것도 못 박는다. 빈 값은 "계정이 파기된 사람"이라는 뜻이지 "발신자가 없다"는 뜻이 아니다.
 
 - [ ] **Step 5: 검증하고 커밋한다**
 

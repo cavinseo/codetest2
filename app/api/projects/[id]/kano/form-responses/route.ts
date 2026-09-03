@@ -81,8 +81,10 @@ export async function POST(
                     projectId,
                     email: systemEmail,
                     token: `system_${generateId('inv')}`,
-                    // invitedBy 는 users.id 에 대한 필수 FK 다. 예전에는 'system' 을
+                    // invitedBy 는 users.id 에 대한 FK 다. 예전에는 'system' 을
                     // 넣어서 그런 사용자가 없는 모든 프로젝트에서 P2003 으로 실패했다.
+                    // 컬럼이 nullable 이 됐어도 여기에 null 을 넣으면 안 된다. 빈 값은
+                    // "계정이 파기된 사람"이라는 뜻이지 "발신자가 없다"는 뜻이 아니다.
                     invitedBy: accessResult.user.userId,
                     expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365), // 1년
                 }
