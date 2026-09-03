@@ -10,6 +10,10 @@ import ProgramsTab from '@/components/admin/ProgramsTab';
 import MentorAssign from '@/components/admin/MentorAssign';
 import { MEMBER_ROLE_LABELS, canAssignMentor, canIssueInviteCode, canManagePrograms, type MemberRole } from '@/lib/member-roles';
 import { deleteActionFor, cancelGoesBack, type DeleteStage } from '@/lib/delete-confirmation';
+import {
+    DELETION_REASONS, DELETION_REASON_LABELS, describeMenteeDeletion,
+    type DeletionReason, type MenteeDeletionPreview,
+} from '@/lib/account-deletion';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -49,12 +53,16 @@ export default function AdminModePage() {
     const [searchProject, setSearchProject] = useState('');
     // 프로젝트 삭제는 되돌릴 수 없고 하위 22개 모델을 함께 지운다. 그래서 확인을
     // 두 번 받는다. stage 1 은 "무엇을 지우는지", stage 2 는 "정말 지울 것인지"다.
-    // 사용자 삭제는 서버가 409 로 되물어보는 자체 2단계가 있어 stage 1 만 쓴다.
+    // 사용자 삭제는 서버가 409 로 되물어보는 자체 2단계가 있어 stage 1 에서 요청을
+    // 보낸다. 멘티는 그 409 에 사전 점검 결과가 실려 오고, 화면이 그것을 stage 2 에
+    // 담아 사유까지 받는다.
     const [confirmDelete, setConfirmDelete] = useState<{
         type: 'user' | 'project';
         id: string;
         name: string;
         stage: DeleteStage;
+        preview?: MenteeDeletionPreview;
+        reason?: DeletionReason;
     } | null>(null);
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [accessDenied, setAccessDenied] = useState(false);
@@ -113,19 +121,32 @@ export default function AdminModePage() {
         setTimeout(() => setActionMsg(null), 3500);
     };
 
-    const handleDeleteUser = async (userId: string, confirmCascade = false) => {
+    const handleDeleteUser = async (
+        userId: string,
+        options: { confirmCascade?: boolean; reason?: DeletionReason } = {}
+    ) => {
         const res = await fetch('/api/admin/users', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, ...(confirmCascade ? { confirmCascade: true } : {}) }),
+            body: JSON.stringify({
+                userId,
+                ...(options.confirmCascade ? { confirmCascade: true } : {}),
+                ...(options.reason ? { reason: options.reason } : {}),
+            }),
         });
         const data = await res.json().catch(() => null);
 
-        // 소유 프로젝트가 있으면 서버가 409 로 막는다. 실제 건수를 보여주고 한 번 더 받는다.
+        // 서버가 409 로 되묻는다. 멘티는 사전 점검 결과가 실려 오므로 확인창 안에서
+        // 보여 주고 사유까지 받는다. 다른 역할은 예전대로 브라우저 확인창을 쓴다 —
+        // 그쪽은 보여 줄 것이 프로젝트 건수뿐이라 창을 새로 만들 값어치가 없다.
         if (res.status === 409 && data?.needsCascadeConfirm) {
+            if (data.preview) {
+                setConfirmDelete((prev) => (prev ? { ...prev, stage: 2, preview: data.preview } : prev));
+                return;
+            }
             setConfirmDelete(null);
             if (window.confirm(`${data.error}\n\n그래도 삭제하시겠습니까?`)) {
-                await handleDeleteUser(userId, true);
+                await handleDeleteUser(userId, { confirmCascade: true });
             }
             return;
         }
@@ -464,6 +485,42 @@ export default function AdminModePage() {
                                         </ul>
                                     </div>
                                 )}
+
+                                {confirmDelete.preview && (
+                                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 mb-4">
+                                        <p className="text-[11px] text-amber-300/80 mb-2">삭제하면 이렇게 됩니다</p>
+                                        <ul className="space-y-1 text-xs text-gray-300">
+                                            {describeMenteeDeletion(confirmDelete.preview).map((line) => (
+                                                <li key={line}>{line}</li>
+                                            ))}
+                                            <li>이름·연락처·소속 등 개인정보는 파기됩니다.</li>
+                                            <li>재가입해도 이전 프로젝트는 돌아오지 않습니다.</li>
+                                        </ul>
+                                        <p className="text-[11px] text-gray-500 mt-2">
+                                            접근만 막으려면 삭제 대신 승인 취소를 쓰세요.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {confirmDelete.preview && (
+                                    <div className="mb-4">
+                                        <p className="text-[11px] text-gray-400 mb-2">삭제 사유</p>
+                                        <div className="space-y-1.5">
+                                            {DELETION_REASONS.map((reason) => (
+                                                <label key={reason} className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="deletion-reason"
+                                                        value={reason}
+                                                        checked={confirmDelete.reason === reason}
+                                                        onChange={() => setConfirmDelete({ ...confirmDelete, reason })}
+                                                    />
+                                                    {DELETION_REASON_LABELS[reason]}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <>
@@ -500,12 +557,20 @@ export default function AdminModePage() {
                                         return;
                                     }
                                     if (confirmDelete.type === 'user') {
-                                        handleDeleteUser(confirmDelete.id);
+                                        // 확정은 점검 결과를 보고 있는 stage 2 에서만 한다. preview 만
+                                        // 보고 판단하면, "뒤로"로 stage 1 에 돌아온 뒤 다시 누를 때
+                                        // 마지막 확인을 건너뛰고 지워진다 — preview 는 남아 있으므로.
+                                        handleDeleteUser(confirmDelete.id, confirmDelete.stage === 2 && confirmDelete.preview
+                                            ? { confirmCascade: true, reason: confirmDelete.reason }
+                                            : {});
                                         return;
                                     }
                                     handleDeleteProject(confirmDelete.id);
                                 }}
-                                className="flex-1 px-4 py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-sm font-medium hover:bg-rose-500/30 transition-colors"
+                                // 사유를 고르기 전에는 확정할 수 없다. 서버도 400 으로 막지만,
+                                // 되돌릴 수 없는 조작이라 누르기 전에 알려 주는 편이 낫다.
+                                disabled={confirmDelete.stage === 2 && Boolean(confirmDelete.preview) && !confirmDelete.reason}
+                                className="flex-1 px-4 py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-sm font-medium hover:bg-rose-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 id="admin-confirm-delete-btn"
                             >
                                 {deleteActionFor(confirmDelete) === 'advance' ? '계속' : '삭제'}

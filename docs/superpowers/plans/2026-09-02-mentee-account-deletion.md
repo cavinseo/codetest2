@@ -657,7 +657,7 @@ npx stryker run stryker.crap.config.json --mutate lib/account-deletion.ts
 **Interfaces:**
 - Consumes: Task 2 의 409 응답 `preview`, `DELETION_REASONS`, `DELETION_REASON_LABELS`, `describeMenteeDeletion`.
 
-- [ ] **Step 1: 확인창 상태에 점검 결과와 사유를 담는다**
+- [x] **Step 1: 확인창 상태에 점검 결과와 사유를 담는다**
 
 `app/admin/page.tsx` 의 import 에 더한다.
 
@@ -683,7 +683,7 @@ import {
     } | null>(null);
 ```
 
-- [ ] **Step 2: `handleDeleteUser` 가 사유를 싣고 점검 결과를 받는다**
+- [x] **Step 2: `handleDeleteUser` 가 사유를 싣고 점검 결과를 받는다**
 
 ```tsx
     const handleDeleteUser = async (
@@ -725,7 +725,7 @@ import {
     };
 ```
 
-- [ ] **Step 3: 확인창 stage 2 에 점검 결과와 사유 선택을 넣는다**
+- [x] **Step 3: 확인창 stage 2 에 점검 결과와 사유 선택을 넣는다**
 
 기존 `{confirmDelete.stage === 2 ? ( ... )}` 의 참 갈래에서, `deleteTargetProject` 블록 아래에 사용자용 블록을 더한다.
 
@@ -766,28 +766,31 @@ import {
                                 )}
 ```
 
-- [ ] **Step 4: 확정 버튼이 사유를 넘기고, 사유가 없으면 눌리지 않게 한다**
+- [x] **Step 4: 확정 버튼이 사유를 넘기고, 사유가 없으면 눌리지 않게 한다**
 
 확정 버튼의 `onClick` 에서 사용자 갈래를 바꾼다.
 
 ```tsx
                                     if (confirmDelete.type === 'user') {
-                                        handleDeleteUser(confirmDelete.id, confirmDelete.preview
+                                        // 확정은 점검 결과를 보고 있는 stage 2 에서만 한다. preview 만
+                                        // 보고 판단하면, "뒤로"로 stage 1 에 돌아온 뒤 다시 누를 때
+                                        // 마지막 확인을 건너뛰고 지워진다 — preview 는 남아 있으므로.
+                                        handleDeleteUser(confirmDelete.id, confirmDelete.stage === 2 && confirmDelete.preview
                                             ? { confirmCascade: true, reason: confirmDelete.reason }
                                             : {});
                                         return;
                                     }
 ```
 
-같은 버튼에 `disabled` 를 더한다.
+같은 버튼에 `disabled` 를 더한다. 여기도 stage 를 함께 본다.
 
 ```tsx
-                                disabled={Boolean(confirmDelete.preview) && !confirmDelete.reason}
+                                disabled={confirmDelete.stage === 2 && Boolean(confirmDelete.preview) && !confirmDelete.reason}
 ```
 
 `disabled` 상태가 보이도록 className 끝에 `disabled:opacity-50 disabled:cursor-not-allowed` 를 더한다.
 
-- [ ] **Step 5: `lib/delete-confirmation.ts` 의 주석을 사실에 맞춘다**
+- [x] **Step 5: `lib/delete-confirmation.ts` 의 주석을 사실에 맞춘다**
 
 판정 함수는 바꾸지 않는다. 사용자 삭제는 여전히 stage 1 에서 요청을 보내고, 서버 409 가 stage 2 를 연다. 주석만 지금 동작에 맞게 고친다.
 
