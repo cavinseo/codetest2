@@ -2,7 +2,7 @@
 
 **작성일:** 2026-09-02
 **대상 브랜치:** `claude/admin-account-password-recovery-o93xgy`
-**상태:** 결정 완료(9절), 구현 계획서 작성 대기
+**상태:** 결정 완료(9절). 구현 계획서는 `docs/superpowers/plans/2026-09-02-mentee-account-deletion.md`
 
 ## 1. 배경과 문제
 
