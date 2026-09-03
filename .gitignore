@@ -46,11 +46,20 @@ prisma/backup/
 
 # Tool state directories (not project source)
 .bkit/
-.claude/
 testsprite_tests/
 docs/.pdca-status.json
 docs/.bkit-memory.json
 docs/.pdca-snapshots/
+
+# .claude/ 는 도구 상태라 통째로 무시하되, SessionStart 훅(session-start.sh)만
+# 예외로 추적한다. 원격 세션은 컨테이너가 매번 새로 떠 ~/.claude/skills/ 가
+# 비어 있는데, 이 훅이 .agents/skills/ 의 벤더링된 스킬을 그 자리로 복사해
+# 채운다. 디렉터리 전체를 무시하면 그 안의 !부정 규칙이 통하지 않으므로
+# .claude/* 로 한 단계 내려가 필요한 파일만 다시 연다.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/hooks/*.sh
 
 .vercel
 .env*
