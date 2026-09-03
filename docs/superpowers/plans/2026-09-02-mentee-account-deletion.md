@@ -809,7 +809,14 @@ import {
 npx tsc --noEmit && npx vitest run && npx next lint
 ```
 
-화면 실기동 검증은 **감리자가 실계정으로 수행한다.** dev 서버를 띄우지 않는다. 확인할 것은 세 가지다. 멘티 삭제 시 점검 결과가 보이는지, 사유를 고르기 전에는 확정 버튼이 눌리지 않는지, 멘토·매니저 삭제가 예전대로 동작하는지.
+화면 실기동 검증은 **감리자가 실계정으로 수행한다.** dev 서버를 띄우지 않는다. 확인할 것은 네 가지다. 멘티 삭제 시 점검 결과가 보이는지, 사유를 고르기 전에는 확정 버튼이 눌리지 않는지, "뒤로" 로 돌아간 뒤 다시 눌러도 마지막 확인을 거치는지, 멘토·매니저 삭제가 예전대로 동작하는지.
+
+**2026-09-03 뮤테이션 확인.** 주석만 고쳤으므로 점수가 그대로여야 한다는 요구를 만족했다.
+
+```
+File                     | % Mutation score | # killed | # survived
+delete-confirmation.ts   |           100.00 |       20 |          0
+```
 
 ---
 
@@ -818,7 +825,7 @@ npx tsc --noEmit && npx vitest run && npx next lint
 **Files:**
 - Create: `docs/2026-09-02-mentee-account-deletion-guide.md`
 
-- [ ] **Step 1: 운영자용 지침을 쓴다**
+- [x] **Step 1: 운영자용 지침을 쓴다**
 
 설계 문서(`docs/superpowers/specs/2026-09-02-mentee-account-deletion-design.md`)의 2절과 4절을 관리자가 읽을 분량으로 옮긴다. `docs/2026-09-02-admin-account-recovery.md` 와 같은 톤이다. 담을 것은 다음과 같다.
 
