@@ -146,7 +146,7 @@ describe('계정 파기 시 이력 익명화', () => {
 
 `app/api/projects/[id]/kano/form-responses/route.ts:84` 의 주석이 `invitedBy` 를 "필수 FK" 라고 설명한다. 이 Task 가 그 전제를 깨므로 함께 고친다. 컬럼이 nullable 이 됐다고 새 초대에 `null` 을 넣으면 안 된다는 것도 못 박는다. 빈 값은 "계정이 파기된 사람"이라는 뜻이지 "발신자가 없다"는 뜻이 아니다.
 
-- [ ] **Step 5: 검증하고 커밋한다**
+- [x] **Step 5: 검증하고 커밋한다**
 
 ```sh
 npx prisma validate
@@ -155,6 +155,16 @@ npx tsc --noEmit && npx vitest run && npx next lint
 ```
 
 `npx prisma generate` 가 실패하면 Task 2 의 타입이 맞지 않으므로 여기서 멈추고 보고한다.
+
+**2026-09-03 결과:** 원격 세션은 npm 레지스트리가 막혀 게이트를 돌리지 못했다. 사용자가 로컬에서 실행해 통과를 확인했다.
+
+```
+Test Files  93 passed (93)
+     Tests  1055 passed (1055)
+✔ No ESLint warnings or errors
+```
+
+`tsc` 는 `&&` 체인이라 뒤가 돌았다는 사실이 통과를 뜻한다. 원격에서는 대신 새 테스트의 단언 7개를 실제 스키마에 대해 node 로 직접 돌려 7/7 통과를 확인했다.
 
 커밋 후 **사용자에게 마이그레이션 적용을 요청한다.**
 
