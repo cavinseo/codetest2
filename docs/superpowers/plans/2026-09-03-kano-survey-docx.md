@@ -680,7 +680,7 @@ npx tsc --noEmit && npx vitest run && npx next lint
 **Interfaces:**
 - Consumes: Task 3 의 라우트, Task 1 의 `resolveKanoQuestionPair`.
 
-- [ ] **Step 1: 기본 질문 문구를 모델의 것으로 바꾼다**
+- [x] **Step 1: 기본 질문 문구를 모델의 것으로 바꾼다**
 
 `KanoManager.tsx` 148~149행의 인라인 템플릿을 `resolveKanoQuestionPair` 로 바꾼다. 화면과 인쇄물의 정본을 하나로 만드는 것이 목적이다.
 
@@ -696,7 +696,7 @@ import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
 
 `getKanoTopic` 은 설문 주제 표시(910행 부근)에 여전히 쓰이므로 import 를 지우지 않는다. 그 사용이 없어졌다면 지운다.
 
-- [ ] **Step 2: 내려받기 버튼을 더한다**
+- [x] **Step 2: 내려받기 버튼을 더한다**
 
 「질문 저장」 버튼 왼쪽에 둔다. 저장된 값이 나가므로 저장 중에는 잠근다.
 
@@ -721,11 +721,13 @@ import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
 
 `btn-secondary` 클래스가 없으면 저장소의 기존 보조 버튼 클래스(`btn-ghost` 등)를 쓴다.
 
-- [ ] **Step 3: 안내 문구에 Word 를 더한다**
+- [x] **Step 3: 안내 문구에 Word 를 더한다**
 
 기존 노란 안내문 "저장된 질문이 미리보기 및 Google Forms에 반영됩니다" 를 "저장된 질문이 미리보기, Google Forms, Word 설문지에 반영됩니다" 로 고친다. 편집만 하고 저장하지 않은 질문은 인쇄물에 나가지 않는다는 것을 같은 자리에서 알린다.
 
 - [ ] **Step 4: 검증하고 커밋한다**
+
+> 미실행(2026-09-03): 이 Task 는 node_modules 가 없는 원격 컨테이너에서 작업해 게이트 3종(tsc·vitest·lint)을 아직 돌리지 못했다 — 사용자 로컬 몫이다. 아래 화면 확인 3가지는 감리자가 실계정으로 수행한다. 대체 검증은 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-4.md` 에 있다.
 
 ```sh
 npx tsc --noEmit && npx vitest run && npx next lint
