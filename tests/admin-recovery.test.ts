@@ -74,7 +74,17 @@ describe('diagnoseAdminAccess', () => {
     });
 
     it('역할이 ADMIN 이 아니면 isAdmin 이 켜져 있어도 막힌다', () => {
-        const result = diagnoseAdminAccess(user({ role: 'MENTEE' }), ['admin@example.com'], NOW);
+        // 역할을 바꾸면 프로필 완성 기준도 그 역할의 것이 된다. 픽스처의 관리자용 프로필을
+        // 그대로 두면 온보딩 blocker 가 함께 붙어 "역할이 막는다"를 단독으로 단언할 수 없다.
+        // 멘티 기준(companyName·industry)까지 채워 역할 하나만 남긴다.
+        const result = diagnoseAdminAccess(
+            user({
+                role: 'MENTEE',
+                profile: { organization: '운영', phone: '000-0000-0000', companyName: '가', industry: '제조' },
+            }),
+            ['admin@example.com'],
+            NOW,
+        );
         expect(result.canEnterAdminMode).toBe(false);
         expect(result.blockers).toEqual(['시스템 역할이 MENTEE 다. 관리자 모드는 role=ADMIN 만 통과한다.']);
     });
