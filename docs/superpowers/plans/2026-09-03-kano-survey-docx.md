@@ -97,7 +97,7 @@ PDF 에서 옮겨 적었다. 모델의 문자열 정본이며 테스트가 이 �
 **Interfaces:**
 - Produces: `buildKanoSurveyDocumentModel(requirements)` → `KanoSurveyDocumentModel`, `resolveKanoQuestionPair(requirement)`, `kanoSurveyFileName(projectName)`. Task 2 의 렌더러와 Task 3 의 라우트, Task 4 의 화면이 쓴다.
 
-- [ ] **Step 1: `package.json` 에 의존성을 적는다**
+- [x] **Step 1: `package.json` 에 의존성을 적는다**
 
 `dependencies` 에 알파벳 순서로 넣는다.
 
@@ -107,7 +107,7 @@ PDF 에서 옮겨 적었다. 모델의 문자열 정본이며 테스트가 이 �
 
 원격 세션은 설치할 수 없다. **사용자가 로컬에서 `npm install` 을 실행하고 `package-lock.json` 을 이 Task 의 커밋에 포함한다.** 설치 뒤 `node_modules/docx/package.json` 의 실제 버전을 확인해 위 범위와 맞는지 본다.
 
-- [ ] **Step 2: 순수 모델 `lib/kano-survey-document.ts` 를 만든다**
+- [x] **Step 2: 순수 모델 `lib/kano-survey-document.ts` 를 만든다**
 
 ```ts
 // WS-6 종이 설문지(「고객니즈조사 설문지」 양식)의 내용을 순수 데이터로 만든다.
@@ -216,7 +216,7 @@ export function kanoSurveyFileName(projectName: string | null | undefined): stri
 }
 ```
 
-- [ ] **Step 3: `tests/kano-survey-document.test.ts` 를 쓴다**
+- [x] **Step 3: `tests/kano-survey-document.test.ts` 를 쓴다**
 
 ```ts
 // 종이 설문지 모델이 양식의 문구와 행 번호 규칙을 그대로 지키는지 확인하는 테스트입니다.
@@ -351,11 +351,13 @@ describe('kanoSurveyFileName', () => {
 });
 ```
 
-- [ ] **Step 4: stryker `mutate` 목록에 올린다**
+- [x] **Step 4: stryker `mutate` 목록에 올린다**
 
 `stryker.crap.config.json` 의 `mutate` 배열 끝에 `"lib/kano-survey-document.ts"` 를 더한다.
 
 - [ ] **Step 5: 검증하고 커밋한다**
+
+> 원격 세션은 npm 레지스트리가 막혀(`registry.npmjs.org` 403, `node_modules` 없음) 게이트·stryker 를 실행하지 못했다 — 사용자 로컬 확인 대기. Step 1~4 는 완료했고 대체 검증 결과는 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-1.md` 에 있다.
 
 ```sh
 npm install
