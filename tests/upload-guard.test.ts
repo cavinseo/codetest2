@@ -109,3 +109,49 @@ describe('checkUploadedFile', () => {
         if (!result.ok) expect(result.failure.status).toBe(400);
     });
 });
+
+describe('업로드 가드 회귀 계약', () => {
+    it('기존 엑셀 오류 문구 네 가지를 글자 단위로 유지한다', () => {
+        expect(checkUploadedExcel(null)).toEqual({
+            error: '업로드할 엑셀 파일이 필요합니다.',
+            status: 400,
+        });
+        expect(checkUploadedExcel(fileOf('empty.xlsx', 0))).toEqual({
+            error: '빈 파일입니다. 내용이 있는 엑셀 파일을 올려 주세요.',
+            status: 400,
+        });
+        expect(checkUploadedExcel(fileOf('huge.xlsx', MAX_UPLOAD_BYTES + 1))).toEqual({
+            error: '파일 크기는 10MB를 초과할 수 없습니다.',
+            status: 413,
+        });
+        expect(checkUploadedExcel(fileOf('payload.zip', 100))).toEqual({
+            error: '.xlsx 또는 .xls 파일만 업로드할 수 있습니다.',
+            status: 400,
+        });
+    });
+
+    it('파일명 앞뒤 공백을 무시한다', () => {
+        expect(checkUploadedExcel(fileOf('  data.xlsx  ', 100))).toBeNull();
+    });
+
+    it('MiB 배수가 아닌 상한은 내림한 KB로 표시한다', () => {
+        expect(checkUploadedFile(fileOf('small.html', 1501), {
+            ...answerFileRule,
+            maxBytes: 1500,
+        })).toEqual({
+            error: '파일 크기는 1KB를 초과할 수 없습니다.',
+            status: 413,
+        });
+        expect(checkUploadedFile(fileOf('medium.html', (1536 * 1024) + 1), {
+            ...answerFileRule,
+            maxBytes: 1536 * 1024,
+        })).toEqual({
+            error: '파일 크기는 1536KB를 초과할 수 없습니다.',
+            status: 413,
+        });
+    });
+
+    it('허용 확장자는 파일명 끝에서만 인정한다', () => {
+        expect(checkUploadedFile(fileOf('report.html.txt', 100), answerFileRule)?.status).toBe(400);
+    });
+});
