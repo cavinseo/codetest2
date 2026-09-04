@@ -1051,11 +1051,11 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
 **플래그:** 이 Task 가 더하는 링크·카드는 전부 `process.env.NEXT_PUBLIC_KANO_OFFLINE_SURVEY === 'on'` 일 때만 렌더한다(결정 13). `.env.example` 에 `NEXT_PUBLIC_KANO_OFFLINE_SURVEY=off` 와 한 줄 설명을 더한다. **`lib/kano-offline-survey.ts` 를 import 하지 않는다**(node `crypto`). 형식 상수가 필요하면 `'kano-offline-response'` 리터럴을 쓰고 테스트가 두 곳의 일치를 단언한다.
 
-- [ ] **Step 0: Task 5 에서 넘어온 회귀 넷 공백 두 개를 메운다** — `tests/api-kano-offline-responses.test.ts` 에 케이스 2개를 더한다. **`app/api/projects/[id]/kano/offline-responses/route.ts` 는 고치지 마라 — 구현은 옳고 모자란 것은 테스트다.**
+- [x] **Step 0: Task 5 에서 넘어온 회귀 넷 공백 두 개를 메운다** — `tests/api-kano-offline-responses.test.ts` 에 케이스 2개를 더한다. **`app/api/projects/[id]/kano/offline-responses/route.ts` 는 고치지 마라 — 구현은 옳고 모자란 것은 테스트다.**
   1. **프로젝트 전체 삭제가 없다**: 정상 1파일 저장에서 트랜잭션 목이 받은 호출 중 `kanoSurveyInvitation.deleteMany` 가 **한 번도 없고**, `kanoResponse.deleteMany` 의 `where` 에 항상 `respondentEmail` 이 있음을 단언한다(`writePolicy` 가 `'replace'` 로 바뀌면 실패해야 한다).
   2. **파일 10개는 통과한다**: 서로 다른 `submissionId`·이메일로 10개를 올려 200 과 `respondentCount: 10` 을 단언한다(`>` 가 `>=` 로 바뀌면 실패해야 한다).
 
-- [ ] **Step 1: 화면이 쓸 순수 모듈을 먼저 만든다** — `lib/kano-offline-upload-client.ts`. 이 저장소에는 jsdom 이 없어 컴포넌트를 테스트할 수 없고 감리자도 dev 서버를 띄울 수 없다. 그래서 화면에서 틀리면 조용히 망가지는 계산만 순수 함수로 빼내 테스트로 고정한다(배치 오프셋을 잘못 더하면 실패한 파일명이 엉뚱하게 표시된다).
+- [x] **Step 1: 화면이 쓸 순수 모듈을 먼저 만든다** — `lib/kano-offline-upload-client.ts`. 이 저장소에는 jsdom 이 없어 컴포넌트를 테스트할 수 없고 감리자도 dev 서버를 띄울 수 없다. 그래서 화면에서 틀리면 조용히 망가지는 계산만 순수 함수로 빼내 테스트로 고정한다(배치 오프셋을 잘못 더하면 실패한 파일명이 엉뚱하게 표시된다).
 
 ```ts
 // 오프라인 답변 업로드 화면이 쓰는 순수 계산. 브라우저에서 돌아야 하므로 node 전용 모듈
@@ -1080,16 +1080,16 @@ export function absoluteFileIndex(batchIndex: number, indexInBatch: number, size
 
 `inspectKanoOfflineFileText` 는 `<` 로 시작하면 `id="kano-offline-response"` 섬 중 **마지막 비어 있지 않은 것**을 쓰고, 섬이 없거나 전부 비었으면 `survey-file`(안내: "답하지 않은 원본 설문 파일"), 그 외 텍스트는 통째로 `JSON.parse` 한다. 파싱 실패·형식 불일치는 `not-offline-file`, `projectId` 불일치는 `other-project` 다.
 
-- [ ] **Step 2: 내려받기 링크** — Google Forms 카드 1단계 「양식 확인」 버튼(692-697행) 아래에 `<a href={`/api/projects/${projectId}/kano/offline-survey`} className="mt-2 w-full …btn-secondary text-xs …">오프라인 HTML 받기</a>`. `KanoSurveyPreview` 에 `offlineSurveyUrl?: string` prop 을 더하고 제어바(148-161행)에 같은 링크를 「PDF 출력」 왼쪽에 둔다(prop 이 있을 때만). 66-67행 기본 문구는 `resolveKanoQuestionPair(req)` 로 바꾼다(`getKanoTopic` 은 주제 표시에 여전히 쓰이므로 import 유지).
+- [x] **Step 2: 내려받기 링크** — Google Forms 카드 1단계 「양식 확인」 버튼(692-697행) 아래에 `<a href={`/api/projects/${projectId}/kano/offline-survey`} className="mt-2 w-full …btn-secondary text-xs …">오프라인 HTML 받기</a>`. `KanoSurveyPreview` 에 `offlineSurveyUrl?: string` prop 을 더하고 제어바(148-161행)에 같은 링크를 「PDF 출력」 왼쪽에 둔다(prop 이 있을 때만). 66-67행 기본 문구는 `resolveKanoQuestionPair(req)` 로 바꾼다(`getKanoTopic` 은 주제 표시에 여전히 쓰이므로 import 유지).
 
-- [ ] **Step 3: 업로드 카드** — 「응답 파일로 업로드」 카드(814-866행) 바로 아래에 새 카드 「오프라인 응답 파일 업로드」. 상태: `offlineFiles: File[]`, `isUploadingOffline`, `offlineProgress: { done; total }`, `offlineResult: { message; failures; rematchedAnswerCount; droppedAnswerCount } | null`, `offlineConflict: { code; added; removed; changed; affectedFiles } | { code; indexes } | null`. `<input type="file" multiple accept=".html,.htm,.json,.kano.json">`. 선택 직후 각 파일을 `File.text()` 로 읽어 **Step 1 의 `inspectKanoOfflineFileText(text, projectId)`** 로 판정하고 목록에 ✓/✗(사유별 문구 — `survey-file` 이면 "답하지 않은 원본 설문 파일")로 표시한다(서버 검증을 대체하지 않는다). 같은 판정을 컴포넌트 안에 다시 쓰지 마라. 업로드 핸들러는 `chunkKanoOfflineFiles` 로 나눈 **10개씩 순차 배치**를 `POST …/kano/offline-responses` 에 보내고 진행(`3/7 배치`)을 표시한다 — 한 배치가 409/에러면 거기서 멈추고 남은 파일 수를 알린다(재시도는 submissionId 멱등이라 안전하다). `failures` 의 `index` 는 배치 안 인덱스이므로 화면은 `absoluteFileIndex` 로 오프셋을 더해 파일명으로 보여 준다. **`replace` 선택지·`window.prompt` 없음.**
+- [x] **Step 3: 업로드 카드** — 「응답 파일로 업로드」 카드(814-866행) 바로 아래에 새 카드 「오프라인 응답 파일 업로드」. 상태: `offlineFiles: File[]`, `isUploadingOffline`, `offlineProgress: { done; total }`, `offlineResult: { message; failures; rematchedAnswerCount; droppedAnswerCount } | null`, `offlineConflict: { code; added; removed; changed; affectedFiles } | { code; indexes } | null`. `<input type="file" multiple accept=".html,.htm,.json,.kano.json">`. 선택 직후 각 파일을 `File.text()` 로 읽어 **Step 1 의 `inspectKanoOfflineFileText(text, projectId)`** 로 판정하고 목록에 ✓/✗(사유별 문구 — `survey-file` 이면 "답하지 않은 원본 설문 파일")로 표시한다(서버 검증을 대체하지 않는다). 같은 판정을 컴포넌트 안에 다시 쓰지 마라. 업로드 핸들러는 `chunkKanoOfflineFiles` 로 나눈 **10개씩 순차 배치**를 `POST …/kano/offline-responses` 에 보내고 진행(`3/7 배치`)을 표시한다 — 한 배치가 409/에러면 거기서 멈추고 남은 파일 수를 알린다(재시도는 submissionId 멱등이라 안전하다). `failures` 의 `index` 는 배치 안 인덱스이므로 화면은 `absoluteFileIndex` 로 오프셋을 더해 파일명으로 보여 준다. **`replace` 선택지·`window.prompt` 없음.**
   - 200: 토스트 `data.message`, `failures` 가 있으면 카드 안 결과 패널에 파일명·사유(코드별 한국어 문구 매핑: `GUARD` 는 detail 그대로, `PARSE:survey-file` → "아직 답하지 않은 원본 설문 파일입니다", `PARSE:html-no-island` → "이 앱이 만든 설문 파일이 아닙니다", `PARSE:*` → "답변 파일 형식이 올바르지 않습니다", `WRONG_PROJECT`, `UNKNOWN_REQUIREMENT`, `DUPLICATE_IN_BATCH`, `RESPONDENT_EXISTS` → "이미 다른 방법으로 응답한 이메일입니다"), `droppedAnswerCount > 0` 이면 "문구가 바뀐 문항의 답 N개는 등록하지 않았습니다". 그 뒤 `await loadData()`.
   - 409 `QUESTION_SET_CHANGED`: 안내 박스 "설문 배포 후 질문이 바뀌었습니다(추가 a·삭제 b·문구 변경 c). 영향 파일: …" + 버튼 「일치하는 문항만 등록」 → `acceptQuestionSetMismatch=true` 로 재전송.
   - `RESPONDENT_EXISTS` 가 있는 200: 박스 "이미 응답한 이메일과 겹치는 파일 N개" + 버튼 「해당 파일만 덮어쓰기」 → 그 인덱스들을 `overwriteFiles` 로 재전송.
 
-- [ ] **Step 4: 초대 내역 라벨** — 1028-1062행에서 `inv.token.startsWith('offline_')` 이면 이메일 대신 `오프라인 응답 #${inv.token.slice(8, 16)}` 을 굵게 보이고(이메일이 실제 값이면 그 아래 작은 글씨로), 「링크 복사」 버튼을 렌더하지 않는다(즉시 만료 토큰).
+- [x] **Step 4: 초대 내역 라벨** — 1028-1062행에서 `inv.token.startsWith('offline_')` 이면 이메일 대신 `오프라인 응답 #${inv.token.slice(8, 16)}` 을 굵게 보이고(이메일이 실제 값이면 그 아래 작은 글씨로), 「링크 복사」 버튼을 렌더하지 않는다(즉시 만료 토큰).
 
-- [ ] **Step 5: 검증하고 커밋한다**
+- [x] **Step 5: 검증하고 커밋한다**
 
 ```sh
 npx tsc --noEmit && npx vitest run && npx next lint && npm run build
