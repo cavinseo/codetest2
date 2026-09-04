@@ -64,11 +64,19 @@ describe('buildKanoSurveyDocumentModel', () => {
         expect(KANO_SURVEY_TITLE).toBe('고객니즈조사 설문지');
         expect(KANO_SURVEY_GUIDE).toContain('Kano 방식으로 작성되어');
         expect(KANO_SURVEY_GUIDE).toContain('긍정과 부정의 질문 모두 해당되는 항목에 표시');
-        expect(KANO_SURVEY_INTRODUCTION.startsWith('(제품/서비스 소개) 안녕하세요.')).toBe(true);
-        expect(KANO_SURVEY_INTRODUCTION).toContain('「　　　　　　　」 기술을 활용하여');
-        expect(KANO_SURVEY_INTRODUCTION).toContain('좀 더 나은 서비스를 만드는데');
+        // 부분 문자열 검사만으로는 이어 붙인 조각 하나가 통째로 사라져도 통과한다 —
+        // 실제로 stryker 가 contains 에 안 걸린 조각 3개(43·45·46행)를 "" 로 바꿔도
+        // 살아남았다(2026-09-04, 94.34%). 그래서 전문을 그대로 단언한다.
+        expect(KANO_SURVEY_INTRODUCTION).toBe(
+            '(제품/서비스 소개) 안녕하세요. 「　　　　　　　」 기술을 활용하여 다양한 「　　　　」제품을 '
+            + '개발하고 있는 「　　　　」 대표 「　　　　」입니다. 본 설문은 자사에서 제공하는 「　　　　」에 '
+            + '대하여, 소비자의 의견을 수렴하여 좀 더 나은 서비스를 만드는데 필요한 기초 자료를 얻는 것에 '
+            + '목적이 있습니다. 귀하께서 응답하시는 내용은 정답이 없으며, 오직 제품 레벨 업을 위한 용도로만 '
+            + '사용할 것을 약속드립니다. 바쁘신 가운데 시간을 내어 주셔서 대단히 감사합니다. '
+            + '/(필요시 이미지 자료 첨부가능)'
+        );
+        // 결정 6의 기록: 양식 원문의 "좀 더 나은 더 나은 서비스" 오타는 고쳐 담는다.
         expect(KANO_SURVEY_INTRODUCTION).not.toContain('나은 더 나은');
-        expect(KANO_SURVEY_INTRODUCTION.endsWith('/(필요시 이미지 자료 첨부가능)')).toBe(true);
         expect(KANO_SURVEY_QUESTION_HEADER).toBe('질 문 문 항');
         expect(KANO_SURVEY_CLOSING).toBe(
             '긴 시간 질문에 성심껏 응답해 주셔서 감사합니다. 귀하의 의견을 참고하여 좋은 자료로 활용 하겠습니다.'

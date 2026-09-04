@@ -357,7 +357,7 @@ describe('kanoSurveyFileName', () => {
 
 - [ ] **Step 5: 검증하고 커밋한다**
 
-> 감리 기록(2026-09-03): lock 커밋 `447e6af`(docx 9.7.1). 픽스처 결함(`e4c83f2`) 수정 뒤 로컬 게이트 재실행: vitest **98파일/1129테스트 통과**, `next lint` 통과(경고 1건은 이 파일의 unused `eslint-disable`, 감리자가 제거) — 스크린샷으로 확인. **stryker 점수(`lib/kano-survey-document.ts`, 기준 100%)는 아직 미보고**라 Step 5 를 닫지 않는다. 대체 검증 결과는 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-1.md` 에 있다.
+> 감리 기록(2026-09-03): lock 커밋 `447e6af`(docx 9.7.1). 픽스처 결함(`e4c83f2`) 수정 뒤 로컬 게이트 재실행: vitest **98파일/1129테스트 통과**, `next lint` 통과(경고 1건은 이 파일의 unused `eslint-disable`, 감리자가 제거) — 스크린샷으로 확인. **stryker 점수(`lib/kano-survey-document.ts`, 기준 100%)는 아직 미보고**라 Step 5 를 닫지 않는다. 대체 검증 결과는 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-1.md` 에 있다. **stryker 1차(2026-09-04): 94.34%, survived 3** — 전부 `KANO_SURVEY_INTRODUCTION` 의 이어 붙인 조각(43·45·46행)을 "" 로 바꾼 StringLiteral 뮤턴트로, 테스트가 소개문을 부분 문자열로만 검사해 contains 에 안 걸린 조각이 살아남았다. 등가 뮤턴트가 아니므로 disable 이 아니라 테스트를 전문 일치로 보강했고, 감리자가 세 뮤턴트를 각각 시뮬레이션해 보강 테스트가 죽이는 것을 역검증했다. 사용자 재실행에서 100% 가 나오면 이 Step 을 닫는다.
 
 ```sh
 npm install
