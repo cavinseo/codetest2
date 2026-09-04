@@ -33,7 +33,7 @@
 | 3 | 기존 응답자(다른 경로)와 이메일이 겹치면 **기본 거절**, 파일별 명시 승인(`overwriteFiles`) 시만 덮어쓰기 |
 | 4 | 오프라인 경로에 `replace`(전체 삭제) 없음 — append 고정 |
 | 5 | 오프라인 초대: `token = offline_<submissionId>`, `expiresAt = now`, `invitedBy = 업로더`, `respondedAt = submittedAt` |
-| 6 | 이메일 선택. 없으면 `offline-<submissionId 앞 12자>@import.local` |
+| 6 | 이메일 선택. 없으면 `offline-<submissionId 에서 하이픈을 지운 뒤 앞 12자>@import.local` — submissionId 는 하이픈이 든 UUID 라 `a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d` 이면 `offline-a1b2c3d4e5f6@import.local` 이다(정본 `lib/kano-offline-response.ts:196`). **2026-09-04 정정**: 처음에는 "앞 12자"라고만 적어 실제로 만들어지지 않는 값을 가리키고 있었고, Task 7 운영 지침이 그 문장을 그대로 옮겼다 — 결함의 출처는 이 표다 |
 | 7 | 파일명: 설문 `Kano_설문_<프로젝트명 정제>.html`(서버, RFC 5987), 답변 `kano-response-<submissionId 앞 8자>.html`(브라우저, ASCII) |
 | 8 | **요청당 최대 10 파일, 파일당 최대 400 KB**(답변 HTML 은 기본 ≈15 KB + 문항당 ≈2.3 KB — 100문항이면 ≈250 KB). 화면이 10개씩 순차 배치로 보내고 배치마다 원자 저장. 실패 파일은 목록 반환. 라우트는 `export const maxDuration = 60`, 트랜잭션은 `{ timeout: 60_000, maxWait: 10_000 }` — Vercel 서버리스의 본문 상한(약 4.5 MB)·실행 시간과 Prisma 대화형 트랜잭션 기본 5초를 넘지 않기 위해서다. 재시도는 submissionId 멱등으로 안전하다 |
 | 9 | 질문 세트 불일치는 409. `acceptQuestionSetMismatch=true` 면 문항별 해시 일치분만 수입. **id 가 전부 바뀐 경우(AI 재생성·JSON 이관)에도 문구 해시 `t` 가 정확히 하나의 현재 문항과 일치하면 그 문항으로 재매칭**한다 |
@@ -1127,6 +1127,8 @@ npx tsc --noEmit && npx vitest run && npx next lint && npm run build
 >
 > **틀린 서술 1건**: 합성 이메일을 `offline-<submissionId 앞 12자>@import.local` 이라 적었는데, `lib/kano-offline-response.ts:196` 은 하이픈을 먼저 지우고 12자를 자른다. submissionId 는 하이픈이 든 UUID 라(`kano-offline-survey.ts` `createSubmissionId`) 지침대로면 `offline-a1b2c3d4-e5f@…`, 실제로는 `offline-a1b2c3d4e5f6@…` 다. 초대 목록에서 파일과 응답자를 맞춰 보려는 담당자가 없는 문자열을 찾게 된다.
 >
+> **정정(2026-09-04, 감리자 책임)**: 이 문장의 출처는 워커가 아니라 위 결정표 6번이다. 계획서가 "앞 12자"라고만 적어 두었고 워커는 정본을 그대로 옮겼다. 결정표를 고쳤으니 재작업 Step 5 는 지침 문서를 그 정정된 정본에 맞추는 일이다 — 워커의 판단 착오가 아니었다.
+>
 > 무회귀 재실행(원격 컨테이너): 감리 하네스 23+47+29+11 전부 통과, 워커 테스트 원본 102/102·22/22·19/20(1건은 `vi.doMock` 셰임 한계), 브라우저 왕복 6단계 전부 통과(외부 요청 0건 — 지침의 "CDN 없이 열린다"를 뒷받침한다), `npm run check:encoding` exit 0. tsc·vitest 104 파일 1321 테스트·lint 는 사용자 로컬 보고.
 >
 > **회귀 그물 구멍(Task 5 코드, 여기로 이월)**: 워커의 `tests/api-kano-offline-responses.test.ts` 를 이번에 셰임에 `vi.mock`·`toMatchObject`·`expect.any` 를 넣어 처음으로 원본 그대로 돌렸다(23/23 통과). 그 23개에 뮤턴트를 넣어 보니 Task 5 때 살아남았던 둘(`writePolicy` `append`→`replace`, 파일 수 `>`→`>=`)은 Task 6 Step 0 의 보강으로 이제 잡히지만, **`invitationExpiresAt: (now) => now` 를 1년 뒤로 바꿔도 23개가 전부 통과한다**. 즉시 만료는 "리셋으로 respondedAt 이 비어도 이 토큰으로 온라인 응답을 할 수 없어야 한다"는 보안 성질이고 이번 지침이 사실로 단언한 문장인데, 저장소 테스트가 지키지 않는다. (`tokenPrefix: 'offline'` 도 라우트가 항상 명시 토큰을 넘겨 도달하지 않는 인자라 어떤 뮤턴트도 잡히지 않는다 — 등가 뮤턴트로 기록만 한다.)
@@ -1139,6 +1141,28 @@ npx tsc --noEmit && npx vitest run && npx next lint && npm run build
 
 ### Task 8 (감리자): 실기동 검증
 
-- [ ] **Step 1: 컨테이너 스모크(Playwright)** — `node --experimental-strip-types` 로 `renderKanoOfflineSurveyHtml(buildKanoOfflineSurveyModel(샘플 3개))` 를 파일로 쓰고, 전역 Playwright(`/opt/node22/lib/node_modules/playwright`)로 `file://` 로 열어 네트워크 전면 차단 상태에서: 미답 저장 → 차단·다운로드 없음·`missing` 강조 / 전부 답 + 이메일 → 다운로드 캡처 → 파일명 `kano-response-<8hex>.html` / **다운로드된 HTML 을 다시 `file://` 로 열어 라디오·이메일이 복원되고 상태문구가 뜨는지** / 답 하나 바꿔 재저장 → 같은 submissionId·바뀐 값·응답 섬 1개 / 내용을 `parseKanoOfflineResponseText` → `reconcileKanoOfflineResponse`(같은 모델) → `status 'ok'`·answers 3 / **원본(미답) HTML → `survey-file`** / `#payload` 의 JSON 도 같은 파서로 통과 / 문구 하나 바꾼 모델로 대조 → `question-set-changed`·dropped 1 / `#fallback` 이 보이고 `#payload` 가 같은 JSON / `</script>` 요구사항으로 렌더한 파일이 브라우저에서 깨지지 않음.
-- [ ] **Step 2: 사용자 실계정(Windows Chrome·Edge, 파일럿용 별도 프로젝트)** — 플래그 켠 뒤 WS-6 에서 「오프라인 HTML 받기」 → 받은 파일 더블클릭 → 답 → 「답변 저장」 → 받은 `kano-response-….html` 을 다시 열어 답이 복원되는지 → 그 파일을 「오프라인 응답 파일 업로드」 → 응답자 표·초대 내역·분석에 반영 확인. 같은 파일 재업로드 → 응답 수 불변. 원본(미답) 설문 HTML 을 올리면 "아직 답하지 않은 원본 설문 파일". 질문 저장으로 문구 하나 바꾼 뒤 재업로드 → 409 안내 → 「일치하는 문항만 등록」. 온라인 초대로 이미 응답한 이메일을 파일에 적어 업로드 → `RESPONDENT_EXISTS` → 「덮어쓰기」. **실배포 URL(Vercel)에서 파일 11개(10+1 배치)를 한 번에 올려 배치 진행과 결과가 맞는지** 확인 — 서버리스 상한은 로컬에서 재현되지 않는다.
-- [ ] **Step 3: 미확인으로 남기는 것** — Task 0 파일럿에서 못 본 채널, 회사 보안 정책(파일 다운로드 차단·`.html` 첨부 필터). 설계서 11절.
+- [x] **Step 1: 컨테이너 스모크(Playwright)** — `node --experimental-strip-types` 로 `renderKanoOfflineSurveyHtml(buildKanoOfflineSurveyModel(샘플 3개))` 를 파일로 쓰고, 전역 Playwright(`/opt/node22/lib/node_modules/playwright`)로 `file://` 로 열어 네트워크 전면 차단 상태에서: 미답 저장 → 차단·다운로드 없음·`missing` 강조 / 전부 답 + 이메일 → 다운로드 캡처 → 파일명 `kano-response-<8hex>.html` / **다운로드된 HTML 을 다시 `file://` 로 열어 라디오·이메일이 복원되고 상태문구가 뜨는지** / 답 하나 바꿔 재저장 → 같은 submissionId·바뀐 값·응답 섬 1개 / 내용을 `parseKanoOfflineResponseText` → `reconcileKanoOfflineResponse`(같은 모델) → `status 'ok'`·answers 3 / **원본(미답) HTML → `survey-file`** / `#payload` 의 JSON 도 같은 파서로 통과 / 문구 하나 바꾼 모델로 대조 → `question-set-changed`·dropped 1 / `#fallback` 이 보이고 `#payload` 가 같은 JSON / `</script>` 요구사항으로 렌더한 파일이 브라우저에서 깨지지 않음.
+- [ ] **Step 2: 사용자 실계정(Windows Chrome·Edge, 파일럿용 별도 프로젝트)** — 플래그 켠 뒤 WS-6 에서 「오프라인 HTML 받기」 → 받은 파일 더블클릭 → 답 → 「답변 저장」 → 받은 `kano-response-….html` 을 다시 열어 답이 복원되는지 → 그 파일을 「오프라인 응답 파일 업로드」 → 응답자 표·초대 내역·분석에 반영 확인. 같은 파일 재업로드 → 응답 수 불변. 원본(미답) 설문 HTML 을 올리면 "아직 답하지 않은 원본 설문 파일". 질문 저장으로 문구 하나 바꾼 뒤 재업로드 → 409 안내 → 「일치하는 문항만 등록」. 온라인 초대로 이미 응답한 이메일을 파일에 적어 업로드 → `RESPONDENT_EXISTS` → 「덮어쓰기」. **실배포 URL(Vercel)에서 파일 11개(10+1 배치)를 한 번에 올려 배치 진행과 결과가 맞는지** 확인 — 서버리스 상한은 로컬에서 재현되지 않는다. 밟을 순서와 각 단계의 기대값은 `docs/2026-09-04-kano-offline-survey-acceptance.md` 에 체크리스트로 풀어 두었다(감리자 작성, 2026-09-04).
+> Step 1 완료(2026-09-04, 감리자): 원격 컨테이너에서 `task8-smoke.mts` 를 실행해 **10단계 전부 통과**. 렌더(`buildKanoOfflineSurveyModel`+`renderKanoOfflineSurveyHtml`, 문항 3 — 하나는 `</script><script>alert(1)</script>` 주입 시도) → 헤드리스 Chromium(`file://`, file 이외 요청 전면 차단) → 서버 파서·대조까지를 한 스크립트로 이었다.
+>
+> 1. 미답 저장 차단 · "아직 답하지 않은 질문이 5개 있습니다." · `.q.missing` 1개 · 다운로드 0
+> 2. 전부 답 + 이메일 → 다운로드 `kano-response-<8hex>.html` · 16261 B · 응답 섬 1개
+> 3. 저장본을 다시 열기 → 라디오 6개·이메일 복원, 상태문구 일치, `#payload` 758자가 응답 섬과 동일(Task 3 에서 잡은 빈 폴백 결함의 회귀 확인)
+> 4. 답 하나 바꿔 재저장 → submissionId 동일 · `req_a` LIKE→DISLIKE · 섬 여전히 1개 · 파일명 동일
+> 5. 저장본 → `parseKanoOfflineResponseText` → `reconcileKanoOfflineResponse`(같은 모델) → `status 'ok'` · answers 3 · 이메일 소문자 정규화(`Respondent@Example.com` → `respondent@example.com`, 라우트의 사칭 방어가 소문자 집합으로 비교하므로 이 정규화가 전제다) · 토큰 `offline_<submissionId>`
+> 6. 원본(미답) 설문 HTML → 거절 · 사유 `survey-file`
+> 7. `#payload` 의 JSON(「내용 복사」 경로) → 같은 파서 통과 · HTML 경로와 결과 `deepEqual`
+> 8. 문구 하나 바꾼 모델과 대조 → `question-set-changed` · dropped 1 · matched 2 · `describeKanoQuestionSetChange` 가 라우트와 같은 인자로 (추가 0·삭제 0·변경 1)
+> 9. `</script>` 주입 요구사항이 본문에 글자로 표시되고 실행 스크립트는 렌더러의 하나뿐 · 문서 정상
+> 10. 외부 요청 0건 · 콘솔 오류 0건 (문서 3개를 열어 확인)
+>
+> 남는 한계: 컨테이너의 Chromium 은 리눅스다. 실제 응답자가 쓸 Windows Chrome·Edge 의 다운로드 정책(사용자 제스처 없는 `download` 속성 차단, "이 형식의 파일은 위험" 경고), iOS Safari 의 `file://` 제약, 메일·메신저 첨부 필터는 여기서 재현되지 않는다 — 그것이 Step 2 다.
+
+- [x] **Step 3: 미확인으로 남기는 것** — 아래 목록이 이 계획의 범위에서 **끝까지 확인되지 않은 채 남는 것**이다. 배포 판단은 이걸 알고 하는 것이다.
+>
+> 1. **수신 채널** — Task 0 파일럿에서 실제로 확인한 채널 밖은 모른다. 카카오톡·Outlook+Edge·iPhone 중 파일럿에서 본 것만 근거가 있고, 나머지(사내 메신저, Gmail 웹, Android 기본 브라우저, 사내 MDM 이 걸린 단말)는 미확인이다.
+> 2. **회사 보안 정책** — `.html` 첨부 필터, 다운로드 차단, 스크립트 포함 파일에 대한 EDR 격리. 응답자 쪽 정책은 우리가 볼 수 없다. 「내용 복사」 폴백이 이 경우의 유일한 우회로이고, 그 경로 자체는 컨테이너에서 검증했다(Step 1-7).
+> 3. **Vercel 서버리스 상한** — 본문 약 4.5 MB, 실행 시간, Prisma 대화형 트랜잭션. 로컬에 없는 계약이라 실배포에서만 드러난다. 10개×400 KB = 4 MB 가 상한에 붙어 있어 여유가 크지 않다(Step 2 의 11개 배치 시험이 이걸 본다).
+> 4. **대량 문항** — 답변 HTML 크기 추정(기본 ≈15 KB + 문항당 ≈2.3 KB)은 계산이지 측정이 아니다. 100문항 실측은 하지 않았다.
+> 5. **응답자 단위 삭제** — 이번 범위 밖(설계서 10절). 오프라인 응답만 골라 지우는 수단이 없다는 사실은 운영 지침의 「되돌리기」에 적었다.
+> 6. **초대 즉시 만료의 회귀 그물** — 코드는 옳지만 저장소 테스트가 지키지 않는다(Task 7 판정 노트 참조). Task 7 재작업 Step 6 이 미완이면 이 항목은 미확인으로 남는다.
