@@ -26,7 +26,8 @@
         "lib/account-deletion.ts",
         "lib/kano-survey-document.ts",
         "lib/kano-response-import.ts",
-        "lib/kano-offline-survey.ts"
+        "lib/kano-offline-survey.ts",
+        "lib/kano-offline-response.ts"
     ],
     "ignorePatterns": [
         ".claude/**",
