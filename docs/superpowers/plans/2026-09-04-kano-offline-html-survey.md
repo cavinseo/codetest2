@@ -126,7 +126,7 @@
 **Interfaces:**
 - Produces: `importKanoResponses(tx, respondents, options)`. Task 5 의 라우트가 쓴다. 엑셀 라우트는 **이번에 건드리지 않는다**(결정 12) — `upload-excel/route.ts:152-205` 의 규칙을 그대로 옮겨 두고, 통합은 후속 계획에서 감리자 실기동과 함께 한다.
 
-- [ ] **Step 1: `lib/kano-response-import.ts` 를 만든다**
+- [x] **Step 1: `lib/kano-response-import.ts` 를 만든다**
 
 ```ts
 // 파일로 들어온 Kano 응답을 DB 에 쓰는 트랜잭션 본문이다.
@@ -264,13 +264,13 @@ export async function importKanoResponses(
 
 `writePolicy: 'replace'` 분기는 엑셀 라우트와의 규칙 동일성을 위해 두되, 이번 계획의 호출자(Task 5)는 항상 `'append'` 를 준다(결정 4).
 
-- [ ] **Step 2: 테스트를 쓴다**
+- [x] **Step 2: 테스트를 쓴다**
 
 `tests/kano-response-import.test.ts` — tx 목 객체로: (1) `append` 는 해당 이메일의 응답만 `deleteMany` 하고 초대는 지우지 않는다, (2) `replace` 는 응답 전체 → 초대 전체 순으로 지운다, (3) upsert 인자(`projectId_email`, `create.token` 이 접두어로 시작, `expiresAt` 이 옵션 함수 결과, `respondedAt` 이 응답자 값), (4) `token` 을 준 응답자는 그 토큰으로 create, (5) `createMany` 행이 답 수와 같고 `kanoCategory` 가 `classifyKanoResponse` 와 같다, (6) `overwrittenRespondentCount` 는 `findMany` 결과 수, `replace` 면 0, (7) 답이 0개면 `createMany` 를 부르지 않는다, (8) 응답자가 0명이면 `findMany`·`deleteMany` 를 부르지 않는다.
 
-- [ ] **Step 3: `stryker.crap.config.json` `mutate` 에 `lib/kano-response-import.ts` 를 더한다**
+- [x] **Step 3: `stryker.crap.config.json` `mutate` 에 `lib/kano-response-import.ts` 를 더한다**
 
-- [ ] **Step 4: 검증하고 커밋한다**
+- [x] **Step 4: 검증하고 커밋한다**
 
 ```sh
 npx tsc --noEmit && npx vitest run && npx next lint
