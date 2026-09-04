@@ -2,6 +2,8 @@
 
 > **For agentic workers:** 이 계획서가 각 Task 의 정본이다. Step 은 체크박스(`- [ ]`)로 추적하고, 완료 시 `- [x]` 로 갱신해 코드와 함께 커밋한다.
 
+> **완결(2026-09-04)**: Task 1~4 전부 구현·게이트(tsc·vitest·lint)·stryker 100%·실기동 검증 완료. 판정 근거는 `docs/superpowers/reports/2026-09-03-kano-survey-docx/` 의 보고서 4건과 각 Step 의 감리 기록에 있다.
+
 **Goal:** WS-6 「설문 질문 구성」에 저장된 긍정·부정 질문을 종이 설문지 양식(첨부 PDF 「고객니즈조사 설문지」)에 맞춘 Word(.docx) 파일로 내려받을 수 있게 한다. 온라인 설문(Google Forms·초대 링크)을 쓰기 어려운 현장 조사에서 인쇄해 돌리기 위한 것이다.
 
 **Architecture:** 문서를 두 층으로 나눈다. **모델**(`lib/kano-survey-document.ts`)은 제목·안내문·응답 척도·행 목록·맺음말을 순수 데이터로 만들고, **렌더러**(`lib/kano-survey-docx.ts`)는 그 데이터를 `docx` 라이브러리로 .docx 바이너리로 바꾼다. 양식의 문구와 행 번호 규칙은 전부 모델에 있어 실DB 없이 테스트하고 뮤테이션으로 고정한다. 렌더러는 얇게 두고 스모크 테스트만 한다. API 는 기존 `invite-template` 라우트와 같은 모양의 GET 내려받기이고, 화면은 「질문 저장」 옆에 버튼 하나를 더한다.
@@ -355,9 +357,9 @@ describe('kanoSurveyFileName', () => {
 
 `stryker.crap.config.json` 의 `mutate` 배열 끝에 `"lib/kano-survey-document.ts"` 를 더한다.
 
-- [ ] **Step 5: 검증하고 커밋한다**
+- [x] **Step 5: 검증하고 커밋한다**
 
-> 감리 기록(2026-09-03): lock 커밋 `447e6af`(docx 9.7.1). 픽스처 결함(`e4c83f2`) 수정 뒤 로컬 게이트 재실행: vitest **98파일/1129테스트 통과**, `next lint` 통과(경고 1건은 이 파일의 unused `eslint-disable`, 감리자가 제거) — 스크린샷으로 확인. **stryker 점수(`lib/kano-survey-document.ts`, 기준 100%)는 아직 미보고**라 Step 5 를 닫지 않는다. 대체 검증 결과는 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-1.md` 에 있다. **stryker 1차(2026-09-04): 94.34%, survived 3** — 전부 `KANO_SURVEY_INTRODUCTION` 의 이어 붙인 조각(43·45·46행)을 "" 로 바꾼 StringLiteral 뮤턴트로, 테스트가 소개문을 부분 문자열로만 검사해 contains 에 안 걸린 조각이 살아남았다. 등가 뮤턴트가 아니므로 disable 이 아니라 테스트를 전문 일치로 보강했고, 감리자가 세 뮤턴트를 각각 시뮬레이션해 보강 테스트가 죽이는 것을 역검증했다. 사용자 재실행에서 100% 가 나오면 이 Step 을 닫는다.
+> 감리 기록(2026-09-03): lock 커밋 `447e6af`(docx 9.7.1). 픽스처 결함(`e4c83f2`) 수정 뒤 로컬 게이트 재실행: vitest **98파일/1129테스트 통과**, `next lint` 통과(경고 1건은 이 파일의 unused `eslint-disable`, 감리자가 제거) — 스크린샷으로 확인. **stryker 점수(`lib/kano-survey-document.ts`, 기준 100%)는 아직 미보고**라 Step 5 를 닫지 않는다. 대체 검증 결과는 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-1.md` 에 있다. **stryker 1차(2026-09-04): 94.34%, survived 3** — 전부 `KANO_SURVEY_INTRODUCTION` 의 이어 붙인 조각(43·45·46행)을 "" 로 바꾼 StringLiteral 뮤턴트로, 테스트가 소개문을 부분 문자열로만 검사해 contains 에 안 걸린 조각이 살아남았다. 등가 뮤턴트가 아니므로 disable 이 아니라 테스트를 전문 일치로 보강했고, 감리자가 세 뮤턴트를 각각 시뮬레이션해 보강 테스트가 죽이는 것을 역검증했다. 사용자 재실행에서 100% 가 나오면 이 Step 을 닫는다. **재실행(2026-09-04, 사용자 보고): 100% — Step 을 닫는다.** 게이트 3종·vitest 98파일·전문 일치 보강 테스트까지 전부 그린.
 
 ```sh
 npm install
@@ -725,9 +727,9 @@ import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
 
 기존 노란 안내문 "저장된 질문이 미리보기 및 Google Forms에 반영됩니다" 를 "저장된 질문이 미리보기, Google Forms, Word 설문지에 반영됩니다" 로 고친다. 편집만 하고 저장하지 않은 질문은 인쇄물에 나가지 않는다는 것을 같은 자리에서 알린다.
 
-- [ ] **Step 4: 검증하고 커밋한다**
+- [x] **Step 4: 검증하고 커밋한다**
 
-> 미실행(2026-09-03): 이 Task 는 node_modules 가 없는 원격 컨테이너에서 작업해 게이트 3종(tsc·vitest·lint)을 아직 돌리지 못했다 — 사용자 로컬 몫이다. 아래 화면 확인 3가지는 감리자가 실계정으로 수행한다. 대체 검증은 `docs/superpowers/reports/2026-09-03-kano-survey-docx/task-4.md` 에 있다.
+> 완료(2026-09-04, 사용자 실계정 실기동): 게이트 3종 그린에 더해 화면 3단계를 확인했다 — ① 「설문지 Word 내려받기」로 `.docx` 가 내려오고 Word·한글에서 열림, ② 문서 구조가 양식과 일치(제목·안내문·빈칸 소개·표 머리글+N-1/N-2 행+빈 응답 칸·맺음말), ③ 질문 수정·저장 후 재다운로드에 반영되고 미저장 수정은 반영되지 않음. 이로써 계획서의 전 Task 가 완결됐다.
 
 ```sh
 npx tsc --noEmit && npx vitest run && npx next lint
