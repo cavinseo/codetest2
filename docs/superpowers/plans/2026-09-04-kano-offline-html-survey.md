@@ -1031,6 +1031,16 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
 - [x] **Step 3: 검증하고 커밋한다**
 
+> 감리 승인(2026-09-04, 커밋 `eafc56d`+`e6722ea`): 경계(커밋 2·파일 4·LF·제어바이트 0·테스트 파일 103), 라우트가 계획서 Step 1 블록과 차이 0줄(대소문자 비교 수정본 포함). 원격 컨테이너에서 **라우트를 직접 호출하는 감리 하네스 29/29** — 목이 아니라 실제 핸들러를 불러 트랜잭션 클라이언트에 오는 호출을 하나하나 기록해 봤다. 정상 2파일이 트랜잭션 한 번 안에서만 쓰고(`invitation.upsert`+`response.createMany`), 토큰이 `offline_<submissionId>`, 만료가 즉시, 익명 파일은 합성 이메일, 초대 조회는 `where: { projectId }` 에 두 컬럼뿐(`insensitive` 없음), 400·403·409·500 네 경로 모두 `$transaction` 0회, 로그에 이메일·파일명·submissionId 없음을 확인했다.
+>
+> 보고서가 DEVIATIONS 로 밝힌 `tx as unknown as ...` 캐스트는 **기능상 무해함을 실행으로 확인했다** — 캐스트는 넘어가는 객체를 바꾸지 않고, `importKanoResponses` 가 부르는 다섯 메서드(`kanoResponse.findMany/deleteMany/createMany`, `kanoSurveyInvitation.upsert/deleteMany`)가 모두 실제로 호출됐다. 다만 `npx tsc --noEmit` 이 그 캐스트 없이 실패한다는 주장 자체는 `node_modules`(생성된 Prisma 타입)가 없어 재현하지 못했다. 이 라우트가 실제 `Prisma.TransactionClient` 와 `KanoImportTx` 가 처음 만나는 자리다.
+>
+> 뮤턴트 14종 역검증에서 12종이 잡혔다(사칭 방어 무력화, 소문자화 생략, `offline_` 판별 역전, 409 플래그 무시, 중복 인덱스 오해, 트랜잭션 옵션 제거, 만료 1년, 빈 목록 진입, 요구사항 0건 통과, unknown 통과, 실패 파일 수입, 로그 누출). **두 종이 저장소 테스트를 그대로 통과했다:**
+> 1. **`writePolicy: 'append'` → `'replace'`** — 21개 테스트가 전부 통과한다. `replace` 는 `importKanoResponses` 가 프로젝트의 **응답과 초대를 통째로 삭제**하게 만든다. 오프라인 파일 한 장을 올렸을 뿐인데 온라인 응답까지 사라지는 경로이고, 바로 옆 엑셀 경로가 정당하게 `'replace'` 를 쓰기 때문에 오타 한 번으로 뒤집힌다. 지금 코드는 옳다.
+> 2. **`entries.length > MAX_FILES` → `>=`** — 테스트가 11개만 보고 10개를 보지 않는다. 화면(Task 6)이 **정확히 10개씩** 배치로 보내므로, 뒤집히면 모든 정상 배치가 거절된다.
+>
+> 둘 다 코드 결함이 아니라 회귀 넷의 공백이고, 케이스 목록을 그렇게 쓴 내 누락이다. 감리 하네스에는 두 케이스를 넣어 뮤턴트가 죽는 것을 확인했고, 저장소 쪽 보강은 **Task 6 Step 0** 으로 이월한다.
+
 ---
 
 ### Task 6: 화면 연결
@@ -1039,6 +1049,10 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 - Modify: `components/project/KanoManager.tsx`, `components/KanoSurveyPreview.tsx`, `.env.example`
 
 **플래그:** 이 Task 가 더하는 링크·카드는 전부 `process.env.NEXT_PUBLIC_KANO_OFFLINE_SURVEY === 'on'` 일 때만 렌더한다(결정 13). `.env.example` 에 `NEXT_PUBLIC_KANO_OFFLINE_SURVEY=off` 와 한 줄 설명을 더한다. **`lib/kano-offline-survey.ts` 를 import 하지 않는다**(node `crypto`). 형식 상수가 필요하면 `'kano-offline-response'` 리터럴을 쓰고 테스트가 두 곳의 일치를 단언한다.
+
+- [ ] **Step 0: Task 5 에서 넘어온 회귀 넷 공백 두 개를 메운다** — `tests/api-kano-offline-responses.test.ts` 에 케이스 2개를 더한다. **`app/api/projects/[id]/kano/offline-responses/route.ts` 는 고치지 마라 — 구현은 옳고 모자란 것은 테스트다.**
+  1. **프로젝트 전체 삭제가 없다**: 정상 1파일 저장에서 트랜잭션 목이 받은 호출 중 `kanoSurveyInvitation.deleteMany` 가 **한 번도 없고**, `kanoResponse.deleteMany` 의 `where` 에 항상 `respondentEmail` 이 있음을 단언한다(`writePolicy` 가 `'replace'` 로 바뀌면 실패해야 한다).
+  2. **파일 10개는 통과한다**: 서로 다른 `submissionId`·이메일로 10개를 올려 200 과 `respondentCount: 10` 을 단언한다(`>` 가 `>=` 로 바뀌면 실패해야 한다).
 
 - [ ] **Step 1: 내려받기 링크** — Google Forms 카드 1단계 「양식 확인」 버튼(692-697행) 아래에 `<a href={`/api/projects/${projectId}/kano/offline-survey`} className="mt-2 w-full …btn-secondary text-xs …">오프라인 HTML 받기</a>`. `KanoSurveyPreview` 에 `offlineSurveyUrl?: string` prop 을 더하고 제어바(148-161행)에 같은 링크를 「PDF 출력」 왼쪽에 둔다(prop 이 있을 때만). 66-67행 기본 문구는 `resolveKanoQuestionPair(req)` 로 바꾼다(`getKanoTopic` 은 주제 표시에 여전히 쓰이므로 import 유지).
 
