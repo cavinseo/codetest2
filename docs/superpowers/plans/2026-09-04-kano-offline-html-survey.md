@@ -1115,13 +1115,13 @@ npx tsc --noEmit && npx vitest run && npx next lint && npm run build
 - Create: `docs/2026-09-04-kano-offline-survey-guide.md`
 - Modify: `docs/2026-09-02-mentee-account-deletion-guide.md`
 
-- [ ] **Step 0: Task 6 에서 넘어온 관찰을 고친다** — `components/project/KanoManager.tsx:1336` 의 `isOfflineInvitation` 에서 플래그 조건을 뺀다(`inv.token.startsWith('offline_')` 만 남긴다). 오프라인 초대 라벨은 데이터가 있으면 참인 표시라 기능 노출 플래그와 묶이면 안 된다 — 플래그를 끈 뒤 합성 이메일과 쓸모없는 「링크 복사」 버튼이 다시 보인다. 링크·업로드 카드의 플래그 게이팅은 그대로 둔다.
+- [x] **Step 0: Task 6 에서 넘어온 관찰을 고친다** — `components/project/KanoManager.tsx:1336` 의 `isOfflineInvitation` 에서 플래그 조건을 뺀다(`inv.token.startsWith('offline_')` 만 남긴다). 오프라인 초대 라벨은 데이터가 있으면 참인 표시라 기능 노출 플래그와 묶이면 안 된다 — 플래그를 끈 뒤 합성 이메일과 쓸모없는 「링크 복사」 버튼이 다시 보인다. 링크·업로드 카드의 플래그 게이팅은 그대로 둔다.
 
-- [ ] **Step 2: 운영 지침을 쓴다** — 선례 `docs/2026-09-02-mentee-account-deletion-guide.md` 의 어조로. 절: (1) 언제 쓰는가(온라인 초대 링크·Word 종이 설문·엑셀 손입력과의 관계 — 오프라인 HTML 은 "기기는 있지만 인터넷이 없는" 현장용, Word 는 종이용, 둘 다 엑셀 경로로 보완), (2) 배포 절차(플래그 켜기 → 「오프라인 HTML 받기」 → 파일럿에서 검증된 채널로 전달 → 피설문자 안내문 예시), (3) 수집 절차(회신 파일을 한 폴더에 → 「오프라인 응답 파일 업로드」 → 결과 패널 읽는 법 — 실패 코드별 조치, 409 안내와 「일치하는 문항만 등록」, `RESPONDENT_EXISTS` 와 「덮어쓰기」), (4) 하지 말 것(배포 후 요구사항 AI 재생성·JSON 이관 — id 가 바뀌어 문구가 같은 문항만 재매칭된다, 같은 파일 두 번 저장 안내), (5) 되돌리기(플래그 끄기, 오프라인 응답만 지우는 수단은 없으므로 파일럿은 별도 프로젝트에서).
+- [x] **Step 2: 운영 지침을 쓴다** — 선례 `docs/2026-09-02-mentee-account-deletion-guide.md` 의 어조로. 절: (1) 언제 쓰는가(온라인 초대 링크·Word 종이 설문·엑셀 손입력과의 관계 — 오프라인 HTML 은 "기기는 있지만 인터넷이 없는" 현장용, Word 는 종이용, 둘 다 엑셀 경로로 보완), (2) 배포 절차(플래그 켜기 → 「오프라인 HTML 받기」 → 파일럿에서 검증된 채널로 전달 → 피설문자 안내문 예시), (3) 수집 절차(회신 파일을 한 폴더에 → 「오프라인 응답 파일 업로드」 → 결과 패널 읽는 법 — 실패 코드별 조치, 409 안내와 「일치하는 문항만 등록」, `RESPONDENT_EXISTS` 와 「덮어쓰기」), (4) 하지 말 것(배포 후 요구사항 AI 재생성·JSON 이관 — id 가 바뀌어 문구가 같은 문항만 재매칭된다, 같은 파일 두 번 저장 안내), (5) 되돌리기(플래그 끄기, 오프라인 응답만 지우는 수단은 없으므로 파일럿은 별도 프로젝트에서).
 
-- [ ] **Step 3: 삭제 지침에 한 줄** — `docs/2026-09-02-mentee-account-deletion-guide.md` 에, 삭제 미리보기가 보여 주는 `설문 초대 N건은 남고 발송자만 비워집니다.`(문구 정본은 `lib/account-deletion.ts:45`)의 N 에 **엑셀·오프라인 파일 업로드로 생긴 초대**(토큰 `excel_`/`offline_`)도 들어간다는 한 줄을 더한다. 업로더가 발송자로 기록되기 때문이다.
+- [x] **Step 3: 삭제 지침에 한 줄** — `docs/2026-09-02-mentee-account-deletion-guide.md` 에, 삭제 미리보기가 보여 주는 `설문 초대 N건은 남고 발송자만 비워집니다.`(문구 정본은 `lib/account-deletion.ts:45`)의 N 에 **엑셀·오프라인 파일 업로드로 생긴 초대**(토큰 `excel_`/`offline_`)도 들어간다는 한 줄을 더한다. 업로더가 발송자로 기록되기 때문이다.
 
-- [ ] **Step 4: 커밋한다** (게이트: `npm run check:encoding`)
+- [x] **Step 4: 커밋한다** (게이트: `npm run check:encoding`)
 
 ---
 
