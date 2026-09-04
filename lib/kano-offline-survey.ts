@@ -178,7 +178,10 @@ const SCRIPT = `
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-        if (document.getElementById('kano-offline-response').textContent.trim()) {
+        var priorResponseText = document.getElementById('kano-offline-response').textContent.trim();
+        if (priorResponseText) {
+            payloadBox.value = priorResponseText;
+            fallback.hidden = false;
             status.textContent = '이전에 저장한 답변이 실려 있습니다. 수정 후 다시 저장할 수 있습니다.';
         }
     });

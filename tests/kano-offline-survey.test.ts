@@ -259,6 +259,21 @@ describe('renderKanoOfflineSurveyHtml', () => {
         expect(script).toContain("document.execCommand('copy')");
     });
 
+    it('저장 파일을 다시 열면 응답 JSON을 복사 폴백에 복원한다', () => {
+        const html = renderKanoOfflineSurveyHtml(createModel());
+        const script = html.slice(html.lastIndexOf('<script>'));
+        const restoreBlock = script.match(
+            /document\.addEventListener\('DOMContentLoaded', function \(\) \{([\s\S]*?)\n    \}\);/
+        )?.[1] ?? '';
+
+        expect(restoreBlock).toContain(
+            "var priorResponseText = document.getElementById('kano-offline-response').textContent.trim();"
+        );
+        expect(restoreBlock).toContain('payloadBox.value = priorResponseText;');
+        expect(restoreBlock).toContain('fallback.hidden = false;');
+        expect(restoreBlock).toContain('이전에 저장한 답변이 실려 있습니다. 수정 후 다시 저장할 수 있습니다.');
+    });
+
     it('문항별 긍정·부정 라디오를 다섯 값씩 만든다', () => {
         const html = renderKanoOfflineSurveyHtml(createModel());
 
