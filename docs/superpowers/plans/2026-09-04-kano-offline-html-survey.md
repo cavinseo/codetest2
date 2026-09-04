@@ -586,9 +586,9 @@ npx stryker run stryker.crap.config.json --mutate lib/kano-survey-document.ts   
 - Create: `lib/kano-offline-response.ts`, `tests/kano-offline-response.test.ts`
 - Modify: `stryker.crap.config.json`
 
-- [ ] **Step 0: Task 3 에서 넘어온 결함을 고친다** — `lib/kano-offline-survey.ts` 의 `SCRIPT` 안 `DOMContentLoaded` 처리에서, 응답 섬에 내용이 있으면 그 내용을 `#payload` 에 채우고 `#fallback` 을 보인다(안내 문구 표시와 같은 자리). 저장 경로는 그대로 둔다. 테스트: 렌더된 스크립트 문자열에 그 복원 코드가 있음을 `tests/kano-offline-survey.test.ts` 에서 단언하고, `lib/kano-offline-survey.ts` 는 뮤테이션 목록에 있으므로 stryker 를 재실행해 100% 를 확인한다.
+- [x] **Step 0: Task 3 에서 넘어온 결함을 고친다** — `lib/kano-offline-survey.ts` 의 `SCRIPT` 안 `DOMContentLoaded` 처리에서, 응답 섬에 내용이 있으면 그 내용을 `#payload` 에 채우고 `#fallback` 을 보인다(안내 문구 표시와 같은 자리). 저장 경로는 그대로 둔다. 테스트: 렌더된 스크립트 문자열에 그 복원 코드가 있음을 `tests/kano-offline-survey.test.ts` 에서 단언하고, `lib/kano-offline-survey.ts` 는 뮤테이션 목록에 있으므로 stryker 를 재실행해 100% 를 확인한다.
 
-- [ ] **Step 1: `lib/kano-offline-response.ts` 를 만든다**
+- [x] **Step 1: `lib/kano-offline-response.ts` 를 만든다**
 
 ```ts
 // 피설문자가 저장한 답변 파일(.kano.json)을 읽어 검증하고 현재 질문 세트와 대조한다.
@@ -832,11 +832,11 @@ function isNonEmptyString(value: unknown): value is string {
 }
 ```
 
-- [ ] **Step 2: `tests/kano-offline-response.test.ts`**
+- [x] **Step 2: `tests/kano-offline-response.test.ts`**
 
 파싱 실패 사유 16종 하나당 케이스 하나(빈 문자열, BOM 만 — 문자열은 `'\uFEFF'` 이스케이프로 만든다, 응답 섬이 없는 HTML → `html-no-island`, 응답 섬이 비어 있는 HTML(미답 원본) → `survey-file`, **응답 섬이 채워진 HTML → 정상 파싱**(값이 JSON 경로와 같음), 빈 섬 + 채워진 섬이 함께 있으면 채워진 것을 씀, 채워진 섬 둘이면 **마지막 것**을 씀, 섬 안의 `\u003c/script>` 이스케이프가 `<` 로 복원됨, 깨진 JSON, 배열, `format` 다름, `version: 2`, projectId 빈 문자열, 해시 63자, questions 의 h 15자·t 누락, submissionId 대문자는 허용되나 하이픈 누락은 거절, submittedAt 미래 10분 → now 로 폴백·미래 4분 → 유지·파싱 불가 → now, 이메일 `' Hong@X.COM '` → `hong@x.com`, 이메일 형식 오류 거절, `respondentEmail: ''` → null, answers 빈 배열, 301개, 값 `'like'`(소문자) 거절, 숫자 1 거절, requirementId 중복). 대조: 프로젝트 불일치, 해시 같고 미지 id → `unknown-requirement`, 해시 같음 → 전부, 해시 다르고 문항 h 일부 일치 → `matched`/`dropped` 정확, 문구가 바뀐 문항(id 는 있고 h 다름)은 버림, **id 가 전부 바뀌고 문구는 같음 → 전부 재매칭·`rematched` = 답 수**, 같은 문구가 현재 두 문항에 있으면 재매칭하지 않음, 재매칭된 id 는 두 번 쓰이지 않음, **문구가 겹치던 문항 둘 중 하나가 삭제된 파일(삭제된 문항의 답이 앞에 오도록) → 남은 문항의 id 가 `matched` 에 한 번만 들어간다**(2단계 대조 회귀), 문항이 삭제된 경우 dropped 에 포함. 합성 이메일 결정성·길이, 토큰 접두어, 배치 중복(같은 이메일 두 파일·같은 submissionId 두 파일·둘 다 없음 → `[]`), 변경 요약 added/removed/changed.
 
-- [ ] **Step 3: stryker 목록에 더하고 검증·커밋한다**
+- [x] **Step 3: stryker 목록에 더하고 검증·커밋한다**
 
 원격 세션에서는 아래 하네스로 대체 검증한다(감리자가 제공): `node --experimental-strip-types` 로 이 모듈을 import 해 위 케이스를 `node:assert` 로 실행. `crypto`·`./constants`·`./kano-offline-survey` 만 의존하므로 컨테이너에서 돈다.
 
