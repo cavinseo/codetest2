@@ -1091,6 +1091,16 @@ export function absoluteFileIndex(batchIndex: number, indexInBatch: number, size
 
 - [x] **Step 5: 검증하고 커밋한다**
 
+> 감리 승인(2026-09-04, 커밋 `c65ed15`+`6cd62e4`+`f775373`): 경계(커밋 3·파일 9·테스트 파일 104·`app/**` 무변경·기존 테스트 제거 0줄·LF·제어바이트 0). 원격 컨테이너에서 순수 모듈 감리 하네스 11/11(배치·절대 인덱스 왕복 포함), 워커 테스트 원본 22/22 재실행, **뮤턴트 11종 전부 사망**(배치 크기·`ceil`→`floor`·slice 오프바이원·오프셋 누락·첫 섬/마지막 섬·빈 섬 필터·HTML 판별·형식 검사·형식 이름 오타·프로젝트 검사·배열 거절). Task 3·4·5 하네스(23·47·29)와 브라우저 왕복 6단계도 재실행해 무회귀를 확인했다.
+>
+> **Step 0 의 두 뮤턴트를 감리자가 직접 재현했다**: `writePolicy` 를 `'replace'` 로, `>` 를 `>=` 로 바꾸면 각각 내 라우트 하네스가 1건씩 실패하고 원복 후 29/29 로 돌아온다. 저장소 테스트도 17·18번이 각각 잡는다. Task 5 에서 이월한 공백이 실제로 메워졌다.
+>
+> **빌드를 아무도 돌리지 않은 공백은 import 그래프 추적으로 대신했다**: `lib/kano-offline-upload-client.ts`(1개 모듈)·`components/project/KanoManager.tsx`(11개)·`components/KanoSurveyPreview.tsx`(5개)에서 도달 가능한 모든 모듈을 훑어 `crypto` 등 node 전용 import 가 **0건**임을 확인했다. 플래그는 네 자리 모두 `process.env.NEXT_PUBLIC_KANO_OFFLINE_SURVEY === 'on'` 리터럴 형태라 Next.js 가 인라인할 수 있다. 컴포넌트에 사전검사·배치·오프셋 계산이 복사되지 않았고(전부 순수 모듈 호출), `console`·`window.prompt`·`replace` 선택지도 없다.
+>
+> 남긴 관찰 하나: 초대 내역의 오프라인 라벨이 **플래그에 함께 묶여 있다**(`components/project/KanoManager.tsx:1336`). 플래그를 끄면 이미 수입된 오프라인 응답이 합성 이메일(`offline-…@import.local`)로 보이고 쓸모없는 「링크 복사」 버튼이 다시 나타난다. 라벨은 데이터가 있으면 참인 표시이므로 플래그와 무관해야 한다 — "라벨 변경도 플래그 뒤에" 라고 쓴 내 지시에서 비롯된 것이라 실행 AI 의 실패로 보지 않고 **Task 7 Step 0** 으로 이월한다.
+>
+> 화면 실동작(브라우저에서 링크 클릭·파일 선택·배치 업로드·충돌 버튼·결과 패널)은 여전히 검증되지 않았다. Task 8 의 사용자 실계정 단계가 이 기능에서 유일한 화면 검증이다.
+
 ```sh
 npx tsc --noEmit && npx vitest run && npx next lint && npm run build
 ```
@@ -1105,11 +1115,13 @@ npx tsc --noEmit && npx vitest run && npx next lint && npm run build
 - Create: `docs/2026-09-04-kano-offline-survey-guide.md`
 - Modify: `docs/2026-09-02-mentee-account-deletion-guide.md`
 
-- [ ] **Step 1: 운영 지침을 쓴다** — 선례 `docs/2026-09-02-mentee-account-deletion-guide.md` 의 어조로. 절: (1) 언제 쓰는가(온라인 초대 링크·Word 종이 설문·엑셀 손입력과의 관계 — 오프라인 HTML 은 "기기는 있지만 인터넷이 없는" 현장용, Word 는 종이용, 둘 다 엑셀 경로로 보완), (2) 배포 절차(플래그 켜기 → 「오프라인 HTML 받기」 → 파일럿에서 검증된 채널로 전달 → 피설문자 안내문 예시), (3) 수집 절차(회신 파일을 한 폴더에 → 「오프라인 응답 파일 업로드」 → 결과 패널 읽는 법 — 실패 코드별 조치, 409 안내와 「일치하는 문항만 등록」, `RESPONDENT_EXISTS` 와 「덮어쓰기」), (4) 하지 말 것(배포 후 요구사항 AI 재생성·JSON 이관 — id 가 바뀌어 문구가 같은 문항만 재매칭된다, 같은 파일 두 번 저장 안내), (5) 되돌리기(플래그 끄기, 오프라인 응답만 지우는 수단은 없으므로 파일럿은 별도 프로젝트에서).
+- [ ] **Step 0: Task 6 에서 넘어온 관찰을 고친다** — `components/project/KanoManager.tsx:1336` 의 `isOfflineInvitation` 에서 플래그 조건을 뺀다(`inv.token.startsWith('offline_')` 만 남긴다). 오프라인 초대 라벨은 데이터가 있으면 참인 표시라 기능 노출 플래그와 묶이면 안 된다 — 플래그를 끈 뒤 합성 이메일과 쓸모없는 「링크 복사」 버튼이 다시 보인다. 링크·업로드 카드의 플래그 게이팅은 그대로 둔다.
 
-- [ ] **Step 2: 삭제 지침에 한 줄** — "삭제 미리보기의 '설문 초대 발송 수' 에는 엑셀·오프라인 파일 업로드로 생긴 초대(토큰 `excel_`/`offline_`)가 포함된다."
+- [ ] **Step 2: 운영 지침을 쓴다** — 선례 `docs/2026-09-02-mentee-account-deletion-guide.md` 의 어조로. 절: (1) 언제 쓰는가(온라인 초대 링크·Word 종이 설문·엑셀 손입력과의 관계 — 오프라인 HTML 은 "기기는 있지만 인터넷이 없는" 현장용, Word 는 종이용, 둘 다 엑셀 경로로 보완), (2) 배포 절차(플래그 켜기 → 「오프라인 HTML 받기」 → 파일럿에서 검증된 채널로 전달 → 피설문자 안내문 예시), (3) 수집 절차(회신 파일을 한 폴더에 → 「오프라인 응답 파일 업로드」 → 결과 패널 읽는 법 — 실패 코드별 조치, 409 안내와 「일치하는 문항만 등록」, `RESPONDENT_EXISTS` 와 「덮어쓰기」), (4) 하지 말 것(배포 후 요구사항 AI 재생성·JSON 이관 — id 가 바뀌어 문구가 같은 문항만 재매칭된다, 같은 파일 두 번 저장 안내), (5) 되돌리기(플래그 끄기, 오프라인 응답만 지우는 수단은 없으므로 파일럿은 별도 프로젝트에서).
 
-- [ ] **Step 3: 커밋한다** (게이트: `npm run check:encoding`)
+- [ ] **Step 3: 삭제 지침에 한 줄** — "삭제 미리보기의 '설문 초대 발송 수' 에는 엑셀·오프라인 파일 업로드로 생긴 초대(토큰 `excel_`/`offline_`)가 포함된다."
+
+- [ ] **Step 4: 커밋한다** (게이트: `npm run check:encoding`)
 
 ---
 
