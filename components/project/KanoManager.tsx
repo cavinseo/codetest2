@@ -1333,8 +1333,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                             </h2>
                             <div className="space-y-2">
                                 {invitations.map(inv => {
-                                    const isOfflineInvitation = process.env.NEXT_PUBLIC_KANO_OFFLINE_SURVEY === 'on'
-                                        && inv.token.startsWith('offline_');
+                                    const isOfflineInvitation = inv.token.startsWith('offline_');
                                     return (
                                         <div key={inv.id} className="flex items-center justify-between p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl group hover:border-white/[0.10] transition-colors">
                                         <div className="flex items-center gap-3">
