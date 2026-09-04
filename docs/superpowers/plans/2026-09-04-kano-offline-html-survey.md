@@ -290,7 +290,7 @@ npx stryker run stryker.crap.config.json --mutate lib/kano-response-import.ts
 **Files:**
 - Modify: `lib/upload-guard.ts`, `tests/upload-guard.test.ts`
 
-- [ ] **Step 1: `checkUploadedFile` 을 두고 엑셀 함수는 래퍼로 남긴다**
+- [x] **Step 1: `checkUploadedFile` 을 두고 엑셀 함수는 래퍼로 남긴다**
 
 ```ts
 export interface UploadFileRule {
@@ -327,9 +327,9 @@ export function guardUploadedFile(value: unknown, rule: UploadFileRule): UploadG
 
 `checkUploadedExcel(value, options)` 는 `checkUploadedFile(value, { extensions: ['.xlsx', '.xls'], maxBytes: options.maxBytes, label: '엑셀' })` 로 위임한다. **기존 오류 문구 세 개(`업로드할 엑셀 파일이 필요합니다.`, `빈 파일입니다. 내용이 있는 엑셀 파일을 올려 주세요.`, `.xlsx 또는 .xls 파일만 업로드할 수 있습니다.`)와 `파일 크기는 10MB를 초과할 수 없습니다.` 는 글자 단위로 같아야 한다** — `tests/upload-guard.test.ts` 의 기존 단언이 그대로 통과해야 한다. `formatLimit` 은 MB 단위면 `10MB`, 그 아래면 `1MB`/`512KB` 로 만든다. 머리 주석의 "세 업로드 라우트" 는 실제 사용처가 Kano 업로드 1곳뿐이므로 사실대로 고친다.
 
-- [ ] **Step 2: 테스트를 더한다** — 규칙 `{ extensions: ['.html', '.htm', '.json'], maxBytes: 400 * 1024, label: '답변' }` 로 `a.html`/`A.HTM`/`b.json`/`c.kano.json` 허용, `.txt` 거부 문구에 `.html 또는 .htm 또는 .json` 포함, 400 KB + 1 바이트가 413 이고 문구에 `400KB`, 0 바이트 문구에 `답변`, `File` 이 아닌 값의 문구에 `답변`. 기존 엑셀 케이스는 그대로.
+- [x] **Step 2: 테스트를 더한다** — 규칙 `{ extensions: ['.html', '.htm', '.json'], maxBytes: 400 * 1024, label: '답변' }` 로 `a.html`/`A.HTM`/`b.json`/`c.kano.json` 허용, `.txt` 거부 문구에 `.html 또는 .htm 또는 .json` 포함, 400 KB + 1 바이트가 413 이고 문구에 `400KB`, 0 바이트 문구에 `답변`, `File` 이 아닌 값의 문구에 `답변`. 기존 엑셀 케이스는 그대로.
 
-- [ ] **Step 3: 검증하고 커밋한다**
+- [x] **Step 3: 검증하고 커밋한다**
 
 ---
 
