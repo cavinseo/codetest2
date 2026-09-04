@@ -450,4 +450,29 @@ describe('POST /api/projects/[id]/kano/offline-responses', () => {
     it('16. 서버리스 실행 시간 상한을 export한다', () => {
         expect(route.maxDuration).toBe(60);
     });
+
+    it('17. 정상 수입은 응답자 범위만 교체하고 프로젝트 전체를 삭제하지 않는다', async () => {
+        const res = await call([jsonFile(makePayload())]);
+
+        expect(res.status).toBe(200);
+        expect(tx.kanoSurveyInvitation.deleteMany).not.toHaveBeenCalled();
+        expect(tx.kanoResponse.deleteMany).toHaveBeenCalled();
+        for (const [args] of tx.kanoResponse.deleteMany.mock.calls) {
+            expect(args).toMatchObject({
+                where: { respondentEmail: { in: expect.any(Array) } },
+            });
+        }
+    });
+
+    it('18. 파일 10개는 한 배치로 모두 저장한다', async () => {
+        const files = Array.from({ length: 10 }, (_, index) => jsonFile(
+            makePayload({ submissionNumber: index + 1 }),
+            `${index}.kano.json`
+        ));
+        const res = await call(files);
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.respondentCount).toBe(10);
+    });
 });
