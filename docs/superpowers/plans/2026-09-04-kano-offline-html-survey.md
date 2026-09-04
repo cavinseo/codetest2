@@ -857,7 +857,7 @@ function isNonEmptyString(value: unknown): value is string {
 **Files:**
 - Create: `app/api/projects/[id]/kano/offline-responses/route.ts`, `tests/api-kano-offline-responses.test.ts`
 
-- [ ] **Step 1: 라우트를 만든다**
+- [x] **Step 1: 라우트를 만든다**
 
 ```ts
 import { NextRequest, NextResponse } from 'next/server';
@@ -1023,13 +1023,13 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
 `failures[].detail` 은 가드 문구·파서 사유 코드뿐이다 — 파일 내용·이메일은 절대 넣지 않는다. `fileName` 은 업로더 자신의 파일명이라 응답에는 담되 로그에는 남기지 않는다.
 
-- [ ] **Step 2: `tests/api-kano-offline-responses.test.ts`**
+- [x] **Step 2: `tests/api-kano-offline-responses.test.ts`**
 
 `$transaction` 목 + bare 목 패턴. 파일은 `new File([JSON.stringify(payload)], 'a.kano.json', { type: 'application/json' })` 로 만들고 `formData.append('files', file)` 로 여러 개 붙인다. 현재 질문 세트는 `customerRequirement.findMany` 목이 돌려주는 요구사항으로 `buildKanoOfflineSurveyModel` 이 계산하므로, 테스트는 같은 요구사항으로 `questionSetHash`·`questions[].h` 를 만들어 페이로드에 넣는다.
 
 케이스: (1) 정상 2파일 → tx 로만 쓰기, `respondentCount 2`, 응답 본문에 이메일 없음, (2) 1파일 가드 실패 + 1파일 정상 → 정상 1건 저장 + `failures[0].code 'GUARD'`, (3) 전부 실패 → 400 + failures, (4) 해시 불일치 + 플래그 없음 → 409 `QUESTION_SET_CHANGED` + added/removed/changed + 쓰기 0, (5) 같은 요청에 `acceptQuestionSetMismatch=true` → 일치 문항만 저장·`droppedAnswerCount`, (5b) 요구사항 id 를 전부 바꾼 현재 세트(문구 동일) + 수락 → 전부 재매칭·`rematchedAnswerCount`, (6) 다른 projectId → `WRONG_PROJECT`, (7) 해시 같은데 미지 requirementId → `UNKNOWN_REQUIREMENT`·쓰기 0, (7b) 수락했는데 일치 문항이 0개인 파일 → `UNKNOWN_REQUIREMENT`, (8) 같은 이메일 두 파일 → 둘 다 `DUPLICATE_IN_BATCH`, (9) 기존 초대(token `uuid…`, 온라인)와 같은 이메일(**DB 에는 `Hong@X.COM`, 파일에는 `hong@x.com`**) → `RESPONDENT_EXISTS`·쓰기 0 — 목이 프로젝트의 초대를 전부 돌려주고 라우트가 소문자로 비교해야 통과한다, (10) 같은 요청에 `overwriteFiles=0` → 저장, (11) 기존 초대 token 이 `offline_` 이면 승인 없이 저장(재수입), (12) `$transaction` 옵션에 `timeout` 이 있다, (13) 403 그대로, (14) 11 파일 400, (14b) 401 KB 파일은 `GUARD` 실패, (14c) 답변 HTML(응답 섬 채움) 1건 → 200·저장, (14d) 미답 원본 HTML → `failures[].code 'PARSE'`·`detail 'survey-file'`, (15) 500 본문에 내부 오류 없음, (16) 라우트 모듈이 `maxDuration` 을 export 한다.
 
-- [ ] **Step 3: 검증하고 커밋한다**
+- [x] **Step 3: 검증하고 커밋한다**
 
 ---
 
