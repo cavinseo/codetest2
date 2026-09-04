@@ -108,11 +108,15 @@ const FILE_NAME_MAX = 60;
  * 걸리는지는 이 환경(node_modules 없음)에서 확인하지 못했다 — 걸리면 아래처럼
  * 이유를 적은 disable 주석으로 대응한다(RISKS 참고).
  */
-export function kanoSurveyFileName(projectName: string | null | undefined): string {
-    const cleaned = (projectName ?? '')
+/** 파일명 줄기 정제. 경로 구분자·제어 문자는 밑줄, 겹공백은 하나, 60자 상한. .docx 와 .html 이 같이 쓴다. */
+export function sanitizeKanoFileNameStem(name: string | null | undefined): string {
+    return (name ?? '')
         .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, FILE_NAME_MAX);
-    return `Kano_설문지_${cleaned || '프로젝트'}.docx`;
+}
+
+export function kanoSurveyFileName(projectName: string | null | undefined): string {
+    return `Kano_설문지_${sanitizeKanoFileNameStem(projectName) || '프로젝트'}.docx`;
 }

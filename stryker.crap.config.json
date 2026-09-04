@@ -25,7 +25,8 @@
         "lib/temp-password-email.ts",
         "lib/account-deletion.ts",
         "lib/kano-survey-document.ts",
-        "lib/kano-response-import.ts"
+        "lib/kano-response-import.ts",
+        "lib/kano-offline-survey.ts"
     ],
     "ignorePatterns": [
         ".claude/**",
