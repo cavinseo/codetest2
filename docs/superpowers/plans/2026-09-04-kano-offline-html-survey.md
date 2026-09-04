@@ -331,6 +331,12 @@ export function guardUploadedFile(value: unknown, rule: UploadFileRule): UploadG
 
 - [x] **Step 3: 검증하고 커밋한다**
 
+> 감리 승인(2026-09-04, 커밋 `e5682e3`+`7505897`): 경계(파일 4·기존 테스트 제거 0줄·skip/only 도입 없음·테스트 파일 99 유지), `lib/upload-guard.ts` 가 위 Step 1 블록과 차이 0줄, 계약대로 `checkUploadedExcel` 이 래퍼가 되었다. 원격 컨테이너에서 감리 하네스 15/15(엑셀 문구 4종을 글자 단위 `deepEqual` 로 고정)와 워커 테스트 원본 15/15 재실행. 뮤턴트 9종 역검증 결과 워커 테스트가 5종(확장자 무력화·항상 MB·`>`→`>=`·`maxBytes` 무시·0바이트 무력화)을 잡았고 4종이 생존했다(아래). tsc·vitest 99 파일·lint·check:encoding 은 사용자 로컬 보고.
+>
+> 생존 뮤턴트 4종은 **코드 결함이 아니라 회귀 넷의 공백**이다(감리 하네스가 3종을 잡아 구현이 계약대로임을 확인했다): ① `label: '엑셀'` 을 `'파일'` 로 바꿔도 저장소 테스트는 전부 통과한다 — 기존 4개 단언이 모두 라벨과 무관한 부분 문자열만 본다. 이번 Task 의 핵심 위험(문구 글자 단위 유지)을 저장소가 스스로 지키지 못한다. ② `formatLimit` 의 `Math.floor`→`Math.ceil`, ③ `name.trim()` 제거, ④ `endsWith`→`includes` 도 잡히지 않는다(③④ 는 리팩터 이전부터 있던 공백). 보강 4케이스는 Task 3 위임 프롬프트의 선행 Step 으로 이월한다.
+>
+> 함께 확인한 동작 변화: 이전 문구는 `Math.floor(maxBytes / 1MiB)MB` 로 항상 MB 였으므로 MiB 배수가 아닌 `maxBytes` 에서 새 `formatLimit` 과 결과가 갈린다(400 KiB → 이전 `0MB`, 지금 `400KB`). 유일한 프로덕션 사용처 `app/api/projects/[id]/kano/upload-excel/route.ts:123` 이 `maxBytes` 를 넘기지 않아 기본 10 MiB 경로만 타므로 실사용 문구는 그대로다.
+
 ---
 
 ### Task 3: 오프라인 설문 모델·해시·HTML 렌더러 + 내려받기 라우트
