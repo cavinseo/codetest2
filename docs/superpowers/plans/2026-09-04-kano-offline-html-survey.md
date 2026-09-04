@@ -2,9 +2,9 @@
 
 > **For agentic workers:** 이 계획서가 각 Task 의 정본이다. Step 은 체크박스(`- [ ]`)로 추적하고, 완료 시 `- [x]` 로 갱신해 코드와 함께 커밋한다.
 
-**Goal:** WS-6 미리보기 양식을 오프라인에서 답할 수 있는 단일 HTML 파일로 내려주고, 피설문자가 저장한 답변 파일(`.kano.json`)을 여러 개 올리면 `KanoResponse` 가 자동으로 만들어지게 한다. 설계·결정의 근거는 `docs/superpowers/specs/2026-09-04-kano-offline-html-survey-design.md`(이하 "설계서")다.
+**Goal:** WS-6 미리보기 양식을 오프라인에서 답할 수 있는 단일 HTML 파일로 내려주고, 피설문자가 **답을 담아 다시 저장한 그 HTML 파일**(보조로 JSON)을 여러 개 올리면 `KanoResponse` 가 자동으로 만들어지게 한다. 설계·결정의 근거는 `docs/superpowers/specs/2026-09-04-kano-offline-html-survey-design.md`(이하 "설계서")다.
 
-**Architecture:** 세 층이다. **공용 수입 함수**(`lib/kano-response-import.ts`)가 엑셀 경로와 오프라인 경로의 초대 upsert → `createMany` 트랜잭션을 하나로 묶는다. **오프라인 설문 모델·렌더러**(`lib/kano-offline-survey.ts`)가 requirementId·질문 해시를 내장한 자급자족 HTML 문자열을 만든다. **응답 파일 파서**(`lib/kano-offline-response.ts`)가 텍스트를 검증된 응답으로 바꾸고 현재 질문 세트와 대조한다. 라우트 둘(GET 내려받기, POST 수입)은 얇고, 화면은 링크 하나와 업로드 카드 하나를 더한다.
+**Architecture:** 세 층이다. **공용 수입 함수**(`lib/kano-response-import.ts`)가 엑셀 경로와 오프라인 경로의 초대 upsert → `createMany` 트랜잭션을 하나로 묶는다. **오프라인 설문 모델·렌더러**(`lib/kano-offline-survey.ts`)가 requirementId·질문 해시를 내장한 자급자족 HTML 문자열을 만든다. **응답 파일 파서**(`lib/kano-offline-response.ts`)가 답이 담긴 HTML(응답 섬) 또는 JSON 텍스트를 검증된 응답으로 바꾸고 현재 질문 세트와 대조한다. 라우트 둘(GET 내려받기, POST 수입)은 얇고, 화면은 링크 하나와 업로드 카드 하나를 더한다.
 
 **Tech Stack:** Next.js 15 App Router, Prisma 6, node `crypto`(sha256), vitest(Prisma 전부 mock), Stryker. **새 npm 의존성 없음, 스키마 변경 없음.**
 
@@ -28,14 +28,14 @@
 
 | # | 결정 |
 | --- | --- |
-| 1 | 응답 파일은 전용 JSON `.kano.json` (아래 형식). 값은 enum 만 허용 |
-| 2 | v1 은 별도 답변 파일 방식. `<` 로 시작하는 파일은 "설문 파일" 로 거절 |
+| 1 | 응답 페이로드는 아래 JSON 형식. 값은 enum 만 허용 |
+| 2 | **답변 파일은 설문 HTML 자체다(자기 저장형 왕복, 사용자 결정 B, 2026-09-04).** 「답변 저장」이 라디오 상태를 `checked` 속성으로 굳히고 응답 섬(`<script type="application/json" id="kano-offline-response">`)에 페이로드를 써 넣은 뒤 `kano-response-<id8>.html` 로 내려준다. 다시 열면 답이 복원되고 재저장하면 같은 submissionId 로 갱신된다. 서버는 `.html`(응답 섬 추출)과 `.json`(「내용 복사」 폴백)을 둘 다 받는다. 응답 섬이 비어 있으면 "아직 답하지 않은 설문 파일" 로 거절 |
 | 3 | 기존 응답자(다른 경로)와 이메일이 겹치면 **기본 거절**, 파일별 명시 승인(`overwriteFiles`) 시만 덮어쓰기 |
 | 4 | 오프라인 경로에 `replace`(전체 삭제) 없음 — append 고정 |
 | 5 | 오프라인 초대: `token = offline_<submissionId>`, `expiresAt = now`, `invitedBy = 업로더`, `respondedAt = submittedAt` |
 | 6 | 이메일 선택. 없으면 `offline-<submissionId 앞 12자>@import.local` |
-| 7 | 파일명: HTML `Kano_설문_<프로젝트명 정제>.html`, 응답 `kano-response-<submissionId 앞 8자>.kano.json` |
-| 8 | **요청당 최대 20 파일, 파일당 최대 256 KB**(답변 파일은 1~2 KB). 화면이 20개씩 순차 배치로 보내고 배치마다 원자 저장. 실패 파일은 목록 반환. 라우트는 `export const maxDuration = 60`, 트랜잭션은 `{ timeout: 60_000, maxWait: 10_000 }` — Vercel 서버리스의 본문 상한(약 4.5 MB)·실행 시간과 Prisma 대화형 트랜잭션 기본 5초를 넘지 않기 위해서다. 재시도는 submissionId 멱등으로 안전하다 |
+| 7 | 파일명: 설문 `Kano_설문_<프로젝트명 정제>.html`(서버, RFC 5987), 답변 `kano-response-<submissionId 앞 8자>.html`(브라우저, ASCII) |
+| 8 | **요청당 최대 10 파일, 파일당 최대 400 KB**(답변 HTML 은 기본 ≈15 KB + 문항당 ≈2.3 KB — 100문항이면 ≈250 KB). 화면이 10개씩 순차 배치로 보내고 배치마다 원자 저장. 실패 파일은 목록 반환. 라우트는 `export const maxDuration = 60`, 트랜잭션은 `{ timeout: 60_000, maxWait: 10_000 }` — Vercel 서버리스의 본문 상한(약 4.5 MB)·실행 시간과 Prisma 대화형 트랜잭션 기본 5초를 넘지 않기 위해서다. 재시도는 submissionId 멱등으로 안전하다 |
 | 9 | 질문 세트 불일치는 409. `acceptQuestionSetMismatch=true` 면 문항별 해시 일치분만 수입. **id 가 전부 바뀐 경우(AI 재생성·JSON 이관)에도 문구 해시 `t` 가 정확히 하나의 현재 문항과 일치하면 그 문항으로 재매칭**한다 |
 | 10 | 파서는 zod 없이 손 검증(순수 TS) |
 | 11 | `KanoSurveyPreview` 기본 문구도 `resolveKanoQuestionPair` 로 통일 |
@@ -64,6 +64,10 @@
 ```
 
 `respondentEmail` 은 `null` 일 수 있다. `answers` 는 1~300개, `requirementId` 중복 금지.
+
+이 JSON 은 두 곳에 실린다. (1) **답변 HTML 의 응답 섬** `<script type="application/json" id="kano-offline-response">…</script>` — 기본 경로. (2) 「내용 복사」 textarea — 다운로드가 막힌 환경의 폴백. 서버 파서는 텍스트가 `<` 로 시작하면 응답 섬(여러 개면 **마지막 비어 있지 않은 것**)을 뽑고, 아니면 JSON 으로 본다. JSON 안의 `\u003c` 는 `JSON.parse` 가 그대로 `<` 로 되돌리므로 별도 처리가 없다.
+
+**자기 저장형 HTML 의 규칙(실증으로 확정)** — 응답 섬은 반드시 설문 섬·스크립트보다 **앞에** 빈 채로 미리 둔다(문서 끝에 붙이면 다시 연 파일에서 스크립트가 섬보다 먼저 실행돼 이전 답을 못 찾고 재저장 시 섬이 두 개가 된다). 이전 답 조회는 페이지 로드 시가 아니라 **저장 버튼 클릭 시점**에 한다. 재저장은 같은 submissionId 를 쓴다.
 
 ### 해시 규칙 (Task 3 이 구현, Task 4 가 대조)
 
@@ -277,6 +281,8 @@ npx tsc --noEmit && npx vitest run && npx next lint
 npx stryker run stryker.crap.config.json --mutate lib/kano-response-import.ts
 ```
 
+> 감리 승인(2026-09-04, 커밋 `f7015c9`+`e93d775`): 경계(파일 5·금지 파일 무접촉·LF·제어바이트 0), lib 가 계획서 블록과 차이 0줄, 테스트에 `vi.fn` 없음, 감리 하네스 10/10·테스트 원본 8/8 을 원격 컨테이너에서 재실행, `generateId('inv')` 뮤턴트를 주입해 강화된 단언이 1건 실패로 잡는 것을 역검증. tsc·vitest 99/1137·lint·stryker 66 killed 100% 는 사용자 로컬 보고.
+
 ---
 
 ### Task 2: 업로드 가드 일반화
@@ -321,7 +327,7 @@ export function guardUploadedFile(value: unknown, rule: UploadFileRule): UploadG
 
 `checkUploadedExcel(value, options)` 는 `checkUploadedFile(value, { extensions: ['.xlsx', '.xls'], maxBytes: options.maxBytes, label: '엑셀' })` 로 위임한다. **기존 오류 문구 세 개(`업로드할 엑셀 파일이 필요합니다.`, `빈 파일입니다. 내용이 있는 엑셀 파일을 올려 주세요.`, `.xlsx 또는 .xls 파일만 업로드할 수 있습니다.`)와 `파일 크기는 10MB를 초과할 수 없습니다.` 는 글자 단위로 같아야 한다** — `tests/upload-guard.test.ts` 의 기존 단언이 그대로 통과해야 한다. `formatLimit` 은 MB 단위면 `10MB`, 그 아래면 `1MB`/`512KB` 로 만든다. 머리 주석의 "세 업로드 라우트" 는 실제 사용처가 Kano 업로드 1곳뿐이므로 사실대로 고친다.
 
-- [ ] **Step 2: 테스트를 더한다** — `.json`/`.kano.json` 허용, `.txt` 거부 문구에 `.json` 포함, `maxBytes: 1024 * 1024` 로 1 MB + 1 바이트가 413.
+- [ ] **Step 2: 테스트를 더한다** — 규칙 `{ extensions: ['.html', '.htm', '.json'], maxBytes: 400 * 1024, label: '답변' }` 로 `a.html`/`A.HTM`/`b.json`/`c.kano.json` 허용, `.txt` 거부 문구에 `.html 또는 .htm 또는 .json` 포함, 400 KB + 1 바이트가 413 이고 문구에 `400KB`, 0 바이트 문구에 `답변`, `File` 이 아닌 값의 문구에 `답변`. 기존 엑셀 케이스는 그대로.
 
 - [ ] **Step 3: 검증하고 커밋한다**
 
@@ -512,7 +518,7 @@ export function renderKanoOfflineSurveyHtml(model: KanoOfflineSurveyModel): stri
         <section class="submit">
             <label class="email">이메일 (선택) <input type="email" id="email" placeholder="입력하지 않으면 익명으로 집계됩니다"></label>
             <p class="note">입력한 이메일은 답변 파일에 담기며 설문 결과 관리 목적으로만 쓰입니다. 문의: 설문 담당자</p>
-            <button type="button" id="save">답변 파일 저장</button>
+            <button type="button" id="save">답변 저장</button>
             <p id="status" class="status" aria-live="polite"></p>
             <div id="fallback" class="fallback" hidden>
                 <p>다운로드 창이 뜨지 않았다면 아래 내용을 <b>「내용 복사」</b>로 복사해 담당자에게 메일로 보내 주세요.</p>
@@ -522,6 +528,7 @@ export function renderKanoOfflineSurveyHtml(model: KanoOfflineSurveyModel): stri
         </section>
     </div>
 </main>
+<script type="application/json" id="kano-offline-response"></script>
 <script type="application/json" id="kano-offline-survey">${jsonForScript(island)}</script>
 <script>${SCRIPT}</script>
 </body>
@@ -532,11 +539,11 @@ export function renderKanoOfflineSurveyHtml(model: KanoOfflineSurveyModel): stri
 `CSS` 는 미리보기(`KanoSurveyPreview.tsx`)의 보라 헤더(`#673ab7`)·5열 라디오 격자·긍정/부정 색점을 흉내내는 인라인 스타일이고 `@media print { .submit { display: none } }` 를 포함한다. 외양은 근사치다 — 테스트는 구조만 단언한다.
 
 `SCRIPT` 의 동작(이 순서와 문구가 계약이다):
-1. 섬(`#kano-offline-survey`)을 `JSON.parse` 한다.
-2. `submissionId` 는 저장 버튼을 처음 누를 때 만든다: `crypto.randomUUID` 가 있으면 그것, 없으면 `crypto.getRandomValues` 로 만든 UUID v4. 같은 페이지 세션에서는 재사용한다.
-3. 「답변 파일 저장」: 모든 `questions[].id` 에 대해 `f_<id>`·`d_<id>` 라디오가 둘 다 선택됐는지 검사. 미완이면 첫 미답 문항으로 스크롤하고 그 `.q` 에 `class="missing"` 을 더하며 `#status` 에 `아직 답하지 않은 질문이 N개 있습니다.` 를 쓴다. 다운로드하지 않는다.
-4. 완료면 응답 파일 JSON(형식 정본)을 만들어 `Blob` + `<a download="kano-response-<submissionId 앞 8자>.kano.json">` 으로 저장한다. 같은 JSON 을 `#payload` 에 넣고 `#fallback` 을 **항상** 보인다(다운로드 실패는 감지할 수 없다).
-5. `#status` 는 성공을 단정하지 않는다: `답변 파일 kano-response-….kano.json 을 저장합니다. 다운로드된 파일을 설문 담당자에게 보내 주세요.` 저장 버튼은 비활성화하고 문구를 `저장됨` 으로 바꾼다.
+1. 설문 섬(`#kano-offline-survey`)을 `JSON.parse` 한다. 응답 섬(`#kano-offline-response`)은 **저장 버튼 클릭 시점에** `textContent.trim()` 으로 읽는다 — 로드 시점에 읽으면 안 된다(정본 절의 규칙). 페이지를 열었을 때 응답 섬에 내용이 있으면 `#status` 에 `이전에 저장한 답변이 실려 있습니다. 수정 후 다시 저장할 수 있습니다.` 를 쓴다(이 표시만 로드 시 허용 — `DOMContentLoaded` 뒤에).
+2. `submissionId` 는 응답 섬에 있으면 그 값을 재사용하고, 없으면 처음 저장할 때 만든다: `crypto.randomUUID` 가 있으면 그것, 없으면 `crypto.getRandomValues` 로 만든 UUID v4.
+3. 「답변 저장」: 모든 `questions[].id` 에 대해 `f_<id>`·`d_<id>` 라디오가 둘 다 선택됐는지 검사. 미완이면 첫 미답 문항으로 스크롤하고 그 `.q` 에 `class="missing"` 을 더하며 `#status` 에 `아직 답하지 않은 질문이 N개 있습니다.` 를 쓴다. 다운로드하지 않는다.
+4. 완료면 (a) 모든 라디오에 대해 선택된 것은 `setAttribute('checked', '')`, 아닌 것은 `removeAttribute('checked')` — `outerHTML` 은 프로퍼티가 아니라 속성만 담기 때문이다. 이메일 입력은 `setAttribute('value', …)`. (b) 응답 페이로드 JSON(형식 정본)을 만들어 응답 섬의 `textContent` 에 `jsonForScript` 와 같은 규칙(`<` → `\u003c`)으로 써 넣는다. (c) `'<!DOCTYPE html>\n' + document.documentElement.outerHTML` 을 `Blob(text/html)` + `<a download="kano-response-<submissionId 앞 8자>.html">` 으로 저장한다. (d) 같은 JSON 을 `#payload` 에 넣고 `#fallback` 을 **항상** 보인다(다운로드 실패는 감지할 수 없다).
+5. `#status` 는 성공을 단정하지 않는다: `답변이 담긴 설문 파일 kano-response-….html 을 저장합니다. 다운로드된 파일을 설문 담당자에게 보내 주세요. 다시 저장하면 같은 응답이 갱신됩니다.` 저장 버튼은 **비활성화하지 않는다**(재저장 허용).
 6. 「내용 복사」: `navigator.clipboard.writeText` 시도, 실패하면 textarea 를 선택해 `document.execCommand('copy')`.
 
 - [ ] **Step 3: 내려받기 라우트를 만든다** — `app/api/projects/[id]/kano/survey-document/route.ts` 를 그대로 본뜬다. 차이: `select` 에 `id`·`category` 추가, `renderKanoOfflineSurveyHtml(buildKanoOfflineSurveyModel({ projectId, projectName: project.name, requirements }))`, 요구사항 0건이면 400 `'먼저 고객요구사항을 등록하세요.'`, 헤더 `Content-Type: text/html; charset=utf-8`, `Content-Disposition: attachment; filename*=UTF-8''<encodeURIComponent(kanoOfflineSurveyFileName(project.name))>`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. 로거 이름 `api/kano-offline-survey`.
@@ -545,7 +552,7 @@ export function renderKanoOfflineSurveyHtml(model: KanoOfflineSurveyModel): stri
 
 - 해시: 같은 입력 → 같은 값(결정성), 순서만 바꾼 요구사항 → 세트 해시 동일, 문구 한 글자 변경 → 세트 해시·해당 문항 `h`·`t` 변경, id 만 바꾼 문항 → `h` 는 변하고 `t` 는 그대로, 문항 추가/삭제 → 세트 해시 변경, 저장값 앞뒤 공백은 `resolveKanoQuestionPair` 가 잘라 해시가 같음.
 - 모델: `answerOptions` 가 `[LIKE,'마음에 든다'] … [DISLIKE,'마음에 안든다']` 순, 저장된 질문이 없으면 화면 기본 문구, `no` 는 1부터.
-- HTML: `<script type="application/json" id="kano-offline-survey">` 섬을 정규식으로 뽑아 `JSON.parse` 하면 `format`/`version`/`projectId`/`questionSetHash`/`questions[].h`/`questions[].t` 가 모델과 같다; 개인정보 고지 문구(결정 16)가 있다; 문항마다 `name="f_<id>"`·`name="d_<id>"` 라디오가 각 5개(값 5종); 요구사항 문구에 `</script><script>alert(1)</script>` 를 넣으면 HTML 본문에 `<script>alert` 가 없고 `&lt;/script&gt;` 로 나오며 섬 JSON 에도 `</script>` 문자열이 없다; `https?://`·`src=`·`@import`·`url(` 가 0건(자급자족); `charset=utf-8`·`lang="ko"`·`noscript` 포함; 파일명 `kanoOfflineSurveyFileName('a/b')` → `Kano_설문_a_b.html`, 빈 이름 → `Kano_설문_프로젝트.html`.
+- HTML: `<script type="application/json" id="kano-offline-survey">` 섬을 정규식으로 뽑아 `JSON.parse` 하면 `format`/`version`/`projectId`/`questionSetHash`/`questions[].h`/`questions[].t` 가 모델과 같다; **응답 섬 `id="kano-offline-response"` 가 정확히 하나, 내용이 비어 있고, 설문 섬과 `<script>` 보다 앞에 있다**(문자열 인덱스 비교); 인라인 스크립트 문자열에 `setAttribute('checked'`·`outerHTML`·`kano-offline-response` 가 있다; 개인정보 고지 문구(결정 16)가 있다; 문항마다 `name="f_<id>"`·`name="d_<id>"` 라디오가 각 5개(값 5종); 요구사항 문구에 `</script><script>alert(1)</script>` 를 넣으면 HTML 본문에 `<script>alert` 가 없고 `&lt;/script&gt;` 로 나오며 섬 JSON 에도 `</script>` 문자열이 없다; `https?://`·`src=`·`@import`·`url(` 가 0건(자급자족); `charset=utf-8`·`lang="ko"`·`noscript` 포함; 파일명 `kanoOfflineSurveyFileName('a/b')` → `Kano_설문_a_b.html`, 빈 이름 → `Kano_설문_프로젝트.html`.
 
 - [ ] **Step 5: `tests/api-kano-offline-survey.test.ts`** — `tests/api-kano-survey-document.test.ts` 와 같은 5 케이스(200 헤더 4종 + 본문에 `<!DOCTYPE html>`·프로젝트명, 요구사항 order asc 조회, 404, 403 그대로, 500 본문에 원인 없음) + 요구사항 0건 400.
 
@@ -581,7 +588,7 @@ import { KANO_OFFLINE_FORMAT, KANO_OFFLINE_VERSION } from './kano-offline-survey
 export const KANO_OFFLINE_MAX_ANSWERS = 300;
 
 export type KanoOfflineParseFailure =
-    | 'empty' | 'html-file' | 'not-json' | 'format' | 'version'
+    | 'empty' | 'survey-file' | 'html-no-island' | 'not-json' | 'format' | 'version'
     | 'project-id' | 'question-set-hash' | 'questions' | 'submission-id'
     | 'submitted-at' | 'email' | 'answers-empty' | 'answers-too-many'
     | 'answer-shape' | 'answer-value' | 'answer-duplicate';
@@ -608,11 +615,28 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ANSWER_VALUES = new Set(Object.keys(KANO_ANSWER_SCORE));
 
-export function parseKanoOfflineResponseText(rawText: string, now: Date = new Date()): KanoOfflineParseResult {
+const RESPONSE_ISLAND = /<script type="application\/json" id="kano-offline-response">([\s\S]*?)<\/script>/g;
+
+/**
+ * 답변 HTML 이면 응답 섬의 JSON 을, 아니면 텍스트 그대로를 돌려준다.
+ * 섬이 여러 개면 마지막 비어 있지 않은 것을 쓴다 — 재저장된 파일의 최신 답이 뒤에 온다.
+ */
+export function extractKanoOfflinePayloadText(rawText: string): { ok: true; text: string } | { ok: false; reason: 'empty' | 'survey-file' | 'html-no-island' } {
     // 메모장이 붙이는 BOM 은 JSON 이 아니다.
     const text = rawText.replace(/^\uFEFF/, '').trim();
     if (!text) return { ok: false, reason: 'empty' };
-    if (text.startsWith('<')) return { ok: false, reason: 'html-file' };
+    if (!text.startsWith('<')) return { ok: true, text };
+    const islands = [...text.matchAll(RESPONSE_ISLAND)].map((m) => m[1].trim());
+    if (islands.length === 0) return { ok: false, reason: 'html-no-island' };
+    const filled = islands.filter((island) => island.length > 0);
+    if (filled.length === 0) return { ok: false, reason: 'survey-file' };
+    return { ok: true, text: filled[filled.length - 1] };
+}
+
+export function parseKanoOfflineResponseText(rawText: string, now: Date = new Date()): KanoOfflineParseResult {
+    const extracted = extractKanoOfflinePayloadText(rawText);
+    if (!extracted.ok) return { ok: false, reason: extracted.reason };
+    const text = extracted.text;
 
     let data: unknown;
     try {
@@ -782,7 +806,7 @@ function isNonEmptyString(value: unknown): value is string {
 
 - [ ] **Step 2: `tests/kano-offline-response.test.ts`**
 
-파싱 실패 사유 하나당 케이스 하나(빈 문자열, BOM 만 — 문자열은 `'\uFEFF'` 이스케이프로 만든다, `<!DOCTYPE` 로 시작, 깨진 JSON, 배열, `format` 다름, `version: 2`, projectId 빈 문자열, 해시 63자, questions 의 h 15자·t 누락, submissionId 대문자는 허용되나 하이픈 누락은 거절, submittedAt 미래 10분 → now 로 폴백·미래 4분 → 유지·파싱 불가 → now, 이메일 `' Hong@X.COM '` → `hong@x.com`, 이메일 형식 오류 거절, `respondentEmail: ''` → null, answers 빈 배열, 301개, 값 `'like'`(소문자) 거절, 숫자 1 거절, requirementId 중복). 대조: 프로젝트 불일치, 해시 같고 미지 id → `unknown-requirement`, 해시 같음 → 전부, 해시 다르고 문항 h 일부 일치 → `matched`/`dropped` 정확, 문구가 바뀐 문항(id 는 있고 h 다름)은 버림, **id 가 전부 바뀌고 문구는 같음 → 전부 재매칭·`rematched` = 답 수**, 같은 문구가 현재 두 문항에 있으면 재매칭하지 않음, 재매칭된 id 는 두 번 쓰이지 않음, 문항이 삭제된 경우 dropped 에 포함. 합성 이메일 결정성·길이, 토큰 접두어, 배치 중복(같은 이메일 두 파일·같은 submissionId 두 파일·둘 다 없음 → `[]`), 변경 요약 added/removed/changed.
+파싱 실패 사유 하나당 케이스 하나(빈 문자열, BOM 만 — 문자열은 `'\uFEFF'` 이스케이프로 만든다, 응답 섬이 없는 HTML → `html-no-island`, 응답 섬이 비어 있는 HTML(미답 원본) → `survey-file`, **응답 섬이 채워진 HTML → 정상 파싱**(값이 JSON 경로와 같음), 빈 섬 + 채워진 섬이 함께 있으면 채워진 것을 씀, 채워진 섬 둘이면 **마지막 것**을 씀, 섬 안의 `\u003c/script>` 이스케이프가 `<` 로 복원됨, 깨진 JSON, 배열, `format` 다름, `version: 2`, projectId 빈 문자열, 해시 63자, questions 의 h 15자·t 누락, submissionId 대문자는 허용되나 하이픈 누락은 거절, submittedAt 미래 10분 → now 로 폴백·미래 4분 → 유지·파싱 불가 → now, 이메일 `' Hong@X.COM '` → `hong@x.com`, 이메일 형식 오류 거절, `respondentEmail: ''` → null, answers 빈 배열, 301개, 값 `'like'`(소문자) 거절, 숫자 1 거절, requirementId 중복). 대조: 프로젝트 불일치, 해시 같고 미지 id → `unknown-requirement`, 해시 같음 → 전부, 해시 다르고 문항 h 일부 일치 → `matched`/`dropped` 정확, 문구가 바뀐 문항(id 는 있고 h 다름)은 버림, **id 가 전부 바뀌고 문구는 같음 → 전부 재매칭·`rematched` = 답 수**, 같은 문구가 현재 두 문항에 있으면 재매칭하지 않음, 재매칭된 id 는 두 번 쓰이지 않음, 문항이 삭제된 경우 dropped 에 포함. 합성 이메일 결정성·길이, 토큰 접두어, 배치 중복(같은 이메일 두 파일·같은 submissionId 두 파일·둘 다 없음 → `[]`), 변경 요약 added/removed/changed.
 
 - [ ] **Step 3: stryker 목록에 더하고 검증·커밋한다**
 
@@ -814,11 +838,12 @@ import {
 import { importKanoResponses, type KanoImportRespondent } from '@/lib/kano-response-import';
 
 const log = createLogger('api/kano-offline-responses');
-// Vercel 서버리스의 본문 상한(약 4.5 MB)과 실행 시간 안에 들어야 한다. 답변 파일은 1~2 KB 라
-// 20 × 256 KB 는 넉넉하고, 화면이 20개씩 나눠 보낸다.
-const MAX_FILES = 20;
-const MAX_FILE_BYTES = 256 * 1024;
-const FILE_RULE = { extensions: ['.json'], maxBytes: MAX_FILE_BYTES, label: '답변' };
+// Vercel 서버리스의 본문 상한(약 4.5 MB)과 실행 시간 안에 들어야 한다. 답변 HTML 은 문항당
+// 약 2.3 KB 라 100문항이어도 250 KB 안팎이고, 10 × 400 KB = 4 MB 로 상한 아래다. 화면이 10개씩 나눠 보낸다.
+const MAX_FILES = 10;
+const MAX_FILE_BYTES = 400 * 1024;
+// 답변 HTML 이 기본 경로, .json 은 「내용 복사」 폴백. 업로드된 HTML 은 파싱만 하고 어디에도 렌더하지 않는다.
+const FILE_RULE = { extensions: ['.html', '.htm', '.json'], maxBytes: MAX_FILE_BYTES, label: '답변' };
 
 export const maxDuration = 60;
 
@@ -961,7 +986,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
 `$transaction` 목 + bare 목 패턴. 파일은 `new File([JSON.stringify(payload)], 'a.kano.json', { type: 'application/json' })` 로 만들고 `formData.append('files', file)` 로 여러 개 붙인다. 현재 질문 세트는 `customerRequirement.findMany` 목이 돌려주는 요구사항으로 `buildKanoOfflineSurveyModel` 이 계산하므로, 테스트는 같은 요구사항으로 `questionSetHash`·`questions[].h` 를 만들어 페이로드에 넣는다.
 
-케이스: (1) 정상 2파일 → tx 로만 쓰기, `respondentCount 2`, 응답 본문에 이메일 없음, (2) 1파일 가드 실패 + 1파일 정상 → 정상 1건 저장 + `failures[0].code 'GUARD'`, (3) 전부 실패 → 400 + failures, (4) 해시 불일치 + 플래그 없음 → 409 `QUESTION_SET_CHANGED` + added/removed/changed + 쓰기 0, (5) 같은 요청에 `acceptQuestionSetMismatch=true` → 일치 문항만 저장·`droppedAnswerCount`, (5b) 요구사항 id 를 전부 바꾼 현재 세트(문구 동일) + 수락 → 전부 재매칭·`rematchedAnswerCount`, (6) 다른 projectId → `WRONG_PROJECT`, (7) 해시 같은데 미지 requirementId → `UNKNOWN_REQUIREMENT`·쓰기 0, (7b) 수락했는데 일치 문항이 0개인 파일 → `UNKNOWN_REQUIREMENT`, (8) 같은 이메일 두 파일 → 둘 다 `DUPLICATE_IN_BATCH`, (9) 기존 초대(token `uuid…`, 온라인)와 같은 이메일(대소문자 다름) → `RESPONDENT_EXISTS`·쓰기 0, (10) 같은 요청에 `overwriteFiles=0` → 저장, (11) 기존 초대 token 이 `offline_` 이면 승인 없이 저장(재수입), (12) `$transaction` 옵션에 `timeout` 이 있다, (13) 403 그대로, (14) 21 파일 400, (14b) 257 KB 파일은 `GUARD` 실패, (15) 500 본문에 내부 오류 없음, (16) 라우트 모듈이 `maxDuration` 을 export 한다.
+케이스: (1) 정상 2파일 → tx 로만 쓰기, `respondentCount 2`, 응답 본문에 이메일 없음, (2) 1파일 가드 실패 + 1파일 정상 → 정상 1건 저장 + `failures[0].code 'GUARD'`, (3) 전부 실패 → 400 + failures, (4) 해시 불일치 + 플래그 없음 → 409 `QUESTION_SET_CHANGED` + added/removed/changed + 쓰기 0, (5) 같은 요청에 `acceptQuestionSetMismatch=true` → 일치 문항만 저장·`droppedAnswerCount`, (5b) 요구사항 id 를 전부 바꾼 현재 세트(문구 동일) + 수락 → 전부 재매칭·`rematchedAnswerCount`, (6) 다른 projectId → `WRONG_PROJECT`, (7) 해시 같은데 미지 requirementId → `UNKNOWN_REQUIREMENT`·쓰기 0, (7b) 수락했는데 일치 문항이 0개인 파일 → `UNKNOWN_REQUIREMENT`, (8) 같은 이메일 두 파일 → 둘 다 `DUPLICATE_IN_BATCH`, (9) 기존 초대(token `uuid…`, 온라인)와 같은 이메일(대소문자 다름) → `RESPONDENT_EXISTS`·쓰기 0, (10) 같은 요청에 `overwriteFiles=0` → 저장, (11) 기존 초대 token 이 `offline_` 이면 승인 없이 저장(재수입), (12) `$transaction` 옵션에 `timeout` 이 있다, (13) 403 그대로, (14) 11 파일 400, (14b) 401 KB 파일은 `GUARD` 실패, (14c) 답변 HTML(응답 섬 채움) 1건 → 200·저장, (14d) 미답 원본 HTML → `failures[].code 'PARSE'`·`detail 'survey-file'`, (15) 500 본문에 내부 오류 없음, (16) 라우트 모듈이 `maxDuration` 을 export 한다.
 
 - [ ] **Step 3: 검증하고 커밋한다**
 
@@ -976,8 +1001,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
 - [ ] **Step 1: 내려받기 링크** — Google Forms 카드 1단계 「양식 확인」 버튼(692-697행) 아래에 `<a href={`/api/projects/${projectId}/kano/offline-survey`} className="mt-2 w-full …btn-secondary text-xs …">오프라인 HTML 받기</a>`. `KanoSurveyPreview` 에 `offlineSurveyUrl?: string` prop 을 더하고 제어바(148-161행)에 같은 링크를 「PDF 출력」 왼쪽에 둔다(prop 이 있을 때만). 66-67행 기본 문구는 `resolveKanoQuestionPair(req)` 로 바꾼다(`getKanoTopic` 은 주제 표시에 여전히 쓰이므로 import 유지).
 
-- [ ] **Step 2: 업로드 카드** — 「응답 파일로 업로드」 카드(814-866행) 바로 아래에 새 카드 「오프라인 응답 파일 업로드」. 상태: `offlineFiles: File[]`, `isUploadingOffline`, `offlineProgress: { done; total }`, `offlineResult: { message; failures; rematchedAnswerCount; droppedAnswerCount } | null`, `offlineConflict: { code; added; removed; changed; affectedFiles } | { code; indexes } | null`. `<input type="file" multiple accept=".json,.kano.json">`. 선택 직후 각 파일을 `File.text()` 로 읽어 `JSON.parse` 가 되고 `format === 'kano-offline-response'` 이며 `projectId` 가 현재 프로젝트와 같은지만 확인해 목록에 ✓/✗ 로 표시한다(서버 검증을 대체하지 않는다). 업로드 핸들러는 파일을 **20개씩 순차 배치**로 `POST …/kano/offline-responses` 에 보내고 진행(`3/7 배치`)을 표시한다 — 한 배치가 409/에러면 거기서 멈추고 남은 파일 수를 알린다(재시도는 submissionId 멱등이라 안전하다). `failures` 의 `index` 는 배치 안 인덱스이므로 화면은 배치 오프셋을 더해 파일명으로 보여 준다. **`replace` 선택지·`window.prompt` 없음.**
-  - 200: 토스트 `data.message`, `failures` 가 있으면 카드 안 결과 패널에 파일명·사유(코드별 한국어 문구 매핑: `GUARD` 는 detail 그대로, `PARSE:html-file` → "답변 파일이 아니라 설문 파일입니다", `PARSE:*` → "답변 파일 형식이 올바르지 않습니다", `WRONG_PROJECT`, `UNKNOWN_REQUIREMENT`, `DUPLICATE_IN_BATCH`, `RESPONDENT_EXISTS` → "이미 다른 방법으로 응답한 이메일입니다"), `droppedAnswerCount > 0` 이면 "문구가 바뀐 문항의 답 N개는 등록하지 않았습니다". 그 뒤 `await loadData()`.
+- [ ] **Step 2: 업로드 카드** — 「응답 파일로 업로드」 카드(814-866행) 바로 아래에 새 카드 「오프라인 응답 파일 업로드」. 상태: `offlineFiles: File[]`, `isUploadingOffline`, `offlineProgress: { done; total }`, `offlineResult: { message; failures; rematchedAnswerCount; droppedAnswerCount } | null`, `offlineConflict: { code; added; removed; changed; affectedFiles } | { code; indexes } | null`. `<input type="file" multiple accept=".html,.htm,.json,.kano.json">`. 선택 직후 각 파일을 `File.text()` 로 읽어 — `<` 로 시작하면 `id="kano-offline-response"` 섬의 마지막 비어 있지 않은 내용을, 아니면 텍스트 전체를 — `JSON.parse` 가 되고 `format === 'kano-offline-response'` 이며 `projectId` 가 현재 프로젝트와 같은지만 확인해 목록에 ✓/✗(빈 섬이면 "답하지 않은 원본 설문 파일")로 표시한다(서버 검증을 대체하지 않는다). 업로드 핸들러는 파일을 **10개씩 순차 배치**로 `POST …/kano/offline-responses` 에 보내고 진행(`3/7 배치`)을 표시한다 — 한 배치가 409/에러면 거기서 멈추고 남은 파일 수를 알린다(재시도는 submissionId 멱등이라 안전하다). `failures` 의 `index` 는 배치 안 인덱스이므로 화면은 배치 오프셋을 더해 파일명으로 보여 준다. **`replace` 선택지·`window.prompt` 없음.**
+  - 200: 토스트 `data.message`, `failures` 가 있으면 카드 안 결과 패널에 파일명·사유(코드별 한국어 문구 매핑: `GUARD` 는 detail 그대로, `PARSE:survey-file` → "아직 답하지 않은 원본 설문 파일입니다", `PARSE:html-no-island` → "이 앱이 만든 설문 파일이 아닙니다", `PARSE:*` → "답변 파일 형식이 올바르지 않습니다", `WRONG_PROJECT`, `UNKNOWN_REQUIREMENT`, `DUPLICATE_IN_BATCH`, `RESPONDENT_EXISTS` → "이미 다른 방법으로 응답한 이메일입니다"), `droppedAnswerCount > 0` 이면 "문구가 바뀐 문항의 답 N개는 등록하지 않았습니다". 그 뒤 `await loadData()`.
   - 409 `QUESTION_SET_CHANGED`: 안내 박스 "설문 배포 후 질문이 바뀌었습니다(추가 a·삭제 b·문구 변경 c). 영향 파일: …" + 버튼 「일치하는 문항만 등록」 → `acceptQuestionSetMismatch=true` 로 재전송.
   - `RESPONDENT_EXISTS` 가 있는 200: 박스 "이미 응답한 이메일과 겹치는 파일 N개" + 버튼 「해당 파일만 덮어쓰기」 → 그 인덱스들을 `overwriteFiles` 로 재전송.
 
@@ -1009,6 +1034,6 @@ npx tsc --noEmit && npx vitest run && npx next lint && npm run build
 
 ### Task 8 (감리자): 실기동 검증
 
-- [ ] **Step 1: 컨테이너 스모크(Playwright)** — `node --experimental-strip-types` 로 `renderKanoOfflineSurveyHtml(buildKanoOfflineSurveyModel(샘플 3개))` 를 파일로 쓰고, 전역 Playwright(`/opt/node22/lib/node_modules/playwright`)로 `file://` 로 열어 네트워크 전면 차단 상태에서: 미답 저장 → 차단·다운로드 없음·`missing` 강조 / 전부 답 + 이메일 → 다운로드 캡처 → 파일명 `kano-response-<8hex>.kano.json` / 내용을 `parseKanoOfflineResponseText` → `reconcileKanoOfflineResponse`(같은 모델) → `status 'ok'`·answers 3 / 문구 하나 바꾼 모델로 대조 → `question-set-changed`·dropped 1 / `#fallback` 이 보이고 `#payload` 가 같은 JSON / `</script>` 요구사항으로 렌더한 파일이 브라우저에서 깨지지 않음.
-- [ ] **Step 2: 사용자 실계정(Windows Chrome·Edge, 파일럿용 별도 프로젝트)** — 플래그 켠 뒤 WS-6 에서 「오프라인 HTML 받기」 → 받은 파일 더블클릭 → 답 → 「답변 파일 저장」 → 받은 `.kano.json` 을 「오프라인 응답 파일 업로드」 → 응답자 표·초대 내역·분석에 반영 확인. 같은 파일 재업로드 → 응답 수 불변. 질문 저장으로 문구 하나 바꾼 뒤 재업로드 → 409 안내 → 「일치하는 문항만 등록」. 온라인 초대로 이미 응답한 이메일을 파일에 적어 업로드 → `RESPONDENT_EXISTS` → 「덮어쓰기」. **실배포 URL(Vercel)에서 파일 21개(20+1 배치)를 한 번에 올려 배치 진행과 결과가 맞는지** 확인 — 서버리스 상한은 로컬에서 재현되지 않는다.
+- [ ] **Step 1: 컨테이너 스모크(Playwright)** — `node --experimental-strip-types` 로 `renderKanoOfflineSurveyHtml(buildKanoOfflineSurveyModel(샘플 3개))` 를 파일로 쓰고, 전역 Playwright(`/opt/node22/lib/node_modules/playwright`)로 `file://` 로 열어 네트워크 전면 차단 상태에서: 미답 저장 → 차단·다운로드 없음·`missing` 강조 / 전부 답 + 이메일 → 다운로드 캡처 → 파일명 `kano-response-<8hex>.html` / **다운로드된 HTML 을 다시 `file://` 로 열어 라디오·이메일이 복원되고 상태문구가 뜨는지** / 답 하나 바꿔 재저장 → 같은 submissionId·바뀐 값·응답 섬 1개 / 내용을 `parseKanoOfflineResponseText` → `reconcileKanoOfflineResponse`(같은 모델) → `status 'ok'`·answers 3 / **원본(미답) HTML → `survey-file`** / `#payload` 의 JSON 도 같은 파서로 통과 / 문구 하나 바꾼 모델로 대조 → `question-set-changed`·dropped 1 / `#fallback` 이 보이고 `#payload` 가 같은 JSON / `</script>` 요구사항으로 렌더한 파일이 브라우저에서 깨지지 않음.
+- [ ] **Step 2: 사용자 실계정(Windows Chrome·Edge, 파일럿용 별도 프로젝트)** — 플래그 켠 뒤 WS-6 에서 「오프라인 HTML 받기」 → 받은 파일 더블클릭 → 답 → 「답변 저장」 → 받은 `kano-response-….html` 을 다시 열어 답이 복원되는지 → 그 파일을 「오프라인 응답 파일 업로드」 → 응답자 표·초대 내역·분석에 반영 확인. 같은 파일 재업로드 → 응답 수 불변. 원본(미답) 설문 HTML 을 올리면 "아직 답하지 않은 원본 설문 파일". 질문 저장으로 문구 하나 바꾼 뒤 재업로드 → 409 안내 → 「일치하는 문항만 등록」. 온라인 초대로 이미 응답한 이메일을 파일에 적어 업로드 → `RESPONDENT_EXISTS` → 「덮어쓰기」. **실배포 URL(Vercel)에서 파일 11개(10+1 배치)를 한 번에 올려 배치 진행과 결과가 맞는지** 확인 — 서버리스 상한은 로컬에서 재현되지 않는다.
 - [ ] **Step 3: 미확인으로 남기는 것** — Task 0 파일럿에서 못 본 채널, 회사 보안 정책(파일 다운로드 차단·`.html` 첨부 필터). 설계서 11절.
