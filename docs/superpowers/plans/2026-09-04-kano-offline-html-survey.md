@@ -351,7 +351,7 @@ export function guardUploadedFile(value: unknown, rule: UploadFileRule): UploadG
 **Interfaces:**
 - Produces: `computeKanoQuestionHash`, `computeKanoQuestionSetHash`, `buildKanoOfflineSurveyModel`, `renderKanoOfflineSurveyHtml`, `kanoOfflineSurveyFileName`, 상수 `KANO_OFFLINE_FORMAT`/`KANO_OFFLINE_VERSION`. Task 4 가 해시 함수와 상수를, Task 5 가 모델을 쓴다.
 
-- [ ] **Step 1: `lib/kano-survey-document.ts` 에서 파일명 정제를 분리한다**
+- [x] **Step 1: `lib/kano-survey-document.ts` 에서 파일명 정제를 분리한다**
 
 ```ts
 /** 파일명 줄기 정제. 경로 구분자·제어 문자는 밑줄, 겹공백은 하나, 60자 상한. .docx 와 .html 이 같이 쓴다. */
@@ -370,7 +370,7 @@ export function kanoSurveyFileName(projectName: string | null | undefined): stri
 
 기존 테스트 17개는 그대로 통과해야 하고, 이 파일은 뮤테이션 목록에 있으므로 Step 6 에서 재실행 점수를 보고한다.
 
-- [ ] **Step 2: `lib/kano-offline-survey.ts` 를 만든다**
+- [x] **Step 2: `lib/kano-offline-survey.ts` 를 만든다**
 
 ```ts
 // 오프라인 HTML 설문의 내용과 마크업을 만든다.
@@ -552,17 +552,17 @@ export function renderKanoOfflineSurveyHtml(model: KanoOfflineSurveyModel): stri
 5. `#status` 는 성공을 단정하지 않는다: `답변이 담긴 설문 파일 kano-response-….html 을 저장합니다. 다운로드된 파일을 설문 담당자에게 보내 주세요. 다시 저장하면 같은 응답이 갱신됩니다.` 저장 버튼은 **비활성화하지 않는다**(재저장 허용).
 6. 「내용 복사」: `navigator.clipboard.writeText` 시도, 실패하면 textarea 를 선택해 `document.execCommand('copy')`.
 
-- [ ] **Step 3: 내려받기 라우트를 만든다** — `app/api/projects/[id]/kano/survey-document/route.ts` 를 그대로 본뜬다. 차이: `select` 에 `id`·`category` 추가, `renderKanoOfflineSurveyHtml(buildKanoOfflineSurveyModel({ projectId, projectName: project.name, requirements }))`, 요구사항 0건이면 400 `'먼저 고객요구사항을 등록하세요.'`, 헤더 `Content-Type: text/html; charset=utf-8`, `Content-Disposition: attachment; filename*=UTF-8''<encodeURIComponent(kanoOfflineSurveyFileName(project.name))>`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. 로거 이름 `api/kano-offline-survey`.
+- [x] **Step 3: 내려받기 라우트를 만든다** — `app/api/projects/[id]/kano/survey-document/route.ts` 를 그대로 본뜬다. 차이: `select` 에 `id`·`category` 추가, `renderKanoOfflineSurveyHtml(buildKanoOfflineSurveyModel({ projectId, projectName: project.name, requirements }))`, 요구사항 0건이면 400 `'먼저 고객요구사항을 등록하세요.'`, 헤더 `Content-Type: text/html; charset=utf-8`, `Content-Disposition: attachment; filename*=UTF-8''<encodeURIComponent(kanoOfflineSurveyFileName(project.name))>`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. 로거 이름 `api/kano-offline-survey`.
 
-- [ ] **Step 4: `tests/kano-offline-survey.test.ts`**
+- [x] **Step 4: `tests/kano-offline-survey.test.ts`**
 
 - 해시: 같은 입력 → 같은 값(결정성), 순서만 바꾼 요구사항 → 세트 해시 동일, 문구 한 글자 변경 → 세트 해시·해당 문항 `h`·`t` 변경, id 만 바꾼 문항 → `h` 는 변하고 `t` 는 그대로, 문항 추가/삭제 → 세트 해시 변경, 저장값 앞뒤 공백은 `resolveKanoQuestionPair` 가 잘라 해시가 같음.
 - 모델: `answerOptions` 가 `[LIKE,'마음에 든다'] … [DISLIKE,'마음에 안든다']` 순, 저장된 질문이 없으면 화면 기본 문구, `no` 는 1부터.
 - HTML: `<script type="application/json" id="kano-offline-survey">` 섬을 정규식으로 뽑아 `JSON.parse` 하면 `format`/`version`/`projectId`/`questionSetHash`/`questions[].h`/`questions[].t` 가 모델과 같다; **응답 섬 `id="kano-offline-response"` 가 정확히 하나, 내용이 비어 있고, 설문 섬과 `<script>` 보다 앞에 있다**(문자열 인덱스 비교); 인라인 스크립트 문자열에 `setAttribute('checked'`·`outerHTML`·`kano-offline-response` 가 있다; 개인정보 고지 문구(결정 16)가 있다; 문항마다 `name="f_<id>"`·`name="d_<id>"` 라디오가 각 5개(값 5종); 요구사항 문구에 `</script><script>alert(1)</script>` 를 넣으면 HTML 본문에 `<script>alert` 가 없고 `&lt;/script&gt;` 로 나오며 섬 JSON 에도 `</script>` 문자열이 없다; `https?://`·`src=`·`@import`·`url(` 가 0건(자급자족); `charset=utf-8`·`lang="ko"`·`noscript` 포함; 파일명 `kanoOfflineSurveyFileName('a/b')` → `Kano_설문_a_b.html`, 빈 이름 → `Kano_설문_프로젝트.html`.
 
-- [ ] **Step 5: `tests/api-kano-offline-survey.test.ts`** — `tests/api-kano-survey-document.test.ts` 와 같은 5 케이스(200 헤더 4종 + 본문에 `<!DOCTYPE html>`·프로젝트명, 요구사항 order asc 조회, 404, 403 그대로, 500 본문에 원인 없음) + 요구사항 0건 400.
+- [x] **Step 5: `tests/api-kano-offline-survey.test.ts`** — `tests/api-kano-survey-document.test.ts` 와 같은 5 케이스(200 헤더 4종 + 본문에 `<!DOCTYPE html>`·프로젝트명, 요구사항 order asc 조회, 404, 403 그대로, 500 본문에 원인 없음) + 요구사항 0건 400.
 
-- [ ] **Step 6: stryker 목록에 `lib/kano-offline-survey.ts` 를 더하고 검증·커밋한다**
+- [x] **Step 6: stryker 목록에 `lib/kano-offline-survey.ts` 를 더하고 검증·커밋한다**
 
 ```sh
 npx tsc --noEmit && npx vitest run && npx next lint
