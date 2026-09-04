@@ -1123,6 +1123,18 @@ npx tsc --noEmit && npx vitest run && npx next lint && npm run build
 
 - [x] **Step 4: 커밋한다** (게이트: `npm run check:encoding`)
 
+> 감리 판정(2026-09-04, 커밋 `7fce108`+`0cc235e`): **재작업 1건 · 조건부**. 경계는 깨끗하다(커밋 2·파일 5·`tests/` 무변경·테스트 파일 104·삭제 지침에서 지운 줄 0·BOM/CRLF/제어바이트 0·문서에 실제 이메일·토큰 0). Step 0 은 라벨에서 플래그만 뺐고 링크(884)·업로드 카드(1061)·미리보기(1522) 게이팅은 그대로다. 문서는 게이트가 검사하지 않으므로 서술을 문장 단위로 코드와 대조했다 — 실패 문구 8종 중 7종이 `KanoManager.tsx:114-121` 과 글자 단위로 같고, 남은 `'파일을 확인해 주세요'` 는 라우트가 GUARD 에 항상 `detail` 을 실어(route.ts:71) 도달할 수 없는 대체 문구라 지침이 "가드 문구 그대로"라 적은 것이 옳다. 가드 예시 3종, 인용한 화면 이름 7종, 파일명 2종, 400KB·10개 배치·409 중단과 남은 파일 수(KanoManager.tsx:503-535), 재매칭 규칙(kano-offline-response.ts:181-190), 즉시 만료(route.ts:145), 인쇄 숨김(`.submit`), 되돌리기 2문장이 모두 코드와 일치했다.
+>
+> **틀린 서술 1건**: 합성 이메일을 `offline-<submissionId 앞 12자>@import.local` 이라 적었는데, `lib/kano-offline-response.ts:196` 은 하이픈을 먼저 지우고 12자를 자른다. submissionId 는 하이픈이 든 UUID 라(`kano-offline-survey.ts` `createSubmissionId`) 지침대로면 `offline-a1b2c3d4-e5f@…`, 실제로는 `offline-a1b2c3d4e5f6@…` 다. 초대 목록에서 파일과 응답자를 맞춰 보려는 담당자가 없는 문자열을 찾게 된다.
+>
+> 무회귀 재실행(원격 컨테이너): 감리 하네스 23+47+29+11 전부 통과, 워커 테스트 원본 102/102·22/22·19/20(1건은 `vi.doMock` 셰임 한계), 브라우저 왕복 6단계 전부 통과(외부 요청 0건 — 지침의 "CDN 없이 열린다"를 뒷받침한다), `npm run check:encoding` exit 0. tsc·vitest 104 파일 1321 테스트·lint 는 사용자 로컬 보고.
+>
+> **회귀 그물 구멍(Task 5 코드, 여기로 이월)**: 워커의 `tests/api-kano-offline-responses.test.ts` 를 이번에 셰임에 `vi.mock`·`toMatchObject`·`expect.any` 를 넣어 처음으로 원본 그대로 돌렸다(23/23 통과). 그 23개에 뮤턴트를 넣어 보니 Task 5 때 살아남았던 둘(`writePolicy` `append`→`replace`, 파일 수 `>`→`>=`)은 Task 6 Step 0 의 보강으로 이제 잡히지만, **`invitationExpiresAt: (now) => now` 를 1년 뒤로 바꿔도 23개가 전부 통과한다**. 즉시 만료는 "리셋으로 respondedAt 이 비어도 이 토큰으로 온라인 응답을 할 수 없어야 한다"는 보안 성질이고 이번 지침이 사실로 단언한 문장인데, 저장소 테스트가 지키지 않는다. (`tokenPrefix: 'offline'` 도 라우트가 항상 명시 토큰을 넘겨 도달하지 않는 인자라 어떤 뮤턴트도 잡히지 않는다 — 등가 뮤턴트로 기록만 한다.)
+
+- [ ] **Step 5(재작업): 합성 이메일 서술을 실제 값과 맞춘다** — `docs/2026-09-04-kano-offline-survey-guide.md` 의 "이메일이 없는 답변은 `offline-<submissionId 앞 12자>@import.local` 형식의 합성 이메일로 저장된다." 를 하이픈을 지운 뒤 12자라는 사실이 드러나게 고친다. 정본은 `lib/kano-offline-response.ts:196` 이고, submissionId 가 `a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d` 일 때 실제 값은 `offline-a1b2c3d4e5f6@import.local` 이다.
+
+- [ ] **Step 6(재작업): 즉시 만료에 회귀 테스트를 건다** — `tests/api-kano-offline-responses.test.ts` 에, 정상 수입 시 `$transaction` 안에서 `kanoSurveyInvitation.upsert` 의 `create.expiresAt` 이 응답 시각 기준으로 미래가 아님을 단언하는 케이스를 더한다. `invitationExpiresAt: (now) => now`(`route.ts:145`)를 `new Date(now.getTime() + 60000)` 으로 바꾼 상태에서 그 케이스가 실패하는지 역검증하고 원복한 뒤, 결과를 보고서 VERIFIED BY 에 담는다.
+
 ---
 
 ### Task 8 (감리자): 실기동 검증
