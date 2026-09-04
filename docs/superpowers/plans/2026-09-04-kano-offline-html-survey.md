@@ -548,7 +548,7 @@ export function renderKanoOfflineSurveyHtml(model: KanoOfflineSurveyModel): stri
 1. 설문 섬(`#kano-offline-survey`)을 `JSON.parse` 한다. 응답 섬(`#kano-offline-response`)은 **저장 버튼 클릭 시점에** `textContent.trim()` 으로 읽는다 — 로드 시점에 읽으면 안 된다(정본 절의 규칙). 페이지를 열었을 때 응답 섬에 내용이 있으면 `#status` 에 `이전에 저장한 답변이 실려 있습니다. 수정 후 다시 저장할 수 있습니다.` 를 쓴다(이 표시만 로드 시 허용 — `DOMContentLoaded` 뒤에).
 2. `submissionId` 는 응답 섬에 있으면 그 값을 재사용하고, 없으면 처음 저장할 때 만든다: `crypto.randomUUID` 가 있으면 그것, 없으면 `crypto.getRandomValues` 로 만든 UUID v4.
 3. 「답변 저장」: 모든 `questions[].id` 에 대해 `f_<id>`·`d_<id>` 라디오가 둘 다 선택됐는지 검사. 미완이면 첫 미답 문항으로 스크롤하고 그 `.q` 에 `class="missing"` 을 더하며 `#status` 에 `아직 답하지 않은 질문이 N개 있습니다.` 를 쓴다. 다운로드하지 않는다.
-4. 완료면 (a) 모든 라디오에 대해 선택된 것은 `setAttribute('checked', '')`, 아닌 것은 `removeAttribute('checked')` — `outerHTML` 은 프로퍼티가 아니라 속성만 담기 때문이다. 이메일 입력은 `setAttribute('value', …)`. (b) 응답 페이로드 JSON(형식 정본)을 만들어 응답 섬의 `textContent` 에 `jsonForScript` 와 같은 규칙(`<` → `\u003c`)으로 써 넣는다. (c) `'<!DOCTYPE html>\n' + document.documentElement.outerHTML` 을 `Blob(text/html)` + `<a download="kano-response-<submissionId 앞 8자>.html">` 으로 저장한다. (d) 같은 JSON 을 `#payload` 에 넣고 `#fallback` 을 **항상** 보인다(다운로드 실패는 감지할 수 없다).
+4. 완료면 (a) 모든 라디오에 대해 선택된 것은 `setAttribute('checked', '')`, 아닌 것은 `removeAttribute('checked')` — `outerHTML` 은 프로퍼티가 아니라 속성만 담기 때문이다. 이메일 입력은 `setAttribute('value', …)`. (b) 응답 페이로드 JSON(형식 정본)을 만들어 응답 섬의 `textContent` 에 `jsonForScript` 와 같은 규칙(`<` → `\u003c`)으로 써 넣는다. (c) `'<!DOCTYPE html>\n' + document.documentElement.outerHTML` 을 `Blob(text/html)` + `<a download="kano-response-<submissionId 앞 8자>.html">` 으로 저장한다. (d) 같은 JSON 을 `#payload` 에 넣고 `#fallback` 을 **항상** 보인다(다운로드 실패는 감지할 수 없다). textarea 의 `value` 는 프로퍼티라 `outerHTML` 에 남지 않으므로, **다시 연 파일에서는 로드 시 응답 섬의 내용을 `#payload` 에 다시 채운다** — 빈 상자를 보여 주면 「내용 복사」가 빈 문자열을 복사해 응답자가 답을 보냈다고 착각한다(감리 브라우저 왕복에서 실제로 재현).
 5. `#status` 는 성공을 단정하지 않는다: `답변이 담긴 설문 파일 kano-response-….html 을 저장합니다. 다운로드된 파일을 설문 담당자에게 보내 주세요. 다시 저장하면 같은 응답이 갱신됩니다.` 저장 버튼은 **비활성화하지 않는다**(재저장 허용).
 6. 「내용 복사」: `navigator.clipboard.writeText` 시도, 실패하면 textarea 를 선택해 `document.execCommand('copy')`.
 
@@ -572,6 +572,12 @@ npx stryker run stryker.crap.config.json --mutate lib/kano-survey-document.ts   
 
 `renderKanoOfflineSurveyHtml` 의 CSS/JS 문자열 상수는 StringLiteral 뮤턴트가 대량으로 생긴다. 테스트가 계약 문구(상태 메시지·id·name)를 단언해 죽이되, 순수 장식 CSS 는 `// Stryker disable next-line StringLiteral: 장식 CSS 는 동작 계약이 아니다` 로 **상수 선언 줄에만** 제외한다. 제외로 줄어든 뮤턴트 수를 보고서에 적는다.
 
+> 감리 승인(2026-09-04, 커밋 `4b2acd9`+`939fdfb`+`60f639f`): 경계(커밋 3·파일 9·기존 테스트 제거 0줄·skip/only 0·LF·제어바이트 0), `lib/` 두 파일이 계획서 블록과 차이 0줄, 파일명 분리가 기존 주석을 살렸다. 원격 컨테이너에서 감리 하네스 23/23(해시는 `node:crypto` 로 직접 계산한 기대값과 대조), 라우트 하네스 7/7(헤더 4종·select 필드·0건 400·404·403·500 무누출), 워커 테스트 원본 18/19 재실행(1건은 `vi.doMock` 을 셰임이 못 흉내내는 내 한계이지 워커의 실패가 아니다). 뮤턴트 12종 역검증에서 11종이 워커 테스트와 감리 하네스 양쪽에 잡혔고, 남은 1종(`KANO_OFFLINE_VERSION` 1→2)은 셰임이 못 돌린 그 테스트가 잡는다(`toBe(1)` 로 리터럴 고정). tsc·vitest 101 파일 1173 테스트·lint·check:encoding·stryker 100%(68/54)는 사용자 로컬 보고.
+>
+> **브라우저 왕복(실제 Chromium, 감리자 직접 수행)**: 미완 저장 차단(다운로드 없음·문구·미답 표시 1개) → 6문항 답변 + 이메일 저장(`kano-response-<8자>.html`, checked 속성 6개, 이메일 속성 보존, 주입 문구 무력) → 저장 파일 다시 열기(선택 6개·이메일·이전 답변 안내 복원, 응답 섬 1개) → 답 수정·이메일 삭제 후 재저장(submissionId 유지, 답 갱신, 이메일 null, 섬 여전히 1개) → 3세대 왕복까지 유지. 외부 요청 0건, 콘솔 오류 0건. 미리보기와 같은 보라 헤더·5열 격자·긍정/부정 색점을 스크린샷으로 확인했다.
+>
+> **다시 연 파일에서 `#payload` 가 빈 채로 폴백이 보이는 결함**을 왕복에서 찾았다. textarea 의 `value` 는 `outerHTML` 에 직렬화되지 않는데 `hidden` 은 반영되기 때문이다. 응답자가 저장한 파일을 다시 열면 "복사해 담당자에게 메일로 보내 주세요" 안내와 빈 상자가 함께 보이고, 그대로 「내용 복사」를 누르면 빈 문자열을 보내게 된다. 위 4(d) 계약이 저장 시점만 규정한 내 누락이므로 실행 AI 의 실패로 보지 않고, 계약을 고친 뒤 **Task 4 Step 0** 으로 이월한다.
+
 ---
 
 ### Task 4: 응답 파일 파서·대조 (순수)
@@ -579,6 +585,8 @@ npx stryker run stryker.crap.config.json --mutate lib/kano-survey-document.ts   
 **Files:**
 - Create: `lib/kano-offline-response.ts`, `tests/kano-offline-response.test.ts`
 - Modify: `stryker.crap.config.json`
+
+- [ ] **Step 0: Task 3 에서 넘어온 결함을 고친다** — `lib/kano-offline-survey.ts` 의 `SCRIPT` 안 `DOMContentLoaded` 처리에서, 응답 섬에 내용이 있으면 그 내용을 `#payload` 에 채우고 `#fallback` 을 보인다(안내 문구 표시와 같은 자리). 저장 경로는 그대로 둔다. 테스트: 렌더된 스크립트 문자열에 그 복원 코드가 있음을 `tests/kano-offline-survey.test.ts` 에서 단언하고, `lib/kano-offline-survey.ts` 는 뮤테이션 목록에 있으므로 stryker 를 재실행해 100% 를 확인한다.
 
 - [ ] **Step 1: `lib/kano-offline-response.ts` 를 만든다**
 
