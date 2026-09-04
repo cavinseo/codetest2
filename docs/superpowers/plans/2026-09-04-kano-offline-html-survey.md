@@ -747,17 +747,29 @@ export function reconcileKanoOfflineResponse(file: KanoOfflineResponseFile, curr
     const fileQuestionById = new Map(file.questions.map((q) => [q.id, q]));
     const matched: KanoOfflineResponseFile['answers'] = [];
     const taken = new Set<string>();
+    const leftovers: Array<{ answer: KanoOfflineResponseFile['answers'][number]; fileQuestion: { id: string; h: string; t: string } }> = [];
     let rematched = 0;
+
+    // 1차: id 가 현재에도 있는 답을 먼저 확정한다. 재매칭을 같은 반복에서 처리하면 파일 순서에
+    // 따라 재매칭이 남아 있는 문항의 자리를 가로채고, 그 문항의 제 답이 뒤이어 또 들어와
+    // 같은 requirementId 가 두 번 실린다(문구가 겹치던 문항 하나가 삭제되면 재현된다).
     for (const answer of file.answers) {
         const fileQuestion = fileQuestionById.get(answer.requirementId);
         if (!fileQuestion) continue;
         const currentHash = current.questionHashById.get(answer.requirementId);
-        if (currentHash !== undefined && currentHash === fileQuestion.h) {
-            matched.push(answer);
-            taken.add(answer.requirementId);
+        if (currentHash === undefined) {
+            leftovers.push({ answer, fileQuestion });
             continue;
         }
-        if (currentHash !== undefined) continue; // id 는 있는데 문구가 바뀜 — 버린다
+        if (currentHash === fileQuestion.h) {
+            matched.push(answer);
+            taken.add(answer.requirementId);
+        }
+        // id 는 있는데 문구가 바뀜 — 버린다.
+    }
+
+    // 2차: id 가 사라진 답만 문구 해시로 재매칭한다. 남은 자리가 정확히 하나일 때만이다.
+    for (const { answer, fileQuestion } of leftovers) {
         const candidates = (current.requirementIdsByTextHash.get(fileQuestion.t) ?? []).filter((id) => !taken.has(id));
         if (candidates.length === 1) {
             matched.push({ ...answer, requirementId: candidates[0] });
@@ -820,7 +832,7 @@ function isNonEmptyString(value: unknown): value is string {
 
 - [ ] **Step 2: `tests/kano-offline-response.test.ts`**
 
-파싱 실패 사유 하나당 케이스 하나(빈 문자열, BOM 만 — 문자열은 `'\uFEFF'` 이스케이프로 만든다, 응답 섬이 없는 HTML → `html-no-island`, 응답 섬이 비어 있는 HTML(미답 원본) → `survey-file`, **응답 섬이 채워진 HTML → 정상 파싱**(값이 JSON 경로와 같음), 빈 섬 + 채워진 섬이 함께 있으면 채워진 것을 씀, 채워진 섬 둘이면 **마지막 것**을 씀, 섬 안의 `\u003c/script>` 이스케이프가 `<` 로 복원됨, 깨진 JSON, 배열, `format` 다름, `version: 2`, projectId 빈 문자열, 해시 63자, questions 의 h 15자·t 누락, submissionId 대문자는 허용되나 하이픈 누락은 거절, submittedAt 미래 10분 → now 로 폴백·미래 4분 → 유지·파싱 불가 → now, 이메일 `' Hong@X.COM '` → `hong@x.com`, 이메일 형식 오류 거절, `respondentEmail: ''` → null, answers 빈 배열, 301개, 값 `'like'`(소문자) 거절, 숫자 1 거절, requirementId 중복). 대조: 프로젝트 불일치, 해시 같고 미지 id → `unknown-requirement`, 해시 같음 → 전부, 해시 다르고 문항 h 일부 일치 → `matched`/`dropped` 정확, 문구가 바뀐 문항(id 는 있고 h 다름)은 버림, **id 가 전부 바뀌고 문구는 같음 → 전부 재매칭·`rematched` = 답 수**, 같은 문구가 현재 두 문항에 있으면 재매칭하지 않음, 재매칭된 id 는 두 번 쓰이지 않음, 문항이 삭제된 경우 dropped 에 포함. 합성 이메일 결정성·길이, 토큰 접두어, 배치 중복(같은 이메일 두 파일·같은 submissionId 두 파일·둘 다 없음 → `[]`), 변경 요약 added/removed/changed.
+파싱 실패 사유 하나당 케이스 하나(빈 문자열, BOM 만 — 문자열은 `'\uFEFF'` 이스케이프로 만든다, 응답 섬이 없는 HTML → `html-no-island`, 응답 섬이 비어 있는 HTML(미답 원본) → `survey-file`, **응답 섬이 채워진 HTML → 정상 파싱**(값이 JSON 경로와 같음), 빈 섬 + 채워진 섬이 함께 있으면 채워진 것을 씀, 채워진 섬 둘이면 **마지막 것**을 씀, 섬 안의 `\u003c/script>` 이스케이프가 `<` 로 복원됨, 깨진 JSON, 배열, `format` 다름, `version: 2`, projectId 빈 문자열, 해시 63자, questions 의 h 15자·t 누락, submissionId 대문자는 허용되나 하이픈 누락은 거절, submittedAt 미래 10분 → now 로 폴백·미래 4분 → 유지·파싱 불가 → now, 이메일 `' Hong@X.COM '` → `hong@x.com`, 이메일 형식 오류 거절, `respondentEmail: ''` → null, answers 빈 배열, 301개, 값 `'like'`(소문자) 거절, 숫자 1 거절, requirementId 중복). 대조: 프로젝트 불일치, 해시 같고 미지 id → `unknown-requirement`, 해시 같음 → 전부, 해시 다르고 문항 h 일부 일치 → `matched`/`dropped` 정확, 문구가 바뀐 문항(id 는 있고 h 다름)은 버림, **id 가 전부 바뀌고 문구는 같음 → 전부 재매칭·`rematched` = 답 수**, 같은 문구가 현재 두 문항에 있으면 재매칭하지 않음, 재매칭된 id 는 두 번 쓰이지 않음, **문구가 겹치던 문항 둘 중 하나가 삭제된 파일(삭제된 문항의 답이 앞에 오도록) → 남은 문항의 id 가 `matched` 에 한 번만 들어간다**(2단계 대조 회귀), 문항이 삭제된 경우 dropped 에 포함. 합성 이메일 결정성·길이, 토큰 접두어, 배치 중복(같은 이메일 두 파일·같은 submissionId 두 파일·둘 다 없음 → `[]`), 변경 요약 added/removed/changed.
 
 - [ ] **Step 3: stryker 목록에 더하고 검증·커밋한다**
 
