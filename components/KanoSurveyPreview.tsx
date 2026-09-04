@@ -1,6 +1,7 @@
 'use client';
 
 import { getKanoTopic } from '@/lib/utils/korean-utils';
+import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
 
 interface Requirement {
     id: string;
@@ -16,6 +17,7 @@ interface KanoSurveyPreviewProps {
     projectName: string;
     requirements: Requirement[];
     onClose: () => void;
+    offlineSurveyUrl?: string;
 }
 
 const answerOptions = [
@@ -26,7 +28,7 @@ const answerOptions = [
     { value: 'DISLIKE', label: '마음에 안든다' },
 ];
 
-export default function KanoSurveyPreview({ projectName, requirements, onClose }: KanoSurveyPreviewProps) {
+export default function KanoSurveyPreview({ projectName, requirements, onClose, offlineSurveyUrl }: KanoSurveyPreviewProps) {
     return (
         <div className="kano-survey-preview fixed inset-0 bg-black/70 flex items-start justify-center overflow-y-auto z-50 p-4">
             <div className="kano-survey-preview-paper bg-white rounded-xl shadow-2xl max-w-[64.4rem] w-full my-8">
@@ -62,9 +64,8 @@ export default function KanoSurveyPreview({ projectName, requirements, onClose }
                 <div className="p-8 space-y-10">
                     {requirements.map((req, index) => {
                         const topic = getKanoTopic(req.requirement);
-                        // DB에 저장된 질문 우선, 없으면 자동 생성
-                        const positiveQ = req.kanoPositiveQ || `${topic}(이)라면 어떻게 생각하십니까?`;
-                        const negativeQ = req.kanoNegativeQ || `${topic}(이)가 아니라면 어떻게 생각하십니까?`;
+                        // 화면과 내려받기 파일의 기본 질문이 어긋나면 같은 요구사항을 다르게 묻게 된다.
+                        const { positive: positiveQ, negative: negativeQ } = resolveKanoQuestionPair(req);
 
                         return (
                             <div key={req.id} className="animate-fade-in group">
@@ -146,6 +147,14 @@ export default function KanoSurveyPreview({ projectName, requirements, onClose }
 
                 {/* 하단 제어바 */}
                 <div className="kano-survey-preview-controls sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 p-4 rounded-b-xl flex justify-end gap-3 z-10">
+                    {offlineSurveyUrl && (
+                        <a
+                            href={offlineSurveyUrl}
+                            className="bg-gray-100 text-gray-700 px-6 py-2.5 rounded-lg font-bold hover:bg-gray-200 transition-colors"
+                        >
+                            오프라인 HTML 받기
+                        </a>
+                    )}
                     <button
                         onClick={() => window.print()}
                         className="bg-[#673ab7] text-white px-6 py-2.5 rounded-lg font-bold hover:bg-[#5e35a6] transition-colors"

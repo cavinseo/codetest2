@@ -27,7 +27,8 @@
         "lib/kano-survey-document.ts",
         "lib/kano-response-import.ts",
         "lib/kano-offline-survey.ts",
-        "lib/kano-offline-response.ts"
+        "lib/kano-offline-response.ts",
+        "lib/kano-offline-upload-client.ts"
     ],
     "ignorePatterns": [
         ".claude/**",

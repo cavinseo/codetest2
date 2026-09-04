@@ -9,6 +9,12 @@ import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import KanoRespondentTable from '@/components/project/KanoRespondentTable';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
 import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
+import {
+    absoluteFileIndex,
+    chunkKanoOfflineFiles,
+    inspectKanoOfflineFileText,
+    type KanoOfflineFilePreview,
+} from '@/lib/kano-offline-upload-client';
 
 interface Requirement {
     id: string;
@@ -75,6 +81,45 @@ interface KanoManagerProps {
 
 type ToastType = 'success' | 'error' | 'info';
 type ExcelUploadFormat = 'template' | 'googleForms';
+type OfflineFailureCode =
+    | 'GUARD' | 'PARSE' | 'WRONG_PROJECT' | 'UNKNOWN_REQUIREMENT'
+    | 'DUPLICATE_IN_BATCH' | 'RESPONDENT_EXISTS';
+
+interface OfflineUploadFailure {
+    index: number;
+    fileName: string;
+    code: OfflineFailureCode;
+    detail?: string;
+}
+
+interface OfflineUploadResult {
+    message: string;
+    failures: OfflineUploadFailure[];
+    rematchedAnswerCount: number;
+    droppedAnswerCount: number;
+}
+
+type OfflineUploadConflict =
+    | { code: 'QUESTION_SET_CHANGED'; added: number; removed: number; changed: number; affectedFiles: string[] }
+    | { code: 'RESPONDENT_EXISTS'; indexes: number[] };
+
+function offlinePreviewMessage(preview: KanoOfflineFilePreview): string {
+    if (preview.ok) return '업로드할 수 있는 답변 파일';
+    if (preview.reason === 'survey-file') return '답하지 않은 원본 설문 파일';
+    if (preview.reason === 'other-project') return '다른 프로젝트의 답변 파일';
+    return '답변 파일 형식이 올바르지 않습니다';
+}
+
+function offlineFailureMessage(failure: OfflineUploadFailure): string {
+    if (failure.code === 'GUARD') return failure.detail || '파일을 확인해 주세요';
+    if (failure.code === 'PARSE' && failure.detail === 'survey-file') return '아직 답하지 않은 원본 설문 파일입니다';
+    if (failure.code === 'PARSE' && failure.detail === 'html-no-island') return '이 앱이 만든 설문 파일이 아닙니다';
+    if (failure.code === 'PARSE') return '답변 파일 형식이 올바르지 않습니다';
+    if (failure.code === 'WRONG_PROJECT') return '다른 프로젝트의 답변 파일입니다';
+    if (failure.code === 'UNKNOWN_REQUIREMENT') return '현재 설문에서 찾을 수 없는 문항입니다';
+    if (failure.code === 'DUPLICATE_IN_BATCH') return '같은 응답자가 이 배치에 중복되어 있습니다';
+    return '이미 다른 방법으로 응답한 이메일입니다';
+}
 
 export default function KanoManager({ projectId, initialView }: KanoManagerProps) {
     const kanoUploadTemplateUrl = `/api/projects/${projectId}/kano/upload-template`;
@@ -106,6 +151,12 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [excelFile, setExcelFile] = useState<File | null>(null);
     const [excelUploadFormat, setExcelUploadFormat] = useState<ExcelUploadFormat>('template');
+    const [offlineFiles, setOfflineFiles] = useState<File[]>([]);
+    const [offlineFilePreviews, setOfflineFilePreviews] = useState<KanoOfflineFilePreview[]>([]);
+    const [isUploadingOffline, setIsUploadingOffline] = useState(false);
+    const [offlineProgress, setOfflineProgress] = useState({ done: 0, total: 0 });
+    const [offlineResult, setOfflineResult] = useState<OfflineUploadResult | null>(null);
+    const [offlineConflict, setOfflineConflict] = useState<OfflineUploadConflict | null>(null);
     const [importMessage, setImportMessage] = useState('');
     const [projectName, setProjectName] = useState('');
 
@@ -120,6 +171,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const excelInputRef = useRef<HTMLInputElement | null>(null);
+    const offlineInputRef = useRef<HTMLInputElement | null>(null);
 
     const showToast = (message: string, type: ToastType = 'success') => {
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -383,6 +435,140 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             showToast(message, 'error');
         } finally {
             setIsUploadingExcel(false);
+        }
+    };
+
+    const handleSelectOfflineFiles = async (files: File[]) => {
+        setOfflineFiles(files);
+        setOfflineFilePreviews([]);
+        setOfflineResult(null);
+        setOfflineConflict(null);
+        setOfflineProgress({ done: 0, total: 0 });
+        const previews = await Promise.all(files.map(async (file): Promise<KanoOfflineFilePreview> => {
+            try {
+                return inspectKanoOfflineFileText(await file.text(), projectId);
+            } catch {
+                return { ok: false, reason: 'not-offline-file' };
+            }
+        }));
+        setOfflineFilePreviews(previews);
+    };
+
+    const handleUploadOfflineResponses = async (options: {
+        acceptQuestionSetMismatch?: boolean;
+        overwriteIndexes?: number[];
+    } = {}) => {
+        if (offlineFiles.length === 0) {
+            showToast('업로드할 오프라인 답변 파일을 선택하세요.', 'error');
+            return;
+        }
+
+        const batches = chunkKanoOfflineFiles(offlineFiles);
+        const failures: OfflineUploadFailure[] = [];
+        let droppedAnswerCount = 0;
+        let rematchedAnswerCount = 0;
+        let completedBatches = 0;
+        let currentBatchIndex = 0;
+        let lastMessage = '';
+        setIsUploadingOffline(true);
+        setOfflineProgress({ done: 0, total: batches.length });
+        setOfflineResult(null);
+        setOfflineConflict(null);
+
+        try {
+            for (currentBatchIndex = 0; currentBatchIndex < batches.length; currentBatchIndex += 1) {
+                const batch = batches[currentBatchIndex];
+                const formData = new FormData();
+                batch.forEach((file) => formData.append('files', file));
+                if (options.acceptQuestionSetMismatch) {
+                    formData.append('acceptQuestionSetMismatch', 'true');
+                }
+                const overwriteInBatch = batch.flatMap((_, indexInBatch) =>
+                    options.overwriteIndexes?.includes(absoluteFileIndex(currentBatchIndex, indexInBatch))
+                        ? [indexInBatch]
+                        : []
+                );
+                if (overwriteInBatch.length > 0) {
+                    formData.append('overwriteFiles', overwriteInBatch.join(','));
+                }
+
+                const res = await fetch(`/api/projects/${projectId}/kano/offline-responses`, {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await res.json();
+                if (res.status === 409 && data.code === 'QUESTION_SET_CHANGED') {
+                    const remaining = offlineFiles.length - absoluteFileIndex(currentBatchIndex, 0);
+                    const message = `질문 변경으로 업로드를 멈췄습니다. 남은 파일 ${remaining}개는 처리하지 않았습니다. 같은 파일은 submissionId 기준으로 안전하게 재시도할 수 있습니다.`;
+                    setOfflineConflict({
+                        code: 'QUESTION_SET_CHANGED',
+                        added: data.added,
+                        removed: data.removed,
+                        changed: data.changed,
+                        affectedFiles: data.affectedFiles,
+                    });
+                    setOfflineResult({ message, failures, droppedAnswerCount, rematchedAnswerCount });
+                    showToast(message, 'error');
+                    if (completedBatches > 0) await loadData();
+                    return;
+                }
+
+                const batchFailures = (Array.isArray(data.failures) ? data.failures : []) as OfflineUploadFailure[];
+                const absoluteFailures = batchFailures.map((failure) => {
+                    const index = absoluteFileIndex(currentBatchIndex, failure.index);
+                    return { ...failure, index, fileName: offlineFiles[index]?.name ?? failure.fileName };
+                });
+                failures.push(...absoluteFailures);
+
+                if (!res.ok) {
+                    const respondentIndexes = absoluteFailures
+                        .filter((failure) => failure.code === 'RESPONDENT_EXISTS')
+                        .map((failure) => failure.index);
+                    if (respondentIndexes.length > 0) {
+                        setOfflineConflict({ code: 'RESPONDENT_EXISTS', indexes: respondentIndexes });
+                    }
+                    const remaining = offlineFiles.length - absoluteFileIndex(currentBatchIndex, 0);
+                    const message = `${data.error || '오프라인 답변 업로드에 실패했습니다.'} 남은 파일 ${remaining}개는 처리하지 않았습니다. 같은 파일은 submissionId 기준으로 안전하게 재시도할 수 있습니다.`;
+                    setOfflineResult({ message, failures, droppedAnswerCount, rematchedAnswerCount });
+                    showToast(message, 'error');
+                    if (completedBatches > 0) await loadData();
+                    return;
+                }
+
+                droppedAnswerCount += Number(data.droppedAnswerCount) || 0;
+                rematchedAnswerCount += Number(data.rematchedAnswerCount) || 0;
+                lastMessage = data.message;
+                completedBatches += 1;
+                setOfflineProgress({ done: completedBatches, total: batches.length });
+                showToast(data.message, 'success');
+            }
+
+            const respondentIndexes = failures
+                .filter((failure) => failure.code === 'RESPONDENT_EXISTS')
+                .map((failure) => failure.index);
+            if (respondentIndexes.length > 0) {
+                setOfflineConflict({ code: 'RESPONDENT_EXISTS', indexes: respondentIndexes });
+            }
+            setOfflineResult({
+                message: lastMessage,
+                failures,
+                droppedAnswerCount,
+                rematchedAnswerCount,
+            });
+            await loadData();
+            if (failures.length === 0) {
+                setOfflineFiles([]);
+                setOfflineFilePreviews([]);
+                if (offlineInputRef.current) offlineInputRef.current.value = '';
+            }
+        } catch (error: any) {
+            const remaining = offlineFiles.length - absoluteFileIndex(currentBatchIndex, 0);
+            const message = `${error.message || '오프라인 답변 업로드에 실패했습니다.'} 남은 파일 ${remaining}개는 처리하지 않았습니다. 같은 파일은 submissionId 기준으로 안전하게 재시도할 수 있습니다.`;
+            setOfflineResult({ message, failures, droppedAnswerCount, rematchedAnswerCount });
+            showToast(message, 'error');
+            if (completedBatches > 0) await loadData();
+        } finally {
+            setIsUploadingOffline(false);
         }
     };
 
@@ -695,6 +881,14 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                             >
                                                 양식 확인
                                             </button>
+                                            {process.env.NEXT_PUBLIC_KANO_OFFLINE_SURVEY === 'on' && (
+                                                <a
+                                                    href={`/api/projects/${projectId}/kano/offline-survey`}
+                                                    className="mt-2 w-full px-3 py-2 rounded-lg btn-secondary text-xs font-semibold transition-colors text-center"
+                                                >
+                                                    오프라인 HTML 받기
+                                                </a>
+                                            )}
                                         </div>
 
                                         {/* 2단계: 설문지 생성 (Google 연동 필요) */}
@@ -864,6 +1058,119 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                         </div>
                     )}
 
+                    {process.env.NEXT_PUBLIC_KANO_OFFLINE_SURVEY === 'on' && requirements.length > 0 && (
+                        <div className="card">
+                            <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                                <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 16V4m0 12l-4-4m4 4l4-4M4 20h16" />
+                                </svg>
+                                오프라인 응답 파일 업로드
+                            </h2>
+                            <p className="text-sm text-gray-500 mt-1 mb-4">
+                                피설문자가 답변을 저장한 HTML 또는 복사한 JSON 파일을 등록합니다
+                            </p>
+
+                            <div className="rounded-xl border border-purple-500/20 bg-purple-500/[0.06] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
+                                <input
+                                    ref={offlineInputRef}
+                                    type="file"
+                                    multiple
+                                    accept=".html,.htm,.json,.kano.json"
+                                    onChange={(event) => void handleSelectOfflineFiles(Array.from(event.target.files ?? []))}
+                                    className="flex-1 min-w-0 text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-purple-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-purple-200 hover:file:bg-purple-500/25"
+                                />
+                                <button
+                                    onClick={() => void handleUploadOfflineResponses()}
+                                    disabled={isUploadingOffline || offlineFiles.length === 0}
+                                    className="px-5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:hover:bg-purple-600 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
+                                >
+                                    {isUploadingOffline && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                                    {isUploadingOffline ? '업로드 중...' : '업로드'}
+                                </button>
+                            </div>
+
+                            {offlineProgress.total > 0 && (
+                                <p className="mt-3 text-xs text-purple-300">
+                                    {offlineProgress.done}/{offlineProgress.total} 배치
+                                </p>
+                            )}
+
+                            {offlineFiles.length > 0 && (
+                                <div className="mt-3 space-y-1.5">
+                                    {offlineFiles.map((file, index) => {
+                                        const preview = offlineFilePreviews[index];
+                                        return (
+                                            <div key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-3 rounded-lg bg-black/15 px-3 py-2 text-xs">
+                                                <span className="min-w-0 truncate text-gray-300">{file.name}</span>
+                                                {!preview ? (
+                                                    <span className="flex-shrink-0 text-gray-500">검사 중...</span>
+                                                ) : preview.ok ? (
+                                                    <span className="flex-shrink-0 text-emerald-400">✓ {offlinePreviewMessage(preview)}</span>
+                                                ) : (
+                                                    <span className="flex-shrink-0 text-red-400">✗ {offlinePreviewMessage(preview)}</span>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {offlineConflict?.code === 'QUESTION_SET_CHANGED' && (
+                                <div className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.08] p-4 text-sm text-amber-100">
+                                    <p>
+                                        설문 배포 후 질문이 바뀌었습니다(추가 {offlineConflict.added}·삭제 {offlineConflict.removed}·문구 변경 {offlineConflict.changed}).
+                                        영향 파일: {offlineConflict.affectedFiles.join(', ')}
+                                    </p>
+                                    <button
+                                        onClick={() => void handleUploadOfflineResponses({ acceptQuestionSetMismatch: true })}
+                                        disabled={isUploadingOffline}
+                                        className="mt-3 btn-secondary text-xs"
+                                    >
+                                        일치하는 문항만 등록
+                                    </button>
+                                </div>
+                            )}
+
+                            {offlineConflict?.code === 'RESPONDENT_EXISTS' && (
+                                <div className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.08] p-4 text-sm text-amber-100">
+                                    <p>이미 응답한 이메일과 겹치는 파일 {offlineConflict.indexes.length}개</p>
+                                    <button
+                                        onClick={() => void handleUploadOfflineResponses({ overwriteIndexes: offlineConflict.indexes })}
+                                        disabled={isUploadingOffline}
+                                        className="mt-3 btn-secondary text-xs"
+                                    >
+                                        해당 파일만 덮어쓰기
+                                    </button>
+                                </div>
+                            )}
+
+                            {offlineResult && (
+                                <div className="mt-4 rounded-xl border border-white/[0.08] bg-black/15 p-4 text-sm text-gray-300">
+                                    <p>{offlineResult.message}</p>
+                                    {offlineResult.rematchedAnswerCount > 0 && (
+                                        <p className="mt-2 text-blue-300">
+                                            문구가 같은 현재 문항으로 답 {offlineResult.rematchedAnswerCount}개를 다시 연결했습니다.
+                                        </p>
+                                    )}
+                                    {offlineResult.droppedAnswerCount > 0 && (
+                                        <p className="mt-2 text-amber-300">
+                                            문구가 바뀐 문항의 답 {offlineResult.droppedAnswerCount}개는 등록하지 않았습니다.
+                                        </p>
+                                    )}
+                                    {offlineResult.failures.length > 0 && (
+                                        <ul className="mt-3 space-y-1 text-xs text-red-300">
+                                            {offlineResult.failures.map((failure) => (
+                                                <li key={`${failure.index}-${failure.code}`}>
+                                                    {failure.fileName}: {offlineFailureMessage(failure)}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* 설문 질문 구성 */}
                     {requirements.length > 0 && (
                         <div className="card">
@@ -1025,8 +1332,11 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 초대 내역 <span className="text-gray-500 font-normal text-sm">({invitations.length}명)</span>
                             </h2>
                             <div className="space-y-2">
-                                {invitations.map(inv => (
-                                    <div key={inv.id} className="flex items-center justify-between p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl group hover:border-white/[0.10] transition-colors">
+                                {invitations.map(inv => {
+                                    const isOfflineInvitation = process.env.NEXT_PUBLIC_KANO_OFFLINE_SURVEY === 'on'
+                                        && inv.token.startsWith('offline_');
+                                    return (
+                                        <div key={inv.id} className="flex items-center justify-between p-3 bg-white/[0.03] border border-white/[0.06] rounded-xl group hover:border-white/[0.10] transition-colors">
                                         <div className="flex items-center gap-3">
                                             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${inv.respondedAt ? 'bg-emerald-500/15' : 'bg-amber-500/15'}`}>
                                                 {inv.respondedAt ? (
@@ -1040,7 +1350,18 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                                 )}
                                             </div>
                                             <div>
-                                                <p className="text-white text-sm font-medium">{inv.email}</p>
+                                                {isOfflineInvitation ? (
+                                                    <>
+                                                        <p className="text-white text-sm font-semibold">
+                                                            오프라인 응답 #{inv.token.slice(8, 16)}
+                                                        </p>
+                                                        {!inv.email.endsWith('@import.local') && (
+                                                            <p className="text-[11px] text-gray-500 mt-0.5">{inv.email}</p>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <p className="text-white text-sm font-medium">{inv.email}</p>
+                                                )}
                                                 <p className="text-xs mt-0.5">
                                                     {inv.respondedAt ? (
                                                         <span className="text-emerald-400">응답 완료 · {new Date(inv.respondedAt).toLocaleDateString()}</span>
@@ -1050,17 +1371,20 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                                 </p>
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => copyInvitationLink(inv.token)}
-                                            className="btn-ghost text-sm flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                                            </svg>
-                                            링크 복사
-                                        </button>
-                                    </div>
-                                ))}
+                                        {!isOfflineInvitation && (
+                                            <button
+                                                onClick={() => copyInvitationLink(inv.token)}
+                                                className="btn-ghost text-sm flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                </svg>
+                                                링크 복사
+                                            </button>
+                                        )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
@@ -1196,6 +1520,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                     projectName={projectName}
                     requirements={requirements}
                     onClose={() => setShowPreview(false)}
+                    offlineSurveyUrl={process.env.NEXT_PUBLIC_KANO_OFFLINE_SURVEY === 'on'
+                        ? `/api/projects/${projectId}/kano/offline-survey`
+                        : undefined}
                 />
             )}
 
