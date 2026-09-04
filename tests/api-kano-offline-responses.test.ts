@@ -475,4 +475,23 @@ describe('POST /api/projects/[id]/kano/offline-responses', () => {
         expect(res.status).toBe(200);
         expect(body.respondentCount).toBe(10);
     });
+
+    it('19. 오프라인 초대는 즉시 만료돼 온라인 응답에 재사용되지 않는다', async () => {
+        // 만료가 미래면 응답 리셋으로 respondedAt 이 비었을 때 이 토큰이 살아 있는 온라인
+        // 설문 링크가 된다. 파일의 이메일은 자기 신고 값이라 남의 이름으로 초대를 만들 수
+        // 있고, 그 링크가 유효하면 사칭 방어가 통째로 우회된다.
+        const before = Date.now();
+        const res = await call([jsonFile(makePayload())]);
+        const after = Date.now();
+
+        expect(res.status).toBe(200);
+        expect(tx.kanoSurveyInvitation.upsert).toHaveBeenCalledTimes(1);
+        const [{ create, update }] = tx.kanoSurveyInvitation.upsert.mock.calls[0];
+        expect(create.token).toMatch(/^offline_/);
+        const expiresAt = new Date(create.expiresAt).getTime();
+        expect(expiresAt).toBeGreaterThanOrEqual(before);
+        expect(expiresAt).toBeLessThanOrEqual(after);
+        // 재수입이 만료를 늘려 주지도 않는다 — update 는 만료를 건드리지 않는다.
+        expect(update.expiresAt).toBeUndefined();
+    });
 });

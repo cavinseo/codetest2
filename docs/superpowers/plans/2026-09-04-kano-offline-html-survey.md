@@ -1133,9 +1133,17 @@ npx tsc --noEmit && npx vitest run && npx next lint && npm run build
 >
 > **회귀 그물 구멍(Task 5 코드, 여기로 이월)**: 워커의 `tests/api-kano-offline-responses.test.ts` 를 이번에 셰임에 `vi.mock`·`toMatchObject`·`expect.any` 를 넣어 처음으로 원본 그대로 돌렸다(23/23 통과). 그 23개에 뮤턴트를 넣어 보니 Task 5 때 살아남았던 둘(`writePolicy` `append`→`replace`, 파일 수 `>`→`>=`)은 Task 6 Step 0 의 보강으로 이제 잡히지만, **`invitationExpiresAt: (now) => now` 를 1년 뒤로 바꿔도 23개가 전부 통과한다**. 즉시 만료는 "리셋으로 respondedAt 이 비어도 이 토큰으로 온라인 응답을 할 수 없어야 한다"는 보안 성질이고 이번 지침이 사실로 단언한 문장인데, 저장소 테스트가 지키지 않는다. (`tokenPrefix: 'offline'` 도 라우트가 항상 명시 토큰을 넘겨 도달하지 않는 인자라 어떤 뮤턴트도 잡히지 않는다 — 등가 뮤턴트로 기록만 한다.)
 
-- [ ] **Step 5(재작업): 합성 이메일 서술을 실제 값과 맞춘다** — `docs/2026-09-04-kano-offline-survey-guide.md` 의 "이메일이 없는 답변은 `offline-<submissionId 앞 12자>@import.local` 형식의 합성 이메일로 저장된다." 를 하이픈을 지운 뒤 12자라는 사실이 드러나게 고친다. 정본은 `lib/kano-offline-response.ts:196` 이고, submissionId 가 `a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d` 일 때 실제 값은 `offline-a1b2c3d4e5f6@import.local` 이다.
+- [x] **Step 5(재작업): 합성 이메일 서술을 실제 값과 맞춘다** — `docs/2026-09-04-kano-offline-survey-guide.md` 의 "이메일이 없는 답변은 `offline-<submissionId 앞 12자>@import.local` 형식의 합성 이메일로 저장된다." 를 하이픈을 지운 뒤 12자라는 사실이 드러나게 고친다. 정본은 `lib/kano-offline-response.ts:196` 이고, submissionId 가 `a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d` 일 때 실제 값은 `offline-a1b2c3d4e5f6@import.local` 이다.
 
-- [ ] **Step 6(재작업): 즉시 만료에 회귀 테스트를 건다** — `tests/api-kano-offline-responses.test.ts` 에, 정상 수입 시 `$transaction` 안에서 `kanoSurveyInvitation.upsert` 의 `create.expiresAt` 이 응답 시각 기준으로 미래가 아님을 단언하는 케이스를 더한다. `invitationExpiresAt: (now) => now`(`route.ts:145`)를 `new Date(now.getTime() + 60000)` 으로 바꾼 상태에서 그 케이스가 실패하는지 역검증하고 원복한 뒤, 결과를 보고서 VERIFIED BY 에 담는다.
+> 재작업 처리(2026-09-04, 감리자 직접): 사용자가 처리를 지시해 워커에게 돌려보내지 않고 감리자가 했다. 스킬의 "감리자가 대신 고치지 않는다"에서 벗어난 것이라 여기 적어 둔다 — Step 5 의 결함은 워커가 아니라 **설계서 11절 → 계획서 결정표 6번 → 운영 지침**으로 번진 내 문서의 것이었고, 세 문서를 한꺼번에 고쳐야 하는 일이라 워커에게 조각으로 나눠 주는 편이 더 나빴다.
+>
+> Step 5: 설계서 5·9절 2곳, 계획서 결정표 6번, 운영 지침 한 문단을 실제 구현(`lib/kano-offline-response.ts:196`)에 맞췄다. 정정 경위는 설계서 11절에 남겼다 — 설계서 한 줄이 아래 문서 전부를 오염시킨 사례다. 저장소에 `submissionId 앞 12자` 는 이제 판정 노트의 인용문에만 남는다.
+>
+> Step 6: `tests/api-kano-offline-responses.test.ts` 에 19번 케이스를 더했다(기존 23건 무수정 — diff 의 `-` 줄 0, 19줄 추가). 역검증에서 `route.ts:145` 의 만료를 **+1초·+1시간·+1년**으로 바꾼 세 뮤턴트가 모두 이 케이스 하나만 실패시키고 원복하면 24/24 로 돌아온다. `update.expiresAt` 이 `undefined` 임도 함께 단언해 재수입이 만료를 늘리지 않는 것까지 고정했다.
+>
+> 무회귀: 워커 테스트 24/24·102/102·22/22·19/20(`vi.doMock` 셰임 한계), 감리 하네스 23·47·29·11, Task 8 스모크 10단계, `check:encoding` exit 0, 테스트 파일 104 유지. **`npx tsc --noEmit`·`npx vitest run`·`npx next lint` 는 이 컨테이너에 `node_modules` 가 없어 실행하지 못했다 — 사용자 로컬에서 한 번 돌려 확인해야 닫힌다.**
+
+- [x] **Step 6(재작업): 즉시 만료에 회귀 테스트를 건다** — `tests/api-kano-offline-responses.test.ts` 에, 정상 수입 시 `$transaction` 안에서 `kanoSurveyInvitation.upsert` 의 `create.expiresAt` 이 응답 시각 기준으로 미래가 아님을 단언하는 케이스를 더한다. `invitationExpiresAt: (now) => now`(`route.ts:145`)를 `new Date(now.getTime() + 60000)` 으로 바꾼 상태에서 그 케이스가 실패하는지 역검증하고 원복한 뒤, 결과를 보고서 VERIFIED BY 에 담는다.
 
 ---
 

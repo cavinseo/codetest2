@@ -116,7 +116,7 @@ WS-6 「Google Forms 연동 › 미리보기」는 온라인 설문(`app/survey/
 | 대상 | 오프라인 경로의 처리 | 근거 |
 | --- | --- | --- |
 | `KanoSurveyInvitation` | 이메일(또는 합성 이메일)마다 1건 upsert. `token = offline_<submissionId>`, `expiresAt = now`(즉시 만료), `respondedAt = submittedAt`, `isUsed = true`, `invitedBy = 업로더`. | `KanoResponse.invitationId` 가 필수(Restrict)라 스키마 변경 없이 만족하려면 초대가 있어야 한다. 즉시 만료로 두는 이유: '응답 데이터 리셋'(`lib/kano-response-reset.ts`)이 `respondedAt` 만 비우므로, 만료가 없으면 리셋 뒤 합성 이메일 명의로 온라인 응답이 가능해지는 구멍이 생긴다(엑셀 경로 `excel_` 초대에 이미 있는 구멍). |
-| `KanoResponse` | 파일의 answers 마다 1행. `respondentEmail` = 파일 이메일(소문자·trim) 또는 `offline-<submissionId 앞 12자>@import.local`. | 파일마다 유일한 합성 이메일이라 여러 익명 응답자가 분석에서 1명으로 합쳐지지 않는다(`countUniqueProjectRespondents` 는 `respondentEmail` 기준). 같은 파일 재업로드는 같은 이메일 → 자기 응답만 지우고 재생성(멱등). |
+| `KanoResponse` | 파일의 answers 마다 1행. `respondentEmail` = 파일 이메일(소문자·trim) 또는 `offline-<submissionId 에서 하이픈을 지운 뒤 앞 12자>@import.local`. | 파일마다 유일한 합성 이메일이라 여러 익명 응답자가 분석에서 1명으로 합쳐지지 않는다(`countUniqueProjectRespondents` 는 `respondentEmail` 기준). 같은 파일 재업로드는 같은 이메일 → 자기 응답만 지우고 재생성(멱등). |
 | 기존 응답자(온라인·엑셀·구글폼)와 같은 이메일 | **기본 거절**(`RESPONDENT_EXISTS`). 관리자가 파일별로 명시 승인할 때만 덮어쓴다. | 파일의 이메일은 피설문자의 자기 신고 값이라 사칭으로 타인의 온라인 응답을 지울 수 있다(반박 3). 엑셀 경로는 기존 규칙(덮어쓰기)을 그대로 둔다. |
 | 질문 세트 불일치 | 기본 409 + 변경 요약. 명시 수락 시 문항별 `h` 가 현재와 같은 답만 수입, 나머지는 `droppedAnswerCount` 로 보고. | 데이터가 조용히 빠지거나 엉뚱한 문항에 붙는 것을 막는다. |
 | 다른 프로젝트의 파일 | 400 (`projectId` 불일치). 해시가 같아도 `requirementId` 소속 검증은 항상 돈다. | 온라인 제출과 같은 계약. |
@@ -199,7 +199,7 @@ WS-6 「Google Forms 연동 › 미리보기」는 온라인 설문(`app/survey/
 | 3 | 기존 응답자와 이메일 충돌 | **기본 거절**, 파일별 명시 승인 시에만 덮어쓰기 | 사칭 방어(6절). 엑셀 경로는 기존 규칙 유지 |
 | 4 | 오프라인 경로의 `replace`(전체 삭제) | 제공하지 않는다(append 고정) | 파일 1장=응답자 1명인 경로에서 전체 삭제는 사고 경로 |
 | 5 | 오프라인 초대 | `token = offline_<submissionId>`, `expiresAt = now`, `invitedBy = 업로더` | DB 수준 멱등 + 리셋 후 온라인 응답 구멍 차단 |
-| 6 | 응답자 이메일 | 선택. 없으면 `offline-<submissionId 앞 12자>@import.local` | 익명 응답 허용, 파일마다 유일 |
+| 6 | 응답자 이메일 | 선택. 없으면 `offline-<submissionId 에서 하이픈을 지운 뒤 앞 12자>@import.local` | 익명 응답 허용, 파일마다 유일 |
 | 7 | 파일명 | 설문 `Kano_설문_<프로젝트명 정제>.html`(서버가 정함, RFC 5987) / 답변 `kano-response-<id8>.html`(브라우저, ASCII) | 실증 |
 | 8 | 배치 정책 | 검증 통과 파일만 한 트랜잭션으로 저장, 실패 파일은 목록으로 반환. **요청당 10 파일·파일당 400 KB**(답변 HTML ≈15 KB + 문항당 2.3 KB), 화면이 10개씩 순차 전송, 라우트 `maxDuration = 60` | 운영자 마찰 최소 + Vercel·Prisma 상한 |
 | 9 | 질문 세트 불일치 | 기본 409 + 변경 요약. 명시 수락 시 문항별 `h` 일치분 + **id 가 바뀐 문항은 문구 해시 `t` 로 재매칭**(정확히 하나일 때만) | 조용한 탈락 방지, AI 재생성·JSON 이관 대비 |
@@ -247,3 +247,5 @@ WS-6 「Google Forms 연동 › 미리보기」는 온라인 설문(`app/survey/
 - Vercel 의 본문·실행 시간 상한 수치는 문헌 지식이다. 실배포 URL 에서 21파일 배치 업로드를 감리자가 확인하는 것으로 닫는다.
 - 감리자가 PoC HTML 을 직접 헤드리스 Chromium 으로 재실행해 외부 참조 0·미답 차단·다운로드·값 일치를 재확인했고, 비ASCII 파일명이 `download` 로 바뀌는 현상도 재현했다.
 - 실DB 의 `excel_`/`system_` 초대 건수와 초대 내역 카드의 실제 렌더 모습은 DB 접속·dev 서버 금지로 코드 근거로만 판단했다.
+- **정정(2026-09-04)**: 5절·9절의 합성 이메일을 "`submissionId` 앞 12자"라고만 적어 두었다. `submissionId` 는 하이픈이 든 UUID 라 실제 구현(`lib/kano-offline-response.ts:196`)은 하이픈을 먼저 지우고 12자를 자른다 — `a1b2c3d4-e5f6-…` 이면 `offline-a1b2c3d4e5f6@import.local` 이다. 이 문구가 계획서 결정표 6번과 Task 7 운영 지침으로 그대로 번졌고, Task 7 감리에서 잡아 세 문서를 함께 고쳤다. 설계서의 한 줄이 아래 문서 전부를 오염시킨다는 사례로 남긴다.
+- 구현이 끝난 뒤의 미확인 사항은 계획서 Task 8 Step 3 에 정리했다(수신 채널, 응답자 쪽 보안 정책, Vercel 서버리스 상한, 100문항 크기 실측, 응답자 단위 삭제 부재).
