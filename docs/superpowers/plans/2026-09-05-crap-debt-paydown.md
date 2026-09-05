@@ -157,6 +157,10 @@ npx vitest run tests/workbook-importer.test.ts
 3. CRAP 위험 표에 `lib/workbook-importer.ts` 가 없다 — 표를 보고서에.
 4. `git diff --stat` 에 `lib/` 변경이 없다.
 
+> **감리 기록(2026-09-05) — 승인.** 병합 `b45b147`, 작업 커밋 `5278cf4`, 보고서 `58feb28`(`docs/superpowers/reports/2026-09-05-crap-debt-paydown/task-2.md`).
+> 감리자가 직접 확인한 것: ① 경계 — Task 2 구간(`b45b147`→head) 변경이 `tests/workbook-importer.test.ts`(+79)·계획서 체크박스 2개·보고서 **셋뿐**이고, 금지 경로(`lib`·`app`·`components`·패키지 파일·`stryker` 설정·`.github`·`prisma`·`.gitignore`·`tests/google-forms.test.ts`) 전부 무변경. ② 계약 B(병합 시 양쪽 보존) 준수 — 병합 커밋이 문서 1개만 들여왔고 충돌이 없었으며, 감리자의 Task 1 승인 기록과 `it` 개수 정정이 브랜치에 그대로 살아 있다. ③ 포팅 충실도 — 원본 브랜치와 `git diff` **빈 출력**(바이트 동일, 편집 없음), `it` 12개(포팅 전 11). ④ **CRAP 재측정을 감리자가 직접 실행** — [run #23](https://github.com/cavinseo/codetest2/actions/runs/33977884756) (`workflow_dispatch`, `58feb28`). 로그에서 읽은 값: **CRAP > 30 = 4**(Task 1 후 9), 커버리지 100% 함수 545(80%), 최대 CRAP **56.0**(기준선 306.0 → Task 1 후 132.0 → 지금 56.0), 위험 표에 `lib/workbook-importer.ts` 없음. 남은 4건은 Task 3 이 맡은 것과 정확히 일치한다. 실행 결론 failure 는 `--fail-over=30` 의 예정된 중간 상태다. ⑤ 뮤테이션 회귀 없음 — 살아남은 뮤턴트 15건 목록이 기준선과 동일하다.
+> 실행 AI 가 독립 검토의 "추가 경계조건 테스트" 제안을 반영하지 않은 것은 옳다 — 테스트를 더하면 원본 대조(`git diff` 빈 출력)가 깨져 무편집 포팅의 검증 근거가 사라진다. 그런 개선은 별도 과제다.
+
 ---
 
 ### Task 3: 나머지 4건 (56.0 / 56.0 / 42.0 / 42.0)
