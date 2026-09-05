@@ -109,7 +109,8 @@ git checkout origin/claude/carp-inspection-46phhc -- tests/google-forms.test.ts
 npx vitest run tests/google-forms.test.ts
 ```
 
-`describe` 는 `createKanoForm` 과 `getFormResponses` 둘이고 `it` 은 8개다. `fetch` 를 mock 하므로 네트워크에 나가지 않는다.
+`describe` 는 `createKanoForm` 과 `getFormResponses` 둘이고 `it` 은 **10개**다(각각 4개·6개). `fetch` 를 mock 하므로 네트워크에 나가지 않는다.
+(감리 정정: 초안에 8개로 적은 것은 감리자가 파일을 `head` 로 잘라 읽은 탓이며, 위임 프롬프트에는 처음부터 10개로 나갔다.)
 
 - [ ] **Step 2: CRAP 을 재현해 위험 3건이 사라졌는지 본다**
 
