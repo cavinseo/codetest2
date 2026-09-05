@@ -79,3 +79,8 @@ tmp-*.mjs
 # 뮤테이션 테스트 산출물. 샌드박스는 저장소 사본이라 절대 커밋하지 않는다.
 .stryker-tmp/
 stryker-crap-report.json
+
+# CRAP 로컬 측정 보고서는 재생성할 수 있으므로 커밋하지 않는다.
+/crap-report.md
+/crap-report.json
+/eslint-complexity.json

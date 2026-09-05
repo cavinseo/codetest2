@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { specDraftTreeSchema, type SpecDraftInput } from '../lib/ai/types';
-import { buildSpecDraftPrompts } from '../lib/ai/prompts';
+import { buildAttributeDraftPrompts, buildSpecDraftPrompts } from '../lib/ai/prompts';
 import {
     composeSpecDraftFromCores,
     generateSpecAiDraft,
@@ -159,5 +159,40 @@ describe('buildSpecDraftPrompts', () => {
 
         expect(prompts.user).toContain('미납자 자동 안내');
         expect(prompts.user).toContain('알림 발송 엔진');
+    });
+});
+
+describe('buildAttributeDraftPrompts', () => {
+    it('제품 문맥과 문진 답변을 JSON 형식 지시와 함께 넣는다', () => {
+        const prompts = buildAttributeDraftPrompts({
+            project: { name: '동호회 운영 관리 솔루션', description: '회원·회비를 관리한다' },
+            answers: {
+                segmentationBasis: '조직 규모',
+                marketSegments: '소규모 동호회',
+                customerNames: '운영진',
+                customerProblems: '회비 집계에 손이 많이 간다',
+                expectedBenefits: '집계 시간 단축',
+            },
+        });
+
+        expect(prompts.system).toContain('"rows"');
+        expect(prompts.system).toContain('WS-3');
+        expect(prompts.user).toContain('동호회 운영 관리 솔루션');
+        expect(prompts.user).toContain('조직 규모');
+        expect(prompts.user).toContain('회비 집계에 손이 많이 간다');
+        expect(prompts.user).toContain('집계 시간 단축');
+    });
+
+    it('답변이 비어 있어도 항목 이름은 남겨 프롬프트 형태를 유지한다', () => {
+        // 값이 없을 때 undefined 가 그대로 찍히면 모델이 그것을 내용으로 읽는다.
+        const prompts = buildAttributeDraftPrompts({
+            project: { name: '이름만 있는 제품' },
+            answers: {},
+        });
+
+        expect(prompts.user).toContain('제품명: 이름만 있는 제품');
+        expect(prompts.user).toContain('세분화 기준:');
+        expect(prompts.user).not.toContain('undefined');
+        expect(prompts.user).not.toContain('null');
     });
 });

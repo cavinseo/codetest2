@@ -102,7 +102,7 @@ Task 1·2·3 은 서로 독립이다. Task 4 는 셋 다 끝난 뒤에만 한다
 
 **Files:** Create `tests/google-forms.test.ts` · Modify `.gitignore`(필요 시)
 
-- [ ] **Step 1: 테스트를 가져온다**
+- [x] **Step 1: 테스트를 가져온다**
 
 ```sh
 git checkout origin/claude/carp-inspection-46phhc -- tests/google-forms.test.ts
@@ -112,11 +112,11 @@ npx vitest run tests/google-forms.test.ts
 `describe` 는 `createKanoForm` 과 `getFormResponses` 둘이고 `it` 은 **10개**다(각각 4개·6개). `fetch` 를 mock 하므로 네트워크에 나가지 않는다.
 (감리 정정: 초안에 8개로 적은 것은 감리자가 파일을 `head` 로 잘라 읽은 탓이며, 위임 프롬프트에는 처음부터 10개로 나갔다.)
 
-- [ ] **Step 2: CRAP 을 재현해 위험 3건이 사라졌는지 본다**
+- [x] **Step 2: CRAP 을 재현해 위험 3건이 사라졌는지 본다**
 
 "로컬에서 CRAP 재현하기" 절의 4줄을 실행하고 `crap-report.md` 의 위험 표를 확인한다. `lib/google-forms.ts` 행 3개가 사라져 **위험이 12 → 9** 가 되어야 한다.
 
-- [ ] **Step 3: 측정 생성물이 커밋되지 않게 한다**
+- [x] **Step 3: 측정 생성물이 커밋되지 않게 한다**
 
 `git status` 에 `coverage/`·`eslint-complexity.json`·`crap-report.md`·`crap-report.json` 이 보이면 `.gitignore` 에 더한다. 이미 무시되고 있으면 `.gitignore` 를 고치지 마라.
 
@@ -138,7 +138,7 @@ npx vitest run tests/google-forms.test.ts
 
 **Files:** Modify `tests/workbook-importer.test.ts`
 
-- [ ] **Step 1: 테스트를 가져온다**
+- [x] **Step 1: 테스트를 가져온다**
 
 ```sh
 git checkout origin/claude/carp-inspection-46phhc -- tests/workbook-importer.test.ts
@@ -149,7 +149,7 @@ npx vitest run tests/workbook-importer.test.ts
 
 추가되는 것은 `it('QFD·로드맵·자산·자금 시트를 레코드로 옮긴다')` 한 개다. 대상 5개 함수는 비공개이므로 공개 진입점을 통해 커버된다.
 
-- [ ] **Step 2: CRAP 재현 — `lib/workbook-importer.ts` 행 5개가 사라져야 한다**
+- [x] **Step 2: CRAP 재현 — `lib/workbook-importer.ts` 행 5개가 사라져야 한다**
 
 **완료 판정**
 1. 게이트 3종 그린 — 출력 마지막 줄 원문.
@@ -167,7 +167,7 @@ npx vitest run tests/workbook-importer.test.ts
 
 **Files:** Create `tests/excel-parser.test.ts` · Modify `tests/kano-algorithm.test.ts`, `tests/email-send.test.ts`, `tests/ai-spec-draft.test.ts`
 
-- [ ] **Step 1: 네 파일을 가져온다**
+- [x] **Step 1: 네 파일을 가져온다**
 
 ```sh
 git checkout origin/claude/carp-inspection-46phhc -- \
@@ -186,7 +186,7 @@ npx vitest run tests/excel-parser.test.ts tests/kano-algorithm.test.ts tests/ema
 
 `tests/email-send.test.ts` 의 추가분은 `sendSurveyInvitation` 이 프로젝트 이름의 마크업을 이스케이프하고, SMTP 미설정·발송 거부 시 **수신자와 설문 링크를 로그에 남기지 않는지**를 단언한다. CLAUDE.md 의 개인정보 규칙을 지키는 테스트이니 단언을 약화하지 마라.
 
-- [ ] **Step 2: CRAP 재현 — 위험 표가 비고 총 위험 수가 0 이어야 한다**
+- [x] **Step 2: CRAP 재현 — 위험 표가 비고 총 위험 수가 0 이어야 한다**
 
 이 시점에 `node scripts/crap-report.mjs --fail-over=30` 을 붙여 실행해 **종료 코드 0** 을 확인한다(앞 Task 와 달리 여기서는 붙인다).
 
