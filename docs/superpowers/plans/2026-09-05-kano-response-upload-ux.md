@@ -371,7 +371,7 @@ export function guardUploadedOfflineHtml(value: unknown): UploadGuardResult;
 **Interfaces:**
 - Produces: `persistKanoUploadAnswers(...)`. Task 5 의 오프라인 라우트가 쓴다.
 
-- [ ] **Step 1: 특성화 테스트를 먼저 만든다 (RED 아님 — 현재 동작을 고정한다)**
+- [x] **Step 1: 특성화 테스트를 먼저 만든다 (RED 아님 — 현재 동작을 고정한다)**
 
 `upload-excel` 라우트에는 테스트가 없다. 추출 전에 현재 동작을 고정한다. `tests/api-kano-survey-document.test.ts` 의 mock 방식을 따르되 `prisma.$transaction` 이 필요하다.
 
@@ -397,7 +397,7 @@ vi.mock('../lib/prisma', () => ({
 
 이 테스트는 Step 2 의 추출 **전에** 통과해야 하고, 추출 **후에도** 수정 없이 통과해야 한다.
 
-- [ ] **Step 2: `lib/kano-response-store.ts` 로 추출한다**
+- [x] **Step 2: `lib/kano-response-store.ts` 로 추출한다**
 
 ```ts
 // 업로드된 Kano 응답을 초대·응답 테이블에 쓰는 트랜잭션.
@@ -423,7 +423,7 @@ export async function persistKanoUploadAnswers(input: PersistKanoUploadInput): P
 
 `upload-excel/route.ts` 의 `prisma.$transaction(...)` 블록을 **로직 변경 없이** 그대로 옮긴다. 라우트는 파싱까지만 하고 이 함수를 부른 뒤 응답을 만든다. `parseWritePolicy` 도 이 모듈로 옮겨 두 라우트가 함께 쓴다.
 
-- [ ] **Step 3: 게이트를 돌리고 특성화 테스트가 그대로 통과함을 확인한다**
+- [x] **Step 3: 게이트를 돌리고 특성화 테스트가 그대로 통과함을 확인한다**
 
 **완료 판정**
 1. 게이트 3종 그린.

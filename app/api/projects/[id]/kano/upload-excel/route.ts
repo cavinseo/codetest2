@@ -3,22 +3,14 @@ import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { guardUploadedExcel } from '@/lib/upload-guard';
-import { generateId } from '@/lib/id';
-import { classifyKanoResponse, type KanoAnswer } from '@/lib/kano-algorithm';
-import { parseGoogleFormsResponseSheet, parseKanoTemplateResponseSheet, parseWorksheetMatrixSheet } from '@/lib/kano-upload-parser';
-
-type ParsedAnswer = {
-    respondentEmail: string;
-    requirementIndex: number;
-    positiveAnswer: KanoAnswer;
-    negativeAnswer: KanoAnswer;
-};
-
-type WritePolicy = 'append' | 'replace';
-
-function parseWritePolicy(rawValue: FormDataEntryValue | null): WritePolicy {
-    return rawValue === 'replace' ? 'replace' : 'append';
-}
+import type { KanoAnswer } from '@/lib/kano-algorithm';
+import {
+    parseGoogleFormsResponseSheet,
+    parseKanoTemplateResponseSheet,
+    parseWorksheetMatrixSheet,
+    type ParsedKanoUploadAnswer,
+} from '@/lib/kano-upload-parser';
+import { parseWritePolicy, persistKanoUploadAnswers } from '@/lib/kano-response-store';
 
 const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
     [/^\s*1\s*$|마음에\s*든다|like/i, 1],
@@ -45,9 +37,9 @@ function selectedAnswerFromRow(row: unknown[], startCol: number): KanoAnswer | n
     return null;
 }
 
-function parseTabularResponses(sheet: XLSX.WorkSheet, requirementCount: number): ParsedAnswer[] {
+function parseTabularResponses(sheet: XLSX.WorkSheet, requirementCount: number): ParsedKanoUploadAnswer[] {
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-    const parsed: ParsedAnswer[] = [];
+    const parsed: ParsedKanoUploadAnswer[] = [];
 
     rows.forEach((row, rowIndex) => {
         const entries = Object.entries(row);
@@ -97,7 +89,7 @@ function pickKanoUploadSheet(workbook: XLSX.WorkBook, format: string): string | 
     return workbook.SheetNames.find((name) => name.includes('KANO') || name.includes('Kano') || name.includes('질문지')) ?? workbook.SheetNames[0];
 }
 
-function parseByUploadFormat(sheet: XLSX.WorkSheet, requirementCount: number, format: string): ParsedAnswer[] {
+function parseByUploadFormat(sheet: XLSX.WorkSheet, requirementCount: number, format: string): ParsedKanoUploadAnswer[] {
     const parsers = format === 'googleForms'
         ? [parseGoogleFormsResponseSheet, parseKanoTemplateResponseSheet, parseTabularResponses, parseWorksheetMatrixSheet]
         : [parseKanoTemplateResponseSheet, parseWorksheetMatrixSheet, parseTabularResponses, parseGoogleFormsResponseSheet];
@@ -149,66 +141,19 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             return NextResponse.json({ error: 'Kano 응답을 찾지 못했습니다. 전용 업로드 양식 또는 Google Forms 응답 시트의 1~5 점수/응답 텍스트를 확인하세요.' }, { status: 400 });
         }
 
-        const respondentEmails = Array.from(new Set(answers.map((answer) => answer.respondentEmail)));
-        const invitations = new Map<string, string>();
-
-        await prisma.$transaction(async (tx) => {
-            if (writePolicy === 'replace') {
-                await tx.kanoResponse.deleteMany({ where: { projectId } });
-                await tx.kanoSurveyInvitation.deleteMany({ where: { projectId } });
-            } else {
-                await tx.kanoResponse.deleteMany({
-                    where: {
-                        projectId,
-                        respondentEmail: { in: respondentEmails },
-                    },
-                });
-            }
-
-            for (const email of respondentEmails) {
-                const invitation = await tx.kanoSurveyInvitation.upsert({
-                    where: { projectId_email: { projectId, email } },
-                    update: { respondedAt: new Date(), isUsed: true },
-                    create: {
-                        id: generateId('inv'),
-                        projectId,
-                        email,
-                        token: `excel_${generateId('inv')}`,
-                        invitedBy: accessResult.user.userId,
-                        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
-                        respondedAt: new Date(),
-                        isUsed: true,
-                    },
-                    select: { id: true },
-                });
-                invitations.set(email, invitation.id);
-            }
-
-            await tx.kanoResponse.createMany({
-                data: answers.map((answer) => {
-                    const invitationId = invitations.get(answer.respondentEmail);
-                    const requirement = requirements[answer.requirementIndex];
-                    if (!invitationId || !requirement) throw new Error('Invalid parsed Kano response.');
-                    return {
-                        id: generateId('response'),
-                        invitationId,
-                        projectId,
-                        requirementId: requirement.id,
-                        respondentEmail: answer.respondentEmail,
-                        positiveAnswer: answer.positiveAnswer,
-                        negativeAnswer: answer.negativeAnswer,
-                        kanoCategory: classifyKanoResponse(answer.positiveAnswer, answer.negativeAnswer),
-                        respondedAt: new Date(),
-                    };
-                }),
-            });
+        const { respondentCount, importedCount } = await persistKanoUploadAnswers({
+            projectId,
+            invitedBy: accessResult.user.userId,
+            writePolicy,
+            requirements,
+            answers,
         });
 
         return NextResponse.json({
             success: true,
-            message: `${respondentEmails.length}명 응답자의 ${answers.length}개 Kano 응답을 업로드했습니다.`,
-            respondentCount: respondentEmails.length,
-            importedCount: answers.length,
+            message: `${respondentCount}명 응답자의 ${importedCount}개 Kano 응답을 업로드했습니다.`,
+            respondentCount,
+            importedCount,
             writePolicy,
             sheetName,
         });
