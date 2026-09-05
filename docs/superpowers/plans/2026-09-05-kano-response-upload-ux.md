@@ -355,6 +355,11 @@ export function guardUploadedOfflineHtml(value: unknown): UploadGuardResult;
 2. `npx stryker run stryker.crap.config.json --mutate lib/kano-offline-response.ts` 100%.
 3. 왕복 테스트가 존재하고, `buildKanoOfflineFormHtml` 의 `KANO_OFFLINE_PAYLOAD_ID` 를 임시로 다른 값으로 바꾸면 그 테스트가 실패한다(확인 후 원복).
 
+> **감리 기록(2026-09-05) — 승인.** 작업 커밋 `1802840`, 보고서 `c5b8f25`(`.../task-3.md`).
+> 감리자가 직접 확인한 것: ① 경계 — 변경 6개 파일이 파일 지도 안, `upload-guard.ts` 는 기존 함수 무수정에 추가만(+40/−0), 기존 가드 테스트 삭제 줄 0. ② 표본 — export 시그니처·오류 문구 5종·판정 순서(형식→JSON→kind/version→projectId→답변)·항목별 버림·이메일 trim/fallback 전부 계약대로. 정규식은 `id` 속성을 실제 속성 위치에서만 잡는 강화판(다른 속성값 속 가짜 id·대문자 id 거부 테스트 있음). 왕복 테스트는 `buildKanoOfflineFormHtml` 의 실제 출력을 쓴다. ③ **파서 직접 실행** — 전역 tsc 로 컴파일해 Task 2 감리 때 Chromium 이 실제로 저장한 `saved-A/B/E.html` 을 넣었다: A·E 는 답변 2세트, B 는 미응답 항목만 버리고 `offline-html-1@import.local` 로 합성, 미작성 원본은 `응답이 하나도 없습니다.`, 다른 projectId 는 거부, `requirementCount=1` 이면 index 1 만 버림. 변조 8종(JSON 손상·version 2·positive 9·문자열 "1"·index 0.5·answers 비배열·이메일 공백 등)도 전부 계약대로. ④ 가드 직접 실행 — 실제 저장본(9,941B) 통과, 확장자 없는 `download` 거부, `.HTM` 허용, 2MB 경계·빈 파일·비파일 전부 정확.
+> DEVIATIONS 판정: "오류 문구 6종" 은 감리자 프롬프트의 오기(파서 5종 + 가드 4종이 맞다) — 계획서 계약을 따른 실행 AI 가 옳다.
+> 감리자가 재실행하지 못한 것: 게이트 3종·stryker(134/134)는 실행 AI 의 로컬 출력에 의존한다.
+
 ---
 
 ### Task 4: 응답 저장 트랜잭션 추출 (특성화 테스트 먼저)
