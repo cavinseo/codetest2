@@ -167,7 +167,7 @@ npx vitest run tests/workbook-importer.test.ts
 
 **Files:** Create `tests/excel-parser.test.ts` · Modify `tests/kano-algorithm.test.ts`, `tests/email-send.test.ts`, `tests/ai-spec-draft.test.ts`
 
-- [ ] **Step 1: 네 파일을 가져온다**
+- [x] **Step 1: 네 파일을 가져온다**
 
 ```sh
 git checkout origin/claude/carp-inspection-46phhc -- \
@@ -186,7 +186,7 @@ npx vitest run tests/excel-parser.test.ts tests/kano-algorithm.test.ts tests/ema
 
 `tests/email-send.test.ts` 의 추가분은 `sendSurveyInvitation` 이 프로젝트 이름의 마크업을 이스케이프하고, SMTP 미설정·발송 거부 시 **수신자와 설문 링크를 로그에 남기지 않는지**를 단언한다. CLAUDE.md 의 개인정보 규칙을 지키는 테스트이니 단언을 약화하지 마라.
 
-- [ ] **Step 2: CRAP 재현 — 위험 표가 비고 총 위험 수가 0 이어야 한다**
+- [x] **Step 2: CRAP 재현 — 위험 표가 비고 총 위험 수가 0 이어야 한다**
 
 이 시점에 `node scripts/crap-report.mjs --fail-over=30` 을 붙여 실행해 **종료 코드 0** 을 확인한다(앞 Task 와 달리 여기서는 붙인다).
 

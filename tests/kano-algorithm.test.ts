@@ -7,6 +7,7 @@ import {
     classifyKanoResponse,
     getSatisfactionQuadrant,
     getWeightedTimkoCategory,
+    translateKanoCategory,
 } from '../lib/kano-algorithm';
 
 describe('kano algorithm', () => {
@@ -132,5 +133,17 @@ describe('kano algorithm', () => {
 
     it('calculates priority score from improvement and dissatisfaction effects', () => {
         expect(calculatePriorityScore(0.8, -0.6, 0.25)).toBeCloseTo(0.75);
+    });
+
+    it('여섯 Kano 분류를 각각 한글 명칭으로 옮기고, 모르는 값은 기본 문구를 쓴다', () => {
+        // 화면과 보고서에 그대로 나가는 라벨이라 값을 직접 고정한다. 한 분기라도
+        // 빠지면 사용자에게 다른 분류로 보이는데 계산은 정상이라 드러나지 않는다.
+        expect(translateKanoCategory('M')).toBe('당연적');
+        expect(translateKanoCategory('O')).toBe('일원적');
+        expect(translateKanoCategory('A')).toBe('매력적');
+        expect(translateKanoCategory('I')).toBe('무관심');
+        expect(translateKanoCategory('R')).toBe('역');
+        expect(translateKanoCategory('Q')).toBe('회의적');
+        expect(translateKanoCategory('알 수 없는 값' as never)).toBe('알 수 없음');
     });
 });

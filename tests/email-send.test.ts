@@ -24,7 +24,7 @@ vi.mock('../lib/logger', () => ({
     createLogger: () => ({ info: logInfo, warn: logWarn, error: logError }),
 }));
 
-const { sendMail } = await import('../lib/email');
+const { sendMail, sendSurveyInvitation } = await import('../lib/email');
 
 const CONFIGURED_SMTP = {
     host: 'smtp.example.com',
@@ -107,5 +107,68 @@ describe('sendMail', () => {
         const sentMail = sendMailMock.mock.calls[0][0] as { subject: string };
         expect(sentMail.subject).not.toContain('\n');
         expect(sentMail.subject).toBe('제목 줄바꿈 주입 시도');
+    });
+});
+
+describe('sendSurveyInvitation', () => {
+    // 설문 링크는 응답자 신원을 대신하는 비밀 토큰이라 수신자 주소와 같은 급으로 다룬다.
+    const RECIPIENT = 'respondent@example.com';
+    const SURVEY_LINK = 'https://app.example.com/survey/secret-token-123';
+
+    it('프로젝트 이름의 마크업을 본문에서 이스케이프하고 제목의 개행을 없앤다', async () => {
+        getSmtpSettings.mockResolvedValue(CONFIGURED_SMTP);
+        sendMailMock.mockResolvedValue({ messageId: 'msg-2' });
+
+        // 프로젝트 이름은 편집 권한자가 정하는데 이 메일은 외부 응답자에게 나간다.
+        // 그대로 넣으면 이름에 링크를 심어 피싱을 끼워 넣을 수 있다.
+        const result = await sendSurveyInvitation(
+            RECIPIENT,
+            SURVEY_LINK,
+            '<a href="https://evil.example.com">당첨</a>\n두 번째 줄'
+        );
+
+        expect(result).toBe(true);
+        const sentMail = sendMailMock.mock.calls[0][0] as { to: string; subject: string; html: string };
+
+        expect(sentMail.to).toBe(RECIPIENT);
+        expect(sentMail.html).not.toContain('<a href="https://evil.example.com">');
+        expect(sentMail.html).toContain('&lt;a href=&quot;https://evil.example.com&quot;&gt;');
+        // 링크 자체는 본문에 그대로 들어가야 응답자가 설문에 들어올 수 있다.
+        expect(sentMail.html).toContain(SURVEY_LINK);
+
+        expect(sentMail.subject).not.toContain('\n');
+        expect(sentMail.subject.startsWith('[Kano 설문] ')).toBe(true);
+        expect(sentMail.subject.endsWith(' - 설문 참여 요청')).toBe(true);
+
+        expect(allLoggedText()).not.toContain(RECIPIENT);
+        expect(allLoggedText()).not.toContain('secret-token-123');
+    });
+
+    it('SMTP 가 설정되지 않았으면 false 를 돌려주고 수신자와 설문 링크를 남기지 않는다', async () => {
+        getSmtpSettings.mockResolvedValue({ configured: false });
+
+        const result = await sendSurveyInvitation(RECIPIENT, SURVEY_LINK, '프로젝트');
+
+        expect(result).toBe(false);
+        expect(sendMailMock).not.toHaveBeenCalled();
+        expect(allLoggedText()).not.toContain(RECIPIENT);
+        expect(allLoggedText()).not.toContain('secret-token-123');
+    });
+
+    it('발송이 거부되면 false 를 돌려주고 코드만 남긴다', async () => {
+        getSmtpSettings.mockResolvedValue(CONFIGURED_SMTP);
+        // 실제 SMTP 거부 메시지에는 수신자 주소가 들어 있다. 원본 오류를 로거에
+        // 그대로 넘기면 그 주소가 meta 로 새어 나간다.
+        sendMailMock.mockRejectedValue(Object.assign(
+            new Error(`550 5.1.1 <${RECIPIENT}>: Recipient address rejected`),
+            { code: 'EENVELOPE' }
+        ));
+
+        const result = await sendSurveyInvitation(RECIPIENT, SURVEY_LINK, '프로젝트');
+
+        expect(result).toBe(false);
+        expect(allLoggedText()).not.toContain(RECIPIENT);
+        expect(allLoggedText()).not.toContain('secret-token-123');
+        expect(allLoggedText()).toContain('EENVELOPE');
     });
 });
