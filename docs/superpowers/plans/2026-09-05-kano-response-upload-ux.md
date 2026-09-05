@@ -2,7 +2,21 @@
 
 > **For agentic workers:** 이 계획서가 각 Task 의 정본이다. Step 은 체크박스(`- [ ]`)로 추적하고, 완료 시 `- [x]` 로 갱신해 코드와 함께 커밋한다.
 
-> **완결(2026-09-05)**: Task 1~6 전부 구현·게이트(tsc·vitest·lint)·stryker 100%(신규 순수 모듈 3종)·감리 판정 완료. Step 23개 모두 `- [x]`. 판정 근거는 `docs/superpowers/reports/2026-09-05-kano-response-upload-ux/` 의 보고서 6건과 각 Task 말미의 감리 기록에 있다. 감리자가 직접 실행한 것은 오프라인 HTML 의 Chromium 왕복 5시나리오, 실브라우저 저장본 3장에 대한 파서·가드 실행, 트랜잭션 추출의 공백 정규화 대조, 화면 무변경 구간의 520줄 diff 다. 게이트·stryker 는 원격 세션의 npm 차단으로 실행 AI 의 로컬 출력에 의존했고, 실화면은 사용자가 로컬 dev 서버에서 확인해 승인했다.
+> **완결(2026-09-05)**: Task 1~6 전부 구현·게이트(tsc·vitest·lint)·stryker 100%(신규 순수 모듈 3종)·감리 판정 완료. Step 23개 모두 `- [x]`. 판정 근거는 `docs/superpowers/reports/2026-09-05-kano-response-upload-ux/` 의 보고서 6건과 각 Task 말미의 감리 기록에 있다. 감리자가 직접 실행한 것은 오프라인 HTML 의 Chromium 왕복 5시나리오, 실브라우저 저장본 3장에 대한 파서·가드 실행, 트랜잭션 추출의 공백 정규화 대조, 화면 무변경 구간의 520줄 diff 다. 실화면은 사용자가 로컬 dev 서버에서 확인해 승인했다.
+>
+> **게이트 독립 재실행(2026-09-05, 병합 후)**: `main` 병합(`1a4ffdb`) 으로 CI 가 돌아 **성공**했다 — [run #95](https://github.com/cavinseo/codetest2/actions/runs/33971581322). 원격 세션의 npm 차단으로 감리자가 못 돌린 게이트를 CI 가 대신 실행했고, 감리자가 로그에서 직접 읽은 값은 다음과 같다.
+>
+> | 단계 | 결과 |
+> | --- | --- |
+> | 한글 인코딩 검사 | `한글 인코딩 검사 통과.` |
+> | Lint | success |
+> | Type check (`tsc --noEmit`) | success |
+> | Test | `Test Files 105 passed (105)` / `Tests 1206 passed (1206)` — 실행 AI 보고와 일치 |
+> | Build (`next build`) | `✓ Compiled successfully`, 정적 페이지 33/33, 신규 라우트 `kano/offline-form`·`kano/upload-offline` 둘 다 산출물에 포함 |
+>
+> **다만 stryker(뮤테이션)는 CI 가 검증하지 않는다.** 뮤테이션 워크플로 `.github/workflows/crap.yml` 은 미병합 브랜치 `claude/carp-inspection-46phhc` 에만 있고 `main` 에는 없다(`main` 의 워크플로는 `ci.yml` 하나뿐). 즉 CLAUDE.md 가 경고한 뮤테이션 회귀(`lib/ai/personal-vendors.ts` 100%→68.75% 사례)를 **지금도 CI 가 잡지 못한다**. 이번 계획의 stryker 점수 3건은 실행 AI 의 로컬 출력에 의존한 채로 남는다. 후속 과제로 `crap.yml` 을 `main` 에 올리는 것을 권한다.
+>
+> **배포는 이 저장소에 구성돼 있지 않다.** Vercel·Netlify 설정 파일이 없고 배포 워크플로도 없다. 따라서 병합으로 자동 배포된 것은 없으며, 실환경 재검증 대상도 없다.
 
 **Goal:** WS-6 「Kano 설문 관리」 화면에 흩어져 있는 응답 수집 경로를 사용자가 고를 수 있게 재배치한다. 세 가지다.
 
