@@ -292,7 +292,7 @@ HTML 이 반드시 갖춰야 할 것(테스트가 이것들을 단언한다):
 - Produces: `parseKanoOfflineResponseHtml(html, options)`, `guardUploadedOfflineHtml(value)`, `MAX_OFFLINE_HTML_BYTES`, `MAX_OFFLINE_HTML_FILES`. Task 5 의 라우트가 쓴다.
 - Consumes: Task 2 의 payload 계약, `ParsedKanoUploadAnswer`(`lib/kano-upload-parser.ts`).
 
-- [ ] **Step 1: 파서**
+- [x] **Step 1: 파서**
 
 ```ts
 // 응답자가 저장한 오프라인 HTML 에서 답변을 꺼낸다.
@@ -322,7 +322,7 @@ export function parseKanoOfflineResponseHtml(
 - 채택된 항목이 0개면 `'응답이 하나도 없습니다.'`
 - `respondentEmail` 이 비었거나 문자열이 아니면 `fallbackEmail` 을 쓴다. 있으면 `trim()` 한다.
 
-- [ ] **Step 2: 업로드 가드**
+- [x] **Step 2: 업로드 가드**
 
 `lib/upload-guard.ts` 에 더한다. **`guardUploadedExcel` 과 `checkUploadedExcel` 은 건드리지 마라.**
 
@@ -342,13 +342,13 @@ export function guardUploadedOfflineHtml(value: unknown): UploadGuardResult;
 - `MAX_OFFLINE_HTML_BYTES` 초과면 `'HTML 응답지 하나는 2MB를 초과할 수 없습니다.'`(413)
 - 확장자가 `.html`/`.htm` 이 아니면 `'.html 또는 .htm 파일만 업로드할 수 있습니다.'`(400)
 
-- [ ] **Step 3: 테스트**
+- [x] **Step 3: 테스트**
 
 `tests/kano-offline-response.test.ts` — 위 규칙 하나마다 케이스를 둔다. **왕복 테스트를 반드시 포함한다**: Task 2 의 `buildKanoOfflineFormHtml` 로 HTML 을 만들고, 그 JSON 블록을 답변이 채워진 payload 로 치환한 뒤 파서에 넣어 기대한 `ParsedKanoUploadAnswer[]` 가 나오는지 본다. 이것이 두 모듈의 계약을 고정하는 유일한 테스트다.
 
 `tests/upload-guard.test.ts` — 기존 케이스를 그대로 두고 `guardUploadedOfflineHtml` 케이스를 더한다.
 
-- [ ] **Step 4: `stryker.crap.config.json` 의 `mutate` 에 `"lib/kano-offline-response.ts"` 를 더한다**
+- [x] **Step 4: `stryker.crap.config.json` 의 `mutate` 에 `"lib/kano-offline-response.ts"` 를 더한다**
 
 **완료 판정**
 1. 게이트 3종 그린.

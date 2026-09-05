@@ -60,3 +60,43 @@ export function checkUploadedExcel(
     }
     return null;
 }
+
+export const MAX_OFFLINE_HTML_BYTES = 2 * 1024 * 1024;
+export const MAX_OFFLINE_HTML_FILES = 100;
+
+function hasSupportedOfflineHtmlExtension(fileName: string): boolean {
+    const lower = fileName.trim().toLowerCase();
+    return lower.endsWith('.html') || lower.endsWith('.htm');
+}
+
+/**
+ * 오프라인 응답지는 낱장이라 수십 KB 다. 엑셀의 10MB 를 그대로 쓰면 100장을 받을 때
+ * 1GB 가 되므로 한도를 따로 둔다.
+ */
+export function guardUploadedOfflineHtml(value: unknown): UploadGuardResult {
+    if (!(value instanceof File)) {
+        return {
+            ok: false,
+            failure: { error: '업로드할 HTML 응답지가 필요합니다.', status: 400 },
+        };
+    }
+    if (value.size === 0) {
+        return {
+            ok: false,
+            failure: { error: '빈 파일입니다. 내용이 있는 HTML 응답지를 올려 주세요.', status: 400 },
+        };
+    }
+    if (value.size > MAX_OFFLINE_HTML_BYTES) {
+        return {
+            ok: false,
+            failure: { error: 'HTML 응답지 하나는 2MB를 초과할 수 없습니다.', status: 413 },
+        };
+    }
+    if (!hasSupportedOfflineHtmlExtension(value.name)) {
+        return {
+            ok: false,
+            failure: { error: '.html 또는 .htm 파일만 업로드할 수 있습니다.', status: 400 },
+        };
+    }
+    return { ok: true, file: value };
+}
