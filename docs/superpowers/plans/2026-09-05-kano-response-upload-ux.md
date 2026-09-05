@@ -122,7 +122,7 @@ Task 1 은 독립이다. Task 2 → 3 → 5, 4 → 5, 5 → 6 순으로 의존�
 - Modify: `app/api/projects/[id]/kano/create-form/route.ts`, `.../form-responses/route.ts`, `.../form-script/route.ts`, `stryker.crap.config.json`
 
 **Interfaces:**
-- Produces: `GOOGLE_FORMS_INTEGRATION_ENABLED`, `GOOGLE_FORMS_DISABLED_MESSAGE`, `googleFormsDisabledResponse()`. Task 6 의 화면이 쓴다.
+- Produces: `GOOGLE_FORMS_INTEGRATION_ENABLED`, `GOOGLE_FORMS_DISABLED_MESSAGE`. Task 6 의 화면이 쓴다. (감리 정정: 초안에 적혔던 `googleFormsDisabledResponse()` 는 확정 계약에 없는 오기였다 — 실행 AI 가 확정 계약대로 export 2개만 만든 것이 맞다.)
 
 - [x] **Step 1: 플래그 모듈을 만든다**
 
@@ -163,6 +163,10 @@ export const GOOGLE_FORMS_DISABLED_MESSAGE =
 1. `npx tsc --noEmit` / `npx vitest run` / `npx next lint` 전부 그린.
 2. `npx stryker run stryker.crap.config.json --mutate lib/feature-flags.ts` mutation score 100%.
 3. 새 테스트가 결함을 실제로 잡는다 — 라우트의 가드 한 개를 임시로 지우면 `tests/api-kano-google-forms-disabled.test.ts` 가 실패하고, 되돌리면 통과한다(확인 후 원복).
+
+> **감리 기록(2026-09-05) — 승인.** 작업 커밋 `683f66a`, 보고서 `f6ad5d3`(`docs/superpowers/reports/2026-09-05-kano-response-upload-ux/task-1.md`).
+> 감리자가 직접 확인한 것: ① 경계 — 변경 10개 파일이 전부 파일 지도 안이고, 기존 테스트 2개(`api-form-responses-invitation`, `api-error-exposure`)의 변경은 플래그 mock 5줄 추가뿐(삭제 0줄), 라우트 3개는 각각 +5/−0 로 가드 아래 코드가 남아 있다. ② 표본 — 세 라우트 모두 `requireProjectAccess` 반환 직후·`try` 앞에 가드가 있다(`create-form:22-24`, `form-responses:26-28`, `form-script:18-20`); 플래그 문구가 확정 계약과 한 글자도 다르지 않다; 신설 테스트가 503+문구, 권한 거부 403 선행, mock 10개 미호출까지 단언한다. ③ `stryker.crap.config.json` 은 유효 JSON 이고 `lib/feature-flags.ts` 가 추가됐다.
+> 감리자가 재실행하지 못한 것: 게이트 3종·stryker 는 원격 세션의 npm 차단으로 실행 AI 의 로컬 출력(vitest 100파일·1,137개, stryker 2/2 사멸)에 의존한다. `api-error-exposure.test.ts` 의 mock 추가는 Ask First 를 거친 정당한 처리로 판정한다.
 
 ---
 
@@ -270,6 +274,11 @@ HTML 이 반드시 갖춰야 할 것(테스트가 이것들을 단언한다):
 2. `npx stryker run stryker.crap.config.json --mutate lib/kano-offline-form.ts` 100%.
 3. `npx stryker run stryker.crap.config.json --mutate lib/kano-survey-document.ts` 100% (Step 1 수정 전과 같은 점수). 보고서 VERIFIED BY 에 두 점수를 원문으로 적는다.
 4. `kanoSurveyFileName` 의 반환 문자열이 바뀌지 않았다 — 기존 두 테스트 파일이 수정 없이 통과한다.
+
+> **감리 기록(2026-09-05) — 승인.** 작업 커밋 `cd3ef95`, 보고서 `8c81a37`(`.../task-2.md`).
+> 감리자가 직접 확인한 것: ① 경계 — 변경 6개 파일이 파일 지도 안이고 `kano-survey-document.ts` 의 변경은 어간 추출뿐, 기존 `kanoSurveyFileName` 테스트는 한 줄도 바뀌지 않았다. ② 표본 — export 이름·payload 계약·`<` 치환(TS 쪽 `'\\u003c'`, 인라인 JS 쪽 `'\\\\u003c'` 로 이스케이프 단계가 맞다)·`escapeHtml` 적용·외부 자원 0·백틱/`${` 금지 전부 코드에서 확인. 테스트는 문구 4종 전문 일치, 필드셋 구조·라벨·값 정확 비교, `</script>` 주입 시 닫힘 2개, `vm` 가짜 DOM 으로 복원·confirm·저장까지 단언한다. ③ **신설 실행물 직접 실행** — 전역 tsc 로 컴파일해 `buildKanoOfflineFormHtml` 을 호출, 9,936바이트·`<!DOCTYPE html>` 시작·`</script>` 2개·외부 자원 없음 확인. ④ **실브라우저 왕복(Chromium 141, Playwright)** — `file://` 에서 A 전부 답하고 저장(confirm 없음, JSON 정확), B 한 문항 비우고 저장(`1개 문항이 비어 있습니다. 그래도 저장할까요?` 확인 후 `null` 저장), C confirm 취소 시 내려받기 없음, D 저장본 재열기 시 라디오 4개·이메일 복원, E 저장본에서 답 바꿔 재저장 — 5개 시나리오 전부 통과, 페이지 오류 0.
+> 환경 주의: Linux 컨테이너의 `LANG` 이 비어 있으면 Chrome 이 한글 다운로드 이름을 `download`(확장자 없음)로 떨어뜨린다. `LANG=C.UTF-8` 에서는 `Kano_오프라인_응답_<stem>_<시각>.html` 이 정확히 반영됐다 — 코드 결함이 아니라 감리 환경 로케일 문제다. 이후 Playwright 검증은 반드시 UTF-8 로케일로 돌린다.
+> 감리자가 재실행하지 못한 것: 게이트 3종·stryker 두 건(24/24, 54/54 사멸)은 실행 AI 의 로컬 출력에 의존한다.
 
 ---
 
