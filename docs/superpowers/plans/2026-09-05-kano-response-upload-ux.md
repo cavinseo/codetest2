@@ -497,6 +497,10 @@ type OfflineUploadFileResult = {
 
 > **감리자 이월**: 실제 브라우저에서 내려받은 HTML 을 열어 라디오 선택 → 「응답 저장」 → 재업로드하는 왕복은 **감리자/사용자가 로컬에서** 수행한다. dev 서버 기동은 실행 AI 에게 위임하지 않는다.
 
+> **감리 기록(2026-09-05) — 승인.** 작업 커밋 `43db76e`, 보고서 `46c833a`(`.../task-5.md`).
+> 감리자가 직접 확인한 것: ① 경계 — 변경 5개 파일이 파일 지도 안, `lib/`·`tests/fixtures/`·`components/` 무변경. ② 표본 — GET 은 `survey-document` 본과 같은 순서(권한→project→requirements order asc→렌더)이고 생성기 문자열을 가공 없이 `text/html; charset=utf-8` 첨부로 내보낸다(47행). 따라서 Task 2 감리의 Chromium 저장 왕복 검증이 라우트 출력에도 그대로 적용된다. POST 는 `formData.getAll('files')`·0장/101장 400·파일별 `guardUploadedOfflineHtml`→`file.text()`→`parseKanoOfflineResponseHtml(fallbackEmail: offline-html-<순번>)`·같은 이메일 재출현 시 뒤 파일만 failed·성공분으로 `persistKanoUploadAnswers` 1회·응답에 파일명만·`log.error(…, { projectId })` 전부 계약 B·C 와 일치. ③ 테스트 — 위 이월 항목을 대신하는 **실브라우저 픽스처 3장이 POST 테스트의 실제 입력**이며, (a)~(h) 8건 + 100장 경계·파일명 대체/절단·로그 인수 비노출 3건. persist 1회 호출·`@` 부재·로그 인수 검사가 단언돼 있다.
+> 감리자가 재실행하지 못한 것: 게이트 3종(vitest 105파일·1,206개)은 실행 AI 의 로컬 출력에 의존한다. 라우트는 `next/server`·Prisma 가 필요해 컨테이너에서 실행하지 않았다. 실화면 조작은 Task 6 판정으로 넘긴다.
+
 ---
 
 ### Task 6: 화면 재배치 — 「응답 수집」 카드와 방식 탭 3개
