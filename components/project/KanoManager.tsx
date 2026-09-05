@@ -9,6 +9,10 @@ import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import KanoRespondentTable from '@/components/project/KanoRespondentTable';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
 import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
+import {
+    GOOGLE_FORMS_DISABLED_MESSAGE,
+    GOOGLE_FORMS_INTEGRATION_ENABLED,
+} from '@/lib/feature-flags';
 
 interface Requirement {
     id: string;
@@ -40,6 +44,13 @@ interface BulkInviteSummary {
     skipped: number;
     failed: number;
     emailSent: number;
+}
+
+interface OfflineUploadFileResult {
+    fileName: string;
+    status: 'ok' | 'failed';
+    answerCount?: number;
+    reason?: string;
 }
 
 interface AnalysisResult {
@@ -106,6 +117,10 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [excelFile, setExcelFile] = useState<File | null>(null);
     const [excelUploadFormat, setExcelUploadFormat] = useState<ExcelUploadFormat>('template');
+    const [collectMode, setCollectMode] = useState<'file' | 'offline' | 'googleForms'>('file');
+    const [offlineFiles, setOfflineFiles] = useState<File[]>([]);
+    const [offlineResults, setOfflineResults] = useState<OfflineUploadFileResult[]>([]);
+    const [isUploadingOffline, setIsUploadingOffline] = useState(false);
     const [importMessage, setImportMessage] = useState('');
     const [projectName, setProjectName] = useState('');
 
@@ -120,6 +135,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const excelInputRef = useRef<HTMLInputElement | null>(null);
+    const offlineInputRef = useRef<HTMLInputElement | null>(null);
 
     const showToast = (message: string, type: ToastType = 'success') => {
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -383,6 +399,58 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             showToast(message, 'error');
         } finally {
             setIsUploadingExcel(false);
+        }
+    };
+
+    const handleCollectModeChange = (mode: 'file' | 'offline' | 'googleForms') => {
+        setCollectMode(mode);
+        setOfflineResults([]);
+    };
+
+    const handleUploadOfflineResponses = async () => {
+        if (offlineFiles.length === 0) {
+            showToast('업로드할 HTML 응답지를 선택하세요.', 'error');
+            return;
+        }
+
+        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 응답/초대 데이터를 지우고 새롭게 업로드', '1');
+        if (uploadPolicy === null) return;
+        const shouldReplace = uploadPolicy.trim() === '2';
+        if (!shouldReplace && uploadPolicy.trim() !== '1') {
+            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
+            return;
+        }
+
+        setIsUploadingOffline(true);
+        setOfflineResults([]);
+        try {
+            const formData = new FormData();
+            for (const file of offlineFiles) {
+                formData.append('files', file);
+            }
+            formData.append('writePolicy', shouldReplace ? 'replace' : 'append');
+
+            const res = await fetch(`/api/projects/${projectId}/kano/upload-offline`, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                if (res.status === 400 && Array.isArray(data.results)) {
+                    setOfflineResults(data.results);
+                }
+                throw new Error(data.error || '오프라인 응답지 업로드에 실패했습니다.');
+            }
+
+            setOfflineResults(data.results || []);
+            showToast(data.message, 'success');
+            setOfflineFiles([]);
+            if (offlineInputRef.current) offlineInputRef.current.value = '';
+            await loadData();
+        } catch (error: any) {
+            showToast(error.message || '오프라인 응답지 업로드에 실패했습니다.', 'error');
+        } finally {
+            setIsUploadingOffline(false);
         }
     };
 
@@ -659,68 +727,117 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                         </div>
                     )}
 
-                    {/* Google Forms 연동 */}
+                    {/* 응답 수집 방식은 목적이 달라 한 카드 안에서 선택해야 혼동이 없다. */}
                     {requirements.length > 0 && (
                         <div className="card">
-                            <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
-                                    <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    Google Forms 연동
-                                    {googleConfigured ? (
-                                        <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">연동됨</span>
-                                    ) : (
-                                        <span className="text-xs bg-white/[0.04] text-gray-500 border border-white/[0.08] px-2 py-0.5 rounded-full">미설정</span>
-                                    )}
-                                </h2>
+                            <h2 className="text-lg font-display font-bold text-white flex items-center gap-2 mb-4">
+                                <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 16V4m0 12l-4-4m4 4l4-4M4 20h16" />
+                                </svg>
+                                응답 수집
+                            </h2>
+
+                            <div className="flex flex-wrap gap-1 p-1 bg-white/[0.04] border border-white/[0.06] rounded-xl w-fit mb-5">
+                                <button
+                                    type="button"
+                                    onClick={() => handleCollectModeChange('file')}
+                                    className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${collectMode === 'file'
+                                        ? 'bg-primary-600 text-white shadow-sm'
+                                        : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
+                                        }`}
+                                >
+                                    응답 파일로 업로드
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleCollectModeChange('offline')}
+                                    className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${collectMode === 'offline'
+                                        ? 'bg-primary-600 text-white shadow-sm'
+                                        : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
+                                        }`}
+                                >
+                                    오프라인 응답파일 업로드
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleCollectModeChange('googleForms')}
+                                    className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${collectMode === 'googleForms'
+                                        ? 'bg-primary-600 text-white shadow-sm'
+                                        : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
+                                        }`}
+                                >
+                                    <span className="flex items-center gap-2">
+                                        Google Forms 연동
+                                        <span className="text-[10px] bg-white/[0.08] text-gray-300 border border-white/[0.10] px-1.5 py-0.5 rounded-full">개발 중</span>
+                                    </span>
+                                </button>
                             </div>
 
-                            <p className="text-sm text-gray-500 -mt-2 mb-4">
-                                Google Forms로 설문지를 만들고 응답을 수집합니다
-                            </p>
+                            {collectMode === 'googleForms' && (
                                 <div className="space-y-4">
+                                    <div>
+                                        <h3 className="text-white text-sm font-semibold">Google Forms 연동</h3>
+                                        <p className="text-sm text-gray-500 mt-1">개발 중입니다. 준비되면 이 자리에서 바로 쓸 수 있습니다</p>
+                                    </div>
+                                    {!GOOGLE_FORMS_INTEGRATION_ENABLED && (
+                                        <p className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-gray-400">
+                                            {GOOGLE_FORMS_DISABLED_MESSAGE}
+                                        </p>
+                                    )}
                                     {/* 3단계 진행 흐름 */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 ${GOOGLE_FORMS_INTEGRATION_ENABLED ? '' : 'opacity-60 grayscale'}`}>
                                         {/* 1단계: 미리보기 */}
                                         <div className="p-4 bg-white/[0.03] border border-white/[0.08] rounded-xl flex flex-col">
                                             <div className="flex items-center gap-2 mb-2">
                                                 <span className="w-5 h-5 rounded-full bg-emerald-500/15 text-emerald-300 text-[11px] font-bold flex items-center justify-center">1</span>
-                                                <span className="text-[11px] text-emerald-400">준비됨</span>
+                                                <span className="text-[11px] text-emerald-400">
+                                                    {GOOGLE_FORMS_INTEGRATION_ENABLED ? '준비됨' : '개발 중'}
+                                                </span>
                                             </div>
                                             <h3 className="text-white text-sm font-semibold mb-3">미리보기</h3>
                                             <button
                                                 onClick={() => setShowPreview(true)}
-                                                className="mt-auto w-full px-3 py-2 rounded-lg border border-white/[0.10] bg-white/[0.04] hover:bg-white/[0.08] text-gray-200 text-xs font-semibold transition-colors"
+                                                disabled={!GOOGLE_FORMS_INTEGRATION_ENABLED}
+                                                className="mt-auto w-full px-3 py-2 rounded-lg border border-white/[0.10] bg-white/[0.04] hover:bg-white/[0.08] disabled:hover:bg-white/[0.04] disabled:cursor-not-allowed text-gray-200 text-xs font-semibold transition-colors"
                                             >
                                                 양식 확인
                                             </button>
                                         </div>
 
                                         {/* 2단계: 설문지 생성 (Google 연동 필요) */}
-                                        <div className={`p-4 rounded-xl flex flex-col border ${googleConfigured
+                                        <div className={`p-4 rounded-xl flex flex-col border ${GOOGLE_FORMS_INTEGRATION_ENABLED && googleConfigured
                                             ? 'bg-blue-500/[0.08] border-blue-500/20'
                                             : 'bg-amber-500/[0.06] border-amber-500/25'
                                             }`}>
                                             <div className="flex items-center gap-2 mb-2">
-                                                <span className={`w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${googleConfigured
+                                                <span className={`w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${GOOGLE_FORMS_INTEGRATION_ENABLED && googleConfigured
                                                     ? 'bg-blue-500/15 text-blue-300'
                                                     : 'bg-amber-500/15 text-amber-300'
                                                     }`}>2</span>
-                                                {googleConfigured ? (
+                                                {GOOGLE_FORMS_INTEGRATION_ENABLED && googleConfigured ? (
                                                     <span className="text-[11px] text-blue-400">연동됨</span>
-                                                ) : (
+                                                ) : GOOGLE_FORMS_INTEGRATION_ENABLED ? (
                                                     <span className="text-[11px] text-amber-400 flex items-center gap-1">
                                                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                                         </svg>
                                                         설정 필요
                                                     </span>
+                                                ) : (
+                                                    <span className="text-[11px] text-gray-500">개발 중</span>
                                                 )}
                                             </div>
                                             <h3 className="text-white text-sm font-semibold mb-1">설문지 생성</h3>
                                             <p className="text-xs text-gray-500 mb-3">{requirements.length}개 질문 세트</p>
-                                            {googleConfigured ? (
+                                            {!GOOGLE_FORMS_INTEGRATION_ENABLED ? (
+                                                <button
+                                                    type="button"
+                                                    disabled
+                                                    className="mt-auto w-full px-3 py-2 rounded-lg border border-white/[0.10] bg-white/[0.04] text-gray-400 text-xs font-semibold cursor-not-allowed"
+                                                >
+                                                    개발 중
+                                                </button>
+                                            ) : googleConfigured ? (
                                                 <button
                                                     onClick={handleCreateGoogleForm}
                                                     disabled={isCreatingForm}
@@ -740,46 +857,59 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                         </div>
 
                                         {/* 3단계: 응답 가져오기 */}
-                                        <div className={`p-4 rounded-xl flex flex-col border ${createdFormId
+                                        <div className={`p-4 rounded-xl flex flex-col border ${GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId
                                             ? 'bg-emerald-500/[0.08] border-emerald-500/20'
                                             : 'bg-white/[0.02] border-white/[0.06]'
                                             }`}>
                                             <div className="flex items-center gap-2 mb-2">
-                                                <span className={`w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${createdFormId
+                                                <span className={`w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId
                                                     ? 'bg-emerald-500/15 text-emerald-300'
                                                     : 'bg-white/[0.06] text-gray-500'
                                                     }`}>3</span>
-                                                <span className={`text-[11px] ${createdFormId ? 'text-emerald-400' : 'text-gray-500'}`}>
-                                                    {createdFormId ? '수집 가능' : '2단계 후 진행'}
+                                                <span className={`text-[11px] ${GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId ? 'text-emerald-400' : 'text-gray-500'}`}>
+                                                    {GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId ? '수집 가능' : '2단계 후 진행'}
                                                 </span>
                                             </div>
-                                            <h3 className={`text-sm font-semibold mb-3 ${createdFormId ? 'text-white' : 'text-gray-500'}`}>응답 가져오기</h3>
+                                            <h3 className={`text-sm font-semibold mb-3 ${GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId ? 'text-white' : 'text-gray-500'}`}>응답 가져오기</h3>
                                             <button
                                                 onClick={handleImportResponses}
-                                                disabled={isImporting || !createdFormId}
+                                                disabled={!GOOGLE_FORMS_INTEGRATION_ENABLED || isImporting || !createdFormId}
                                                 className="mt-auto w-full px-3 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 disabled:opacity-40 disabled:hover:bg-emerald-500/15 text-emerald-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
                                             >
-                                                {isImporting && <span className="w-3 h-3 border-2 border-emerald-300 border-t-transparent rounded-full animate-spin" />}
-                                                {isImporting ? '가져오는 중...' : createdFormId ? '응답 가져오기' : '대기 중'}
+                                                {GOOGLE_FORMS_INTEGRATION_ENABLED && isImporting && <span className="w-3 h-3 border-2 border-emerald-300 border-t-transparent rounded-full animate-spin" />}
+                                                {GOOGLE_FORMS_INTEGRATION_ENABLED && isImporting ? '가져오는 중...' : GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId ? '응답 가져오기' : '대기 중'}
                                             </button>
                                         </div>
                                     </div>
 
                                     {/* 보조 수단: Apps Script 직접 실행 */}
                                     <div className="pt-3 border-t border-white/[0.06]">
-                                        <a
-                                            href={kanoFormScriptUrl}
-                                            className="text-xs text-gray-500 hover:text-gray-300 transition-colors inline-flex items-center gap-1.5"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
-                                            </svg>
-                                            Apps Script 파일 받기 (Google 연동 없이 수동 생성)
-                                        </a>
+                                        {GOOGLE_FORMS_INTEGRATION_ENABLED ? (
+                                            <a
+                                                href={kanoFormScriptUrl}
+                                                className="text-xs text-gray-500 hover:text-gray-300 transition-colors inline-flex items-center gap-1.5"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                                                </svg>
+                                                Apps Script 파일 받기 (Google 연동 없이 수동 생성)
+                                            </a>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                disabled
+                                                className="text-xs text-gray-600 inline-flex items-center gap-1.5 cursor-not-allowed"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                                                </svg>
+                                                Apps Script 파일 받기 (Google 연동 없이 수동 생성)
+                                            </button>
+                                        )}
                                     </div>
 
                                     {/* 생성된 폼 URL */}
-                                    {createdFormUrl && (
+                                    {GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormUrl && (
                                         <div className="bg-emerald-500/[0.06] border border-emerald-500/20 rounded-xl p-4">
                                             <h4 className="text-emerald-300 font-semibold text-sm mb-3 flex items-center gap-2">
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -808,59 +938,108 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                         </div>
                                     )}
                                 </div>
-                        </div>
-                    )}
+                            )}
 
-                    {/* 응답 파일 업로드 - Google 연동과 무관한 독립 경로 */}
-                    {requirements.length > 0 && (
-                        <div className="card">
-                            <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
-                                <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 16V4m0 12l-4-4m4 4l4-4M4 20h16" />
-                                </svg>
-                                응답 파일로 업로드
-                            </h2>
-                            <p className="text-sm text-gray-500 mt-1 mb-4">
-                                Google 연동 없이 엑셀 파일만으로 응답을 등록합니다
-                            </p>
+                            {collectMode === 'file' && (
+                                <div>
+                                    <h3 className="text-white text-sm font-semibold">응답 파일로 업로드</h3>
+                                    <p className="text-sm text-gray-500 mt-1 mb-4">여러 명의 답변을 파일 하나에 정리해 한 번에 등록합니다</p>
+                                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
+                                        <select
+                                            value={excelUploadFormat}
+                                            onChange={(event) => setExcelUploadFormat(event.target.value as ExcelUploadFormat)}
+                                            className="px-3 py-2 rounded-lg border border-amber-500/25 bg-black/20 text-amber-100 text-xs font-semibold outline-none focus:border-amber-500/50 lg:flex-shrink-0"
+                                        >
+                                            <option value="template">전용 양식</option>
+                                            <option value="googleForms">Google Forms 형식</option>
+                                        </select>
 
-                            <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
-                                <select
-                                    value={excelUploadFormat}
-                                    onChange={(event) => setExcelUploadFormat(event.target.value as ExcelUploadFormat)}
-                                    className="px-3 py-2 rounded-lg border border-amber-500/25 bg-black/20 text-amber-100 text-xs font-semibold outline-none focus:border-amber-500/50 lg:flex-shrink-0"
-                                >
-                                    <option value="template">전용 양식</option>
-                                    <option value="googleForms">Google Forms 형식</option>
-                                </select>
+                                        <a
+                                            href={`${kanoUploadTemplateUrl}?format=${excelUploadFormat}`}
+                                            className="px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                                            </svg>
+                                            양식 받기
+                                        </a>
 
-                                <a
-                                    href={`${kanoUploadTemplateUrl}?format=${excelUploadFormat}`}
-                                    className="px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
-                                    </svg>
-                                    양식 받기
-                                </a>
+                                        <input
+                                            ref={excelInputRef}
+                                            type="file"
+                                            accept=".xlsx,.xls"
+                                            onChange={(event) => setExcelFile(event.target.files?.[0] ?? null)}
+                                            className="flex-1 min-w-0 text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-200 hover:file:bg-amber-500/25"
+                                        />
 
-                                <input
-                                    ref={excelInputRef}
-                                    type="file"
-                                    accept=".xlsx,.xls"
-                                    onChange={(event) => setExcelFile(event.target.files?.[0] ?? null)}
-                                    className="flex-1 min-w-0 text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-200 hover:file:bg-amber-500/25"
-                                />
+                                        <button
+                                            onClick={handleUploadExcelResponses}
+                                            disabled={isUploadingExcel || !excelFile}
+                                            className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:hover:bg-amber-600 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
+                                        >
+                                            {isUploadingExcel && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                                            {isUploadingExcel ? '업로드 중...' : '업로드'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
-                                <button
-                                    onClick={handleUploadExcelResponses}
-                                    disabled={isUploadingExcel || !excelFile}
-                                    className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:hover:bg-amber-600 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
-                                >
-                                    {isUploadingExcel && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                                    {isUploadingExcel ? '업로드 중...' : '업로드'}
-                                </button>
-                            </div>
+                            {collectMode === 'offline' && (
+                                <div>
+                                    <h3 className="text-white text-sm font-semibold">오프라인 응답파일 업로드</h3>
+                                    <p className="text-sm text-gray-500 mt-1 mb-4">각자 작성한 HTML 응답지를 낱장으로, 여러 장을 한 번에 등록합니다</p>
+                                    <div className="flex flex-wrap gap-2 mb-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPreview(true)}
+                                            className="btn-secondary text-sm"
+                                        >
+                                            양식 확인
+                                        </button>
+                                        <a
+                                            href={`/api/projects/${projectId}/kano/offline-form`}
+                                            className="btn-secondary text-sm"
+                                        >
+                                            오프라인 HTML 받기
+                                        </a>
+                                    </div>
+
+                                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
+                                        <input
+                                            ref={offlineInputRef}
+                                            type="file"
+                                            multiple
+                                            accept=".html,.htm"
+                                            onChange={(event) => setOfflineFiles(Array.from(event.target.files ?? []))}
+                                            className="flex-1 min-w-0 text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-emerald-200 hover:file:bg-emerald-500/25"
+                                        />
+                                        {offlineFiles.length > 0 && (
+                                            <span className="text-xs font-semibold text-emerald-300 lg:flex-shrink-0">{offlineFiles.length}장 선택됨</span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={handleUploadOfflineResponses}
+                                            disabled={isUploadingOffline}
+                                            className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:hover:bg-emerald-600 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
+                                        >
+                                            {isUploadingOffline && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                                            {isUploadingOffline ? '업로드 중...' : '업로드'}
+                                        </button>
+                                    </div>
+
+                                    {offlineResults.length > 0 && (
+                                        <div className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 max-h-[200px] overflow-auto space-y-1">
+                                            {offlineResults.map((result, index) => (
+                                                <div key={`${result.fileName}-${index}`} className={`flex items-center gap-2 text-[11px] ${result.status === 'ok' ? 'text-emerald-300' : 'text-red-300'}`}>
+                                                    <span>{result.status === 'ok' ? '●' : '×'}</span>
+                                                    <span>{result.fileName}</span>
+                                                    <span>— {result.status === 'ok' ? `${result.answerCount ?? 0}개 응답` : result.reason}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
 

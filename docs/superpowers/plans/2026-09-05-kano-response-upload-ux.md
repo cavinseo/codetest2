@@ -508,17 +508,17 @@ type OfflineUploadFileResult = {
 **Files:**
 - Modify: `components/project/KanoManager.tsx`
 
-- [ ] **Step 1: 두 카드를 하나로 합친다**
+- [x] **Step 1: 두 카드를 하나로 합친다**
 
 `KanoManager.tsx:663-812`(Google Forms 연동)과 `815-865`(응답 파일로 업로드)를 지우고 그 자리에 「응답 수집」 카드 하나를 둔다. 카드 머리에 탭 3개를 두고 상태는 `const [collectMode, setCollectMode] = useState<'file' | 'offline' | 'googleForms'>('file')` 로 잡는다. 탭 버튼 스타일은 `KanoManager.tsx:559-593` 의 기존 탭 네비게이션을 그대로 따른다.
 
 각 탭 라벨 아래에 설계 요약의 "한 줄 설명"을 그대로 표시한다 — 요구 2 의 "구분해서 알 수 있게 하라"가 이 문장으로 충족된다.
 
-- [ ] **Step 2: `file` 탭**
+- [x] **Step 2: `file` 탭**
 
 기존 「응답 파일로 업로드」 내용을 그대로 옮긴다(셀렉트·양식 받기·파일 1개·업로드). 제목은 「응답 파일로 업로드」, 설명은 "여러 명의 답변을 파일 하나에 정리해 한 번에 등록합니다". `handleUploadExcelResponses` 는 그대로 쓴다.
 
-- [ ] **Step 3: `offline` 탭 (신규)**
+- [x] **Step 3: `offline` 탭 (신규)**
 
 - 설명: "각자 작성한 HTML 응답지를 낱장으로, 여러 장을 한 번에 등록합니다".
 - **「양식 확인」** 버튼 — `setShowPreview(true)`. Google Forms 카드에서 옮겨 온 것이다.
@@ -528,7 +528,7 @@ type OfflineUploadFileResult = {
 - 「업로드」 → `handleUploadOfflineResponses`: `writePolicy` 를 정하는 방식은 기존 `handleUploadExcelResponses:352` 의 `window.prompt` 와 동일하게 맞춘다(두 경로의 조작이 달라지면 헷갈린다).
 - 응답의 `results` 를 파일별 목록으로 렌더한다. 성공은 초록, 실패는 빨강에 `reason` 을 붙인다. `inviteResults` 렌더(초대 모달)의 시각 언어를 따른다.
 
-- [ ] **Step 4: `googleForms` 탭 — 비활성**
+- [x] **Step 4: `googleForms` 탭 — 비활성**
 
 - `import { GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';`
 - 탭 버튼에 「개발 중」 배지를 붙이고, 탭 내용은 기존 3단계 그리드를 **회색 비활성 상태로** 보여 준다(무엇이 준비되는지 사용자가 알 수 있게 남긴다).
@@ -536,7 +536,7 @@ type OfflineUploadFileResult = {
 - 안내 문구 한 줄: "Google Forms 연동은 개발 중입니다. 준비되면 이 자리에서 바로 쓸 수 있습니다."
 - `handleCreateGoogleForm`·`handleImportResponses` 와 `createdFormUrl`·`createdFormId` 상태는 **지우지 마라** — 기능을 되살릴 때 그대로 쓴다. 도달 불가로 lint 가 경고하면 보고하고 멈춰라.
 
-- [ ] **Step 5: 남는 것 확인**
+- [x] **Step 5: 남는 것 확인**
 
 「설문 질문 구성」 카드(`868-986`), 「응답자 초대」, 「초대 내역」, 「분석 결과」 탭은 건드리지 않는다. `showPreview` 모달 렌더(`1194-1201`)는 그대로 둔다.
 
