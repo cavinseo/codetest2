@@ -25,6 +25,7 @@
         "lib/temp-password-email.ts",
         "lib/account-deletion.ts",
         "lib/kano-survey-document.ts",
+        "lib/kano-offline-form.ts",
         "lib/feature-flags.ts"
     ],
     "ignorePatterns": [

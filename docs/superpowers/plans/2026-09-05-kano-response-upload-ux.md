@@ -175,7 +175,7 @@ export const GOOGLE_FORMS_DISABLED_MESSAGE =
 **Interfaces:**
 - Produces: `kanoSurveyFileNameStem(projectName)` (모델), `buildKanoOfflineFormHtml({...})`, `kanoOfflineFormFileName(projectName)`. Task 3 의 파서 왕복 테스트와 Task 5 의 라우트가 쓴다.
 
-- [ ] **Step 1: 파일명 어간을 모델에서 뽑아 쓴다**
+- [x] **Step 1: 파일명 어간을 모델에서 뽑아 쓴다**
 
 `lib/kano-survey-document.ts` 의 `kanoSurveyFileName` 이 하는 정리(경로 문자·제어 문자 → `_`, 공백 축약, 60자 제한, 빈 값이면 `프로젝트`)를 오프라인 HTML 파일명도 똑같이 해야 한다. 규칙을 복사하지 말고 어간 함수를 export 한다.
 
@@ -200,7 +200,7 @@ export function kanoSurveyFileName(projectName: string | null | undefined): stri
 
 기존 주석 블록은 `kanoSurveyFileNameStem` 위로 옮긴다. **`kanoSurveyFileName` 의 반환값은 한 글자도 바뀌면 안 된다** — `tests/kano-survey-document.test.ts` 와 `tests/api-kano-survey-document.test.ts` 가 그대로 통과해야 한다.
 
-- [ ] **Step 2: `lib/kano-offline-form.ts` 를 만든다**
+- [x] **Step 2: `lib/kano-offline-form.ts` 를 만든다**
 
 문구의 정본은 계속 `kano-survey-document.ts` 다. 여기서는 그것을 HTML 로 그리기만 한다.
 
@@ -247,7 +247,7 @@ HTML 이 반드시 갖춰야 할 것(테스트가 이것들을 단언한다):
   3. JSON 블록의 textContent 를 교체한 뒤 `'<!DOCTYPE html>\n' + document.documentElement.outerHTML` 를 Blob 으로 내려받는다.
 - **모든 사용자 문자열**(프로젝트명, 질문 문구, projectId)은 `escapeHtml` 를 통과시킨다. JSON 직렬화 뒤에는 `<` 를 `\u003c` 로 치환한다.
 
-- [ ] **Step 3: 테스트 `tests/kano-offline-form.test.ts`**
+- [x] **Step 3: 테스트 `tests/kano-offline-form.test.ts`**
 
 최소한 이것들을 단언한다.
 
@@ -261,7 +261,7 @@ HTML 이 반드시 갖춰야 할 것(테스트가 이것들을 단언한다):
 8. 초기 payload 의 `kind`/`version`/`projectId` 가 계약대로이고 `answers` 길이가 요구사항 수와 같으며 전부 `null` 이다.
 9. `kanoOfflineFormFileName('스마트팜')` → `Kano_오프라인_응답지_스마트팜.html`, 빈 이름 → `Kano_오프라인_응답지_프로젝트.html`, 경로 문자 `a/b` → `Kano_오프라인_응답지_a_b.html`.
 
-- [ ] **Step 4: stryker**
+- [x] **Step 4: stryker**
 
 `mutate` 에 `"lib/kano-offline-form.ts"` 를 더한다. **`lib/kano-survey-document.ts` 는 이미 목록에 있으므로 이번 수정 후 재실행해 점수 하락이 없음을 보고서에 담는다.**
 

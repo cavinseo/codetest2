@@ -107,12 +107,17 @@ const FILE_NAME_MAX = 60;
  * no-control-regex 규칙이 이 프로젝트 설정(next/core-web-vitals)에서 실제로
  * 걸리는지는 이 환경(node_modules 없음)에서 확인하지 못했다 — 걸리면 아래처럼
  * 이유를 적은 disable 주석으로 대응한다(RISKS 참고).
+ * 접두사와 확장자는 부르는 쪽이 붙인다 — 설문지(.docx)와 오프라인 응답지(.html)가 같은 정리 규칙을 써야 하기 때문이다.
  */
-export function kanoSurveyFileName(projectName: string | null | undefined): string {
+export function kanoSurveyFileNameStem(projectName: string | null | undefined): string {
     const cleaned = (projectName ?? '')
         .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, FILE_NAME_MAX);
-    return `Kano_설문지_${cleaned || '프로젝트'}.docx`;
+    return cleaned || '프로젝트';
+}
+
+export function kanoSurveyFileName(projectName: string | null | undefined): string {
+    return `Kano_설문지_${kanoSurveyFileNameStem(projectName)}.docx`;
 }

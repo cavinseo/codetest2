@@ -9,6 +9,7 @@ import {
     buildKanoSurveyDocumentModel,
     kanoSurveyAnswerLabels,
     kanoSurveyFileName,
+    kanoSurveyFileNameStem,
     resolveKanoQuestionPair,
 } from '../lib/kano-survey-document';
 import { getKanoAnswerLabel } from '../lib/kano-response-display';
@@ -150,5 +151,19 @@ describe('kanoSurveyFileName', () => {
     it('너무 긴 이름은 60자에서 자른다', () => {
         const long = '가'.repeat(80);
         expect(kanoSurveyFileName(long)).toBe(`Kano_설문지_${'가'.repeat(60)}.docx`);
+    });
+});
+
+describe('kanoSurveyFileNameStem', () => {
+    it('경로 문자를 밑줄로 바꾼다', () => {
+        expect(kanoSurveyFileNameStem('a/b')).toBe('a_b');
+    });
+
+    it('빈 프로젝트명은 기본값을 쓴다', () => {
+        expect(kanoSurveyFileNameStem('')).toBe('프로젝트');
+    });
+
+    it('60자로 자른다', () => {
+        expect(kanoSurveyFileNameStem('가'.repeat(80))).toBe('가'.repeat(60));
     });
 });
