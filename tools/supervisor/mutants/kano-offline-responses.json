@@ -1,0 +1,15 @@
+{
+    "source": "app/api/projects/[id]/kano/offline-responses/route.ts",
+    "tests": ["tests/api-kano-offline-responses.test.ts"],
+    "mutants": [
+        { "name": "사칭 방어 무력화", "from": "if (foreign.has(email) && !overwriteFiles.has(c.index)) {", "to": "if (false) {" },
+        { "name": "기존 초대 소문자화 생략", "from": ".map((inv) => inv.email.toLowerCase()))", "to": ".map((inv) => inv.email))" },
+        { "name": "offline_ 판별 역전", "from": "!inv.token.startsWith('offline_')", "to": "inv.token.startsWith('offline_')" },
+        { "name": "409 수락 플래그 무시", "from": "if (changedFiles.length > 0 && !acceptQuestionSetMismatch) {", "to": "if (false) {" },
+        { "name": "파일 수 경계 > -> >=", "from": "if (entries.length > MAX_FILES)", "to": "if (entries.length >= MAX_FILES)" },
+        { "name": "writePolicy append -> replace", "from": "writePolicy: 'append',", "to": "writePolicy: 'replace'," },
+        { "name": "초대 만료를 1분 뒤로", "from": "invitationExpiresAt: (now) => now,", "to": "invitationExpiresAt: (now) => new Date(now.getTime() + 60000)," },
+        { "name": "빈 목록에도 트랜잭션 진입", "from": "if (respondents.length === 0) {", "to": "if (false) {" },
+        { "name": "실패 파일도 수입 대상에", "from": "const deduped = candidates.filter((c) => !failures.some((f) => f.index === c.index));", "to": "const deduped = candidates;" }
+    ]
+}

@@ -19,6 +19,9 @@ const eslintConfig = [
             // 검사 대상이 되면 내 코드와 무관한 오류가 쏟아진다.
             '.claude/**',
             'node_modules/**',
+            // 감리 하네스. 앱 코드가 아니라 node_modules 없이 돌리는 도구라
+            // next/core-web-vitals 규칙이 겨냥하는 대상이 아니다(tools/supervisor/README.md).
+            'tools/supervisor/**',
             'prisma/dev.db',
             'tsconfig.tsbuildinfo',
             '*.log',
