@@ -548,6 +548,10 @@ type OfflineUploadFileResult = {
 
 > **감리자 이월**: 실화면 조작(탭 전환, 여러 장 선택, 업로드 결과 목록, Google 탭 버튼이 눌리지 않음)은 **감리자/사용자가 로컬 브라우저에서** 확인한다.
 
+> **감리 기록(2026-09-05) — 코드 승인, 실화면 검증 대기.** 작업 커밋 `368c28b`, 보고서 `049f989`(`.../task-6.md`).
+> 감리자가 직접 확인한 것: ① 경계 — 소스 변경은 `components/project/KanoManager.tsx` 한 파일(+271/−92). 「설문 질문 구성」 주석부터 파일 끝까지 520줄을 변경 전후로 diff 해 **완전 동일**함을 확인(질문 구성·초대·초대 내역·분석 결과·미리보기 모달 무변경). ② 표본 — `collectMode` 기본값 `'file'`; 탭 라벨 3개·한 줄 설명 3개가 설계 요약 표와 한 글자도 다르지 않다(749·759·770·780·946·990행); file 탭은 옛 카드의 셀렉트·양식 받기·`excelInputRef`·`handleUploadExcelResponses` 를 그대로 옮겼다; offline 탭은 「양식 확인」→`setShowPreview(true)`, 「오프라인 HTML 받기」→`/kano/offline-form` 링크, `multiple accept=".html,.htm"`, `N장 선택됨`, 파일별 결과 목록(ok 초록/failed 빨강+reason), 탭 전환 시 결과 초기화; `handleUploadOfflineResponses` 는 엑셀과 같은 `window.prompt` 문구·1/2 규칙, 파일마다 `files` 로 append, 400 에 `results` 가 있으면 목록 표시 후 오류 toast, 성공 시 파일 초기화·`loadData()`. Google 탭은 `GOOGLE_FORMS_INTEGRATION_ENABLED` 가 false 인 한 `googleConfigured` 와 무관하게 양식 확인·설문지 생성·응답 가져오기·Apps Script 4개가 전부 `disabled`(Apps Script 는 `<a>` 대신 disabled `<button>`), `GOOGLE_FORMS_DISABLED_MESSAGE` 표시, `handleCreateGoogleForm`·`handleImportResponses`·`createdFormUrl/Id`·`/api/settings` 조회 보존. 실행 AI 가 독립 검토로 잡은 "파일 미선택 시 버튼 비활성 → 오류 toast 도달 불가" 는 버튼을 업로드 중에만 비활성화하는 쪽으로 고쳐졌다(1022행).
+> 감리자가 재실행하지 못한 것: 게이트 3종(vitest 105파일·1,206개, Task 5 와 동일)은 실행 AI 로컬 출력 의존. **실화면은 컨테이너에서 Next 앱을 띄울 수 없어 사용자 로컬 브라우저 체크리스트로 판정한다** — 결과가 오면 아래 "최종 판정" 에 기록한다.
+
 ---
 
 ## 감리 검증 계획 (감리자용)
