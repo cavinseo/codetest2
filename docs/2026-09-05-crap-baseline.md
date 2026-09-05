@@ -68,12 +68,18 @@
 
 ## 현재 운용 방식과 남은 결정
 
-트리거는 `pull_request: [main]` 과 `workflow_dispatch` 다. **이 저장소는 PR 없이 `main` 에
-직접 커밋하므로(CLAUDE.md "단일 브랜치에 연속 커밋"), 실질적으로는 수동 실행 계측기다.**
-`push: branches: [main]` 을 더하면 자동으로 돌지만, 부채 12건을 갚기 전에는 `main` 의 체크가
-계속 붉게 선다. 사용자 결정(2026-09-05): **부채를 갚을 때까지 계측기로만 둔다.**
+Task 1~3 의 테스트 포팅으로 CRAP 위험을 **12 → 9 → 4 → 0** 으로 상환했다.
+최대 CRAP 은 **306.0 → 132.0 → 56.0 → 29.5** 로 줄었다. 감리자가 확인한 마지막 실행은
+[CRAP / Mutation run #24](https://github.com/cavinseo/codetest2/actions/runs/33980340505) 이며,
+`--fail-over=30` 을 켠 채 `success` 였다. Task 1~3 은 병합 커밋 `b6f15e1` 로 `main` 에 반영됐다.
+
+사용자 결정(2026-09-05)인 **부채를 갚을 때까지 계측기로만 둔다**는 조건이 충족돼,
+`push: branches: [main]` 트리거를 더해 자동 게이트로 무장했다. 기존 `pull_request: [main]` 과
+`workflow_dispatch` 도 유지한다. PR 없이 `main` 에 직접 커밋하는 이 저장소에서 이제 푸시마다
+자동 실행된다. 별도 워크플로가 `ci.yml` 과 병렬로 돌아 기본 CI 를 늦추지 않는다.
 
 임계값 `--fail-over=30` 을 낮춰 초록불을 만드는 것은 게이트 변조이므로 하지 않는다.
 
-재측정 방법: GitHub Actions 에서 "CRAP / Mutation" 워크플로를 `main` 기준으로 수동 실행한다.
-결과 보고서 전문은 실행 로그 맨 끝에 실린다.
+최대 CRAP **29.5** 는 임계값 30 에 가까우므로 새 부채가 들어오면 게이트가 실패할 수 있다.
+재측정은 `main` 푸시로 자동 실행되며 GitHub Actions 에서 "CRAP / Mutation" 워크플로를
+`main` 기준으로 수동 실행할 수도 있다. 결과 보고서 전문은 실행 로그 맨 끝에 실린다.

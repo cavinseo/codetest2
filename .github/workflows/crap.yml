@@ -5,7 +5,11 @@ name: CRAP / Mutation
 #
 # PR 에서만 도는 이유(D-3): 회귀는 결국 코드가 main 으로 들어올 때 생기고 그 관문이
 # PR 이다. ci.yml 에 합치면 모든 푸시가 약 4분 길어지는데, 거기서 얻는 것이 없다.
+# 이 저장소는 PR 없이 main 에 직접 커밋하므로 PR 트리거만으로는 돌지 않아 push 를 더한다.
+# 별도 워크플로로 ci.yml 과 병렬 실행되므로 기본 CI 를 늦추지 않는다.
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:

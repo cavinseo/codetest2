@@ -219,7 +219,7 @@ npx vitest run tests/excel-parser.test.ts tests/kano-algorithm.test.ts tests/ema
 
 **Task 1~3 이 모두 승인된 뒤에만 착수한다.** 위험이 0 이 아닌 상태에서 무장하면 `main` 이 붉게 선다.
 
-- [ ] **Step 1: 트리거를 더한다**
+- [x] **Step 1: 트리거를 더한다**
 
 ```yaml
 on:
@@ -232,7 +232,7 @@ on:
 
 기존 주석(D-3 결정) 아래에 이유를 한 줄 더한다 — 이 저장소는 PR 없이 `main` 에 직접 커밋하므로(CLAUDE.md "단일 브랜치에 연속 커밋") `pull_request` 트리거만으로는 이 워크플로가 돌지 않는다. 별도 워크플로라 `ci.yml` 과 병렬로 돌아 푸시를 늦추지 않으므로 D-3 의 근거와 충돌하지 않는다.
 
-- [ ] **Step 2: 기준선 문서를 갱신한다**
+- [x] **Step 2: 기준선 문서를 갱신한다**
 
 `docs/2026-09-05-crap-baseline.md` 의 "현재 운용 방식과 남은 결정" 절을 상환 후 상태로 고친다 — 위험 0, `push` 트리거로 무장됨, 상환에 쓴 Task 와 커밋.
 
