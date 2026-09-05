@@ -138,7 +138,7 @@ npx vitest run tests/google-forms.test.ts
 
 **Files:** Modify `tests/workbook-importer.test.ts`
 
-- [ ] **Step 1: 테스트를 가져온다**
+- [x] **Step 1: 테스트를 가져온다**
 
 ```sh
 git checkout origin/claude/carp-inspection-46phhc -- tests/workbook-importer.test.ts
@@ -149,7 +149,7 @@ npx vitest run tests/workbook-importer.test.ts
 
 추가되는 것은 `it('QFD·로드맵·자산·자금 시트를 레코드로 옮긴다')` 한 개다. 대상 5개 함수는 비공개이므로 공개 진입점을 통해 커버된다.
 
-- [ ] **Step 2: CRAP 재현 — `lib/workbook-importer.ts` 행 5개가 사라져야 한다**
+- [x] **Step 2: CRAP 재현 — `lib/workbook-importer.ts` 행 5개가 사라져야 한다**
 
 **완료 판정**
 1. 게이트 3종 그린 — 출력 마지막 줄 원문.
