@@ -124,7 +124,7 @@ Task 1 은 독립이다. Task 2 → 3 → 5, 4 → 5, 5 → 6 순으로 의존�
 **Interfaces:**
 - Produces: `GOOGLE_FORMS_INTEGRATION_ENABLED`, `GOOGLE_FORMS_DISABLED_MESSAGE`, `googleFormsDisabledResponse()`. Task 6 의 화면이 쓴다.
 
-- [ ] **Step 1: 플래그 모듈을 만든다**
+- [x] **Step 1: 플래그 모듈을 만든다**
 
 ```ts
 // Google Forms 연동처럼 아직 열지 않은 기능의 on/off 를 한 곳에 모은다.
@@ -139,7 +139,7 @@ export const GOOGLE_FORMS_DISABLED_MESSAGE =
     'Google Forms 연동은 개발 중입니다. 응답 파일 업로드 또는 오프라인 응답파일 업로드를 사용해 주세요.';
 ```
 
-- [ ] **Step 2: 라우트 3개를 막는다**
+- [x] **Step 2: 라우트 3개를 막는다**
 
 세 라우트 모두 `requireProjectAccess` **뒤**, 기존 본문 **앞**에 같은 가드를 넣는다. 권한 확인을 먼저 두는 이유는 권한 없는 요청에까지 기능 상태를 알려 줄 필요가 없어서다.
 
@@ -151,13 +151,13 @@ export const GOOGLE_FORMS_DISABLED_MESSAGE =
 
 `import { GOOGLE_FORMS_DISABLED_MESSAGE, GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';` 를 더한다. **가드 아래의 기존 코드는 지우지 마라** — 기능을 되살릴 때 그대로 써야 한다. 그 코드가 도달 불가가 되어 lint 가 경고하면 보고하고 멈춰라(임의로 `eslint-disable` 를 붙이지 마라).
 
-- [ ] **Step 3: 테스트**
+- [x] **Step 3: 테스트**
 
 `tests/feature-flags.test.ts` — 플래그가 `false` 이고 안내 문구에 "개발 중"이 들어 있음을 단언한다(뮤테이션 100% 를 위해 문구 전문을 단언한다).
 
 `tests/api-kano-google-forms-disabled.test.ts` — `tests/api-kano-survey-document.test.ts` 의 mock 방식을 그대로 따라 세 라우트가 각각 503 과 `GOOGLE_FORMS_DISABLED_MESSAGE` 를 돌려주는지, 그리고 **권한이 없으면 503 이전에 권한 응답이 나가는지**를 단언한다.
 
-- [ ] **Step 4: `stryker.crap.config.json` 의 `mutate` 에 `"lib/feature-flags.ts"` 를 더하고 100% 를 확인한다**
+- [x] **Step 4: `stryker.crap.config.json` 의 `mutate` 에 `"lib/feature-flags.ts"` 를 더하고 100% 를 확인한다**
 
 **완료 판정**
 1. `npx tsc --noEmit` / `npx vitest run` / `npx next lint` 전부 그린.

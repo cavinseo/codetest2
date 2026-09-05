@@ -29,6 +29,11 @@ vi.mock('../lib/google-forms', () => ({
     getFormResponses: () => Promise.resolve({ responses: [] }),
 }));
 
+vi.mock('../lib/feature-flags', () => ({
+    GOOGLE_FORMS_INTEGRATION_ENABLED: true,
+    GOOGLE_FORMS_DISABLED_MESSAGE: '',
+}));
+
 const { POST } = await import('../app/api/projects/[id]/kano/form-responses/route');
 
 const SECRET_DETAIL = 'Invalid `prisma.kanoSurveyInvitation.create()` — column "invitedBy"';

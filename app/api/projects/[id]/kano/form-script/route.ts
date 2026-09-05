@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { buildKanoGoogleFormScript } from '@/lib/kano-google-form-script';
+import { GOOGLE_FORMS_DISABLED_MESSAGE, GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';
 
 const log = createLogger('api/kano-form-script');
 
@@ -13,6 +14,10 @@ export async function GET(
     const { id: projectId } = await props.params;
     const accessResult = await requireProjectAccess(request, projectId);
     if (accessResult instanceof NextResponse) return accessResult;
+
+    if (!GOOGLE_FORMS_INTEGRATION_ENABLED) {
+        return NextResponse.json({ error: GOOGLE_FORMS_DISABLED_MESSAGE }, { status: 503 });
+    }
 
     try {
         const project = await prisma.project.findUnique({

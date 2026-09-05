@@ -7,6 +7,7 @@ import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { classifyKano } from '@/lib/kano';
 import { toErrorResponse } from '@/lib/api-error';
+import { GOOGLE_FORMS_DISABLED_MESSAGE, GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';
 
 const log = createLogger('api/kano/form-responses');
 
@@ -21,6 +22,10 @@ export async function POST(
     const projectId = params.id;
     const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
     if (accessResult instanceof NextResponse) return accessResult;
+
+    if (!GOOGLE_FORMS_INTEGRATION_ENABLED) {
+        return NextResponse.json({ error: GOOGLE_FORMS_DISABLED_MESSAGE }, { status: 503 });
+    }
 
     try {
         if (!(await isGoogleConfigured())) {
