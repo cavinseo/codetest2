@@ -102,7 +102,7 @@ Task 1·2·3 은 서로 독립이다. Task 4 는 셋 다 끝난 뒤에만 한다
 
 **Files:** Create `tests/google-forms.test.ts` · Modify `.gitignore`(필요 시)
 
-- [ ] **Step 1: 테스트를 가져온다**
+- [x] **Step 1: 테스트를 가져온다**
 
 ```sh
 git checkout origin/claude/carp-inspection-46phhc -- tests/google-forms.test.ts
@@ -111,11 +111,11 @@ npx vitest run tests/google-forms.test.ts
 
 `describe` 는 `createKanoForm` 과 `getFormResponses` 둘이고 `it` 은 8개다. `fetch` 를 mock 하므로 네트워크에 나가지 않는다.
 
-- [ ] **Step 2: CRAP 을 재현해 위험 3건이 사라졌는지 본다**
+- [x] **Step 2: CRAP 을 재현해 위험 3건이 사라졌는지 본다**
 
 "로컬에서 CRAP 재현하기" 절의 4줄을 실행하고 `crap-report.md` 의 위험 표를 확인한다. `lib/google-forms.ts` 행 3개가 사라져 **위험이 12 → 9** 가 되어야 한다.
 
-- [ ] **Step 3: 측정 생성물이 커밋되지 않게 한다**
+- [x] **Step 3: 측정 생성물이 커밋되지 않게 한다**
 
 `git status` 에 `coverage/`·`eslint-complexity.json`·`crap-report.md`·`crap-report.json` 이 보이면 `.gitignore` 에 더한다. 이미 무시되고 있으면 `.gitignore` 를 고치지 마라.
 
