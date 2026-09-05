@@ -446,7 +446,7 @@ export async function persistKanoUploadAnswers(input: PersistKanoUploadInput): P
 - Consumes: Task 2·3·4 의 산출물 전부.
 - Produces: Task 6 의 화면이 부르는 두 엔드포인트.
 
-- [ ] **Step 1: `GET /api/projects/[id]/kano/offline-form`**
+- [x] **Step 1: `GET /api/projects/[id]/kano/offline-form`**
 
 `survey-document/route.ts` 를 본으로 삼는다. 다른 점은 렌더러와 헤더뿐이다.
 
@@ -462,7 +462,7 @@ export async function persistKanoUploadAnswers(input: PersistKanoUploadInput): P
 
 요구사항이 0개면 400 과 `'먼저 고객요구사항을 등록하세요.'`(`upload-template` 라우트와 같은 문구).
 
-- [ ] **Step 2: `POST /api/projects/[id]/kano/upload-offline`**
+- [x] **Step 2: `POST /api/projects/[id]/kano/upload-offline`**
 
 - `requireProjectAccess(request, projectId, { write: true })`.
 - `formData.getAll('files')` 로 여러 장을 받는다. 0개면 400. `MAX_OFFLINE_HTML_FILES` 초과면 400 과 `'한 번에 100장까지 올릴 수 있습니다.'`
@@ -484,7 +484,7 @@ type OfflineUploadFileResult = {
 - 응답: `{ success: true, message, respondentCount, importedCount, fileCount, results }`.
 - `catch` 에서 `log.error('오프라인 응답지 업로드 실패', error, { projectId })` — **파일 내용·이메일을 로그에 넣지 마라.**
 
-- [ ] **Step 3: 테스트**
+- [x] **Step 3: 테스트**
 
 `tests/api-kano-offline-form.test.ts` — 200 과 `Content-Type: text/html; charset=utf-8`, `Content-Disposition` 파일명, 요구사항 0개면 400, 권한 거부가 그대로 전달되는지.
 
