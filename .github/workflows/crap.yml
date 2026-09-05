@@ -1,0 +1,103 @@
+name: CRAP / Mutation
+
+# CRAP 지수와 뮤테이션 점수를 재는 워크플로다. 기본 CI 와 달리 커버리지 수집이 필요해
+# 별도 잡으로 나눈다.
+#
+# PR 에서만 도는 이유(D-3): 회귀는 결국 코드가 main 으로 들어올 때 생기고 그 관문이
+# PR 이다. ci.yml 에 합치면 모든 푸시가 약 4분 길어지는데, 거기서 얻는 것이 없다.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crap:
+    name: CRAP index / Mutation score
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    # ci.yml 과 같은 더미 값이다. 테스트는 Prisma 를 mock 하므로 실제 DB 에 접속하지 않는다.
+    env:
+      NODE_ENV: test
+      SESSION_SECRET: ci-dummy-secret-32-chars-minimum!
+      ALLOW_DEV_ADMIN: "false"
+      POSTGRES_PRISMA_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      POSTGRES_URL_NON_POOLING: postgresql://ci:ci@localhost:5432/ci?schema=public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # StrykerJS 10 은 Node >= 22 를 요구한다. ci.yml 의 20 을 그대로 쓰면
+      # 뮤테이션 단계가 시작조차 못 하고 죽는다.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install coverage provider
+        run: npm install --no-save "@vitest/coverage-v8@$(node -p "require('./node_modules/vitest/package.json').version")"
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Cyclomatic complexity (ESLint)
+        continue-on-error: true
+        run: npx eslint lib --rule '{"complexity":["warn",{"max":0}]}' -f json -o eslint-complexity.json || true
+
+      - name: Coverage
+        continue-on-error: true
+        run: npx vitest run --pool=threads --coverage.enabled --coverage.provider=v8 --coverage.reporter=json --coverage.reporter=text-summary --coverage.include='lib/**/*.ts' --coverage.reportsDirectory=coverage
+
+      - name: Mutation testing
+        continue-on-error: true
+        run: npm run test:mutation
+
+      - name: Locate inputs
+        if: always()
+        run: |
+          echo "--- vitest/stryker versions ---"
+          node -p "require('./node_modules/vitest/package.json').version"
+          echo "--- produced files ---"
+          ls -la coverage 2>/dev/null || echo "no coverage dir"
+          ls -la eslint-complexity.json 2>/dev/null || echo "no eslint-complexity.json"
+          find . -name 'stryker-crap-report.json' -not -path './node_modules/*' 2>/dev/null
+          found=$(find . -name 'stryker-crap-report.json' -not -path './node_modules/*' | head -1)
+          if [ -n "$found" ]; then echo "CRAP_MUTATION=$found" >> "$GITHUB_ENV"; fi
+
+      # --fail-over=30 은 CRAP 원 논문의 기준선이다. Phase 2 에서 위험을 0건으로
+      # 만들었으므로 그 상태가 그대로 기준선이 된다. 숫자만 남기면 바쁜 날에는
+      # 아무도 보지 않아 위험 함수가 조용히 다시 쌓인다.
+      - name: Build report
+        if: always()
+        run: node scripts/crap-report.mjs --fail-over=30
+
+      - name: Upload raw reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crap-reports
+          path: |
+            coverage/coverage-final.json
+            eslint-complexity.json
+            crap-report.md
+            crap-report.json
+            reports/**
+            stryker-crap-report.json
+          if-no-files-found: warn
+
+      # 아티팩트 저장소에 닿지 못하는 환경에서도 결과를 읽을 수 있게, 로그의 맨
+      # 마지막에 보고서 전문을 한 번 더 싣는다.
+      - name: Print report
+        if: always()
+        run: |
+          cat crap-report.md
+          # 로그 조회는 뒤에서부터 잘리므로, 창 밖으로 밀려나기 쉬운 앞부분(요약과
+          # 위험 목록)만 맨 끝에 한 번 더 싣는다.
+          echo '=== CRAP 요약 재출력 ==='
+          sed -n '1,/^### 주의/p' crap-report.md
