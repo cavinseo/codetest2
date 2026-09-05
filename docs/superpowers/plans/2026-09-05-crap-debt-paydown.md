@@ -127,6 +127,11 @@ npx vitest run tests/google-forms.test.ts
 4. `git diff --stat` 에 `lib/` 변경이 **없다**.
 5. `git status` 가 깨끗하다(측정 생성물이 남지 않았다).
 
+> **감리 기록(2026-09-05) — 승인.** 작업 커밋 `e6067b6`, 보고서 `e1bb433`(`docs/superpowers/reports/2026-09-05-crap-debt-paydown/task-1.md`).
+> 감리자가 직접 확인한 것: ① 경계 — `lib`·`app`·`components`·`package.json`·`package-lock.json`·`stryker.crap.config.json`·`.github`·`prisma` 전부 무변경(diff 빈 출력). 변경은 `tests/google-forms.test.ts`(신규 251줄)·`.gitignore`(+5)·계획서 체크박스 3개뿐. ② 포팅 충실도 — `git diff origin/claude/carp-inspection-46phhc <작업브랜치> -- tests/google-forms.test.ts` 가 **빈 출력**이다(원본과 바이트 동일, 편집 없음). ③ `.gitignore` 추가분이 `/crap-report.md`·`/crap-report.json`·`/eslint-complexity.json` 로 **루트 한정**이고 한국어 이유 주석이 있다 — 프롬프트에 없던 요건인데 실행 AI 가 독립 검토로 잡아 하위 경로의 동명 문서를 숨기지 않게 고쳤다. ④ **CRAP 재측정을 감리자가 직접 실행** — [run #22](https://github.com/cavinseo/codetest2/actions/runs/33976383664) (`workflow_dispatch`, 작업 브랜치 `e1bb433`). 로그에서 읽은 값: **CRAP > 30 = 9**(기준선 12), 커버리지 100% 함수 540(79%, 기준선 535·78%), 최대 CRAP 132.0(기준선 306.0), 위험 표에 `lib/google-forms.ts` 없음. 남은 9건은 Task 2·3 이 맡은 것과 정확히 일치한다. 실행 결론이 failure 인 것은 `--fail-over=30` 이 위험 9건에 반응한 예정된 중간 상태다. ⑤ 뮤테이션 회귀 없음 — 같은 실행의 파일별 점수표와 살아남은 뮤턴트 15건 목록이 기준선과 동일하다.
+> 판정 근거는 전부 감리자의 독립 실행이며, 보고서의 수치를 옮겨 적지 않았다(두 값은 일치했다).
+> 환경 주의: 실행 AI 로컬(Dropbox)에서 커버리지 명령이 `EBUSY ... coverage/.tmp` 로 종료 코드 1을 냈다. 측정 파일 생성 뒤의 정리 실패이고 CI 에서는 재현되지 않으므로 코드 결함이 아니다.
+
 ---
 
 ### Task 2: 워크북 임포터 — 위험 5건 (132.0 ×2 / 110.0 ×2 / 72.0)
