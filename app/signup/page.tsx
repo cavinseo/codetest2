@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ProfileFields, { EMPTY_PROFILE, toProfilePayload, type ProfileValue } from '@/components/member/ProfileFields';
 import type { MemberRole } from '@/lib/member-roles';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function SignupPage() {
     const router = useRouter();
@@ -100,6 +101,8 @@ export default function SignupPage() {
 
     return (
         <div className="min-h-screen bg-surface-900 bg-grid relative overflow-hidden flex items-center justify-center px-4 py-12">
+            {/* 헤더가 없는 화면이라 가릴 내용이 없다 — 오른쪽 위 모서리에 그대로 띄운다. */}
+            <ThemeToggle className="fixed right-4 top-4 z-50" />
             {/* Background Orbs */}
             <div className="bg-orb w-[500px] h-[500px] bg-accent-500 top-[-100px] left-[-100px] animate-pulse-slow" />
             <div className="bg-orb w-[400px] h-[400px] bg-primary-600 bottom-[-100px] right-[-100px] animate-pulse-slow" style={{ animationDelay: '2s' }} />

@@ -7,6 +7,7 @@ import {
     readAndSerializeBusinessPlanFile,
 } from '@/lib/business-plan-file';
 import { canCreateProject, canCreateProjectForOthers, type MemberRole } from '@/lib/member-roles';
+import ThemeToggle from '@/components/ThemeToggle';
 
 interface Project {
     id: string;
@@ -223,8 +224,7 @@ export default function DashboardPage() {
                                 <p className="text-xs text-gray-500">프로젝트 대시보드</p>
                             </div>
                         </Link>
-                        {/* 오른쪽 상단에 고정된 ThemeToggle 이 이 영역을 덮으므로 그만큼 여백을 확보한다 */}
-                        <div className="flex items-center gap-3 sm:mr-44">
+                        <div className="flex items-center gap-3">
                             <Link href="/settings" className="btn-ghost text-sm">
                                 🔗 서비스 설정
                             </Link>
@@ -238,6 +238,7 @@ export default function DashboardPage() {
                                     🧭 프로그램 관리
                                 </Link>
                             )}
+                            <ThemeToggle />
                             <div className="w-px h-6 bg-white/10" />
                             <Link
                                 href="/profile"

@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import ThemeToggle from '@/components/ThemeToggle';
 
 interface AdminLoginFormProps {
     /** 로그인과 권한 확인을 모두 통과했을 때 부른다. */
@@ -52,6 +53,8 @@ export default function AdminLoginForm({ onAuthenticated }: AdminLoginFormProps)
 
     return (
         <div className="min-h-screen bg-surface-900 bg-grid relative overflow-hidden flex items-center justify-center px-4">
+            {/* 헤더가 없는 화면이라 가릴 내용이 없다 — 오른쪽 위 모서리에 그대로 띄운다. */}
+            <ThemeToggle className="fixed right-4 top-4 z-50" />
             <div className="bg-orb w-[500px] h-[500px] bg-amber-500 top-[-100px] right-[-100px] animate-pulse-slow" />
             <div className="bg-orb w-[400px] h-[400px] bg-rose-500 bottom-[-100px] left-[-100px] animate-pulse-slow" style={{ animationDelay: '2s' }} />
 
