@@ -31,3 +31,18 @@ export function chunkTechnicalIndexes(totalColumns: number, groupSize = 3) {
         return { groupIndex, start, size };
     });
 }
+
+// 접힌 그룹 목록에서 하나만 뒤집는다 — 펼칠 때는 키를 지워서 "전체 펼치기"(빈 객체)와
+// 표현이 어긋나지 않게 한다.
+export function toggleGroupVisibility(
+    collapsedGroups: Record<number, boolean>,
+    groupIndex: number,
+): Record<number, boolean> {
+    if (collapsedGroups[groupIndex]) {
+        return Object.entries(collapsedGroups).reduce<Record<number, boolean>>((result, [key, value]) => {
+            if (Number(key) !== groupIndex) result[Number(key)] = value;
+            return result;
+        }, {});
+    }
+    return { ...collapsedGroups, [groupIndex]: true };
+}
