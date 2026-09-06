@@ -734,16 +734,6 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                 </svg>
                             </button>
                         ))}
-                        {hiddenTechnicalGroups.length > 1 && (
-                            <button
-                                type="button"
-                                onClick={expandAllTechnicalGroups}
-                                className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-2 py-1 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
-                                title="기술특성 전체 펼치기"
-                            >
-                                전체 펼치기
-                            </button>
-                        )}
                     </div>
                 )}
 
