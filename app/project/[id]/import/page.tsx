@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import ThemeToggle from '@/components/ThemeToggle';
 
 type UploadMode = 'workbook' | 'worksheet';
 type UploadStatus = 'idle' | 'parsing' | 'success' | 'error';
@@ -196,17 +197,20 @@ export default function ImportPage() {
         <div className="min-h-screen bg-gray-900">
             <header className="border-b border-gray-700 bg-gray-800">
                 <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-                    <div className="flex items-center gap-4">
-                        <Link href={`/project/${projectId}`} className="text-gray-400 transition-colors hover:text-white">
-                            프로젝트로 돌아가기
-                        </Link>
-                        <div className="h-6 w-px bg-gray-700" />
-                        <div>
-                            <h1 className="text-2xl font-bold text-white">엑셀 워크시트 가져오기</h1>
-                            <p className="mt-1 text-sm text-gray-400">
-                                전체 워크북 또는 선택 워크시트를 분석하고 프로젝트 데이터로 반영합니다.
-                            </p>
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                            <Link href={`/project/${projectId}`} className="text-gray-400 transition-colors hover:text-white">
+                                프로젝트로 돌아가기
+                            </Link>
+                            <div className="h-6 w-px bg-gray-700" />
+                            <div>
+                                <h1 className="text-2xl font-bold text-white">엑셀 워크시트 가져오기</h1>
+                                <p className="mt-1 text-sm text-gray-400">
+                                    전체 워크북 또는 선택 워크시트를 분석하고 프로젝트 데이터로 반영합니다.
+                                </p>
+                            </div>
                         </div>
+                        <ThemeToggle />
                     </div>
                 </div>
             </header>

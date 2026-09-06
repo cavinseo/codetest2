@@ -7,6 +7,7 @@ import ProductAttributesTable from '@/components/project/ProductAttributesTable'
 import SpecTable from '@/components/project/SpecTable';
 import RequirementsTable from '@/components/project/RequirementsTable';
 import QFDMatrix from '@/components/project/QFDMatrix';
+import ThemeToggle from '@/components/ThemeToggle';
 import KanoManager from '@/components/project/KanoManager';
 import SalesTable from '@/components/project/SalesTable';
 import FitnessWrapper from '@/components/project/FitnessWrapper';
@@ -522,6 +523,7 @@ export default function ProjectDetailPage() {
                             <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 설정
                             </Link>
+                            <ThemeToggle />
                         </div>
                     </div>
                 </div>

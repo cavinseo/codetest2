@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import ProfileFields, { EMPTY_PROFILE, toProfilePayload, type ProfileValue } from '@/components/member/ProfileFields';
 import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-policy';
 import type { MemberRole } from '@/lib/member-roles';
+import ThemeToggle from '@/components/ThemeToggle';
 
 const EMPTY_PASSWORD_FORM = { currentPassword: '', newPassword: '', confirmPassword: '' };
 
@@ -102,6 +103,8 @@ export default function OnboardingPage() {
 
     return (
         <main className="mx-auto max-w-lg p-6">
+            {/* 헤더가 없는 화면이라 가릴 내용이 없다 — 오른쪽 위 모서리에 그대로 띄운다. */}
+            <ThemeToggle className="fixed right-4 top-4 z-50" />
             <h1 className="mb-2 text-xl font-bold">계정 설정을 마무리해 주세요.</h1>
             <p className="mb-6 text-sm text-gray-500">
                 프로그램을 시작하기 전에 아래 항목을 완료해야 합니다.

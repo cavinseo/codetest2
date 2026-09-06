@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import ThemeToggle from '@/components/ThemeToggle';
 
 interface Member {
     id: string;
@@ -236,6 +237,7 @@ export default function ProjectSettingsPage() {
                                 <p className="text-xs text-gray-500 mt-1">이 페이지의 설정은 현재 선택한 프로젝트에만 적용됩니다.</p>
                             </div>
                         </div>
+                        <ThemeToggle />
                     </div>
                 </div>
             </header>

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getSessionUserFromCookieValue } from '@/lib/auth';
+import ThemeToggle from '@/components/ThemeToggle';
 import { SESSION_COOKIE_NAME } from '@/lib/constants';
 
 export default async function HomePage() {
@@ -19,7 +20,7 @@ export default async function HomePage() {
             <div className="bg-orb w-[300px] h-[300px] bg-primary-400 top-[40%] right-[20%] animate-float opacity-10" />
 
             {/* Navigation */}
-            <nav className="relative z-10 flex items-center justify-between gap-6 max-w-6xl mx-auto px-6 py-6 pr-36 sm:pr-44">
+            <nav className="relative z-10 flex items-center justify-between gap-6 max-w-6xl mx-auto px-6 py-6">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white text-sm font-bold">
                         K
@@ -27,6 +28,7 @@ export default async function HomePage() {
                     <span className="text-white font-display font-bold text-lg">KS-QFD</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
+                    <ThemeToggle />
                     <Link href="/login" className="btn-ghost">
                         로그인
                     </Link>

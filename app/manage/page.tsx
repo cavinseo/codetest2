@@ -9,6 +9,7 @@ import Link from 'next/link';
 import InvitesTab from '@/components/admin/InvitesTab';
 import ProgramsTab from '@/components/admin/ProgramsTab';
 import MentorAssign from '@/components/admin/MentorAssign';
+import ThemeToggle from '@/components/ThemeToggle';
 
 interface ProjectRow {
     id: string;
@@ -88,6 +89,7 @@ export default function ManagePage() {
                             <p className="text-xs text-gray-500 mt-0.5">프로그램 개설, 초대 코드 발행, 멘토 배정</p>
                         </div>
                     </div>
+                    <ThemeToggle />
                 </div>
             </header>
 

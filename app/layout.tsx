@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
-import ThemeToggle from "@/components/ThemeToggle";
 import OnboardingRedirect from "@/components/OnboardingRedirect";
 import "./globals.css";
 
@@ -41,8 +40,9 @@ export default function RootLayout({
             <head>
                 <script dangerouslySetInnerHTML={{ __html: themeScript }} />
             </head>
+            {/* 주/야간 버튼은 각 화면의 헤더(워크시트는 상단 메뉴바) 안에 둔다 — 화면 위에
+                떠 있으면 헤더 버튼과 가로 스크롤되는 탭을 가린다. */}
             <body className={`${inter.variable} ${outfit.variable} antialiased bg-noise`}>
-                <ThemeToggle />
                 <OnboardingRedirect />
                 {children}
             </body>
