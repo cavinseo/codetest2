@@ -702,12 +702,13 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         <p className="mt-0.5 text-xs text-gray-500">요구사항 행은 고객요구사항도출표 저장 순서를 그대로 따릅니다.</p>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-400">
+                        {/* 개별로 숨긴 그룹을 되살리는 길은 이 버튼뿐이라, 하나라도 숨겨져 있으면 "펼치기"를 우선한다. */}
                         <button
                             type="button"
-                            onClick={visibleTechnicalGroups.length > 0 ? collapseAllTechnicalGroups : expandAllTechnicalGroups}
+                            onClick={hiddenTechnicalGroups.length > 0 ? expandAllTechnicalGroups : collapseAllTechnicalGroups}
                             className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-3 py-1.5 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
                         >
-                            {visibleTechnicalGroups.length > 0 ? '기술특성 전체 접기' : '기술특성 전체 펼치기'}
+                            {hiddenTechnicalGroups.length > 0 ? '기술특성 전체 펼치기' : '기술특성 전체 접기'}
                         </button>
                         <div className="hidden items-center gap-3 md:flex">
                         {RELATIONSHIP_OPTIONS.slice(1).map((option) => (
@@ -716,26 +717,6 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         </div>
                     </div>
                 </div>
-
-                {hiddenTechnicalGroups.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.08] bg-indigo-500/[0.04] px-4 py-2 text-xs">
-                        <span className="font-semibold text-indigo-100">숨긴 핵심기능 영역</span>
-                        {hiddenTechnicalGroups.map((group) => (
-                            <button
-                                key={`hidden-group-${group.groupIndex}`}
-                                type="button"
-                                onClick={() => toggleTechnicalGroup(group.groupIndex)}
-                                className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-2 py-1 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
-                                title={`${getCoreNameForTechnicalGroup(group.groupIndex)} 다시 표시`}
-                            >
-                                {getCoreNameForTechnicalGroup(group.groupIndex)}
-                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12h16M13 5l7 7-7 7M4 5l7 7-7 7" />
-                                </svg>
-                            </button>
-                        ))}
-                    </div>
-                )}
 
                 <div className="overflow-x-auto">
                     <table className="min-w-max w-full border-collapse text-[11px] text-gray-200">
