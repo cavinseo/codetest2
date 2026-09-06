@@ -46,3 +46,33 @@ export function toggleGroupVisibility(
     }
     return { ...collapsedGroups, [groupIndex]: true };
 }
+
+// 접힘 상태는 프로젝트별로 브라우저에 남긴다 — 다른 화면에 다녀와도 접어 둔 그룹이
+// 그대로 있어야 하기 때문이다. 값은 접힌 그룹 인덱스 배열(JSON)로 둔다.
+export function qfdCollapsedGroupsStorageKey(projectId: string) {
+    return `qfd-collapsed-groups:${projectId}`;
+}
+
+export function serializeCollapsedGroups(collapsedGroups: Record<number, boolean>): string {
+    const indexes = Object.entries(collapsedGroups)
+        .filter(([, collapsed]) => collapsed)
+        .map(([key]) => Number(key))
+        .sort((a, b) => a - b);
+    return JSON.stringify(indexes);
+}
+
+// 저장값이 깨졌거나(수동 편집·버전 차이) 형식이 다르면 아무것도 접지 않은 상태로 돌아간다.
+export function parseCollapsedGroups(raw: string | null): Record<number, boolean> {
+    if (!raw) return {};
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return {};
+    }
+    if (!Array.isArray(parsed)) return {};
+    return parsed.reduce<Record<number, boolean>>((result, value) => {
+        if (Number.isInteger(value) && value >= 0) result[value] = true;
+        return result;
+    }, {});
+}

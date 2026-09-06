@@ -8,6 +8,9 @@ import {
     findCoreIdForSubName,
     getQfdCoreOptions,
     getQfdSubOptions,
+    parseCollapsedGroups,
+    qfdCollapsedGroupsStorageKey,
+    serializeCollapsedGroups,
     toggleGroupVisibility,
 } from '@/lib/qfd-technical-header';
 
@@ -519,8 +522,19 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         [collapsedTechnicalGroups, technicalGroups]
     );
 
+    // 접힘 상태를 프로젝트별로 브라우저에 남긴다 — 다른 화면에 다녀와도 그대로 있어야 한다.
+    // 저장은 상태를 바꾸는 순간에 함께 해서, 마운트 직후의 빈 상태가 저장값을 덮어쓰는 일을 막는다.
+    const collapsedGroupsStorageKey = qfdCollapsedGroupsStorageKey(projectId);
+    useEffect(() => {
+        setCollapsedTechnicalGroups(parseCollapsedGroups(window.localStorage.getItem(collapsedGroupsStorageKey)));
+    }, [collapsedGroupsStorageKey]);
+    const updateCollapsedTechnicalGroups = (next: Record<number, boolean>) => {
+        setCollapsedTechnicalGroups(next);
+        window.localStorage.setItem(collapsedGroupsStorageKey, serializeCollapsedGroups(next));
+    };
+
     const collapseAllTechnicalGroups = () => {
-        setCollapsedTechnicalGroups(
+        updateCollapsedTechnicalGroups(
             technicalGroups.reduce<Record<number, boolean>>((items, group) => {
                 items[group.groupIndex] = true;
                 return items;
@@ -528,10 +542,10 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         );
     };
     const expandAllTechnicalGroups = () => {
-        setCollapsedTechnicalGroups({});
+        updateCollapsedTechnicalGroups({});
     };
     const toggleTechnicalGroup = (groupIndex: number) => {
-        setCollapsedTechnicalGroups((items) => toggleGroupVisibility(items, groupIndex));
+        updateCollapsedTechnicalGroups(toggleGroupVisibility(collapsedTechnicalGroups, groupIndex));
     };
 
     const getCoreForTechnicalGroup = (groupIndex: number) => {
