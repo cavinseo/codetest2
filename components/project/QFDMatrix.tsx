@@ -8,6 +8,7 @@ import {
     findCoreIdForSubName,
     getQfdCoreOptions,
     getQfdSubOptions,
+    toggleGroupVisibility,
 } from '@/lib/qfd-technical-header';
 
 interface Requirement {
@@ -529,6 +530,9 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const expandAllTechnicalGroups = () => {
         setCollapsedTechnicalGroups({});
     };
+    const toggleTechnicalGroup = (groupIndex: number) => {
+        setCollapsedTechnicalGroups((items) => toggleGroupVisibility(items, groupIndex));
+    };
 
     const getCoreForTechnicalGroup = (groupIndex: number) => {
         if (selectedCoreByGroup[groupIndex]) return selectedCoreByGroup[groupIndex];
@@ -543,6 +547,11 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         }
 
         return '';
+    };
+
+    const getCoreNameForTechnicalGroup = (groupIndex: number) => {
+        const coreId = getCoreForTechnicalGroup(groupIndex);
+        return coreOptions.find((core) => core.id === coreId)?.name || `그룹 ${groupIndex + 1}`;
     };
 
     const getSubOptionsForTechnicalColumn = (index: number) => {
@@ -710,18 +719,31 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
 
                 {hiddenTechnicalGroups.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.08] bg-indigo-500/[0.04] px-4 py-2 text-xs">
-                        <span className="font-semibold text-indigo-100">기술특성 영역이 접혀 있습니다.</span>
-                        <button
-                            type="button"
-                            onClick={expandAllTechnicalGroups}
-                            className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-2 py-1 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
-                            title="기술특성 전체 펼치기"
-                        >
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12h16M13 5l7 7-7 7M4 5l7 7-7 7" />
-                            </svg>
-                            전체 펼치기
-                        </button>
+                        <span className="font-semibold text-indigo-100">숨긴 핵심기능 영역</span>
+                        {hiddenTechnicalGroups.map((group) => (
+                            <button
+                                key={`hidden-group-${group.groupIndex}`}
+                                type="button"
+                                onClick={() => toggleTechnicalGroup(group.groupIndex)}
+                                className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-2 py-1 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
+                                title={`${getCoreNameForTechnicalGroup(group.groupIndex)} 다시 표시`}
+                            >
+                                {getCoreNameForTechnicalGroup(group.groupIndex)}
+                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12h16M13 5l7 7-7 7M4 5l7 7-7 7" />
+                                </svg>
+                            </button>
+                        ))}
+                        {hiddenTechnicalGroups.length > 1 && (
+                            <button
+                                type="button"
+                                onClick={expandAllTechnicalGroups}
+                                className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-2 py-1 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
+                                title="기술특성 전체 펼치기"
+                            >
+                                전체 펼치기
+                            </button>
+                        )}
                     </div>
                 )}
 
@@ -749,17 +771,30 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                     const coreId = getCoreForTechnicalGroup(group.groupIndex);
                                     return (
                                         <th key={`core-group-${group.groupIndex}`} className="border border-white/[0.08] bg-indigo-500/15 px-1 py-2 text-center font-bold text-indigo-100" colSpan={group.size}>
-                                            <select
-                                                value={coreId}
-                                                onChange={(event) => setSelectedCoreByGroup((items) => ({ ...items, [group.groupIndex]: event.target.value }))}
-                                                className="h-8 min-w-0 flex-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-1 text-center text-[11px] font-bold text-indigo-50 outline-none focus:border-indigo-300"
-                                                title="핵심기능 선택"
-                                            >
-                                                <option value="">핵심기능</option>
-                                                {coreOptions.map((core) => (
-                                                    <option key={core.id} value={core.id}>{core.name}</option>
-                                                ))}
-                                            </select>
+                                            <div className="flex items-center gap-1">
+                                                <select
+                                                    value={coreId}
+                                                    onChange={(event) => setSelectedCoreByGroup((items) => ({ ...items, [group.groupIndex]: event.target.value }))}
+                                                    className="h-8 min-w-0 flex-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-1 text-center text-[11px] font-bold text-indigo-50 outline-none focus:border-indigo-300"
+                                                    title="핵심기능 선택"
+                                                >
+                                                    <option value="">핵심기능</option>
+                                                    {coreOptions.map((core) => (
+                                                        <option key={core.id} value={core.id}>{core.name}</option>
+                                                    ))}
+                                                </select>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleTechnicalGroup(group.groupIndex)}
+                                                    className="inline-flex h-8 w-6 flex-none items-center justify-center rounded-md border border-indigo-200/20 bg-slate-950/80 text-indigo-100 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
+                                                    title={`${getCoreNameForTechnicalGroup(group.groupIndex)} 영역 숨기기`}
+                                                    aria-label={`${getCoreNameForTechnicalGroup(group.groupIndex)} 영역 숨기기`}
+                                                >
+                                                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.774 3.162 10.066 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                                                    </svg>
+                                                </button>
+                                            </div>
                                         </th>
                                     );
                                 })}
