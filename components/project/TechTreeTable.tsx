@@ -314,7 +314,7 @@ export default function TechTreeTable({ projectId }: Props) {
     return (
         <div className="relative space-y-4">
             {toast && (
-                <div className={`fixed right-6 top-6 z-[100] flex items-center gap-3 rounded-xl border px-5 py-3 shadow-2xl animate-fade-in ${
+                <div className={`fixed right-6 bottom-6 z-[100] flex items-center gap-3 rounded-xl border px-5 py-3 shadow-2xl animate-fade-in ${
                     toast.type === 'error'
                         ? 'border-rose-500/40 bg-rose-900/90 text-rose-200'
                         : toast.type === 'info'
