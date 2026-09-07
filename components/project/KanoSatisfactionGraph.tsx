@@ -88,7 +88,7 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                         width={width}
                         height={height}
                         fontFamily={KOREAN_CHART_FONT}
-                        className="mx-auto block bg-surface-800/50 rounded-2xl border border-white/10"
+                        className="timko-chart mx-auto block bg-surface-800/50 rounded-2xl border border-white/10"
                     >
                         <TimkoWorksheetGrid x={yAxisX} y={margin.top} width={plotWidth} height={plotHeight} />
 

@@ -247,6 +247,15 @@ body {
   background: rgba(15, 23, 42, 0.09);
 }
 
+/* 주간 모드의 TIMKO 글자는 검정으로 표시하고 밝은 외곽선으로 셀 색상과 구분한다. */
+.light .timko-chart text {
+  fill: #000000;
+  stroke: #ffffff;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
 /* Light mode compatibility for existing dark-first utility classes */
 .light .bg-surface-900,
 .light .bg-surface-850,

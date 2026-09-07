@@ -29,7 +29,7 @@ const quadrantLabels = [
 
 const chartFont = '"Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", "Segoe UI", sans-serif';
 const width = 600;
-const height = 680;
+const height = width;
 const padding = 60;
 const plotWidth = width - 2 * padding;
 const plotHeight = height - 2 * padding;
@@ -91,7 +91,7 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                 width={width}
                 height={height}
                 fontFamily={chartFont}
-                className="bg-gray-800/30 rounded-lg border border-white/10"
+                className="timko-chart bg-gray-800/30 rounded-lg border border-white/10"
             >
                 <TimkoWorksheetGrid x={padding} y={padding} width={plotWidth} height={plotHeight} />
 
