@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import ThemeToggle from '@/components/ThemeToggle';
 
 interface Requirement {
     id: string;
@@ -164,11 +165,13 @@ export default function SurveyPage() {
         <div className="min-h-screen bg-gray-900">
             {/* 헤더 */}
             <header className="bg-gray-800 border-b border-gray-700">
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                     <div className="text-center">
                         <h1 className="text-3xl font-bold text-white mb-2">Kano 설문 조사</h1>
                         <p className="text-gray-400">{surveyData.projectName}</p>
                     </div>
+                    {/* 제목은 가운데 정렬을 지켜야 하므로 버튼만 절대 위치로 오른쪽에 붙인다. */}
+                    <ThemeToggle className="absolute right-4 top-1/2 -translate-y-1/2 sm:right-6 lg:right-8" />
                 </div>
             </header>
 

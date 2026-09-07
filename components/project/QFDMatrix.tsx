@@ -8,6 +8,10 @@ import {
     findCoreIdForSubName,
     getQfdCoreOptions,
     getQfdSubOptions,
+    parseCollapsedGroups,
+    qfdCollapsedGroupsStorageKey,
+    serializeCollapsedGroups,
+    toggleGroupVisibility,
 } from '@/lib/qfd-technical-header';
 
 interface Requirement {
@@ -518,8 +522,19 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         [collapsedTechnicalGroups, technicalGroups]
     );
 
+    // 접힘 상태를 프로젝트별로 브라우저에 남긴다 — 다른 화면에 다녀와도 그대로 있어야 한다.
+    // 저장은 상태를 바꾸는 순간에 함께 해서, 마운트 직후의 빈 상태가 저장값을 덮어쓰는 일을 막는다.
+    const collapsedGroupsStorageKey = qfdCollapsedGroupsStorageKey(projectId);
+    useEffect(() => {
+        setCollapsedTechnicalGroups(parseCollapsedGroups(window.localStorage.getItem(collapsedGroupsStorageKey)));
+    }, [collapsedGroupsStorageKey]);
+    const updateCollapsedTechnicalGroups = (next: Record<number, boolean>) => {
+        setCollapsedTechnicalGroups(next);
+        window.localStorage.setItem(collapsedGroupsStorageKey, serializeCollapsedGroups(next));
+    };
+
     const collapseAllTechnicalGroups = () => {
-        setCollapsedTechnicalGroups(
+        updateCollapsedTechnicalGroups(
             technicalGroups.reduce<Record<number, boolean>>((items, group) => {
                 items[group.groupIndex] = true;
                 return items;
@@ -527,7 +542,10 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         );
     };
     const expandAllTechnicalGroups = () => {
-        setCollapsedTechnicalGroups({});
+        updateCollapsedTechnicalGroups({});
+    };
+    const toggleTechnicalGroup = (groupIndex: number) => {
+        updateCollapsedTechnicalGroups(toggleGroupVisibility(collapsedTechnicalGroups, groupIndex));
     };
 
     const getCoreForTechnicalGroup = (groupIndex: number) => {
@@ -543,6 +561,11 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         }
 
         return '';
+    };
+
+    const getCoreNameForTechnicalGroup = (groupIndex: number) => {
+        const coreId = getCoreForTechnicalGroup(groupIndex);
+        return coreOptions.find((core) => core.id === coreId)?.name || `그룹 ${groupIndex + 1}`;
     };
 
     const getSubOptionsForTechnicalColumn = (index: number) => {
@@ -693,12 +716,13 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         <p className="mt-0.5 text-xs text-gray-500">요구사항 행은 고객요구사항도출표 저장 순서를 그대로 따릅니다.</p>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-400">
+                        {/* 개별로 숨긴 그룹을 되살리는 길은 이 버튼뿐이라, 하나라도 숨겨져 있으면 "펼치기"를 우선한다. */}
                         <button
                             type="button"
-                            onClick={visibleTechnicalGroups.length > 0 ? collapseAllTechnicalGroups : expandAllTechnicalGroups}
+                            onClick={hiddenTechnicalGroups.length > 0 ? expandAllTechnicalGroups : collapseAllTechnicalGroups}
                             className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-3 py-1.5 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
                         >
-                            {visibleTechnicalGroups.length > 0 ? '기술특성 전체 접기' : '기술특성 전체 펼치기'}
+                            {hiddenTechnicalGroups.length > 0 ? '기술특성 전체 펼치기' : '기술특성 전체 접기'}
                         </button>
                         <div className="hidden items-center gap-3 md:flex">
                         {RELATIONSHIP_OPTIONS.slice(1).map((option) => (
@@ -707,23 +731,6 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         </div>
                     </div>
                 </div>
-
-                {hiddenTechnicalGroups.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.08] bg-indigo-500/[0.04] px-4 py-2 text-xs">
-                        <span className="font-semibold text-indigo-100">기술특성 영역이 접혀 있습니다.</span>
-                        <button
-                            type="button"
-                            onClick={expandAllTechnicalGroups}
-                            className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-2 py-1 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
-                            title="기술특성 전체 펼치기"
-                        >
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12h16M13 5l7 7-7 7M4 5l7 7-7 7" />
-                            </svg>
-                            전체 펼치기
-                        </button>
-                    </div>
-                )}
 
                 <div className="overflow-x-auto">
                     <table className="min-w-max w-full border-collapse text-[11px] text-gray-200">
@@ -749,17 +756,30 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                     const coreId = getCoreForTechnicalGroup(group.groupIndex);
                                     return (
                                         <th key={`core-group-${group.groupIndex}`} className="border border-white/[0.08] bg-indigo-500/15 px-1 py-2 text-center font-bold text-indigo-100" colSpan={group.size}>
-                                            <select
-                                                value={coreId}
-                                                onChange={(event) => setSelectedCoreByGroup((items) => ({ ...items, [group.groupIndex]: event.target.value }))}
-                                                className="h-8 min-w-0 flex-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-1 text-center text-[11px] font-bold text-indigo-50 outline-none focus:border-indigo-300"
-                                                title="핵심기능 선택"
-                                            >
-                                                <option value="">핵심기능</option>
-                                                {coreOptions.map((core) => (
-                                                    <option key={core.id} value={core.id}>{core.name}</option>
-                                                ))}
-                                            </select>
+                                            <div className="flex items-center gap-1">
+                                                <select
+                                                    value={coreId}
+                                                    onChange={(event) => setSelectedCoreByGroup((items) => ({ ...items, [group.groupIndex]: event.target.value }))}
+                                                    className="h-8 min-w-0 flex-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-1 text-center text-[11px] font-bold text-indigo-50 outline-none focus:border-indigo-300"
+                                                    title="핵심기능 선택"
+                                                >
+                                                    <option value="">핵심기능</option>
+                                                    {coreOptions.map((core) => (
+                                                        <option key={core.id} value={core.id}>{core.name}</option>
+                                                    ))}
+                                                </select>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleTechnicalGroup(group.groupIndex)}
+                                                    className="inline-flex h-8 w-6 flex-none items-center justify-center rounded-md border border-indigo-200/20 bg-slate-950/80 text-indigo-100 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
+                                                    title={`${getCoreNameForTechnicalGroup(group.groupIndex)} 영역 숨기기`}
+                                                    aria-label={`${getCoreNameForTechnicalGroup(group.groupIndex)} 영역 숨기기`}
+                                                >
+                                                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.774 3.162 10.066 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                                                    </svg>
+                                                </button>
+                                            </div>
                                         </th>
                                     );
                                 })}

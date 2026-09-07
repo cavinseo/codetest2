@@ -70,6 +70,10 @@ docs/.pdca-snapshots/
 *conflicted copy*
 *의 충돌 사본*
 
+# Office 가 문서를 여는 동안 만드는 잠금 파일. 추적되면 stash -u 에 딸려 들어가
+# public/asset 의 양식 원본을 깨진 채로 옮기는 사고가 난다(2026-09-06 발생).
+~$*
+
 # 개발 중 만든 임시 스크립트/백업
 tmp-*.mjs
 *.backup

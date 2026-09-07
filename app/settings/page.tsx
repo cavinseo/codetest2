@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import PersonalAiConnection from '@/components/member/PersonalAiConnection';
+import ThemeToggle from '@/components/ThemeToggle';
 
 interface SettingsData {
     google: {
@@ -140,6 +141,7 @@ export default function ServiceSettingsPage() {
                                 </p>
                             </div>
                         </div>
+                        <ThemeToggle />
                     </div>
                 </div>
             </header>
