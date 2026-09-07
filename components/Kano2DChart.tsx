@@ -100,7 +100,7 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                     {/* X축 */}
                     <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} />
                     {/* Y축 */}
-                    <line x1={padding} y1={padding} x2={padding} y2={height - padding} />
+                    <line x1={width - padding} y1={padding} x2={width - padding} y2={height - padding} />
                 </g>
 
                 {/* 중앙 기준선 (0.5 기준) */}
@@ -120,7 +120,7 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                     })}
                 </g>
 
-                <g fill="#9ca3af" fontSize="10">
+                <g fill="#ffffff" fontSize="11" fontWeight="800">
                     {xAxisTicks.map((label, idx) => {
                         const x = padding + ((idx + 0.5) * plotWidth) / 10;
                         const [top, bottom] = label.split('\n');
@@ -135,42 +135,41 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                         const y = padding + ((idx + 0.5) * plotHeight) / 10;
                         const [top, bottom] = label.split('\n');
                         return (
-                            <text key={label} x={padding - 10} y={y - 5} textAnchor="end">
-                                <tspan x={padding - 10}>{top}</tspan>
-                                <tspan x={padding - 10} dy="12">{bottom}</tspan>
+                            <text key={label} x={width - padding + 10} y={y - 5} textAnchor="start">
+                                <tspan x={width - padding + 10}>{top}</tspan>
+                                <tspan x={width - padding + 10} dy="12">{bottom}</tspan>
                             </text>
                         );
                     })}
                 </g>
 
                 {/* 축 라벨 */}
-                <text x={width / 2} y={height - 16} textAnchor="middle" fill="#9ca3af" fontSize="12" fontWeight="bold">
+                <text x={width / 2} y={height - 16} textAnchor="middle" fill="#ffffff" fontSize="13" fontWeight="800">
                     불만족 계수
                 </text>
                 <text
-                    x={20}
-                    y={height / 2}
-                    textAnchor="middle"
-                    fill="#9ca3af"
-                    fontSize="12"
-                    fontWeight="bold"
-                    transform={`rotate(-90, 20, ${height / 2})`}
+                    x={width - 8}
+                    y={padding - 34}
+                    textAnchor="end"
+                    fill="#ffffff"
+                    fontSize="13"
+                    fontWeight="800"
                 >
                     만족 계수
                 </text>
 
                 {/* 사분면 라벨 */}
                 <g stroke="#1e293b" strokeWidth="3" strokeLinejoin="round" paintOrder="stroke">
-                    <text x={width - padding - 110} y={padding + 20} fill={quadrantColors.attractive} fontSize="12" fontWeight="bold" opacity="0.9">
+                    <text x={width - padding - 110} y={padding + 20} fill="#ffffff" fontSize="12" fontWeight="800">
                         1사분면: 매력적 품질
                     </text>
-                    <text x={padding + 20} y={padding + 20} fill={quadrantColors.oneDimensional} fontSize="12" fontWeight="bold" opacity="0.9">
+                    <text x={padding + 20} y={padding + 20} fill="#ffffff" fontSize="12" fontWeight="800">
                         2사분면: 일원적 품질
                     </text>
-                    <text x={padding + 20} y={height - padding - 15} fill={quadrantColors.mustBe} fontSize="12" fontWeight="bold" opacity="0.9">
+                    <text x={padding + 20} y={height - padding - 15} fill="#ffffff" fontSize="12" fontWeight="800">
                         3사분면: 당연적 품질
                     </text>
-                    <text x={width - padding - 110} y={height - padding - 15} fill={quadrantColors.indifferent} fontSize="12" fontWeight="bold" opacity="0.9">
+                    <text x={width - padding - 110} y={height - padding - 15} fill="#ffffff" fontSize="12" fontWeight="800">
                         4사분면: 무관심 품질
                     </text>
                 </g>
@@ -196,7 +195,7 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                             className="w-3 h-3 rounded-full border-2 border-white"
                             style={{ backgroundColor: color }}
                         />
-                        <span className="text-gray-300">{label}</span>
+                        <span className="text-white font-bold">{label}</span>
                     </div>
                 ))}
             </div>

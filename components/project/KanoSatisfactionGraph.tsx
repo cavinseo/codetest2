@@ -94,7 +94,7 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
 
                         {/* 메인 축 */}
                         <line x1={yAxisX} y1={xAxisY} x2={yAxisX + plotWidth} y2={xAxisY} stroke="#64748b" strokeWidth="2" />
-                        <line x1={yAxisX} y1={margin.top} x2={yAxisX} y2={xAxisY} stroke="#64748b" strokeWidth="2" />
+                        <line x1={yAxisX + plotWidth} y1={margin.top} x2={yAxisX + plotWidth} y2={xAxisY} stroke="#64748b" strokeWidth="2" />
 
                         {/* 중앙 기준선 (0.5) */}
                         <line x1={yAxisX + plotWidth / 2} y1={margin.top} x2={yAxisX + plotWidth / 2} y2={xAxisY} stroke="#475569" strokeDasharray="4" />
@@ -111,7 +111,7 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                             })}
                         </g>
 
-                        <g fill="#cbd5e1" fontSize="11">
+                        <g fill="#ffffff" fontSize="12" fontWeight="800">
                             {xAxisTicks.map((label, idx) => {
                                 const x = yAxisX + ((idx + 0.5) * plotWidth) / 10;
                                 const [top, bottom] = label.split('\n');
@@ -126,23 +126,23 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                                 const y = margin.top + ((idx + 0.5) * plotHeight) / 10;
                                 const [top, bottom] = label.split('\n');
                                 return (
-                                    <text key={label} x={yAxisX - 12} y={y - 5} textAnchor="end">
-                                        <tspan x={yAxisX - 12}>{top}</tspan>
-                                        <tspan x={yAxisX - 12} dy="14">{bottom}</tspan>
+                                    <text key={label} x={yAxisX + plotWidth + 8} y={y - 5} textAnchor="start">
+                                        <tspan x={yAxisX + plotWidth + 8}>{top}</tspan>
+                                        <tspan x={yAxisX + plotWidth + 8} dy="14">{bottom}</tspan>
                                     </text>
                                 );
                             })}
                         </g>
 
-                        <text x={yAxisX + plotWidth / 2} y={height - 26} textAnchor="middle" fill="#e2e8f0" fontSize="14" fontWeight="700">불만족 계수</text>
-                        <text x={28} y={margin.top + plotHeight / 2} textAnchor="middle" fill="#e2e8f0" fontSize="14" fontWeight="700" transform={`rotate(-90, 28, ${margin.top + plotHeight / 2})`}>만족 계수</text>
+                        <text x={yAxisX + plotWidth / 2} y={height - 26} textAnchor="middle" fill="#ffffff" fontSize="14" fontWeight="800">불만족 계수</text>
+                        <text x={width - 8} y={margin.top - 36} textAnchor="end" fill="#ffffff" fontSize="14" fontWeight="800">만족 계수</text>
 
                         {/* 사분면 이름 */}
                         <g stroke="#1e293b" strokeWidth="3" strokeLinejoin="round" paintOrder="stroke">
-                            <text x={yAxisX + plotWidth - 150} y={margin.top + 30} fill={quadrantColors.attractive} fontSize="13" fontWeight="700" opacity="0.95">1사분면: 매력적 품질</text>
-                            <text x={yAxisX + 32} y={margin.top + 30} fill={quadrantColors.oneDimensional} fontSize="13" fontWeight="700" opacity="0.95">2사분면: 일원적 품질</text>
-                            <text x={yAxisX + 32} y={xAxisY - 28} fill={quadrantColors.mustBe} fontSize="13" fontWeight="700" opacity="0.95">3사분면: 당연적 품질</text>
-                            <text x={yAxisX + plotWidth - 165} y={xAxisY - 28} fill={quadrantColors.indifferent} fontSize="13" fontWeight="700" opacity="0.95">4사분면: 무관심 품질</text>
+                            <text x={yAxisX + plotWidth - 150} y={margin.top + 30} fill="#ffffff" fontSize="13" fontWeight="800">1사분면: 매력적 품질</text>
+                            <text x={yAxisX + 32} y={margin.top + 30} fill="#ffffff" fontSize="13" fontWeight="800">2사분면: 일원적 품질</text>
+                            <text x={yAxisX + 32} y={xAxisY - 28} fill="#ffffff" fontSize="13" fontWeight="800">3사분면: 당연적 품질</text>
+                            <text x={yAxisX + plotWidth - 165} y={xAxisY - 28} fill="#ffffff" fontSize="13" fontWeight="800">4사분면: 무관심 품질</text>
                         </g>
 
                         {/* 데이터 포인트 */}

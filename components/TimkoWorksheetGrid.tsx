@@ -36,7 +36,7 @@ export default function TimkoWorksheetGrid({ x, y, width, height }: TimkoWorkshe
                     ))}
                 </g>
             ))}
-            <g fill="#cbd5e1" fontSize="12" fontWeight="700">
+            <g fill="#ffffff" fontSize="13" fontWeight="800">
                 {Array.from({ length: 10 }, (_, col) => (
                     <text key={col} x={x + (col + 0.5) * cellWidth} y={y - 14} textAnchor="middle">
                         {(3.2 + col * 0.2).toFixed(1)}
