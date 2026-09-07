@@ -139,8 +139,8 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
 
                         {/* 사분면 이름 */}
                         <g stroke="#1e293b" strokeWidth="3" strokeLinejoin="round" paintOrder="stroke">
-                            <text x={yAxisX + plotWidth - 150} y={margin.top + 30} fill="#ffffff" fontSize="13" fontWeight="800">1사분면: 매력적 품질</text>
-                            <text x={yAxisX + 32} y={margin.top + 30} fill="#ffffff" fontSize="13" fontWeight="800">2사분면: 일원적 품질</text>
+                            <text x={yAxisX + plotWidth * 0.75} y={margin.top - 36} textAnchor="middle" fill="#ffffff" fontSize="13" fontWeight="800">1사분면: 매력적 품질</text>
+                            <text x={yAxisX + plotWidth * 0.25} y={margin.top - 36} textAnchor="middle" fill="#ffffff" fontSize="13" fontWeight="800">2사분면: 일원적 품질</text>
                             <text x={yAxisX + 32} y={xAxisY - 28} fill="#ffffff" fontSize="13" fontWeight="800">3사분면: 당연적 품질</text>
                             <text x={yAxisX + plotWidth - 165} y={xAxisY - 28} fill="#ffffff" fontSize="13" fontWeight="800">4사분면: 무관심 품질</text>
                         </g>
