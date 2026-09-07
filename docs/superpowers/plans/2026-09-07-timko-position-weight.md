@@ -153,7 +153,7 @@
 **Interfaces:** 없음. `calculateSatisfactionGraphWeight(better, worse): number` 시그니처와
 반환 범위(2, 3, 3.2~5.0) 그대로. export 목록 변경 없음.
 
-- [ ] **Step 1: RED — 기준표 100개 셀의 네 모서리를 전부 찍는 테스트를 추가한다**
+- [x] **Step 1: RED — 기준표 100개 셀의 네 모서리를 전부 찍는 테스트를 추가한다**
 
 `tests/kano-algorithm.test.ts` 의 `'assigns satisfaction graph weights from radial
 Better-Worse positions'` 테스트 **바로 아래**에 추가한다(기존 테스트는 그대로 둔다).
@@ -206,7 +206,7 @@ Expected: **새 테스트 1개 실패**, 나머지 10개 통과. 실패 메시�
 (`만족 0.91 · 불만족 -0.91`, 받은 값 4 ≠ 기대 3.2) 이어야 한다. 실패하지 않으면 테스트가
 잘못 옮겨진 것이니 구현으로 넘어가지 마라.
 
-- [ ] **Step 2: GREEN — 일원적 분기의 가로 띠를 뒤집는다**
+- [x] **Step 2: GREEN — 일원적 분기의 가로 띠를 뒤집는다**
 
 `lib/kano-algorithm.ts:194` 를 다음으로 바꾼다. helper 세 개와 매력적 분기는 그대로.
 
@@ -224,7 +224,7 @@ npx vitest run tests/kano-algorithm.test.ts tests/qfd-worksheet.test.ts
 
 Expected: 전부 통과(기존 단언 수정 없이).
 
-- [ ] **Step 3: 전체 게이트와 뮤테이션**
+- [x] **Step 3: 전체 게이트와 뮤테이션**
 
 ```sh
 npx tsc --noEmit
@@ -240,7 +240,7 @@ stryker 는 `calculateSatisfactionGraphWeight` 와 helper 세 개 범위(수정 
 있으면 CLAUDE.md 규칙대로 `// Stryker disable next-line <Mutator>: <이유>` 로 제외하고,
 disable 전후 총 뮤턴트 수 차이를 보고서에 적는다.
 
-- [ ] **Step 4: 커밋**
+- [x] **Step 4: 커밋**
 
 ```sh
 git add lib/kano-algorithm.ts tests/kano-algorithm.test.ts \
@@ -253,7 +253,7 @@ git commit
 열이 3.2 로 기준표·차트 눈금과 거울상이었다는 것, 기존 테스트가 대각선 셀만 찍어 못
 잡았다는 것. 트레일러는 CLAUDE.md 저장소 관례를 따른다.
 
-- [ ] **Step 5: 보고서를 둘째 커밋으로**
+- [x] **Step 5: 보고서를 둘째 커밋으로**
 
 `docs/superpowers/reports/2026-09-07-timko-position-weight/task-1.md`,
 커밋 메시지 `docs: Task 1 결과 보고서`. VERIFIED BY 에 Step 1 의 RED 출력(실패 메시지

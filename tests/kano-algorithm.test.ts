@@ -123,6 +123,44 @@ describe('kano algorithm', () => {
         expect(calculateSatisfactionGraphWeight(0.8, -0.8)).toBe(3.6);
     });
 
+    it('워크시트 TIMKO 격자 100개 셀의 네 모서리마다 기준표 가중치를 돌려준다', () => {
+        // 사용자 기준표를 격자(행 0 = 만족 1.0~0.91, 열 0 = 불만족 -1.0~-0.91)로 옮긴
+        // 것이다. 위 5행은 왼쪽 L 띠 3.2→4.0, 오른쪽 L 띠 4.2→5.0, 아래 5행은 당연적 3·
+        // 무관심 2 다. 셀마다 한 점만 찍으면 좌우가 뒤집힌 구현도 대각선 셀에서는
+        // 통과하므로(실제로 그렇게 통과해 왔다) 네 모서리를 전부 찍는다.
+        const bands = [
+            [91, 100], [81, 90], [71, 80], [61, 70], [50, 60],
+            [41, 49], [31, 40], [21, 30], [11, 20], [0, 10],
+        ];
+        const expectedGrid = [
+            [3.2, 3.4, 3.6, 3.8, 4.0, 4.2, 4.4, 4.6, 4.8, 5.0],
+            [3.2, 3.4, 3.6, 3.8, 3.8, 4.2, 4.4, 4.6, 4.8, 4.8],
+            [3.2, 3.4, 3.6, 3.6, 3.6, 4.2, 4.4, 4.6, 4.6, 4.6],
+            [3.2, 3.4, 3.4, 3.4, 3.4, 4.2, 4.4, 4.4, 4.4, 4.4],
+            [3.2, 3.2, 3.2, 3.2, 3.2, 4.2, 4.2, 4.2, 4.2, 4.2],
+            [3, 3, 3, 3, 3, 2, 2, 2, 2, 2],
+            [3, 3, 3, 3, 3, 2, 2, 2, 2, 2],
+            [3, 3, 3, 3, 3, 2, 2, 2, 2, 2],
+            [3, 3, 3, 3, 3, 2, 2, 2, 2, 2],
+            [3, 3, 3, 3, 3, 2, 2, 2, 2, 2],
+        ];
+
+        expectedGrid.forEach((rowWeights, row) => {
+            rowWeights.forEach((expected, col) => {
+                const [betterLow, betterHigh] = bands[row];
+                const [worseLow, worseHigh] = bands[col];
+                for (const better of [betterLow, betterHigh]) {
+                    for (const worse of [worseLow, worseHigh]) {
+                        expect(
+                            calculateSatisfactionGraphWeight(better / 100, -worse / 100),
+                            `만족 ${better / 100} · 불만족 ${-worse / 100} (행 ${row}, 열 ${col})`,
+                        ).toBe(expected);
+                    }
+                }
+            });
+        });
+    });
+
     it('maps worksheet TIMKO weights into quality results', () => {
         expect(getWeightedTimkoCategory(4.2)).toBe('매력');
         expect(getWeightedTimkoCategory(3.2)).toBe('일원');

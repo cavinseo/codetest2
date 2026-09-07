@@ -191,7 +191,11 @@ export function calculateSatisfactionGraphWeight(better: number, worse: number):
         return Math.round((4.2 + (band * 0.2)) * 10) / 10;
     }
 
-    const band = Math.min(verticalBand, horizontalOneDimensionalBandFromCenter(worse));
+    // 일원적 사분면은 워크시트가 불만족 계수 -1.0 열(가장 왼쪽)을 3.2, 중앙 -0.5 열을
+    // 4.0 으로 두므로 매력적 사분면과 반대로 중앙에서 먼 열일수록 띠가 낮다. 경계에서
+    // 검증된 중앙 기준 띠를 뒤집어 쓴다 — 왼쪽부터 새로 세는 부동소수점 식은
+    // -0.8 같은 경계에서 한 칸 낮게 나온다.
+    const band = Math.min(verticalBand, 4 - horizontalOneDimensionalBandFromCenter(worse));
     return Math.round((3.2 + (band * 0.2)) * 10) / 10;
 }
 
