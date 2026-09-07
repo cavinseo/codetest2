@@ -110,6 +110,7 @@ export default function KanoAggregationTable({ analysis, projectId, onWeightsSav
                     <table className="w-full text-sm text-center">
                         <thead className="bg-white/[0.04] text-gray-400 border-b border-white/[0.08]">
                             <tr>
+                                <th rowSpan={2} className="px-3 py-4 w-12 border-r border-white/5 font-bold">No</th>
                                 <th rowSpan={2} className="px-4 py-4 text-left w-64 border-r border-white/5 font-bold">설문항목(요구사항)</th>
                                 <th colSpan={7} className="px-4 py-2 border-b border-white/5 font-bold text-primary-400">KANO 응답 집계</th>
                                 <th rowSpan={2} className="px-4 py-4 border-l border-white/5 text-emerald-400 font-bold">만족<br />계수</th>
@@ -135,6 +136,8 @@ export default function KanoAggregationTable({ analysis, projectId, onWeightsSav
 
                                 return (
                                     <tr key={item.requirementId} className="border-t border-white/[0.04] transition-colors hover:bg-white/[0.02]">
+                                        {/* 차트 점 라벨과 같은 배열·같은 순서(idx + 1)라 이 번호로 점을 찾는다. */}
+                                        <td className="px-3 py-3 text-gray-500 border-r border-white/5">{idx + 1}</td>
                                         <td className="px-4 py-3 text-left text-white font-medium border-r border-white/5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[250px]">
                                             {item.requirementName || `요구사항 ${idx + 1}`}
                                         </td>

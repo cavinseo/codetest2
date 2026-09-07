@@ -271,7 +271,7 @@ git commit
 **Interfaces:** 없음. `KanoAggregationTableProps` 그대로. 번호는 새 prop 이 아니라
 `analysis.map((item, idx) => …)` 의 `idx + 1` 이다 — 차트가 쓰는 규칙과 같다.
 
-- [ ] **Step 1: RED — 정적 렌더링 테스트를 시도한다 (중단 규칙 있음)**
+- [x] **Step 1: RED — 정적 렌더링 테스트를 시도한다 (중단 규칙 있음)**
 
 `tests/kano-aggregation-table.test.ts` 를 만든다.
 
@@ -330,7 +330,7 @@ npx vitest run tests/kano-aggregation-table.test.ts
    명령과 오류 원문을 적고, RISKS 에 "번호 열은 자동 테스트 없이 화면 검증으로 이월"
    이라고 적는다.
 
-- [ ] **Step 2: GREEN — `No` 열을 추가한다**
+- [x] **Step 2: GREEN — `No` 열을 추가한다**
 
 `components/project/KanoAggregationTable.tsx:113` 의 `설문항목(요구사항)` 헤더 **앞**에:
 
@@ -354,7 +354,7 @@ npx vitest run tests/kano-aggregation-table.test.ts   # Step 1 이 1·2 번이�
 
 Expected: 통과.
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 ```sh
 npx tsc --noEmit
@@ -365,7 +365,7 @@ npx next lint
 Expected: tsc 출력 없음 / vitest 전체 통과(Step 1 이 1·2 번이면 테스트 수 = Task 1 후 + 1,
 3 번이면 변동 없음) / lint 0건.
 
-- [ ] **Step 4: 커밋**
+- [x] **Step 4: 커밋**
 
 ```sh
 git add components/project/KanoAggregationTable.tsx \
@@ -380,7 +380,7 @@ git commit
 볼 수 없었다는 것, 집계표 컴포넌트 하나를 WS-6·WS-7 이 공유하고 차트와 같은 배열을 같은
 순서로 받으므로 `idx + 1` 이 곧 점 번호라는 것.
 
-- [ ] **Step 5: 보고서를 둘째 커밋으로**
+- [x] **Step 5: 보고서를 둘째 커밋으로**
 
 `docs/superpowers/reports/2026-09-07-timko-position-weight/task-2.md`,
 커밋 메시지 `docs: Task 2 결과 보고서`. Step 1 이 몇 번 경로였는지, 그 근거(명령·출력
