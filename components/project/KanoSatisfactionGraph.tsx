@@ -27,11 +27,12 @@ const quadrantLabels: Record<string, string> = {
 };
 
 export default function KanoSatisfactionGraph({ analysis, selectedRequirementId, onSelectRequirement }: KanoSatisfactionGraphProps) {
-    const width = 1020;
-    const height = 800;
-    const margin = { top: 70, right: 110, bottom: 80, left: 10 };
+    const width = 720;
+    const height = 750;
+    const margin = { top: 64, right: 56, bottom: 150, left: 78 };
     const plotWidth = width - margin.left - margin.right;
     const plotHeight = height - margin.top - margin.bottom;
+    const xAxisY = height - margin.bottom;
     const yAxisX = margin.left;
     const quadrantColors = {
         attractive: '#10b981',
@@ -39,6 +40,31 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
         mustBe: '#ef4444',
         indifferent: '#6b7280',
     };
+    const xAxisTicks = [
+        '-1.0\n~-0.91',
+        '-0.9\n~-0.81',
+        '-0.8\n~-0.71',
+        '-0.7\n~-0.61',
+        '-0.6\n~-0.50',
+        '-0.49\n~-0.41',
+        '-0.4\n~-0.31',
+        '-0.3\n~-0.21',
+        '-0.2\n~-0.11',
+        '-0.1\n~0.0',
+    ];
+    const yAxisTicks = [
+        '1.0\n~0.91',
+        '0.9\n~0.81',
+        '0.8\n~0.71',
+        '0.7\n~0.61',
+        '0.6\n~0.50',
+        '0.49\n~0.41',
+        '0.4\n~0.31',
+        '0.3\n~0.21',
+        '0.2\n~0.11',
+        '0.1\n~0.0',
+    ];
+
     const points = useMemo(() => {
         return analysis.map((req) => {
             const normalizedWorse = Math.min(1, Math.max(0, req.worse + 1));
@@ -62,10 +88,62 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                         width={width}
                         height={height}
                         fontFamily={KOREAN_CHART_FONT}
-                        viewBox={`0 0 ${width} ${height}`}
-                        className="mx-auto block bg-white"
+                        className="mx-auto block bg-surface-800/50 rounded-2xl border border-white/10"
                     >
                         <TimkoWorksheetGrid x={yAxisX} y={margin.top} width={plotWidth} height={plotHeight} />
+
+                        {/* 메인 축 */}
+                        <line x1={yAxisX} y1={xAxisY} x2={yAxisX + plotWidth} y2={xAxisY} stroke="#64748b" strokeWidth="2" />
+                        <line x1={yAxisX} y1={margin.top} x2={yAxisX} y2={xAxisY} stroke="#64748b" strokeWidth="2" />
+
+                        {/* 중앙 기준선 (0.5) */}
+                        <line x1={yAxisX + plotWidth / 2} y1={margin.top} x2={yAxisX + plotWidth / 2} y2={xAxisY} stroke="#475569" strokeDasharray="4" />
+                        <line x1={yAxisX} y1={margin.top + plotHeight / 2} x2={yAxisX + plotWidth} y2={margin.top + plotHeight / 2} stroke="#475569" strokeDasharray="4" />
+
+                        <g stroke="#334155" strokeWidth="1" opacity="0.55">
+                            {xAxisTicks.map((_, idx) => {
+                                const x = yAxisX + ((idx + 1) * plotWidth) / 10;
+                                return <line key={`x-grid-${idx}`} x1={x} y1={margin.top} x2={x} y2={xAxisY} />;
+                            })}
+                            {yAxisTicks.map((_, idx) => {
+                                const y = margin.top + ((idx + 1) * plotHeight) / 10;
+                                return <line key={`y-grid-${idx}`} x1={yAxisX} y1={y} x2={yAxisX + plotWidth} y2={y} />;
+                            })}
+                        </g>
+
+                        <g fill="#cbd5e1" fontSize="11">
+                            {xAxisTicks.map((label, idx) => {
+                                const x = yAxisX + ((idx + 0.5) * plotWidth) / 10;
+                                const [top, bottom] = label.split('\n');
+                                return (
+                                    <text key={label} x={x} y={xAxisY + 24} textAnchor="middle">
+                                        <tspan x={x}>{top}</tspan>
+                                        <tspan x={x} dy="14">{bottom}</tspan>
+                                    </text>
+                                );
+                            })}
+                            {yAxisTicks.map((label, idx) => {
+                                const y = margin.top + ((idx + 0.5) * plotHeight) / 10;
+                                const [top, bottom] = label.split('\n');
+                                return (
+                                    <text key={label} x={yAxisX - 12} y={y - 5} textAnchor="end">
+                                        <tspan x={yAxisX - 12}>{top}</tspan>
+                                        <tspan x={yAxisX - 12} dy="14">{bottom}</tspan>
+                                    </text>
+                                );
+                            })}
+                        </g>
+
+                        <text x={yAxisX + plotWidth / 2} y={height - 26} textAnchor="middle" fill="#e2e8f0" fontSize="14" fontWeight="700">불만족 계수</text>
+                        <text x={28} y={margin.top + plotHeight / 2} textAnchor="middle" fill="#e2e8f0" fontSize="14" fontWeight="700" transform={`rotate(-90, 28, ${margin.top + plotHeight / 2})`}>만족 계수</text>
+
+                        {/* 사분면 이름 */}
+                        <g stroke="#1e293b" strokeWidth="3" strokeLinejoin="round" paintOrder="stroke">
+                            <text x={yAxisX + plotWidth - 150} y={margin.top + 30} fill={quadrantColors.attractive} fontSize="13" fontWeight="700" opacity="0.95">1사분면: 매력적 품질</text>
+                            <text x={yAxisX + 32} y={margin.top + 30} fill={quadrantColors.oneDimensional} fontSize="13" fontWeight="700" opacity="0.95">2사분면: 일원적 품질</text>
+                            <text x={yAxisX + 32} y={xAxisY - 28} fill={quadrantColors.mustBe} fontSize="13" fontWeight="700" opacity="0.95">3사분면: 당연적 품질</text>
+                            <text x={yAxisX + plotWidth - 165} y={xAxisY - 28} fill={quadrantColors.indifferent} fontSize="13" fontWeight="700" opacity="0.95">4사분면: 무관심 품질</text>
+                        </g>
 
                         {/* 데이터 포인트 */}
                         {points.map((p, idx) => {
@@ -107,9 +185,6 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                         })}
                     </svg>
                 </div>
-                <p className="text-xs text-gray-300 leading-6">
-                    좌상단: 일원적 품질 · 우상단: 매력적 품질 · 좌하단: 당연적 품질 · 우하단: 무관심 품질
-                </p>
             </div>
 
             {/* 상세 테이블 */}
