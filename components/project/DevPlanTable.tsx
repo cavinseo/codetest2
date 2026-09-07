@@ -65,7 +65,7 @@ export default function DevPlanTable({ projectId }: Props) {
 
     return (
         <div className="space-y-4 relative">
-            {toast && <div className="fixed top-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border bg-emerald-900/90 border-emerald-500/40 text-emerald-200 animate-fade-in"><svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg><span className="text-sm font-medium">{toast}</span></div>}
+            {toast && <div className="fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border bg-emerald-900/90 border-emerald-500/40 text-emerald-200 animate-fade-in"><svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg><span className="text-sm font-medium">{toast}</span></div>}
             <div className="flex items-center justify-between">
                 <div><h2 className="text-xl font-display font-bold text-white">[WS-14] 개발계획서</h2><p className="text-sm text-gray-500 mt-1">단계별 개발 일정 및 담당 계획</p></div>
                 <div className="flex items-center gap-2">

@@ -344,7 +344,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         <div className="space-y-4 relative">
             {/* 토스트 */}
             {toast && (
-                <div className={`fixed top-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border animate-fade-in ${toast.type === 'success'
+                <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border animate-fade-in ${toast.type === 'success'
                         ? 'bg-emerald-900/90 border-emerald-500/40 text-emerald-200'
                         : 'bg-red-900/90 border-red-500/40 text-red-200'
                     }`}>
