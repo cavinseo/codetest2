@@ -1,6 +1,8 @@
 'use client';
 
 import { KanoCategory } from '@/lib/kano-algorithm';
+import { useState } from 'react';
+import HeaderToast from '@/components/HeaderToast';
 
 interface AnalysisResult {
     requirementId: string;
@@ -66,33 +68,55 @@ function countCell(value: number) {
 }
 
 export default function KanoAggregationTable({ analysis, projectId, onWeightsSaved }: KanoAggregationTableProps) {
-    const saveWeight = async (requirementId: string, rawValue: string) => {
-        if (!projectId) return;
-        const trimmed = rawValue.trim();
-        const kanoWeight = trimmed === '' ? null : Number(trimmed);
+    const [weightDrafts, setWeightDrafts] = useState<Record<string, string>>({});
+    const [isSaving, setIsSaving] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-        if (kanoWeight !== null && (!Number.isFinite(kanoWeight) || kanoWeight < 0 || kanoWeight > 5)) {
-            window.alert('가중치는 0부터 5 사이의 숫자로 입력해주세요.');
-            return;
-        }
-
-        const res = await fetch(`/api/projects/${projectId}/kano/analysis`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ weights: [{ requirementId, kanoWeight }] }),
+    const handleSave = async () => {
+        if (!projectId || isSaving) return;
+        const weights = analysis.filter((item) => item.requirementId in weightDrafts).map((item) => {
+            const value = weightDrafts[item.requirementId].trim();
+            return { requirementId: item.requirementId, kanoWeight: value === '' ? null : Number(value) };
         });
-
-        if (!res.ok) {
-            const data = await res.json().catch(() => null);
-            window.alert(data?.error || '가중치 저장에 실패했습니다.');
+        if (weights.some(({ kanoWeight }) => kanoWeight !== null && (!Number.isFinite(kanoWeight) || kanoWeight < 0 || kanoWeight > 5))) {
+            setToast({ message: '가중치는 0부터 5 사이의 숫자로 입력해주세요.', type: 'error' });
             return;
         }
-
-        await onWeightsSaved?.();
+        setIsSaving(true);
+        setToast(null);
+        try {
+            if (weights.length > 0) {
+                const res = await fetch(`/api/projects/${projectId}/kano/analysis`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ weights }),
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => null);
+                    throw new Error(data?.error || '가중치 저장에 실패했습니다.');
+                }
+            }
+            await onWeightsSaved?.();
+            setWeightDrafts({});
+            setToast({ message: '저장되었습니다.', type: 'success' });
+        } catch (error) {
+            setToast({ message: error instanceof Error ? error.message : '가중치 저장에 실패했습니다.', type: 'error' });
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
         <div className="space-y-6">
+            {toast && <HeaderToast message={toast.message} type={toast.type} />}
+            {projectId && (
+                <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-gray-400">가중치를 수정한 뒤 저장하세요.</p>
+                    <button type="button" onClick={handleSave} disabled={isSaving || analysis.length === 0} className="btn-primary text-sm disabled:opacity-50">
+                        {isSaving ? '저장 중...' : '저장'}
+                    </button>
+                </div>
+            )}
             <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
                 <h3 className="text-xl font-bold text-white">KANO분석 집계표</h3>
                 <div className="flex flex-wrap gap-4 text-xs">
@@ -156,9 +180,10 @@ export default function KanoAggregationTable({ analysis, projectId, onWeightsSav
                                                 min="0"
                                                 max="5"
                                                 step="0.1"
-                                                defaultValue={item.kanoWeight ?? ''}
-                                                onBlur={(event) => saveWeight(item.requirementId, event.currentTarget.value)}
-                                                disabled={!projectId}
+                                                value={weightDrafts[item.requirementId] ?? item.kanoWeight ?? ''}
+                                                onChange={(event) => setWeightDrafts((drafts) => ({ ...drafts, [item.requirementId]: event.target.value }))}
+                                                disabled={!projectId || isSaving}
+                                                aria-label={`${item.requirementName || `요구사항 ${idx + 1}`} 가중치`}
                                                 className="w-20 rounded-md border border-white/10 bg-cyan-400/[0.08] px-2 py-1 text-center font-mono font-bold text-cyan-100 outline-none transition-colors focus:border-cyan-400/70 disabled:opacity-60"
                                                 placeholder="입력"
                                             />

@@ -513,6 +513,56 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         }
     };
 
+    const saveWorksheet = async () => {
+        if (isSavingBenchmarks) return;
+        setIsSavingBenchmarks(true);
+        try {
+            const save = async (path: string, method: string, body: object) => {
+                const response = await fetch(`/api/projects/${projectId}/qfd/${path}`, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => null);
+                    throw new Error(data?.error || 'QFD 저장에 실패했습니다. 다시 저장해주세요.');
+                }
+            };
+
+            for (const tech of technicalChars) {
+                if (techFieldKey(tech.id, 'unit') in techFieldDrafts || techFieldKey(tech.id, 'targetValue') in techFieldDrafts) {
+                    await save('technical', 'PATCH', {
+                        id: tech.id,
+                        name: tech.name,
+                        unit: getTechFieldValue(tech, 'unit').trim(),
+                        targetValue: getTechFieldValue(tech, 'targetValue').trim(),
+                    });
+                }
+                for (const company of [SELF_COMPANY, ...competitorColumns]) {
+                    if (techBenchmarkKey(tech.id, company) in techFieldDrafts) {
+                        await save('technical-benchmarks', 'POST', {
+                            technicalCharId: tech.id,
+                            company,
+                            value: getTechBenchmarkValue(tech, company).trim(),
+                        });
+                    }
+                }
+            }
+            for (const [key, score] of Object.entries(pendingBenchmarks)) {
+                const [requirementId, company] = key.split('::');
+                await save('benchmarks', 'POST', { requirementId, company, score });
+            }
+            setTechFieldDrafts({});
+            setPendingBenchmarks({});
+            await loadData();
+            showToast('워크시트를 저장했습니다.');
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : 'QFD 저장에 실패했습니다. 다시 저장해주세요.', 'error');
+        } finally {
+            setIsSavingBenchmarks(false);
+        }
+    };
+
     const saveBenchmarkImmediately = async (requirementId: string, company: string, score: number) => {
         const res = await fetch(`/api/projects/${projectId}/qfd/benchmarks`, {
             method: 'POST',
@@ -748,7 +798,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     }
 
     return (
-        <div className="relative space-y-6">
+        <fieldset disabled={isSavingBenchmarks} className="relative min-w-0 space-y-6">
             <datalist id={`qfd-competitor-options-${projectId}`}>
                 {competitorNameOptions.map((option) => (
                     <option key={option} value={option} />
@@ -789,6 +839,16 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            data-worksheet-save
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={saveWorksheet}
+                            disabled={isSavingBenchmarks}
+                            className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {isSavingBenchmarks ? '저장 중...' : '저장'}
+                        </button>
                         <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
                             <input
                                 type="text"
@@ -1186,7 +1246,11 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                                             ...drafts,
                                                             [techBenchmarkKey(tech.id, company)]: event.target.value,
                                                         }))}
-                                                        onBlur={() => commitTechBenchmark(tech, company, label)}
+                                                        onBlur={(event) => {
+                                                            if (!(event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-worksheet-save'))) {
+                                                                commitTechBenchmark(tech, company, label);
+                                                            }
+                                                        }}
                                                         onKeyDown={(event) => {
                                                             if (event.key === 'Enter') event.currentTarget.blur();
                                                         }}
@@ -1209,7 +1273,11 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                                             ...drafts,
                                                             [techFieldKey(tech.id, editableField)]: event.target.value,
                                                         }))}
-                                                        onBlur={() => commitTechField(tech, editableField)}
+                                                        onBlur={(event) => {
+                                                            if (!(event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-worksheet-save'))) {
+                                                                commitTechField(tech, editableField);
+                                                            }
+                                                        }}
                                                         onKeyDown={(event) => {
                                                             if (event.key === 'Enter') event.currentTarget.blur();
                                                         }}
@@ -1344,6 +1412,6 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                     </div>
                 </div>
             )}
-        </div>
+        </fieldset>
     );
 }

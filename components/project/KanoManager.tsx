@@ -510,6 +510,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
 
     // Kano \uc9c8\ubb38 \uc800\uc7a5
     const handleSaveKanoQuestions = async () => {
+        if (isSavingQuestions) return;
         setIsSavingQuestions(true);
         try {
             // \uae30\uc874 \uc694\uad6c\uc0ac\ud56d\uc5d0 Kano \uc9c8\ubb38\uc744 \ud569\uccd9\ud558\uc5ec \uc800\uc7a5
@@ -641,6 +642,14 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                     </button>
                 </div>
             </div>
+
+            {activeTab === 'manage' && (
+                <div className="flex justify-end">
+                    <button type="button" onClick={handleSaveKanoQuestions} disabled={isSavingQuestions || requirements.length === 0} className="btn-primary text-sm disabled:opacity-50">
+                        {isSavingQuestions ? '저장 중...' : '저장'}
+                    </button>
+                </div>
+            )}
 
             {/* ===== 설문 관리 탭 ===== */}
             {activeTab === 'manage' && (
