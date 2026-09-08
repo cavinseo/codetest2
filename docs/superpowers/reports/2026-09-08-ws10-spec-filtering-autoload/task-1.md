@@ -31,7 +31,25 @@ WS-2 가 그 스펙에 적어 둔 적용기술을 기술적 특성에 자동으�
 
 ## VERIFIED BY
 
-**게이트 3종은 이 원격 세션에서 실행하지 못했다.** `npm install` 이 실패한다:
+**게이트 3종은 PR #29 의 CI 가 커밋 `8897649` 에서 실행해 전부 통과했다.** 아래 1~4 는 CI
+결과가 나오기 전 이 세션에서 의존성 없이 한 검증이고, 5 가 정식 게이트다.
+
+### 5. CI (정식 게이트) — 전부 초록
+
+| 체크 | 결과 | 내용 |
+| --- | --- | --- |
+| `Lint / Type check / Test / Build` | success (03:30:46 → 03:32:15) | `npm run lint` → `npx tsc --noEmit` → `npm test` → `npm run build` 4단계 |
+| `CRAP index / Mutation score` | success (03:30:45 → 03:33:54) | 커버리지 + `npm run test:mutation` + `crap-report.mjs --fail-over=30` |
+| Vercel 프리뷰 배포 | Ready | `next build` 가 타입 검사를 포함해 통과 |
+
+CRAP 요약(저장소 전체): 측정 함수 705, 커버리지 100% 함수 572(81%), CRAP > 30 위험 0건,
+15 < CRAP ≤ 30 주의 17건, 최대 CRAP 29.5. 살아남은 뮤턴트는 `lib/invite-code.ts`,
+`lib/import-json-schema.ts` 등 이번 변경과 무관한 기존 항목이고, `lib/tech-tree-utils.ts` 는
+`mutate` 목록에 없어 점수에 들어가지 않는다 — 이번 변경으로 인한 회귀는 없다.
+
+### 이 세션에서 게이트를 돌리지 못한 이유
+
+`npm install` 이 실패한다:
 
 ```sh
 $ curl -sS -i https://registry.npmjs.org/vitest
@@ -41,9 +59,8 @@ Host not in allowlist: registry.npmjs.org. Add this host to your network egress 
 ```
 
 `package.json` 의 `xlsx` 가 가리키는 `cdn.sheetjs.com` 도 같은 이유로 막혀 있다(프록시
-status 의 `recentRelayFailures`). 허용 목록 문제라 재시도·우회는 하지 않았다. 대신 의존성
-없이 할 수 있는 검증을 했고, `npx tsc --noEmit && npx vitest run && npx next lint` 는
-의존성이 설치된 환경에서 감리자가 재실행해야 한다.
+status 의 `recentRelayFailures`). 허용 목록 문제라 재시도·우회는 하지 않았고, 대신 아래
+1~4 로 확인한 뒤 정식 게이트는 CI 에 맡겼다.
 
 1. 순수 함수 — 새 테스트와 같은 단언 16건을 node 로 직접 실행(기존 테스트 2건의 단언 포함):
 
@@ -78,12 +95,12 @@ $ node scripts/check-text-encoding.mjs
 ## DEVIATIONS
 
 - 계획서를 먼저 커밋하지 않고 작업 커밋에 함께 담았다(단일 Task 라 분리 이득이 없다).
-- stryker 는 실행하지 못했다(같은 의존성 문제). `lib/tech-tree-utils.ts` 는
-  `stryker.crap.config.json` 의 `mutate` 목록에 없어 재실행 의무 대상은 아니다.
+- 게이트를 작업 세션이 아니라 PR CI 에서 돌렸다(위 사유). stryker 도 마찬가지로 CI 의
+  CRAP 워크플로가 돌렸다. `lib/tech-tree-utils.ts` 는 `stryker.crap.config.json` 의
+  `mutate` 목록에 없어 재실행 의무 대상은 아니다.
 
 ## RISKS
 
-- **게이트 미실행**이 가장 큰 위험이다. 특히 `npx next lint` 는 전혀 대체 검증하지 못했다.
 - 컴포넌트 렌더링 테스트는 이 저장소에서 만들 수 없다(2026-09-07 계획 Task 2: Vitest 4 의
   oxc 변환기가 `jsx: preserve` 인 `.tsx` 를 못 읽는다). 팝업·datalist 는 화면 검증으로
   이월한다 — 계획서의 감리 체크리스트 3번.
