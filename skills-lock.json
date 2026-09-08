@@ -12,6 +12,12 @@
       "sourceType": "github",
       "skillPath": "supervising-dual-ai-delivery/SKILL.md",
       "computedHash": "27581527088d9c84dbc70a6af92c90e74df797773cfbed848de5fb4a9a05032b"
+    },
+    "eli5": {
+      "source": "dreambigou/eli5",
+      "sourceType": "github",
+      "skillPath": "skills/eli5/SKILL.md",
+      "computedHash": "a671efd44a818aee7dbe4ea2ec634079401c3f578c08cb634c2b6181ced2dbe9"
     }
   }
 }
