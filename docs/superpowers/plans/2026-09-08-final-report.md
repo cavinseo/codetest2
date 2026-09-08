@@ -312,12 +312,12 @@ export function shouldUseLandscape(widthPx: number, heightPx: number, threshold?
 export async function renderFinalReportDocx(model: FinalReportModel): Promise<Blob>;
 ```
 
-- [ ] **Step 1: 스모크 테스트** — `tests/final-report-docx.test.ts` — 결과 앞 2바이트가 `PK`.
-- [ ] **Step 2: 구현** — Kano 렌더러(`lib/kano-survey-docx.ts`)의 `PAGE`/`cell` 관용구를
+- [x] **Step 1: 스모크 테스트** — `tests/final-report-docx.test.ts` — 결과 앞 2바이트가 `PK`.
+- [x] **Step 2: 구현** — Kano 렌더러(`lib/kano-survey-docx.ts`)의 `PAGE`/`cell` 관용구를
   따른다. `dataTable` 블록은 `Table`+`TableRow`로, `image` 블록은
   `ImageRun({ data, transformation: { width, height } })` 로 넣고 `landscape` 면 별도
   section(`PageOrientation.LANDSCAPE`)으로 나눈다. 글꼴은 선례와 같이 `맑은 고딕`.
-- [ ] **Step 3: 커밋** — `feat: 결과보고서 .docx 렌더러`
+- [x] **Step 3: 커밋** — `feat: 결과보고서 .docx 렌더러`
 
 ---
 

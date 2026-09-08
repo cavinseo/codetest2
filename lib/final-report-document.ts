@@ -7,6 +7,8 @@ import { A4_PORTRAIT_BODY, A4_LANDSCAPE_BODY, fitImageToBody, shouldUseLandscape
 
 export interface FinalReportFreeInput {
     productImageDataUrl: string | null;
+    productImageWidthPx: number | null;
+    productImageHeightPx: number | null;
     marketDefinition: string;
     targetCustomer: string;
     finalSpecExplanation: string;
@@ -129,8 +131,11 @@ export function buildFinalReportModel(
     ] });
     if (freeInput.productImageDataUrl) {
         heading('제품/서비스 이미지');
-        // 입력 계약에 사진의 픽셀 크기가 없으므로 본문 안의 고정 영역을 사용한다.
-        blocks.push({ kind: 'image', title: '제품/서비스 이미지', pngDataUrl: freeInput.productImageDataUrl, widthMm: 120, heightMm: 80, landscape: false });
+        // 사진 치수를 얻지 못한 경우에도 기존 입력으로 보고서를 만들 수 있게 한다.
+        const size = freeInput.productImageWidthPx !== null && freeInput.productImageHeightPx !== null
+            ? fitImageToBody(freeInput.productImageWidthPx, freeInput.productImageHeightPx, A4_PORTRAIT_BODY)
+            : { widthMm: 120, heightMm: 80 };
+        blocks.push({ kind: 'image', title: '제품/서비스 이미지', pngDataUrl: freeInput.productImageDataUrl, ...size, landscape: false });
     }
     prose('시장정의', freeInput.marketDefinition);
     prose('목표고객', freeInput.targetCustomer);
@@ -188,4 +193,3 @@ export function buildFinalReportModel(
         })]));
     return { title: 'KS-QFD 결과보고서', fileName: finalReportFileName(overview.projectName), blocks };
 }
-

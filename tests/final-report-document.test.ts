@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { buildFinalReportModel, finalReportFileName, type FinalReportWorksheetData, type FinalReportBlock, type FinalReportFreeInput } from '../lib/final-report-document';
 
 const overview = { projectName: '제품 A', description: '제품 설명', coachName: '코치', generatedAt: '2026-09-09T02:00:00Z' };
-const free: FinalReportFreeInput = { productImageDataUrl: null, marketDefinition: '', targetCustomer: '', finalSpecExplanation: '', improvedProductName: '', improvedProductDescription: '' };
+const free: FinalReportFreeInput = { productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null, marketDefinition: '', targetCustomer: '', finalSpecExplanation: '', improvedProductName: '', improvedProductDescription: '' };
 const data: FinalReportWorksheetData = {
     salesEstimates: [
         { period: 'Y_PLUS_1', customer: '미래 고객', amount: 2345, futureAmount: 999, competitor: '미래 경쟁사' },
@@ -94,7 +94,7 @@ it('leaves nullable cells blank without interpreting target values as improvemen
 });
 
 it('inserts free prose only where supplied and retains capture dimensions and titles', () => {
-    const input = { productImageDataUrl: 'data:image/png;base64,photo', marketDefinition: '시장 설명', targetCustomer: '고객 설명', finalSpecExplanation: '최종 설명', improvedProductName: '새 이름', improvedProductDescription: '새 설명' };
+    const input = { productImageWidthPx: null, productImageHeightPx: null, productImageDataUrl: 'data:image/png;base64,photo', marketDefinition: '시장 설명', targetCustomer: '고객 설명', finalSpecExplanation: '최종 설명', improvedProductName: '새 이름', improvedProductDescription: '새 설명' };
     const images = [
         { worksheetId: 'qfd' as const, title: 'QFD 그림', pngDataUrl: 'qfd-png', widthPx: 1920, heightPx: 960 },
         { worksheetId: 'fitness' as const, title: '적합도 그림', pngDataUrl: 'fitness-png', widthPx: 96, heightPx: 192 },
@@ -127,4 +127,23 @@ it('cleans filenames with the survey stem policy', () => {
     expect(finalReportFileName('')).toBe('결과보고서_프로젝트.docx');
     expect(finalReportFileName(' '.repeat(3))).toBe('결과보고서_프로젝트.docx');
     expect(finalReportFileName('X'.repeat(1000))).toBe('결과보고서_' + 'X'.repeat(60) + '.docx');
+});
+
+it.each([
+    [1920, 960, 170, 85],
+    [960, 1920, 128.5, 257],
+    [96, 192, 25.4, 50.8],
+])('preserves product image aspect ratio for %i by %i pixels', (width, height, widthMm, heightMm) => {
+    const input = { ...free, productImageDataUrl: 'photo', productImageWidthPx: width, productImageHeightPx: height };
+    expect(buildFinalReportModel(overview, data, input, []).blocks).toContainEqual({
+        kind: 'image', title: '제품/서비스 이미지', pngDataUrl: 'photo', landscape: false,
+        widthMm: expect.closeTo(widthMm, 10), heightMm: expect.closeTo(heightMm, 10),
+    });
+});
+
+it.each([[null, null], [960, null], [null, 960]])('uses the product image fallback for dimensions %s, %s', (width, height) => {
+    const input = { ...free, productImageDataUrl: 'photo', productImageWidthPx: width, productImageHeightPx: height };
+    expect(buildFinalReportModel(overview, data, input, []).blocks).toContainEqual({
+        kind: 'image', title: '제품/서비스 이미지', pngDataUrl: 'photo', landscape: false, widthMm: 120, heightMm: 80,
+    });
 });
