@@ -8,6 +8,7 @@ import SpecTable from '@/components/project/SpecTable';
 import RequirementsTable from '@/components/project/RequirementsTable';
 import QFDMatrix from '@/components/project/QFDMatrix';
 import ThemeToggle from '@/components/ThemeToggle';
+import { HEADER_TOAST_SLOT_ID } from '@/components/HeaderToast';
 import KanoManager from '@/components/project/KanoManager';
 import SalesTable from '@/components/project/SalesTable';
 import FitnessWrapper from '@/components/project/FitnessWrapper';
@@ -517,6 +518,11 @@ export default function ProjectDetailPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
+                            {/* 저장·오류 알림이 portal 로 이 자리에 들어온다. 버튼과 같은
+                                flex 흐름이라 가리지 않고 gap 만큼 떨어져 보인다.
+                                display:contents 라 알림이 없을 때는 상자를 만들지 않는다 —
+                                빈 div 를 두면 gap-3 이 그대로 남아 버튼이 늘 밀린다. */}
+                            <div id={HEADER_TOAST_SLOT_ID} className="contents" />
                             <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 팀원 초대
                             </Link>

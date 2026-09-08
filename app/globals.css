@@ -148,6 +148,48 @@ body {
     @apply badge bg-rose-500/15 text-rose-300 border-rose-500/25;
   }
 
+  /* ─── Toast ─── */
+  /* 저장·오류 알림의 색이다. 유틸리티 클래스(bg-emerald-900/90 · text-emerald-200)로
+     주면 라이트 모드의 포괄 규칙 `.light [class*="text-emerald-"]` 이 글자만 어둡게
+     덮어쓰는데 배경은 대상 목록에 없어 어두운 채로 남는다 — 어두운 초록 바탕에
+     어두운 초록 글자가 되어 읽을 수 없었다. 그래서 두 테마의 색을 여기서 직접 못 박는다.
+     대비는 흰 글자 기준 5.5:1, 라이트 모드 6.8:1 이상이다(WCAG AA). */
+  .toast-success {
+    background-color: #047857;
+    border-color: #34d399;
+    color: #ffffff;
+  }
+
+  .toast-error {
+    background-color: #b91c1c;
+    border-color: #f87171;
+    color: #ffffff;
+  }
+
+  .toast-info {
+    background-color: #1d4ed8;
+    border-color: #60a5fa;
+    color: #ffffff;
+  }
+
+  .light .toast-success {
+    background-color: #d1fae5;
+    border-color: #059669;
+    color: #065f46;
+  }
+
+  .light .toast-error {
+    background-color: #fee2e2;
+    border-color: #dc2626;
+    color: #991b1b;
+  }
+
+  .light .toast-info {
+    background-color: #dbeafe;
+    border-color: #2563eb;
+    color: #1e3a8a;
+  }
+
   /* ─── Stat Cards ─── */
   .stat-card {
     @apply card text-center relative overflow-hidden;
