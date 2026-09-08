@@ -159,6 +159,11 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const [selectedCoreByGroup, setSelectedCoreByGroup] = useState<Record<number, string>>({});
     const [collapsedTechnicalGroups, setCollapsedTechnicalGroups] = useState<Record<number, boolean>>({});
     const [removingCompetitor, setRemovingCompetitor] = useState<string | null>(null);
+    // 빈 세부기능 열은 기본 15칸이다. 그 칸을 다 쓴 뒤에도 열을 더 만들 수 있어야 해서
+    // 사용자가 "+ 세부기능"으로 늘린 만큼을 따로 센다.
+    const [extraTechColumnCount, setExtraTechColumnCount] = useState(0);
+    const [deletingTech, setDeletingTech] = useState<DisplayTechnical | null>(null);
+    const [isDeletingTech, setIsDeletingTech] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [dataError, setDataError] = useState<string | null>(null);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -312,8 +317,43 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
             return;
         }
 
+        // 늘려 둔 빈 칸에 세부기능을 채우면 그 칸은 실제 열이 된다. 카운트를 줄이지 않으면
+        // 채울 때마다 빈 칸이 하나씩 남아 표가 계속 길어진다.
+        if (tech.isPlaceholder) setExtraTechColumnCount((count) => Math.max(0, count - 1));
+
         await loadData();
         showToast('QFD 기술특성을 저장했습니다.');
+    };
+
+    const addTechnicalColumn = () => {
+        setExtraTechColumnCount((count) => count + 1);
+        // 접어 둔 그룹 뒤에 새 칸이 생기면 보이지 않아 추가한 줄 모른다.
+        expandAllTechnicalGroups();
+    };
+
+    const handleDeleteTechnical = async () => {
+        if (!deletingTech) return;
+
+        setIsDeletingTech(true);
+        try {
+            const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: deletingTech.id }),
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => null);
+                showToast(errorData?.error || '세부기능을 삭제하지 못했습니다.', 'error');
+                return;
+            }
+
+            setDeletingTech(null);
+            await loadData();
+            showToast('세부기능을 삭제했습니다.');
+        } finally {
+            setIsDeletingTech(false);
+        }
     };
 
     const setBenchmark = (requirementId: string, company: string, score: number) => {
@@ -481,14 +521,19 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
 
     const displayTechnicalCols = useMemo<DisplayTechnical[]>(() => [
         ...technicalChars.map((tech) => ({ ...tech, isPlaceholder: false })),
-        ...Array.from({ length: Math.max(0, MIN_WORKSHEET_TECH_COLUMNS - technicalChars.length) }, (_, index) => ({
-            id: `placeholder-${index}`,
-            name: '',
-            unit: '',
-            targetValue: '',
-            isPlaceholder: true,
-        })),
-    ], [technicalChars]);
+        // 워크시트 모양을 유지하는 기본 빈 칸에, 사용자가 늘린 칸을 더한다.
+        // 늘린 칸에 세부기능을 고르면 실제 열이 되므로 그만큼 빈 칸을 도로 줄인다.
+        ...Array.from(
+            { length: Math.max(0, MIN_WORKSHEET_TECH_COLUMNS - technicalChars.length) + extraTechColumnCount },
+            (_, index) => ({
+                id: `placeholder-${index}`,
+                name: '',
+                unit: '',
+                targetValue: '',
+                isPlaceholder: true,
+            })
+        ),
+    ], [technicalChars, extraTechColumnCount]);
 
     const totalWeight = reqAnalysis.reduce((sum, row) => sum + (row.weight || 0), 0);
     const totalAbsoluteImportance = reqAnalysis.reduce((sum, row) => sum + (row.absoluteImportance || 0), 0);
@@ -652,6 +697,9 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         >
                             {isSavingBenchmarks ? '저장 중...' : `비교 점수 저장${pendingBenchmarkCount > 0 ? ` (${pendingBenchmarkCount})` : ''}`}
                         </button>
+                        <button onClick={addTechnicalColumn} className="btn-secondary text-sm" title="빈 세부기능 열을 하나 더 만든다">
+                            + 세부기능
+                        </button>
                         <button onClick={() => setShowAddTechModal(true)} className="btn-secondary text-sm">
                             + 기술특성
                         </button>
@@ -684,6 +732,31 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                     <p className="text-sm font-semibold text-rose-100">QFD 데이터를 불러오지 못했습니다.</p>
                     <p className="mt-1 text-sm text-rose-200/70">{dataError}</p>
                     <button onClick={loadData} className="btn-secondary mt-4 text-sm">다시 시도</button>
+                </section>
+            )}
+
+            {deletingTech && (
+                <section className="rounded-xl border border-rose-500/25 bg-rose-500/[0.04] p-4 animate-fade-in">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <p className="text-sm font-semibold text-white">
+                                세부기능 &apos;{deletingTech.name || '(이름 없음)'}&apos; 열을 삭제할까요?
+                            </p>
+                            <p className="mt-0.5 text-xs text-rose-200/70">
+                                이 열에 입력한 관계 강도와 상관관계도 함께 지워집니다. 되돌릴 수 없습니다.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setDeletingTech(null)} className="btn-secondary text-sm">취소</button>
+                            <button
+                                onClick={handleDeleteTechnical}
+                                disabled={isDeletingTech}
+                                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {isDeletingTech ? '삭제 중...' : '삭제'}
+                            </button>
+                        </div>
+                    </div>
                 </section>
             )}
 
@@ -786,7 +859,20 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                 {visibleTechnicalColumns.map(({ tech, index }) => (
                                     <th key={tech.id} className="h-[104px] border border-white/[0.08] bg-indigo-500/10 p-1 text-center align-bottom font-semibold">
                                         <div className="flex h-full flex-col justify-end gap-1">
-                                            <span className="text-[10px] font-semibold text-indigo-200/70">세부기능</span>
+                                            <div className="flex items-center justify-center gap-1">
+                                                <span className="text-[10px] font-semibold text-indigo-200/70">세부기능</span>
+                                                {!tech.isPlaceholder && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setDeletingTech(tech)}
+                                                        className="inline-flex h-4 w-4 items-center justify-center rounded border border-rose-200/20 bg-white/[0.08] text-[11px] font-bold leading-none text-rose-100 transition-colors hover:bg-rose-500/30"
+                                                        title={`${tech.name || '세부기능'} 열 삭제`}
+                                                        aria-label={`${tech.name || '세부기능'} 열 삭제`}
+                                                    >
+                                                        ×
+                                                    </button>
+                                                )}
+                                            </div>
                                             <select
                                                 value={tech.isPlaceholder ? '' : tech.name}
                                                 onChange={(event) => setTechnicalSubFunction(tech, event.target.value)}
