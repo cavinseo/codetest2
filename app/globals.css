@@ -148,6 +148,35 @@ body {
     @apply badge bg-rose-500/15 text-rose-300 border-rose-500/25;
   }
 
+  /* ─── Toast ─── */
+  /* 저장·오류 알림의 색이다. 유틸리티 클래스(bg-emerald-900/90 · text-emerald-200)로
+     주면 라이트 모드의 포괄 규칙 `.light [class*="text-emerald-"]` 이 글자만 어둡게
+     덮어쓰는데 배경은 대상 목록에 없어 어두운 채로 남는다 — 어두운 초록 바탕에
+     어두운 초록 글자가 되어 읽을 수 없었다. 그래서 색을 여기서 직접 못 박는다.
+
+     성공은 녹색 바탕, 오류는 붉은 바탕, 둘 다 흰 글씨로 테마와 무관하게 고정한다.
+     라이트 모드에서만 연한 바탕에 진한 글씨로 바꾸던 분기는 없앴다 — 같은 알림이
+     테마에 따라 다른 모양으로 보이면 무엇이 성공이고 무엇이 경고인지 눈이 다시
+     익혀야 한다. 흰 글자 대비는 녹색 5.5:1, 붉은색 6.5:1 로 두 배경 모두 WCAG AA 를
+     넘는다. */
+  .toast-success {
+    background-color: #047857;
+    border-color: #34d399;
+    color: #ffffff;
+  }
+
+  .toast-error {
+    background-color: #b91c1c;
+    border-color: #f87171;
+    color: #ffffff;
+  }
+
+  .toast-info {
+    background-color: #1d4ed8;
+    border-color: #60a5fa;
+    color: #ffffff;
+  }
+
   /* ─── Stat Cards ─── */
   .stat-card {
     @apply card text-center relative overflow-hidden;

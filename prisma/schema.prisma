@@ -103,6 +103,7 @@ model Project {
   specFunctions            SpecFunction[]
   techCorrelations         TechCorrelation[]
   technicalCharacteristics TechnicalCharacteristic[]
+  technicalBenchmarks      TechnicalBenchmark[]
   fitnessMatrix            FitnessMatrix?
   techTreeEntries          TechTreeEntry[]
   improvementItems         ImprovementItem[]
@@ -224,18 +225,38 @@ model CustomerRequirement {
 }
 
 model TechnicalCharacteristic {
-  id            String            @id @default(cuid())
+  id            String                @id @default(cuid())
   projectId     String
   name          String
   unit          String?
   targetValue   String?
   qfdMatrices   QFDMatrix[]
-  correlations2 TechCorrelation[] @relation("Tech2")
-  correlations1 TechCorrelation[] @relation("Tech1")
-  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  correlations2 TechCorrelation[]     @relation("Tech2")
+  correlations1 TechCorrelation[]     @relation("Tech1")
+  benchmarks    TechnicalBenchmark[]
+  project       Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@map("technical_characteristics")
+}
+
+/// WS-9 표 아래 「자사」·경쟁사 줄에 적는 기술특성별 실측값이다.
+///
+/// Benchmark 와 헷갈리기 쉬운데 축이 다르다 — Benchmark 는 *고객요구사항* × 회사의
+/// 5점 만족도(오른쪽 「중요도 및 경쟁 비교」 블록)이고, 이쪽은 *기술특성* × 회사의
+/// 스펙값이다. 단위가 열마다 다르므로(ms·%·건) 점수가 아니라 문자열로 둔다.
+model TechnicalBenchmark {
+  id              String                  @id @default(cuid())
+  projectId       String
+  technicalCharId String
+  company         String
+  value           String
+  techChar        TechnicalCharacteristic @relation(fields: [technicalCharId], references: [id], onDelete: Cascade)
+  project         Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, technicalCharId, company])
+  @@index([projectId])
+  @@map("technical_benchmarks")
 }
 
 model KanoSurveyInvitation {

@@ -28,6 +28,7 @@
         "lib/kano-offline-form.ts",
         "lib/kano-offline-response.ts",
         "lib/feature-flags.ts",
+        "lib/technical-benchmark-guards.ts",
         "lib/timko-point-clusters.ts"
     ],
     "ignorePatterns": [

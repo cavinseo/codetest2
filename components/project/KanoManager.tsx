@@ -7,6 +7,7 @@ import Kano2DChart from '@/components/Kano2DChart';
 import CategoryPieChart from '@/components/CategoryPieChart';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import KanoRespondentTable from '@/components/project/KanoRespondentTable';
+import HeaderToast from '@/components/HeaderToast';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
 import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
 import {
@@ -600,27 +601,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     return (
         <div className="space-y-6 relative">
             {/* 인라인 토스트 */}
-            {toast && (
-                <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border animate-fade-in transition-all ${toast.type === 'success' ? 'bg-emerald-900/90 border-emerald-500/40 text-emerald-200'
-                        : toast.type === 'error' ? 'bg-red-900/90 border-red-500/40 text-red-200'
-                            : 'bg-blue-900/90 border-blue-500/40 text-blue-200'
-                    }`}>
-                    {toast.type === 'success' ? (
-                        <svg className="w-5 h-5 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                    ) : toast.type === 'error' ? (
-                        <svg className="w-5 h-5 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    ) : (
-                        <svg className="w-5 h-5 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                    )}
-                    <span className="text-sm font-medium">{toast.message}</span>
-                </div>
-            )}
+            {toast && <HeaderToast message={toast.message} type={toast.type} />}
 
             {/* 탭 네비게이션 */}
             <div className="flex items-center justify-between">

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import HeaderToast from '@/components/HeaderToast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
@@ -758,21 +759,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     return (
         <div className="space-y-6 relative">
             {/* 인라인 토스트 */}
-            {toast && (
-                <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border animate-fade-in ${toast.type === 'success' ? 'bg-emerald-900/90 border-emerald-500/40 text-emerald-200' :
-                        toast.type === 'error' ? 'bg-red-900/90 border-red-500/40 text-red-200' :
-                            'bg-blue-900/90 border-blue-500/40 text-blue-200'
-                    }`}>
-                    <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={
-                            toast.type === 'success' ? 'M5 13l4 4L19 7' :
-                                toast.type === 'error' ? 'M6 18L18 6M6 6l12 12' :
-                                    'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
-                        } />
-                    </svg>
-                    <span className="text-sm font-medium">{toast.message}</span>
-                </div>
-            )}
+            {toast && <HeaderToast message={toast.message} type={toast.type} />}
             {pendingExcelFile && (
                 <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-4">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

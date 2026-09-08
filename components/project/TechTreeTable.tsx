@@ -2,6 +2,7 @@
 // WS-10 기능기술체계도 표를 렌더링하는 클라이언트 컴포넌트입니다.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import HeaderToast from '@/components/HeaderToast';
 import { getTopRankedQfdRequirements, type RankedTechTreeRequirement } from '@/lib/tech-tree-qfd';
 import { buildBlankTechTreeRows, buildTechTreeSpecOptions, applyTechTreeSpecSelection, findTechTreeSpecOptions, type TechTreeSpecOption } from '@/lib/tech-tree-utils';
 
@@ -326,17 +327,7 @@ export default function TechTreeTable({ projectId }: Props) {
 
     return (
         <div className="relative space-y-4">
-            {toast && (
-                <div className={`fixed right-6 bottom-6 z-[100] flex items-center gap-3 rounded-xl border px-5 py-3 shadow-2xl animate-fade-in ${
-                    toast.type === 'error'
-                        ? 'border-rose-500/40 bg-rose-900/90 text-rose-200'
-                        : toast.type === 'info'
-                            ? 'border-blue-500/40 bg-blue-900/90 text-blue-200'
-                            : 'border-emerald-500/40 bg-emerald-900/90 text-emerald-200'
-                }`}>
-                    <span className="text-sm font-medium">{toast.message}</span>
-                </div>
-            )}
+            {toast && <HeaderToast message={toast.message} type={toast.type} />}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>

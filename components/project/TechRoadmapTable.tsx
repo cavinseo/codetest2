@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { getImprovementCustomerNeeds, mergeRoadmapWithCustomerNeeds, type RoadmapLinkRow } from '@/lib/worksheet-links';
+import HeaderToast from '@/components/HeaderToast';
 
 type FutureCustomerRow = RoadmapLinkRow;
 
@@ -119,11 +120,7 @@ export default function TechRoadmapTable({ projectId }: Props) {
 
     return (
         <div className="space-y-4 relative">
-            {toast && (
-                <div className="fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border bg-emerald-900/90 border-emerald-500/40 text-emerald-200 animate-fade-in">
-                    <span className="text-sm font-medium">{toast}</span>
-                </div>
-            )}
+            {toast && <HeaderToast message={toast} />}
 
             <div className="flex items-center justify-between">
                 <div>
