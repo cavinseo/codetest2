@@ -75,9 +75,10 @@
 | Ⅴ | 자금조달계획표(3년) | DB | `FundingSource`(WS-17) |
 
 **필요 GET 엔드포인트 정리 (`/export` 에 없는 것들):**
-`sales`(WS-1) · `tech-tree`(WS-10) · `improvements`(WS-11) · `target-spec`(WS-12) ·
-`tech-roadmap`(WS-13) · `assets`(WS-15) · `funding-plan`(WS-16) · `funding-source`(WS-17) ·
-`mentors`(코치명, soft-fail)
+`sales`(WS-1, `{rows}`) · `tech-tree`(WS-10, **`{entries}`**) · `improvements`(WS-11, `{items}`) ·
+`target-spec`(WS-12, `{rows}`) · `tech-roadmap`(WS-13, `{rows}`) · `assets`(WS-15, `{assets}`) ·
+`funding`(WS-16+17 **한 라우트**, `{plans, sources}`) · `kano/analysis`(`{requirements}`) ·
+`mentors`(코치명, `{mentors}`, soft-fail)
 + 기존 `overview`, `export`(스펙·속성·요구사항·기술특성·QFD·Kano), `qfd/analysis`.
 전부 기존 라우트다 — **신규 서버 라우트 없음.**
 
@@ -186,25 +187,53 @@ export interface FinalReportOverviewInput {
 
 // Ⅰ~Ⅴ 의 DB 표 절 14개를 각자의 행 배열로 받는다. 필드명은 각 워크시트 API 응답 그대로
 // 받고(변환은 이 파일 안에서), Task 0 표의 항목 순서를 따른다.
+//
+// ※ 아래 필드명은 감리자가 라우트·스키마를 직접 읽고 확정한 것이다(2026-09-08).
+//   추정이 아니므로 실행 AI 는 재조사하지 말고 이대로 쓴다.
 export interface FinalReportWorksheetData {
-    salesEstimates: Array<{ customer: string | null; amount: number; futureAmount: number; competitor: string | null }>;
-    specFunctions: Array<{ level: string; name: string; technology: string | null }>;
+    // GET /sales → { rows }. 현재/목표 매출은 amount·futureAmount 가 아니라
+    // period 로 갈린다('Y' = 기준연도, 'Y_PLUS_1' = 향후 1년). 표 두 개는 period 로 나눈다.
+    salesEstimates: Array<{ period: string; customer: string | null; amount: number; futureAmount: number; competitor: string | null }>;
+    // GET /export → specFunctions. level 은 'CORE' | 'SUB' | 'DETAIL', parentId 로 트리를 이룬다.
+    specFunctions: Array<{ id: string; level: string; parentId: string | null; name: string; technology: string | null }>;
+    // GET /export → productAttributes
     productAttributes: Array<{ productName: string | null; customerName: string | null; marketSegment: string | null; customerNeed: string | null; benefit: string | null; attribute: string | null; techCapability: string | null }>;
-    requirements: Array<{ category: string; subcategory: string | null; requirement: string }>;
-    kanoAggregation: Array<{ item: string; satisfactionCoef: number; dissatisfactionCoef: number; quality: string; weight: number }>;
-    competitiveAssessment: Array<{ item: string; weight: number; weightPercent: number; self: number; competitor: number; planQuality: number; improvementRate: number; absoluteImportance: number; qualityImportancePercent: number; rank: number | null }>;
-    improvementNeeds: Array<{ customerNeed: string; improvementRate: string; devProportion: string }>;
-    techTree: Array<{ customerVoice: string; coreSpec: string; subSpec: string; techCharacteristic: string }>;
-    improvementFeatures: Array<{ customerNeed: string; addedFeature: string; performanceImprovement: string }>;
-    targetSpecs: Array<{ category: string | null; subCategory: string | null; specItem: string | null; unit: string | null; targetValue: string | null; note: string | null }>;
-    // WS-13 은 Prisma 필드명이 옛 로드맵 잔재라 화면 열 의미를 주석으로 못박는다.
-    improvementDirections: Array<{
-        category: string;      // 개선 방향(차별화)
-        techItem: string;      // 개선기능 및 성능향상
-        currentLevel: string;  // 구현가능성
-        targetLevel: string;   // 목표 고객
+    // GET /export → customerRequirements
+    requirements: Array<{ id: string; category: string; subcategory: string | null; requirement: string }>;
+    // GET /kano/analysis → { requirements }. 행에 요구사항 '문구'가 없고 requirementId 만
+    // 있다 — 위 requirements 와 id 로 조인해야 항목명이 나온다.
+    // 양식 8쪽 열 대응: better=만족계수, worse=불만족계수, timkoCategory=품질, kanoWeight=가중치
+    kanoAggregation: Array<{ requirementId: string; responseCount: number; better: number; worse: number; kanoWeight: number; autoKanoWeight: number; timkoCategory: string; quadrant: string }>;
+    // GET /qfd/analysis → { requirements }. 타입 정본은 lib/qfd-worksheet.ts 의
+    // QfdRequirementWorksheetRow. 자사/경쟁사는 self/competitor 가 아니라 selfScore/competitorScore 다.
+    competitiveAssessment: Array<{ requirementId: string; requirement: string; weight: number; weightPercent: number; selfScore: number; competitorScore: number; planQuality: number; improvementRate: number; absoluteImportance: number; qualityImportancePercent: number; rank: number | null }>;
+    // GET /improvements → { items }. ImprovementItem 은 같은 3개 컬럼을 type 에 따라
+    // 다른 뜻으로 재사용한다 — 아래 두 배열은 호출자가 type 으로 갈라서 넘긴다.
+    improvementNeeds: Array<{         // type='need'
+        content: string | null;         // 고객니즈
+        improvementRate: string | null; // 경쟁사대비 수준향상율
+        devProportion: string | null;   // 개발향상비중
     }>;
-    assets: Array<{ type: 'CORE' | 'COMPLEMENTARY'; category: string | null; content: string | null }>;
+    improvementFeatures: Array<{      // type='feature' — 같은 컬럼, 다른 뜻
+        content: string | null;         // 개선포인트 우선순위(고객니즈)
+        improvementRate: string | null; // 추가 기능
+        devProportion: string | null;   // 성능향상
+    }>;
+    // GET /tech-tree → { entries } — 이 라우트만 배열 키가 rows 가 아니라 entries 다.
+    techTree: Array<{ customerVoice: string | null; coreSpec: string | null; subSpec: string | null; techCharacteristic: string | null }>;
+    // GET /target-spec → { rows, asIsRows, suggestions, ... } — 보고서는 rows 만 쓴다.
+    targetSpecs: Array<{ category: string | null; subCategory: string | null; specItem: string | null; unit: string | null; targetValue: string | null; note: string | null }>;
+    // GET /tech-roadmap → { rows }. Prisma 필드명이 옛 로드맵 잔재라 화면 열 의미를 못박는다.
+    improvementDirections: Array<{
+        category: string | null;      // 개선 방향(차별화)
+        techItem: string | null;      // 개선기능 및 성능향상
+        currentLevel: string | null;  // 구현가능성
+        targetLevel: string | null;   // 목표 고객
+    }>;
+    // GET /assets → { assets }. category/content 의 뜻이 type 에 따라 다르다
+    // (CORE: content=핵심자산 / COMPLEMENTARY: category=필요항목, content=해결방안).
+    assets: Array<{ type: string; category: string | null; content: string | null }>;
+    // GET /funding → { plans, sources } — 두 표가 한 라우트에서 함께 온다.
     fundingPlans: Array<{ category: string | null; item: string | null; year1: number; year2: number | null; year3: number | null }>;
     fundingSources: Array<{ category: string | null; year1: string | null; year2: string | null; year3: string | null }>;
 }
@@ -248,9 +277,14 @@ export function fitImageToBody(widthPx: number, heightPx: number, body: { widthM
 export function shouldUseLandscape(widthPx: number, heightPx: number, threshold?: number): boolean;
 ```
 
-- [ ] **Step 1: 각 API 응답 필드를 확정한다** — 특히 `kanoAggregation`·`competitiveAssessment`
-  는 이 계획서가 필드명을 추정만 했다. `qfd/analysis`, Kano 분석 라우트의 실제 응답을
-  코드에서 직접 읽고 위 인터페이스를 맞춘 뒤 시작한다.
+- [x] **Step 1: 각 API 응답 필드를 확정한다** — **감리자가 완료했다(2026-09-08).** 위
+  인터페이스의 필드명·주석이 그 결과다. 실행 AI 는 재조사하지 않는다. 확정 과정에서
+  초안의 추정 4개가 틀린 것으로 드러났다: ① 매출 현재/목표는 `amount`/`futureAmount` 가
+  아니라 `period`('Y'/'Y_PLUS_1') 로 갈린다 ② QFD 자사·경쟁사는 `selfScore`/`competitorScore`
+  ③ `ImprovementItem` 에는 `customerNeed`/`addedFeature` 필드가 없고 `content`/
+  `improvementRate`/`devProportion` 을 `type` 에 따라 다른 뜻으로 재사용한다 ④ 자금계획은
+  `/funding-plan`+`/funding-source` 두 라우트가 아니라 `/funding` 하나가
+  `{ plans, sources }` 를 함께 준다.
 - [ ] **Step 2: 실패하는 테스트를 쓴다** — `tests/final-report-document.test.ts`,
   `tests/report-image-fit.test.ts`
   - 14개 DB 절 각각 최소 1개 표본 행으로 `dataTable`/`keyValueTable` 블록이 나오는지
@@ -351,6 +385,15 @@ export async function captureWorksheetNode(node: HTMLElement, options?: { pixelR
   문제없다고 본다.
 - **빈 데이터**: 워크시트를 안 채운 프로젝트는 표가 비거나 "입력된 데이터가 없습니다"만
   나온다 — 계획대로다(위 리스크 아님, 의도한 동작).
+- **`GET /funding` 은 읽기가 아니라 쓰기다**: 행이 하나도 없으면 기본 7행/6행을 실제로
+  `createMany` 한다(`app/api/projects/[id]/funding/route.ts:40-49`). WS-16 을 한 번도
+  안 연 프로젝트에서 보고서 화면을 열면 그 기본행이 DB 에 생긴다. WS-16 화면을 열었을
+  때와 똑같은 결과라 데이터 손상은 아니므로 **그대로 둔다**(피하려면 라우트에 읽기전용
+  플래그를 다는 수정이 필요한데, 그건 "신규/수정 서버 라우트 없음" 계약을 깬다).
+  감리 실화면 검증 때 이 부수효과를 확인 항목에 넣는다.
+- **`GET /mentors` 응답에 이메일이 들어 있다**(`user.email`). CLAUDE.md 의 "이메일을
+  로그·응답 본문에 남기지 않는다" 규칙 때문에 보고서 모델은 `user.name` 만 받고 이메일은
+  타입에서부터 제외한다 — 감리 1순위 표본이다.
 - **FREE 입력 유실**: DB 에 저장하지 않으므로 생성 버튼을 누르기 전 새로고침하면 입력이
   날아간다. 이번 범위에서는 감수한다(3번 결정) — 필요해지면 로컬스토리지 임시 저장을
   별도로 추가할 수 있다.
