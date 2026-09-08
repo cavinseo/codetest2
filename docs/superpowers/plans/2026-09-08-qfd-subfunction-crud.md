@@ -114,8 +114,8 @@ DB 오류 시 500 이고 원인 문자열이 응답에 없음.
 |---|---|---|
 | 측정단위 | `TechnicalCharacteristic.unit` | 입력 가능하게 함 |
 | 설계 목표치 | `TechnicalCharacteristic.targetValue` | 입력 가능하게 함 |
-| 자사 | **없음** | 범위 밖 — 아래 참조 |
-| 경쟁사 | **없음** | 범위 밖 — 아래 참조 |
+| 자사 | **없음** → 새 모델 | Task 3 에서 입력 가능하게 함 |
+| 경쟁사 | **없음** → 새 모델 | Task 3 에서 입력 가능하게 함 |
 
 측정단위·설계 목표치는 값을 담을 열이 이미 있고 PATCH 라우트도 이 둘을 받는다.
 화면(`components/project/QFDMatrix.tsx` tfoot)이 읽기 전용 텍스트로만 그려서
@@ -138,3 +138,38 @@ DB 오류 시 500 이고 원인 문자열이 응답에 없음.
 - **자사·경쟁사 줄을 입력 가능하게 하려면** `TechnicalBenchmark`(projectId,
   technicalCharId, company, value) 같은 새 모델과 마이그레이션이 필요하다.
   스키마·라우트·화면은 준비할 수 있으나 **마이그레이션 적용은 사용자 몫**이다.
+
+---
+
+### Task 3: 자사·경쟁사 줄도 입력 가능하게 한다
+
+사용자가 같은 요구를 다시 냈다 — 네 칸 모두 입력되어야 한다. Task 2 에서 스키마
+제약을 이유로 미뤘던 두 줄을 새 모델을 만들어 채운다.
+
+**왜 새 테이블인가:** 기존 `Benchmark` 는 `@@unique([projectId, requirementId, company])`
+로 *요구사항* × 회사의 5점 만족도다. 여기서 필요한 것은 *기술특성* × 회사의 스펙값
+(단위가 열마다 달라 문자열)이다. 축이 달라 재사용하면 두 의미가 한 테이블에 섞인다.
+
+**마이그레이션 취급:** 스키마와 `migration.sql` 은 커밋하되 **적용은 하지 않는다**
+(CLAUDE.md 원격 실DB 제약). 적용 전에도 화면이 죽지 않도록 두 가지를 넣었다.
+- GET 이 "테이블 없음"(P2021·42P01)만 골라 빈 목록 + `migrationPending: true` 로 답한다.
+- 화면의 `loadData` 는 이 응답을 실패 판정에서 제외한다 — 이 줄 하나 때문에 QFD 표
+  전체가 안 열리면 손해가 더 크다.
+- 저장 시도는 503 과 함께 "저장소가 아직 준비되지 않았습니다"를 돌려준다(조용히
+  성공한 척하지 않는다).
+
+- [x] **Step 1: `TechnicalBenchmark` 모델과 마이그레이션 SQL 을 만든다**
+- [x] **Step 2: `technical-benchmarks` 라우트(GET·POST)를 만든다** — 소속 확인 404,
+  빈 값은 삭제로 다룬다(빈 문자열 행을 남기면 "값 없음" 판정이 두 갈래가 된다)
+- [x] **Step 3: 판정을 순수 모듈로 뺀다** — `lib/technical-benchmark-guards.ts`.
+  "아무 오류나 빈 목록으로 삼키는" 회귀를 막으려면 삼켜도 되는 조건이 한곳에 보여야
+  한다. stryker `mutate` 목록에 등록했다.
+- [x] **Step 4: 자사·경쟁사 칸을 입력으로 바꾼다** — 측정단위와 같은 초안·blur 방식
+- [ ] **Step 5: 게이트 + 뮤테이션 100%** — 이 세션에서는 실행 불가. CI 로 확인한다.
+
+## Task 3 계획 밖 (사람이 하는 일)
+
+- **마이그레이션 적용** — `npx prisma migrate deploy` 를 원격 실DB 에 실행하는 것은
+  사용자 몫이다. 적용 전에는 자사·경쟁사 칸이 비어 보이고 저장 시 503 이 뜬다.
+- **뮤테이션 점수 확인** — `npx stryker run stryker.crap.config.json --mutate lib/technical-benchmark-guards.ts`
+  가 100% 인지 감리자가 확인해야 한다(이 세션에서 실행 불가).
