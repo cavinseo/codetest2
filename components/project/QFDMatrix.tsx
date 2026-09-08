@@ -72,16 +72,29 @@ interface Benchmark {
     score: number;
 }
 
+/** 기술특성 × 회사의 스펙 실측값. 위 Benchmark(요구사항 × 회사의 5점)와 축이 다르다. */
+interface TechnicalBenchmark {
+    technicalCharId: string;
+    company: string;
+    value: string;
+}
+
 interface QFDMatrixProps {
     projectId: string;
 }
 
 type DisplayTechnical = TechnicalChar & { isPlaceholder?: boolean };
+/** 표 아래쪽에서 직접 고쳐 쓰는 기술특성 칸. 둘 다 TechnicalCharacteristic 의 열이다. */
+type TechnicalTextField = 'unit' | 'targetValue';
 type ToastType = 'success' | 'error';
 type VisibleTechnicalColumn = { tech: DisplayTechnical; index: number };
 type PendingBenchmarkScores = Record<string, number>;
 
 const SCORE_OPTIONS = [0, 1, 2, 3, 4, 5];
+const TECHNICAL_FIELD_LABELS: Record<TechnicalTextField, string> = {
+    unit: '측정단위',
+    targetValue: '설계 목표치',
+};
 const MIN_WORKSHEET_TECH_COLUMNS = 15;
 const SELF_COMPANY = 'self';
 const DEFAULT_COMPETITOR_COMPANY = 'competitor';
@@ -147,6 +160,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const [reqAnalysis, setReqAnalysis] = useState<RequirementAnalysis[]>([]);
     const [techAnalysis, setTechAnalysis] = useState<TechnicalAnalysis[]>([]);
     const [benchmarksData, setBenchmarksData] = useState<Benchmark[]>([]);
+    const [technicalBenchmarks, setTechnicalBenchmarks] = useState<TechnicalBenchmark[]>([]);
     const [pendingBenchmarks, setPendingBenchmarks] = useState<PendingBenchmarkScores>({});
     const [isSavingBenchmarks, setIsSavingBenchmarks] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -162,6 +176,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     // 빈 세부기능 열은 기본 15칸이다. 그 칸을 다 쓴 뒤에도 열을 더 만들 수 있어야 해서
     // 사용자가 "+ 세부기능"으로 늘린 만큼을 따로 센다.
     const [extraTechColumnCount, setExtraTechColumnCount] = useState(0);
+    const [techFieldDrafts, setTechFieldDrafts] = useState<Record<string, string>>({});
     const [deletingTech, setDeletingTech] = useState<DisplayTechnical | null>(null);
     const [isDeletingTech, setIsDeletingTech] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -209,13 +224,16 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         setIsLoading(true);
         setDataError(null);
         try {
-            const [requirementsRes, technicalRes, relationshipsRes, analysisRes, benchmarksRes, specRes] = await Promise.all([
+            const [requirementsRes, technicalRes, relationshipsRes, analysisRes, benchmarksRes, specRes, techBenchmarksRes] = await Promise.all([
                 fetch(`/api/projects/${projectId}/requirements`),
                 fetch(`/api/projects/${projectId}/qfd/technical`),
                 fetch(`/api/projects/${projectId}/qfd/relationships`),
                 fetch(`/api/projects/${projectId}/qfd/analysis`),
                 fetch(`/api/projects/${projectId}/qfd/benchmarks`),
                 fetch(`/api/projects/${projectId}/spec`),
+                // 아래 실패 판정에서 일부러 뺀다 — 이 줄 하나 때문에 QFD 표 전체가
+                // 열리지 않으면 손해가 더 크다. 값이 없으면 그 줄만 비어 보인다.
+                fetch(`/api/projects/${projectId}/qfd/technical-benchmarks`).catch(() => null),
             ]);
 
             const failedResponse = [requirementsRes, technicalRes, relationshipsRes, analysisRes, benchmarksRes, specRes].find((response) => !response.ok);
@@ -248,6 +266,10 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
             if (specRes.ok) {
                 const data = await specRes.json();
                 setSpecFunctions(data.specFunctions || []);
+            }
+            if (techBenchmarksRes?.ok) {
+                const data = await techBenchmarksRes.json();
+                setTechnicalBenchmarks(data.technicalBenchmarks || []);
             }
         } catch (error) {
             console.error(error);
@@ -329,6 +351,97 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         setExtraTechColumnCount((count) => count + 1);
         // 접어 둔 그룹 뒤에 새 칸이 생기면 보이지 않아 추가한 줄 모른다.
         expandAllTechnicalGroups();
+    };
+
+    // 측정단위·설계 목표치는 입력 중에는 초안으로 들고 있다가 포커스를 뗄 때 한 번만
+    // 저장한다. 글자마다 PATCH 를 보내면 요청이 타자 수만큼 늘고 순서가 뒤집힐 수 있다.
+    const techFieldKey = (techId: string, field: TechnicalTextField) => `${techId}:${field}`;
+
+    const getTechFieldValue = (tech: DisplayTechnical, field: TechnicalTextField) => {
+        const key = techFieldKey(tech.id, field);
+        if (key in techFieldDrafts) return techFieldDrafts[key];
+        return (field === 'unit' ? tech.unit : tech.targetValue) || '';
+    };
+
+    const commitTechField = async (tech: DisplayTechnical, field: TechnicalTextField) => {
+        const key = techFieldKey(tech.id, field);
+        if (!(key in techFieldDrafts)) return;
+
+        const nextValue = techFieldDrafts[key].trim();
+        const currentValue = ((field === 'unit' ? tech.unit : tech.targetValue) || '').trim();
+
+        // 초안을 먼저 지운다. 남겨 두면 저장 뒤 서버가 돌려준 값 대신 초안이 계속 보인다.
+        setTechFieldDrafts((drafts) => {
+            const next = { ...drafts };
+            delete next[key];
+            return next;
+        });
+
+        if (nextValue === currentValue) return;
+
+        const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: tech.id,
+                name: tech.name,
+                unit: field === 'unit' ? nextValue : (tech.unit || ''),
+                targetValue: field === 'targetValue' ? nextValue : (tech.targetValue || ''),
+            }),
+        });
+
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => null);
+            showToast(errorData?.error || `${TECHNICAL_FIELD_LABELS[field]}을(를) 저장하지 못했습니다.`, 'error');
+            return;
+        }
+
+        await loadData();
+        showToast(`${TECHNICAL_FIELD_LABELS[field]}을(를) 저장했습니다.`);
+    };
+
+    // 자사·경쟁사 줄도 같은 초안·blur 방식을 쓴다. 열쇠에 회사명이 더 붙을 뿐이다.
+    const techBenchmarkKey = (techId: string, company: string) => `bench:${techId}:${company}`;
+
+    const getTechBenchmarkValue = (tech: DisplayTechnical, company: string) => {
+        const key = techBenchmarkKey(tech.id, company);
+        if (key in techFieldDrafts) return techFieldDrafts[key];
+        return technicalBenchmarks.find(
+            (item) => item.technicalCharId === tech.id && item.company === company
+        )?.value || '';
+    };
+
+    const commitTechBenchmark = async (tech: DisplayTechnical, company: string, label: string) => {
+        const key = techBenchmarkKey(tech.id, company);
+        if (!(key in techFieldDrafts)) return;
+
+        const nextValue = techFieldDrafts[key].trim();
+        const currentValue = (technicalBenchmarks.find(
+            (item) => item.technicalCharId === tech.id && item.company === company
+        )?.value || '').trim();
+
+        setTechFieldDrafts((drafts) => {
+            const next = { ...drafts };
+            delete next[key];
+            return next;
+        });
+
+        if (nextValue === currentValue) return;
+
+        const res = await fetch(`/api/projects/${projectId}/qfd/technical-benchmarks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ technicalCharId: tech.id, company, value: nextValue }),
+        });
+
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => null);
+            showToast(errorData?.error || `${label} 값을 저장하지 못했습니다.`, 'error');
+            return;
+        }
+
+        await loadData();
+        showToast(`${label} 값을 저장했습니다.`);
     };
 
     // 지울 열에 실제로 입력해 둔 관계 강도가 몇 개인지. 확인창이 "정말?"을 한 번 더
@@ -1052,13 +1165,64 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                         </td>
                                     )}
                                     {visibleTechnicalColumns.map(({ tech }) => {
-                                        const value = tech.isPlaceholder
-                                            ? ''
-                                            : row.kind === 'unit'
-                                                ? (tech.unit || '-')
-                                                : row.kind === 'target'
-                                                    ? (tech.targetValue || '-')
-                                                    : '-';
+                                        // 네 줄 모두 입력 칸이다. 측정단위·설계 목표치는 기술특성 자신의
+                                        // 열이고, 자사·경쟁사는 technical_benchmarks 의 회사별 행이다.
+                                        const editableField: TechnicalTextField | null = row.kind === 'unit'
+                                            ? 'unit'
+                                            : row.kind === 'target'
+                                                ? 'targetValue'
+                                                : null;
+
+                                        if (!tech.isPlaceholder && (row.kind === 'self' || row.kind === 'competitor')) {
+                                            const company = row.kind === 'self' ? SELF_COMPANY : row.company;
+                                            const label = row.kind === 'self' ? '자사' : row.rowLabel;
+
+                                            return (
+                                                <td key={`${row.key}-${tech.id}`} className="border border-white/[0.08] bg-white/[0.025] p-0">
+                                                    <input
+                                                        type="text"
+                                                        value={getTechBenchmarkValue(tech, company)}
+                                                        onChange={(event) => setTechFieldDrafts((drafts) => ({
+                                                            ...drafts,
+                                                            [techBenchmarkKey(tech.id, company)]: event.target.value,
+                                                        }))}
+                                                        onBlur={() => commitTechBenchmark(tech, company, label)}
+                                                        onKeyDown={(event) => {
+                                                            if (event.key === 'Enter') event.currentTarget.blur();
+                                                        }}
+                                                        className="h-[30px] w-full border-none bg-transparent px-1 text-center text-[11px] text-gray-100 outline-none placeholder:text-gray-600 focus:bg-white/[0.06]"
+                                                        placeholder="-"
+                                                        title={`${tech.name || '세부기능'} ${label} 값`}
+                                                        aria-label={`${tech.name || '세부기능'} ${label} 값`}
+                                                    />
+                                                </td>
+                                            );
+                                        }
+
+                                        if (editableField && !tech.isPlaceholder) {
+                                            return (
+                                                <td key={`${row.key}-${tech.id}`} className="border border-white/[0.08] bg-white/[0.025] p-0">
+                                                    <input
+                                                        type="text"
+                                                        value={getTechFieldValue(tech, editableField)}
+                                                        onChange={(event) => setTechFieldDrafts((drafts) => ({
+                                                            ...drafts,
+                                                            [techFieldKey(tech.id, editableField)]: event.target.value,
+                                                        }))}
+                                                        onBlur={() => commitTechField(tech, editableField)}
+                                                        onKeyDown={(event) => {
+                                                            if (event.key === 'Enter') event.currentTarget.blur();
+                                                        }}
+                                                        className="h-[30px] w-full border-none bg-transparent px-1 text-center text-[11px] text-gray-100 outline-none placeholder:text-gray-600 focus:bg-white/[0.06]"
+                                                        placeholder="-"
+                                                        title={`${tech.name || '세부기능'} ${TECHNICAL_FIELD_LABELS[editableField]}`}
+                                                        aria-label={`${tech.name || '세부기능'} ${TECHNICAL_FIELD_LABELS[editableField]}`}
+                                                    />
+                                                </td>
+                                            );
+                                        }
+
+                                        const value = tech.isPlaceholder ? '' : '-';
 
                                         return (
                                             <td key={`${row.key}-${tech.id}`} className="border border-white/[0.08] bg-white/[0.025] p-1 text-center text-gray-300">
