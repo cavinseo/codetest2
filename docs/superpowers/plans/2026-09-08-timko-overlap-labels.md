@@ -318,7 +318,7 @@ git commit
 바뀌지 않는다 — 바뀌는 것은 번호 `<text>` 를 점 `<g>` 밖의 별도 층으로 옮기고 묶음 단위로
 그리는 것뿐이다.
 
-- [ ] **Step 1: WS-6 `components/Kano2DChart.tsx`**
+- [x] **Step 1: WS-6 `components/Kano2DChart.tsx`**
 
 (a) `:4` 아래에 import 추가:
 
@@ -375,7 +375,7 @@ const pointRadius = 8;
 
 단독 점의 번호는 지금과 똑같이 흰 글자만이다(테두리 없음). 묶음 라벨만 테두리를 얻는다.
 
-- [ ] **Step 2: WS-7 `components/project/KanoSatisfactionGraph.tsx`**
+- [x] **Step 2: WS-7 `components/project/KanoSatisfactionGraph.tsx`**
 
 (a) `:4` 아래에 같은 import 추가.
 
@@ -443,7 +443,7 @@ const POINT_RADIUS = 6;
 
 `:190` 이후의 상세표(`No` 열 포함)는 손대지 않는다.
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 ```sh
 npx tsc --noEmit
@@ -455,7 +455,7 @@ Expected: tsc 출력 없음 / vitest 전체 통과(테스트 수 = Task 1 후와
 컴포넌트 렌더링 테스트는 만들지 않는다(불가능이 확인됨 — 검증된 사실 참조).
 dev 서버도 띄우지 않는다.
 
-- [ ] **Step 4: 커밋**
+- [x] **Step 4: 커밋**
 
 ```sh
 git add components/Kano2DChart.tsx components/project/KanoSatisfactionGraph.tsx \
@@ -467,7 +467,7 @@ git commit
 본문에 **왜**: 4·7번, 11·15번처럼 계수가 같은 항목은 뒤 점이 앞 점을 덮어 번호가
 사라졌다는 것, 점을 밀지 않는 이유, 번호 층을 점 위에 따로 그리는 이유.
 
-- [ ] **Step 5: 보고서를 둘째 커밋으로**
+- [x] **Step 5: 보고서를 둘째 커밋으로**
 
 `docs/superpowers/reports/2026-09-08-timko-overlap-labels/task-2.md`, 커밋 메시지
 `docs: Task 2 결과 보고서`. RISKS 에 "라벨 층은 자동 테스트 없이 화면 검증으로 이월"을

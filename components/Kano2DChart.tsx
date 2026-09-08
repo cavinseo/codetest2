@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import TimkoWorksheetGrid from '@/components/TimkoWorksheetGrid';
+import { clusterLabel, clusterOverlappingPoints } from '@/lib/timko-point-clusters';
 
 interface Kano2DChartProps {
     requirements: Array<{
@@ -33,6 +34,7 @@ const height = width;
 const padding = 60;
 const plotWidth = width - 2 * padding;
 const plotHeight = height - 2 * padding;
+const pointRadius = 8;
 
 export default function Kano2DChart({ requirements }: Kano2DChartProps) {
     // SVG 축 레이블.
@@ -84,6 +86,11 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
             };
         });
     }, [requirements]);
+
+    // 같은 좌표이거나 겹치는 점은 번호가 서로 가려 보이지 않으므로 겹치는 점끼리 묶어
+    // 번호를 한 라벨로 그린다. 점 자체는 옮기지 않는다 — 점이 놓인 칸이 곧 가중치라
+    // 위치를 흐트러뜨리면 차트에서 가중치를 읽을 수 없게 된다.
+    const labelClusters = useMemo(() => clusterOverlappingPoints(points, pointRadius), [points]);
 
     return (
         <div className="relative overflow-x-auto">
@@ -175,15 +182,31 @@ export default function Kano2DChart({ requirements }: Kano2DChartProps) {
                 </g>
 
                 {/* 데이터 포인트 */}
-                {points.map((p, idx) => (
-                    <g key={p.id}>
-                        <circle cx={p.x} cy={p.y} r="8" fill={p.color} stroke="#fff" strokeWidth="2" className="cursor-pointer hover:r-10 transition-all">
-                            <title>{p.name} (만족 계수: {p.better.toFixed(2)}, 불만족 계수: {p.worse.toFixed(2)})</title>
-                        </circle>
-                        <text x={p.x} y={p.y + 3} textAnchor="middle" fill="#fff" fontSize="9" fontWeight="bold" className="pointer-events-none">
-                            {idx + 1}
-                        </text>
-                    </g>
+                {points.map((p) => (
+                    <circle key={p.id} cx={p.x} cy={p.y} r={pointRadius} fill={p.color} stroke="#fff" strokeWidth="2" className="cursor-pointer hover:r-10 transition-all">
+                        <title>{p.name} (만족 계수: {p.better.toFixed(2)}, 불만족 계수: {p.worse.toFixed(2)})</title>
+                    </circle>
+                ))}
+
+                {/* 점 번호 — 점을 전부 그린 뒤 맨 위 층에 그려 다른 점에 가려지지 않게 한다.
+                    겹친 점은 번호를 '4·7' 처럼 한데 적고 진한 테두리로 원 위에서 읽히게 한다. */}
+                {labelClusters.map((cluster) => (
+                    <text
+                        key={cluster.members.join('-')}
+                        x={cluster.x}
+                        y={cluster.y + 3}
+                        textAnchor="middle"
+                        fill="#fff"
+                        fontSize="9"
+                        fontWeight="bold"
+                        stroke={cluster.members.length > 1 ? '#1e293b' : undefined}
+                        strokeWidth={cluster.members.length > 1 ? 3 : undefined}
+                        strokeLinejoin="round"
+                        paintOrder="stroke"
+                        className="pointer-events-none"
+                    >
+                        {clusterLabel(cluster.members)}
+                    </text>
                 ))}
             </svg>
 

@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import TimkoWorksheetGrid from '@/components/TimkoWorksheetGrid';
+import { clusterLabel, clusterOverlappingPoints } from '@/lib/timko-point-clusters';
 
 interface AnalysisResult {
     requirementId: string;
@@ -19,6 +20,7 @@ interface KanoSatisfactionGraphProps {
 }
 
 const KOREAN_CHART_FONT = '"Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", "Segoe UI", sans-serif';
+const POINT_RADIUS = 6;
 const quadrantLabels: Record<string, string> = {
     ATTRACTIVE: '매력적 품질',
     ONE_DIMENSIONAL: '일원적 품질',
@@ -78,6 +80,11 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
             };
         });
     }, [analysis, margin.top, plotHeight, plotWidth, yAxisX]);
+
+    // 같은 좌표이거나 겹치는 점은 번호가 서로 가려 보이지 않으므로 겹치는 점끼리 묶어
+    // 번호를 한 라벨로 그린다. 점 자체는 옮기지 않는다 — 점이 놓인 칸이 곧 가중치라
+    // 위치를 흐트러뜨리면 차트에서 가중치를 읽을 수 없게 된다.
+    const labelClusters = useMemo(() => clusterOverlappingPoints(points, POINT_RADIUS), [points]);
 
     return (
         <div className="space-y-8">
@@ -146,8 +153,7 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                         </g>
 
                         {/* 데이터 포인트 */}
-                        {points.map((p, idx) => {
-                            return (
+                        {points.map((p) => (
                             <g
                                 key={p.requirementId}
                                 className="cursor-pointer"
@@ -162,27 +168,36 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                                 <circle
                                     cx={p.x}
                                     cy={p.y}
-                                    r="6"
+                                    r={POINT_RADIUS}
                                     fill={p.quadrant === 'ATTRACTIVE' ? quadrantColors.attractive : p.quadrant === 'ONE_DIMENSIONAL' ? quadrantColors.oneDimensional : p.quadrant === 'MUST_BE' ? quadrantColors.mustBe : quadrantColors.indifferent}
                                     stroke="#ffffff"
                                     strokeWidth="2"
                                     className="filter drop-shadow-sm"
                                 />
-                                <text
-                                    x={p.x}
-                                    y={p.y + 3}
-                                    textAnchor="middle"
-                                    fill="#fff"
-                                    fontSize="8"
-                                    fontWeight="bold"
-                                    className="pointer-events-none"
-                                >
-                                    {idx + 1}
-                                </text>
                                 <title>{p.requirementName}</title>
                             </g>
-                            );
-                        })}
+                        ))}
+
+                        {/* 점 번호 — 점을 전부 그린 뒤 맨 위 층에 그려 다른 점에 가려지지 않게 한다.
+                            겹친 점은 번호를 '4·7' 처럼 한데 적고 진한 테두리로 원 위에서 읽히게 한다. */}
+                        {labelClusters.map((cluster) => (
+                            <text
+                                key={cluster.members.join('-')}
+                                x={cluster.x}
+                                y={cluster.y + 3}
+                                textAnchor="middle"
+                                fill="#fff"
+                                fontSize="8"
+                                fontWeight="bold"
+                                stroke={cluster.members.length > 1 ? '#1e293b' : undefined}
+                                strokeWidth={cluster.members.length > 1 ? 3 : undefined}
+                                strokeLinejoin="round"
+                                paintOrder="stroke"
+                                className="pointer-events-none"
+                            >
+                                {clusterLabel(cluster.members)}
+                            </text>
+                        ))}
                     </svg>
                 </div>
             </div>
