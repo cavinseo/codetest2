@@ -1,5 +1,8 @@
 'use client';
 
+import MoneyInput from '@/components/ui/MoneyInput';
+import { formatMoney } from '@/lib/money';
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 type SalesPeriod = 'Y' | 'Y_PLUS_1';
@@ -47,12 +50,9 @@ function createRow(period: SalesPeriod, order = 0): SalesRow {
 }
 
 function formatAmount(value: number) {
-    return Number(value || 0).toLocaleString('ko-KR');
+    return formatMoney(value || 0);
 }
 
-function parseAmount(value: string) {
-    return Number(value.replace(/,/g, '')) || 0;
-}
 
 export default function SalesTable({ projectId, onSaved }: Props) {
     const [rows, setRows] = useState<SalesRow[]>([createRow('Y'), createRow('Y_PLUS_1')]);
@@ -297,7 +297,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                                             <input type="text" value={row.customer} onChange={(e) => updateRow(row.id, 'customer', e.target.value)} list="sales-customers" className="w-full border-none bg-transparent p-2.5 text-sm text-white outline-none placeholder-gray-700 focus:ring-1 focus:ring-primary-500/50" placeholder="매출처명" />
                                         </td>
                                         <td className="border border-white/[0.06] p-0">
-                                            <input type="text" inputMode="numeric" value={row.amount ? formatAmount(row.amount) : ''} onChange={(e) => updateRow(row.id, 'amount', parseAmount(e.target.value))} className={`w-full border-none bg-transparent p-2.5 text-right font-mono text-sm ${period.accent} outline-none placeholder-gray-700 focus:ring-1 ${period.focus}`} placeholder="0" />
+                                            <MoneyInput value={row.amount} onValueChange={(value) => updateRow(row.id, 'amount', value ?? 0)} className={`w-full border-none bg-transparent p-2.5 text-right font-mono text-sm ${period.accent} outline-none placeholder-gray-700 focus:ring-1 ${period.focus}`} placeholder="0" />
                                         </td>
                                         <td className="border border-white/[0.06] p-0">
                                             <input type="text" value={row.competitor} onChange={(e) => updateRow(row.id, 'competitor', e.target.value)} list="sales-competitors" className="w-full border-none bg-transparent p-2.5 text-sm text-white outline-none placeholder-gray-700 focus:ring-1 focus:ring-primary-500/50" placeholder="경쟁사명" />

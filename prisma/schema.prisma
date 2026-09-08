@@ -146,8 +146,8 @@ model FundingPlan {
   category  String? // "매출액", "소요자금"
   item      String? // "매출액", "생산비용", "운영관리비" 등
   year1     Float   @default(0)
-  year2     Float   @default(0)
-  year3     Float   @default(0)
+  year2     Float?  @default(0)
+  year3     Float?  @default(0)
   order     Int     @default(0)
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 

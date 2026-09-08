@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
-import { buildTargetSpecSuggestions } from '@/lib/worksheet-links';
+import { buildTargetSpecSuggestions, buildTargetSpecsFromAsIs } from '@/lib/worksheet-links';
 import { targetSpecBodySchema } from '@/lib/bulk-save-schemas';
 import { createBulkWorksheetRoute } from '@/lib/bulk-worksheet-route';
 
@@ -15,16 +15,17 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     const accessResult = await requireProjectAccess(request, projectId, { write: false });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
-        const [rows, improvements, techChars] = await Promise.all([
+        const [rows, improvements, techChars, specFunctions] = await Promise.all([
             prisma.targetSpec.findMany({ where: { projectId }, orderBy: { order: 'asc' } }),
             prisma.improvementItem.findMany({ where: { projectId, type: 'feature' } }),
-            prisma.technicalCharacteristic.findMany({ where: { projectId } })
+            prisma.technicalCharacteristic.findMany({ where: { projectId } }),
+            prisma.specFunction.findMany({ where: { projectId }, orderBy: { order: 'asc' } })
         ]);
         const suggestions = buildTargetSpecSuggestions({
             improvements,
             technicalCharacteristics: techChars,
         });
-        return NextResponse.json({ rows, suggestions, improvements, technicalCharacteristics: techChars });
+        return NextResponse.json({ rows, asIsRows: buildTargetSpecsFromAsIs(specFunctions), suggestions, improvements, technicalCharacteristics: techChars });
     } catch (error) {
         return toErrorResponse(error, {
             log,

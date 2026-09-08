@@ -4,8 +4,8 @@ export interface FundingAiPlan {
     category: string;
     item: string;
     year1: number;
-    year2: number;
-    year3: number;
+    year2: number | null;
+    year3: number | null;
     order: number;
 }
 
@@ -150,10 +150,10 @@ export function parseSourceYear(value?: string | null) {
     try {
         const parsed = JSON.parse(value) as Partial<FundingAiSourceYear>;
         const amount = parsed.amount ?? '';
-        return { source: parsed.source ?? '', amount, amountNumber: Number(amount) || 0 };
+        return { source: parsed.source ?? '', amount, amountNumber: Number(String(amount).replace(/,/g, '')) || 0 };
     } catch {
         const [source = '', amount = ''] = value.split(':');
-        return { source, amount, amountNumber: Number(amount) || 0 };
+        return { source, amount, amountNumber: Number(String(amount).replace(/,/g, '')) || 0 };
     }
 }
 
@@ -162,7 +162,7 @@ function encodeSourceYear(value: FundingAiSourceYear) {
 }
 
 function isRevenuePlan(plan: FundingAiPlan) {
-    return normalize(`${plan.category ?? ''} ${plan.item ?? ''}`).includes('매출');
+    return plan.category === '매출액' || plan.item === '매출액';
 }
 
 function isTotalPlan(plan: FundingAiPlan) {

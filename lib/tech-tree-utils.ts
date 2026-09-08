@@ -23,6 +23,11 @@ export interface TechTreeGeneratedRow {
 }
 
 export interface TechTreeSpecOption {
+    sourceName?: string;
+    id: string;
+    coreId: string;
+    parentId: string;
+    depth: 0 | 1;
     coreSpec: string;
     subSpec: string;
     techCharacteristic: string;
@@ -35,29 +40,29 @@ export function buildTechTreeSpecOptions(sourceSpecs: TechTreeSpecFunctionLike[]
 
     for (const core of cores) {
         const subs = sorted.filter((spec) => spec.level === 'SUB' && spec.parentId === core.id);
-        if (subs.length === 0) {
-            options.push({ coreSpec: core.name, subSpec: core.name, techCharacteristic: core.technology || '' });
-            continue;
-        }
-
         for (const sub of subs) {
-            const details = sorted.filter((spec) => spec.level === 'DETAIL' && spec.parentId === sub.id);
-            if (details.length === 0) {
-                options.push({ coreSpec: core.name, subSpec: sub.name, techCharacteristic: sub.technology || core.technology || '' });
-                continue;
-            }
-
-            for (const detail of details) {
-                options.push({
-                    coreSpec: core.name,
-                    subSpec: detail.name,
-                    techCharacteristic: detail.technology || sub.technology || core.technology || '',
-                });
+            options.push({ id: sub.id, coreId: core.id, parentId: core.id, depth: 0, coreSpec: core.name, subSpec: sub.name, techCharacteristic: sub.technology || '' });
+            for (const detail of sorted.filter((spec) => spec.level === 'DETAIL' && spec.parentId === sub.id)) {
+                options.push({ id: detail.id, coreId: core.id, parentId: sub.id, depth: 1, coreSpec: core.name, subSpec: detail.name, techCharacteristic: detail.technology || '' });
             }
         }
     }
 
-    return options;
+    const namedOptions = options.map((option) => {
+        const duplicates = options.filter((other) => other.coreId === option.coreId && other.subSpec === option.subSpec);
+        if (duplicates.length === 1) return option;
+        const parent = sorted.find((spec) => spec.id === option.parentId);
+        return { ...option, sourceName: option.subSpec, subSpec: option.depth === 1 ? parent?.name + ' > ' + option.subSpec : option.subSpec };
+    });
+    return namedOptions.map((option) => {
+        const duplicates = namedOptions.filter((other) => other.coreId === option.coreId && other.subSpec === option.subSpec);
+        if (duplicates.length === 1) return option;
+        return { ...option, subSpec: option.subSpec + ' [' + (duplicates.findIndex((other) => other.id === option.id) + 1) + ']' };
+    });
+}
+
+export function findTechTreeSpecOptions(options: TechTreeSpecOption[], coreSpec: string, value: string): TechTreeSpecOption[] {
+    return options.filter((option) => option.coreSpec === coreSpec && (option.subSpec === value || option.sourceName === value));
 }
 
 export function buildBlankTechTreeRows(
@@ -86,4 +91,14 @@ export function buildBlankTechTreeRows(
         techCharacteristic: '',
         order: index,
     }));
+}
+
+export function applyTechTreeSpecSelection<T extends TechTreeGeneratedRow>(rows: T[], rowIds: string[], option: TechTreeSpecOption): T[] {
+    const ids = new Set(rowIds);
+    return rows.map((row) => ids.has(row.id) ? {
+        ...row,
+        coreSpec: option.coreSpec,
+        subSpec: option.subSpec,
+        techCharacteristic: option.techCharacteristic,
+    } : row);
 }

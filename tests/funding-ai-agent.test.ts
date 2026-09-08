@@ -53,3 +53,13 @@ describe('funding AI agent', () => {
         expect(result.summary.filledSourceCells).toBe(9);
     });
 });
+
+it('parses commas and decimals in legacy and JSON amounts equally', () => {
+    expect(parseSourceYear('정부:1,234.56789').amountNumber).toBe(1234.56789);
+    expect(parseSourceYear(JSON.stringify({source:'정부',amount:'1,234.56789'})).amountNumber).toBe(1234.56789);
+});
+
+it.each([null, 0, 1234.56789])('AI leaves future revenue %s untouched', (value) => {
+    const plans = [{ id: 'revenue', category: '매출액', item: '매출액', year1: 100, year2: value, year3: value, order: 0 }];
+    expect(generateFundingAiDraft({ plans, sources: [] }).plans).toEqual(plans);
+});

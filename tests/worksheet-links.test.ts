@@ -3,6 +3,9 @@ import {
     buildFundingPlansWithSales,
     buildImprovementSuggestionsFromQfd,
     buildTargetSpecSuggestions,
+    buildTargetSpecsFromAsIs,
+    getImprovementCustomerNeeds,
+    mergeRoadmapWithCustomerNeeds,
 } from '../lib/worksheet-links';
 
 describe('worksheet links', () => {
@@ -80,11 +83,12 @@ describe('worksheet links', () => {
         expect(suggestions).toEqual([
             {
                 id: 'target_feature-1',
+                performanceImprovement: 'Faster response',
                 category: '개선기능',
                 subCategory: 'Improve response speed',
-                specItem: 'Response time',
-                unit: 'ms',
-                targetValue: '< 100',
+                specItem: '',
+                unit: '',
+                targetValue: '',
                 note: 'High need',
                 order: 0,
             },
@@ -120,8 +124,8 @@ describe('worksheet links', () => {
             category: '매출액',
             item: '매출액',
             year1: 150,
-            year2: 150,
-            year3: 150,
+            year2: 0,
+            year3: 0,
         });
         expect(plans[1]).toMatchObject({ year1: 10, year2: 20, year3: 30 });
     });
@@ -141,8 +145,47 @@ describe('worksheet links', () => {
 
         expect(plans[0]).toMatchObject({
             year1: 275,
-            year2: 275,
-            year3: 275,
+            year2: 0,
+            year3: 0,
         });
     });
+});
+
+it('seeds each AS-IS hierarchy node without dropping core technology', () => {
+    const rows = buildTargetSpecsFromAsIs([
+    {id:'c',level:'CORE',name:'핵심',technology:'핵심 기술'},
+    {id:'s',level:'SUB',parentId:'c',name:'세부',technology:'세부 기술'},
+    {id:'d',level:'DETAIL',parentId:'s',name:'세세부',technology:'상세 기술'},
+    ]);
+    expect(rows.map(r => [r.category,r.subCategory,r.specItem])).toEqual([['핵심','','핵심 기술'],['핵심','세부','세부 기술'],['핵심','세부 > 세세부','상세 기술']]);
+});
+
+it('uses WS-11 displayed need order including feature fallback', () => {
+    expect(getImprovementCustomerNeeds([{id:'f',type:'feature',content:'old',order:0},{id:'f2',type:'feature',content:'fallback',order:1},{id:'n',type:'need',content:'first',order:0}])).toEqual(['first','fallback']);
+});
+it('reorders exact unique needs and preserves renamed and ambiguous authored rows', () => {
+    const row = (id: string, category: string, techItem: string) => ({id,category,techItem,currentLevel:'',targetLevel:'',order:0});
+    const result = mergeRoadmapWithCustomerNeeds([row('a','A','a work'),row('b','B','b work'),row('old','Old','keep'),row('dup','Dup','ambiguous')],['B','A','New','Dup','Dup']);
+    expect(result.slice(0,5).map(r => r.category)).toEqual(['B','A','New','Dup','Dup']);
+    expect(result.slice(0,2).map(r => r.techItem)).toEqual(['b work','a work']);
+    expect(result.slice(3,5).every(r => !r.techItem)).toBe(true);
+    expect(result.slice(5).map(r => r.techItem)).toEqual(['keep','ambiguous']);
+    expect(mergeRoadmapWithCustomerNeeds(result,['B','A','New','Dup','Dup'])).toHaveLength(result.length);
+});
+
+it('keeps parent paths without adding empty parent rows', () => {
+    expect(buildTargetSpecsFromAsIs([{id:'c',level:'CORE',name:'C'},{id:'s',level:'SUB',parentId:'c',name:'S'},{id:'d',level:'DETAIL',parentId:'s',name:'D',technology:'tech'}]).map(row => [row.category,row.subCategory,row.specItem])).toEqual([['C','S > D','tech']]);
+});
+
+it('preserves blank, zero and manual future revenue on repeated sales linking', () => {
+    for (const value of [null, 0, 1234.56789]) {
+        const plans = [{category:'매출액',item:'매출액',year1:0,year2:value,year3:value,order:0}];
+        const first = buildFundingPlansWithSales({plans,salesEstimates:[{amount:100}]});
+        expect(buildFundingPlansWithSales({plans:first,salesEstimates:[{amount:200}]})[0]).toMatchObject({year1:200,year2:value,year3:value});
+    }
+});
+
+it('does not restore a cleared target customer from legacy owner', () => {
+    const row = { id: 'old', category: 'Need', techItem: '', currentLevel: '', targetLevel: '', owner: 'legacy customer', order: 0 };
+    expect(mergeRoadmapWithCustomerNeeds([row], ['Need'])[0].targetLevel).toBe('');
 });

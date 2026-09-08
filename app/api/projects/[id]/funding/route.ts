@@ -6,7 +6,7 @@ import { buildFundingPlansWithSales } from '@/lib/worksheet-links';
 import { fundingBodySchema } from '@/lib/bulk-save-schemas';
 
 const INITIAL_FUNDING_PLANS = [
-    { category: '매출액', item: '매출액', order: 0 },
+    { category: '매출액', item: '매출액', year2: null, year3: null, order: 0 },
     { category: '소요자금', item: '생산비용', order: 1 },
     { category: '소요자금', item: '운영관리비', order: 2 },
     { category: '소요자금', item: '설비투자금', order: 3 },

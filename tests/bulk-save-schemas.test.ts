@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     targetSpecBodySchema,
+    fundingPlanRowSchema,
     salesBodySchema,
     techRoadmapBodySchema,
     devPlanBodySchema,
@@ -69,4 +70,11 @@ describe('bulk-save schemas — 데이터 손실 방지 가드', () => {
         expect(fitnessBodySchema.safeParse({ fitnesses: [{ importance: 1 }] }).success).toBe(false);
         expect(fitnessBodySchema.safeParse({ fitnesses: [{ attributeId: 'a1' }] }).success).toBe(true);
     });
+});
+
+it('funding preserves missing or blank future revenue, zero and decimals', () => {
+    expect(fundingPlanRowSchema.parse({category:'매출액',year2:'',year3:null})).toMatchObject({year2:null,year3:null});
+    expect(fundingPlanRowSchema.parse({category:'매출액',year2:0,year3:'1,234.56789'})).toMatchObject({year2:0,year3:1234.56789});
+    expect(fundingPlanRowSchema.parse({category:'매출액'}).year2).toBeNull();
+    expect(fundingPlanRowSchema.parse({category:'소요자금'}).year2).toBe(0);
 });

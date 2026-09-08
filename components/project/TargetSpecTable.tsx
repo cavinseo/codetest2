@@ -3,10 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 
 interface TargetSpecRow {
+    performanceImprovement?: string;
     id: string;
     category: string;
     subCategory: string;
     specItem: string;
+    currentValue?: string | null;
+    competitorValue?: string | null;
     unit: string;
     targetValue: string;
     note: string;
@@ -19,6 +22,11 @@ interface Props {
 
 export default function TargetSpecTable({ projectId }: Props) {
     const [rows, setRows] = useState<TargetSpecRow[]>([]);
+    const [suggestions, setSuggestions] = useState<TargetSpecRow[]>([]);
+    const [asIsRows, setAsIsRows] = useState<TargetSpecRow[]>([]);
+    const [newFeatureId, setNewFeatureId] = useState('');
+    const [newCategory, setNewCategory] = useState('');
+    const [newSubCategory, setNewSubCategory] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState<string | null>(null);
@@ -34,10 +42,13 @@ export default function TargetSpecTable({ projectId }: Props) {
         fetch(`/api/projects/${projectId}/target-spec`)
             .then((r) => (r.ok ? r.json() : null))
             .then((data) => {
-                const sourceRows = data?.rows?.length > 0 ? data.rows : (data?.suggestions || []);
+                setSuggestions(data?.suggestions || []);
+                setAsIsRows(data?.asIsRows || []);
+                const sourceRows = data?.rows?.length > 0 ? data.rows : (data?.asIsRows || []);
                 if (sourceRows) {
                     setRows(sourceRows.map((r: any) => ({
-                        id: r.id,
+                        ...r,
+                id: r.id,
                         category: r.category ?? '',
                         subCategory: r.subCategory ?? '',
                         specItem: r.specItem ?? '',
@@ -51,6 +62,28 @@ export default function TargetSpecTable({ projectId }: Props) {
             .catch(console.error)
             .finally(() => setIsLoading(false));
     }, [projectId]);
+
+    const addFeature = () => {
+        const feature = suggestions.find((item) => item.id === newFeatureId);
+        if (!feature || !newCategory.trim()) return;
+        const category = newCategory.trim();
+        const parentPath = newSubCategory.trim();
+        const subCategory = [parentPath, feature.subCategory].filter(Boolean).join(' > ');
+        if (rows.some((row) => row.category === category && row.subCategory === subCategory)) {
+            showToast('이미 추가된 기능입니다.');
+            return;
+        }
+        const next = [...rows];
+        const groupEnd = rows.reduce((last, row, index) => {
+            const inGroup = row.category === category && (!parentPath || row.subCategory === parentPath || row.subCategory.startsWith(parentPath + ' > '));
+            return inGroup ? index : last;
+        }, -1);
+        const coreEnd = rows.reduce((last, row, index) => row.category === category ? index : last, -1);
+        const insertionIndex = groupEnd >= 0 ? groupEnd + 1 : coreEnd >= 0 ? coreEnd + 1 : next.length;
+        next.splice(insertionIndex, 0, { ...feature, id: 'new_' + Date.now(), category, subCategory, note: '신규' });
+        setRows(next.map((row, order) => ({ ...row, order })));
+        setNewFeatureId('');
+    };
 
     const addRow = () => {
         setRows((prev) => [...prev, {
@@ -84,6 +117,8 @@ export default function TargetSpecTable({ projectId }: Props) {
                         category: row.category,
                         subCategory: row.subCategory,
                         specItem: row.specItem,
+                        currentValue: row.currentValue,
+                        competitorValue: row.competitorValue,
                         unit: row.unit,
                         targetValue: row.targetValue,
                         note: row.note,
@@ -99,7 +134,8 @@ export default function TargetSpecTable({ projectId }: Props) {
 
             const data = await res.json();
             setRows(data.rows.map((r: any) => ({
-                id: r.id,
+                ...r,
+                        id: r.id,
                 category: r.category ?? '',
                 subCategory: r.subCategory ?? '',
                 specItem: r.specItem ?? '',
@@ -157,6 +193,24 @@ export default function TargetSpecTable({ projectId }: Props) {
                 </div>
             </div>
 
+            <div className="card flex flex-wrap items-end gap-3">
+                <label className="text-sm text-gray-300">추가할 신규 기능
+                    <select aria-label="추가할 신규 기능" value={newFeatureId} onChange={(event) => setNewFeatureId(event.target.value)} className="input-field block">
+                        <option value="">기능 선택</option>
+                        {suggestions.map((item) => <option key={item.id} value={item.id}>{item.subCategory}</option>)}
+                    </select>
+                </label>
+                <label className="text-sm text-gray-300">스펙분류(핵심스펙)
+                    <input aria-label="신규 기능 스펙분류" list="new-feature-cores" value={newCategory} onChange={(event) => { setNewCategory(event.target.value); setNewSubCategory(''); }} className="input-field block" />
+                    <datalist id="new-feature-cores">{Array.from(new Set([...asIsRows, ...rows].map((row) => row.category).filter(Boolean))).map((value) => <option key={value} value={value} />)}</datalist>
+                </label>
+                <label className="text-sm text-gray-300">상위 세부항목
+                    <input aria-label="신규 기능 상위 세부항목" list="new-feature-subs" value={newSubCategory} onChange={(event) => setNewSubCategory(event.target.value)} className="input-field block" placeholder="핵심스펙 바로 아래에 추가하려면 비워두세요." />
+                    <datalist id="new-feature-subs">{Array.from(new Set([...asIsRows, ...rows].filter((row) => row.category === newCategory.trim()).flatMap((row) => row.subCategory.split(' > ').map((_, index, parts) => parts.slice(0, index + 1).join(' > '))).filter(Boolean))).map((value) => <option key={value} value={value} />)}</datalist>
+                </label>
+                <button onClick={addFeature} disabled={!newFeatureId || !newCategory.trim()} className="btn-secondary disabled:opacity-40">신규 기능 추가</button>
+                {newFeatureId && <p className="w-full text-sm text-gray-400">고객니즈: {suggestions.find((item) => item.id === newFeatureId)?.note} · 성능향상: {suggestions.find((item) => item.id === newFeatureId)?.performanceImprovement}</p>}
+            </div>
             <div className="card p-0 overflow-x-auto">
                 <table className="w-full border-collapse text-sm">
                     <thead>
@@ -164,8 +218,6 @@ export default function TargetSpecTable({ projectId }: Props) {
                             <th className="border border-white/[0.06] p-3 text-white font-semibold text-center min-w-[140px]">스펙분류</th>
                             <th className="border border-white/[0.06] p-3 text-white font-semibold text-center min-w-[180px]">세부항목</th>
                             <th className="border border-white/[0.06] p-3 text-white font-semibold text-center min-w-[180px]">기술적 특성</th>
-                            <th className="border border-white/[0.06] p-3 text-white font-semibold text-center min-w-[90px]">측정단위</th>
-                            <th className="border border-white/[0.06] p-3 text-white font-semibold text-center min-w-[120px]">설계 목표치</th>
                             <th className="border border-white/[0.06] p-3 text-white font-semibold text-center min-w-[120px]">개선여부</th>
                             <th className="border border-white/[0.06] p-3 w-[48px]" />
                         </tr>
@@ -173,7 +225,7 @@ export default function TargetSpecTable({ projectId }: Props) {
                     <tbody>
                         {rows.length === 0 ? (
                             <tr>
-                                <td colSpan={7} className="border border-white/[0.06] p-10 text-center">
+                                <td colSpan={5} className="border border-white/[0.06] p-10 text-center">
                                     <p className="text-gray-500 text-sm mb-3">최종 목표 스펙 항목을 추가하세요.</p>
                                     <button onClick={addRow} className="btn-primary text-sm">첫 행 추가</button>
                                 </td>
@@ -183,8 +235,6 @@ export default function TargetSpecTable({ projectId }: Props) {
                                 <td className="border border-white/[0.06] p-0">{input(row.category, (value) => updateRow(row.id, 'category', value), '스펙분류', `target-category-${row.id}`, getUniqueValues('category'))}</td>
                                 <td className="border border-white/[0.06] p-0">{input(row.subCategory, (value) => updateRow(row.id, 'subCategory', value), '세부항목', `target-sub-${row.id}`, getUniqueValues('subCategory'))}</td>
                                 <td className="border border-white/[0.06] p-0">{input(row.specItem, (value) => updateRow(row.id, 'specItem', value), '기술적 특성', `target-spec-${row.id}`, getUniqueValues('specItem'))}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.unit, (value) => updateRow(row.id, 'unit', value), '단위', `target-unit-${row.id}`, getUniqueValues('unit'))}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.targetValue, (value) => updateRow(row.id, 'targetValue', value), '목표치', `target-value-${row.id}`, getUniqueValues('targetValue'))}</td>
                                 <td className="border border-white/[0.06] p-0">{input(row.note, (value) => updateRow(row.id, 'note', value), '개선여부', `target-note-${row.id}`, getUniqueValues('note'))}</td>
                                 <td className="border border-white/[0.06] p-2 text-center">
                                     <button onClick={() => deleteRow(row.id)} className="text-rose-500 hover:text-rose-400 text-xs opacity-0 group-hover:opacity-100">삭제</button>

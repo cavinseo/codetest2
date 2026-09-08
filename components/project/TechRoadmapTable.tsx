@@ -1,15 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { getImprovementCustomerNeeds, mergeRoadmapWithCustomerNeeds, type RoadmapLinkRow } from '@/lib/worksheet-links';
 
-interface FutureCustomerRow {
-    id: string;
-    category: string;
-    techItem: string;
-    currentLevel: string;
-    targetLevel: string;
-    order: number;
-}
+type FutureCustomerRow = RoadmapLinkRow;
 
 interface Props {
     projectId: string;
@@ -29,22 +23,14 @@ export default function TechRoadmapTable({ projectId }: Props) {
     };
 
     useEffect(() => {
-        fetch(`/api/projects/${projectId}/tech-roadmap`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((data) => {
-                if (data?.rows) {
-                    setRows(data.rows.map((r: any) => ({
-                        id: r.id,
-                        category: r.category ?? '',
-                        techItem: r.techItem ?? '',
-                        currentLevel: r.currentLevel ?? '',
-                        targetLevel: r.targetLevel ?? '',
-                        order: r.order,
-                    })));
-                }
-            })
-            .catch(console.error)
-            .finally(() => setIsLoading(false));
+        Promise.all([
+            fetch(`/api/projects/${projectId}/tech-roadmap`).then((response) => response.ok ? response.json() : null),
+            fetch(`/api/projects/${projectId}/improvements`).then((response) => response.ok ? response.json() : null).catch(() => null),
+        ]).then(([data, improvementData]) => {
+            if (!data?.rows) return;
+            const saved = data.rows.map((row: RoadmapLinkRow) => ({ ...row, category: row.category ?? '', techItem: row.techItem ?? '', currentLevel: row.currentLevel ?? '', targetLevel: row.targetLevel ?? row.owner ?? '' }));
+            setRows(improvementData ? mergeRoadmapWithCustomerNeeds(saved, getImprovementCustomerNeeds(improvementData.items || [])) : saved);
+        }).catch(console.error).finally(() => setIsLoading(false));
     }, [projectId]);
 
     const addRow = () => {
@@ -78,11 +64,11 @@ export default function TechRoadmapTable({ projectId }: Props) {
                         techItem: row.techItem,
                         currentLevel: row.currentLevel,
                         targetLevel: row.targetLevel,
-                        q1: '',
-                        q2: '',
-                        q3: '',
-                        q4: '',
-                        owner: '',
+                        q1: row.q1 ?? '',
+                        q2: row.q2 ?? '',
+                        q3: row.q3 ?? '',
+                        q4: row.q4 ?? '',
+                        owner: row.owner ?? '',
                         order: idx,
                     })),
                 }),
@@ -95,11 +81,12 @@ export default function TechRoadmapTable({ projectId }: Props) {
 
             const data = await res.json();
             setRows(data.rows.map((r: any) => ({
+                ...r,
                 id: r.id,
                 category: r.category ?? '',
                 techItem: r.techItem ?? '',
                 currentLevel: r.currentLevel ?? '',
-                targetLevel: r.targetLevel ?? '',
+                targetLevel: r.targetLevel ?? r.owner ?? '',
                 order: r.order,
             })));
             showToast('저장되었습니다.');
@@ -151,6 +138,7 @@ export default function TechRoadmapTable({ projectId }: Props) {
                 </div>
             </div>
 
+            {rows.some((row) => row.retained) && <p className="text-sm text-amber-300">고객니즈의 이름 변경이나 중복으로 연결을 확인할 수 없는 기존 작성 행은 목록 아래에 보존했습니다.</p>}
             <div className="card p-0 overflow-x-auto">
                 <table className="w-full border-collapse text-sm">
                     <thead>

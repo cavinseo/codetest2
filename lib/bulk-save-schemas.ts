@@ -132,13 +132,19 @@ export const assetsBodySchema = z.object({ assets: z.array(assetRowSchema) });
 // ── funding ───────────────────────────────────────────────────
 // plans/sources 는 각각 독립적으로 저장할 수 있어야 해서 둘 다 optional 이다.
 // 다만 "키가 없으면 그 컬렉션은 건드리지 않는다"는 규칙을 라우트가 지켜야 한다.
+const fundingYearAmount = z.preprocess(
+    (value) => value == null || value === '' ? null : typeof value === 'string' ? value.replace(/,/g, '') : value,
+    z.coerce.number().finite().nullable()
+);
 export const fundingPlanRowSchema = z.object({
     category: optionalText,
     item: optionalText,
     year1: z.coerce.number().default(0),
-    year2: z.coerce.number().default(0),
-    year3: z.coerce.number().default(0),
+    year2: fundingYearAmount,
+    year3: fundingYearAmount,
     order: z.coerce.number().default(0),
+}).transform((row) => row.category === '매출액' || row.item === '매출액' ? row : {
+    ...row, year2: row.year2 ?? 0, year3: row.year3 ?? 0,
 });
 export const fundingSourceRowSchema = z.object({
     category: optionalText,

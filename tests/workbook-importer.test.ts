@@ -323,3 +323,9 @@ describe('workbook importer', () => {
         expect(getImportableSheetKeys()).toContain('QFD');
     });
 });
+
+it('imports empty future revenue separately from explicit zero and cost defaults', () => {
+    const parsed = parseWorkbookImport(workbook([sheet('자금소요계획표', [['구분','항목','1차년도','2차년도','3차년도'],['매출액','매출액',100,'',0],['소요자금','생산비용',10,'','']])]));
+    expect(parsed.records.fundingPlans[0]).toMatchObject({year2:null,year3:0});
+    expect(parsed.records.fundingPlans[1]).toMatchObject({year2:0,year3:0});
+});

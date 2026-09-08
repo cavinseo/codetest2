@@ -1,3 +1,5 @@
+import type { TechTreeSpecFunctionLike } from './tech-tree-utils';
+
 export interface QfdRequirementLinkInput {
     requirementId: string;
     requirement: string;
@@ -34,6 +36,7 @@ export interface TechnicalCharacteristicLinkInput {
 }
 
 export interface TargetSpecSuggestion {
+    performanceImprovement?: string;
     id: string;
     category: string;
     subCategory: string;
@@ -88,27 +91,26 @@ export function buildImprovementSuggestionsFromQfd(requirements: QfdRequirementL
 
 export function buildTargetSpecSuggestions({
     improvements,
-    technicalCharacteristics,
 }: {
     improvements: ImprovementLinkInput[];
     technicalCharacteristics: TechnicalCharacteristicLinkInput[];
 }): TargetSpecSuggestion[] {
     const features = improvements
         .filter((item) => !(item.priority?.trim() && !item.improvementRate?.trim() && !item.devProportion?.trim()))
-        .filter((item) => item.type === 'feature' && (item.improvementRate?.trim() || item.content?.trim()))
+        .filter((item) => item.type === 'feature' && item.improvementRate?.trim())
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     if (features.length === 0) return [];
 
     return features.map((feature, order) => {
-        const tech = technicalCharacteristics[order] ?? technicalCharacteristics[technicalCharacteristics.length - 1];
         return {
             id: `target_${feature.id}`,
+            performanceImprovement: feature.devProportion ?? '',
             category: '개선기능',
             subCategory: feature.improvementRate?.trim() || feature.content?.trim() || '',
-            specItem: tech?.name ?? '',
-            unit: tech?.unit ?? '',
-            targetValue: tech?.targetValue ?? '',
+            specItem: '',
+            unit: '',
+            targetValue: '',
             note: feature.content?.trim() ?? '',
             order,
         };
@@ -134,8 +136,69 @@ export function buildFundingPlansWithSales({
             category: plan.category || '매출액',
             item: plan.item || '매출액',
             year1: revenue,
-            year2: revenue,
-            year3: revenue,
+            year2: plan.year2 ?? null,
+            year3: plan.year3 ?? null,
         };
     });
+}
+
+export function buildTargetSpecsFromAsIs(specs: Array<Omit<TechTreeSpecFunctionLike, 'level'> & { level: string }>): TargetSpecSuggestion[] {
+    const sorted = [...specs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const result: TargetSpecSuggestion[] = [];
+    const append = (spec: Omit<TechTreeSpecFunctionLike, 'level'>, category: string, subCategory: string) => {
+        result.push({ id: 'asis_' + spec.id, category, subCategory, specItem: spec.technology ?? '', unit: '', targetValue: '', note: '유지', order: result.length });
+    };
+    for (const core of sorted.filter((spec) => spec.level === 'CORE')) {
+        const subs = sorted.filter((spec) => spec.level === 'SUB' && spec.parentId === core.id);
+        if (core.technology || subs.length === 0) append(core, core.name, '');
+        for (const sub of subs) {
+            const details = sorted.filter((spec) => spec.level === 'DETAIL' && spec.parentId === sub.id);
+            if (sub.technology || details.length === 0) append(sub, core.name, sub.name);
+            for (const detail of details) {
+                append(detail, core.name, sub.name + ' > ' + detail.name);
+            }
+        }
+    }
+    return result;
+}
+
+export function getImprovementCustomerNeeds(items: ImprovementLinkInput[]): string[] {
+    const byType = (type: string) => items.filter((item) => item.type === type).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const needs = byType('need');
+    const features = byType('feature');
+    return Array.from({ length: Math.max(needs.length, features.length) }, (_, index) =>
+        needs[index]?.content ?? features[index]?.content ?? ''
+    ).filter((value) => value.trim());
+}
+
+export interface RoadmapLinkRow {
+    id: string;
+    category: string;
+    techItem: string;
+    currentLevel: string;
+    targetLevel: string;
+    owner?: string | null;
+    q1?: string | null;
+    q2?: string | null;
+    q3?: string | null;
+    q4?: string | null;
+    order: number;
+    retained?: boolean;
+}
+
+export function mergeRoadmapWithCustomerNeeds(rows: RoadmapLinkRow[], needs: string[]): RoadmapLinkRow[] {
+    const hasWork = (row: RoadmapLinkRow) => [row.techItem, row.currentLevel, row.targetLevel, row.owner, row.q1, row.q2, row.q3, row.q4].some((value) => value?.trim());
+    const used = new Set<string>();
+    const next = needs.map((category, index) => {
+        const matches = rows.filter((row) => row.category.trim() === category.trim());
+        const unique = needs.filter((need) => need.trim() === category.trim()).length === 1 && matches.length === 1;
+        const saved = unique ? matches[0] : matches.find((row) => !hasWork(row) && !used.has(row.id));
+        if (saved) {
+            used.add(saved.id);
+            return { ...saved, category, targetLevel: saved.targetLevel ?? saved.owner ?? '', retained: false, order: index };
+        }
+        return { id: 'need_' + index, category, techItem: '', currentLevel: '', targetLevel: '', order: index };
+    });
+    return [...next, ...rows.filter((row) => !used.has(row.id) && (row.category.trim() || hasWork(row)) && (hasWork(row) || !needs.some((need) => need.trim() === row.category.trim()))).map((row) => ({ ...row, targetLevel: row.targetLevel ?? row.owner ?? '', retained: true }))]
+        .map((row, order) => ({ ...row, order }));
 }

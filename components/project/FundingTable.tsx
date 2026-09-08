@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import MoneyInput from '@/components/ui/MoneyInput';
+import { formatMoney } from '@/lib/money';
 import {
     generateFundingAiDraft,
     parseSourceYear,
@@ -12,8 +14,8 @@ interface FundingPlan {
     category: string;
     item: string;
     year1: number;
-    year2: number;
-    year3: number;
+    year2: number | null;
+    year3: number | null;
     order: number;
 }
 
@@ -63,7 +65,7 @@ const encodeYear = (value: FundingSourceYear) => JSON.stringify(value);
 const includesNormalized = (plan: FundingPlan, keyword: string) =>
     `${plan.category ?? ''} ${plan.item ?? ''}`.replace(/\s+/g, '').includes(keyword);
 
-const isRevenuePlan = (plan: FundingPlan) => includesNormalized(plan, '매출');
+const isRevenuePlan = (plan: FundingPlan) => plan.category === '매출액' || plan.item === '매출액';
 const isTotalPlan = (plan: FundingPlan) => includesNormalized(plan, '합계');
 const isCostPlan = (plan: FundingPlan) => !isRevenuePlan(plan) && !isTotalPlan(plan);
 
@@ -114,7 +116,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
         }
     };
 
-    const updatePlan = (id: string, field: YearField, value: number) => {
+    const updatePlan = (id: string, field: YearField, value: number | null) => {
         setPlans((prev) => prev.map((plan) => (plan.id === id ? { ...plan, [field]: value } : plan)));
     };
 
@@ -214,7 +216,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                 <p className="mt-1 text-xs text-gray-500">단위: 백만원</p>
                             </div>
                             <div className="text-right text-xs text-gray-500">
-                                <div>매출액은 WS-1과 연동됩니다.</div>
+                                <div>1차년도 매출액은 WS-1과 연동되며 2·3차년도는 직접 입력합니다.</div>
                                 <div>소요자금 합계는 개별 항목 합산 기준입니다.</div>
                             </div>
                         </div>
@@ -237,7 +239,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                             <td className="px-4 py-3 font-medium text-white">{formatFundingLabel(revenuePlan.item)}</td>
                                             {YEAR_FIELDS.map((field) => (
                                                 <td key={field} className="px-4 py-3 text-right text-amber-100">
-                                                    {(Number(revenuePlan[field]) || 0).toLocaleString()}
+                                                    {field === 'year1' ? formatMoney(revenuePlan[field]) : <MoneyInput aria-label={YEAR_LABELS[field] + ' 매출액'} value={revenuePlan[field]} onValueChange={(value) => updatePlan(revenuePlan.id, field, value)} className="w-full min-w-[120px] bg-transparent text-right outline-none" placeholder="직접 입력" />}
                                                 </td>
                                             ))}
                                         </tr>
@@ -255,10 +257,9 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                             </td>
                                             {YEAR_FIELDS.map((field) => (
                                                 <td key={field} className="p-0">
-                                                    <input
-                                                        type="number"
-                                                        value={Number(plan[field]) || ''}
-                                                        onChange={(event) => updatePlan(plan.id, field, Number(event.target.value) || 0)}
+                                                    <MoneyInput
+                                                        value={plan[field]}
+                                                        onValueChange={(value) => updatePlan(plan.id, field, value ?? 0)}
                                                         className={`w-full bg-transparent px-4 py-3 text-right outline-none transition-colors focus:bg-white/[0.04] ${
                                                             isTotalPlan(plan) ? 'font-semibold text-orange-300' : 'text-white'
                                                         }`}
@@ -281,7 +282,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                     <div key={series.field} className="space-y-1.5">
                                         <div className="flex items-center justify-between text-xs text-gray-400">
                                             <span>{series.label}</span>
-                                            <span className="text-white">{planTotals[series.field].toLocaleString()}</span>
+                                            <span className="text-white">{formatMoney(planTotals[series.field])}</span>
                                         </div>
                                         <div className="h-3 rounded-full bg-white/[0.05]">
                                             <div
@@ -301,14 +302,14 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                     <div key={field} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                                         <div className="text-xs text-gray-500">{YEAR_LABELS[field]}</div>
                                         <div className="mt-1 text-lg font-semibold text-white">
-                                            {(totalPlan?.[field] ?? planTotals[field]).toLocaleString()}
+                                            {formatMoney(totalPlan?.[field] ?? planTotals[field])}
                                         </div>
                                     </div>
                                 ))}
                                 <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3">
                                     <div className="text-xs text-cyan-200/70">3개년 총 소요자금</div>
                                     <div className="mt-1 text-lg font-semibold text-cyan-100">
-                                        {totalRequiredCost.toLocaleString()}
+                                        {formatMoney(totalRequiredCost)}
                                     </div>
                                 </div>
                             </div>
@@ -316,7 +317,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                     </div>
                 </div>
             ) : (
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)]">
+                <div className="w-full min-w-0">
                     <div className="card overflow-hidden">
                         <div className="flex items-end justify-between border-b border-white/[0.06] px-6 py-4">
                             <div>
@@ -327,10 +328,10 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                         </div>
 
                         <div className="overflow-x-auto">
-                            <table className="w-full min-w-[960px] border-collapse text-sm">
+                            <table className="w-full min-w-[1300px] border-collapse text-sm">
                                 <thead>
                                     <tr className="border-b border-white/[0.08] bg-white/[0.02] text-center text-gray-400">
-                                        <th className="w-[190px] px-4 py-3 text-left">구분</th>
+                                        <th className="min-w-[240px] w-[240px] px-4 py-3 text-left">구분</th>
                                         {YEAR_FIELDS.map((field) => (
                                             <th key={field} className="px-4 py-3">{YEAR_LABELS[field]}</th>
                                         ))}
@@ -344,21 +345,22 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                             </td>
                                             {YEAR_FIELDS.map((field) => {
                                                 const year = parseSourceYear(source[field]);
+                                                const sourceWidth = Math.max(200, year.source.length * 14 + 32);
                                                 return (
                                                     <td key={field} className="p-0">
-                                                        <div className="grid grid-cols-[minmax(140px,1fr)_110px] divide-x divide-white/[0.05]">
+                                                        <div className="grid divide-x divide-white/[0.05]" style={{ gridTemplateColumns: `minmax(${sourceWidth}px, 1fr) 160px`, minWidth: sourceWidth + 160 }}>
                                                             <input
                                                                 type="text"
                                                                 list={`source-options-${projectId}`}
                                                                 value={year.source}
+                                                                title={year.source}
                                                                 onChange={(event) => updateSourceYear(source.id, field, 'source', event.target.value)}
                                                                 className="min-w-0 bg-transparent px-3 py-3 text-white outline-none focus:bg-white/[0.04]"
                                                                 placeholder="출처"
                                                             />
-                                                            <input
-                                                                type="number"
+                                                            <MoneyInput
                                                                 value={year.amount}
-                                                                onChange={(event) => updateSourceYear(source.id, field, 'amount', event.target.value)}
+                                                                onValueChange={(value) => updateSourceYear(source.id, field, 'amount', value == null ? '' : String(value))}
                                                                 className="min-w-0 bg-transparent px-3 py-3 text-right text-white outline-none focus:bg-white/[0.04]"
                                                                 placeholder="0"
                                                             />
@@ -372,7 +374,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                         <td className="px-4 py-3">자금조달 합계</td>
                                         {YEAR_FIELDS.map((field) => (
                                             <td key={field} className="px-4 py-3 text-right">
-                                                {sourceTotals[field].toLocaleString()}
+                                                {formatMoney(sourceTotals[field])}
                                             </td>
                                         ))}
                                     </tr>

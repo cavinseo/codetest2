@@ -61,7 +61,7 @@ export interface WorkbookImportRecords {
         order: number;
     }>;
     assetItems: Array<{ type: string; category?: string | null; content?: string | null; order: number }>;
-    fundingPlans: Array<{ category?: string | null; item?: string | null; year1: number; year2: number; year3: number; order: number }>;
+    fundingPlans: Array<{ category?: string | null; item?: string | null; year1: number; year2: number | null; year3: number | null; order: number }>;
     fundingSources: Array<{ category?: string | null; year1?: string | null; year2?: string | null; year3?: string | null; order: number }>;
 }
 
@@ -480,8 +480,8 @@ function parseFundingPlans(sheet: ParsedSheet) {
             category: category || null,
             item: item || null,
             year1: numberValue(row?.[2]),
-            year2: numberValue(row?.[3]),
-            year3: numberValue(row?.[4]),
+            year2: (category === '매출액' || item === '매출액') && !cell(row, 3) ? null : numberValue(row?.[3]),
+            year3: (category === '매출액' || item === '매출액') && !cell(row, 4) ? null : numberValue(row?.[4]),
             order: records.length,
         });
     }
