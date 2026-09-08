@@ -285,7 +285,7 @@ export function shouldUseLandscape(widthPx: number, heightPx: number, threshold?
   `improvementRate`/`devProportion` 을 `type` 에 따라 다른 뜻으로 재사용한다 ④ 자금계획은
   `/funding-plan`+`/funding-source` 두 라우트가 아니라 `/funding` 하나가
   `{ plans, sources }` 를 함께 준다.
-- [ ] **Step 2: 실패하는 테스트를 쓴다** — `tests/final-report-document.test.ts`,
+- [x] **Step 2: 실패하는 테스트를 쓴다** — `tests/final-report-document.test.ts`,
   `tests/report-image-fit.test.ts`
   - 14개 DB 절 각각 최소 1개 표본 행으로 `dataTable`/`keyValueTable` 블록이 나오는지
   - 행이 0개인 절은 빈 표 대신 "입력된 데이터가 없습니다" 문구만 넣는다(빈 표보다 명확)
@@ -294,15 +294,15 @@ export function shouldUseLandscape(widthPx: number, heightPx: number, threshold?
   - 파일명 금지 문자(`/ \ : * ? " < > |`) 치환 (Kano 의 `kanoSurveyFileName` 과 같은 규칙)
   - `fitImageToBody`: 폭 초과 → 폭 기준 축소, 세로 초과 → 세로 기준 축소, 둘 다 안 넘으면
     원 크기(px→mm 96dpi), 0 또는 음수 입력은 예외
-- [ ] **Step 3: 실패를 확인한다**
-- [ ] **Step 4: 모델과 크기 계산을 구현한다**
-- [ ] **Step 5: 통과 확인 후 stryker 등록·100% 확인**
+- [x] **Step 3: 실패를 확인한다**
+- [x] **Step 4: 모델과 크기 계산을 구현한다**
+- [x] **Step 5: 통과 확인 후 stryker 등록·100% 확인**
   `stryker.crap.config.json` `mutate` 에 두 파일 추가 →
   `npx stryker run stryker.crap.config.json --mutate lib/final-report-document.ts` /
   `--mutate lib/report-image-fit.ts` → 각각 `100.00`. 등가 뮤턴트는
   `// Stryker disable next-line <Mutator>: <이유>` 로 제외하고 총 뮤턴트 감소 수를
   보고서에 적는다.
-- [ ] **Step 6: 커밋** — `feat: 결과보고서 문서 모델과 그림 크기 계산(순수)`
+- [x] **Step 6: 커밋** — `feat: 결과보고서 문서 모델과 그림 크기 계산(순수)`
 
 ---
 
