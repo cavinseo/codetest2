@@ -27,7 +27,8 @@
         "lib/kano-survey-document.ts",
         "lib/kano-offline-form.ts",
         "lib/kano-offline-response.ts",
-        "lib/feature-flags.ts"
+        "lib/feature-flags.ts",
+        "lib/timko-point-clusters.ts"
     ],
     "ignorePatterns": [
         ".claude/**",

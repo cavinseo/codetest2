@@ -99,7 +99,7 @@ export function clusterLabel(members: number[]): string;
 반환 순서: 묶음은 가장 작은 구성원 인덱스 순, 구성원은 오름차순. 입력 순서 = 차트 점 번호
 순서이므로 이 규칙이 곧 "번호 순서"다.
 
-- [ ] **Step 1: RED — 테스트를 먼저 쓴다**
+- [x] **Step 1: RED — 테스트를 먼저 쓴다**
 
 `tests/timko-point-clusters.test.ts`:
 
@@ -185,7 +185,7 @@ npx vitest run tests/timko-point-clusters.test.ts
 
 Expected: 모듈이 없어 **import 실패로 RED**. 마지막 줄에 `Test Files  1 failed` 가 있어야 한다.
 
-- [ ] **Step 2: GREEN — 모듈 작성**
+- [x] **Step 2: GREEN — 모듈 작성**
 
 `lib/timko-point-clusters.ts`:
 
@@ -263,7 +263,7 @@ npx vitest run tests/timko-point-clusters.test.ts
 
 Expected: 8개 전부 통과.
 
-- [ ] **Step 3: 뮤테이션 100% 와 `mutate` 목록 등재**
+- [x] **Step 3: 뮤테이션 100% 와 `mutate` 목록 등재**
 
 ```sh
 npx stryker run stryker.crap.config.json --mutate lib/timko-point-clusters.ts
@@ -278,7 +278,7 @@ Expected: `lib/timko-point-clusters.ts` 행이 **100.00**, Survived 0, NoCoverag
 `"lib/timko-point-clusters.ts"` 를 추가한다(들여쓰기는 바로 위 항목과 같게). CI 의
 CRAP / Mutation 워크플로가 이후 회귀를 잡도록 하는 것이다.
 
-- [ ] **Step 4: 전체 게이트**
+- [x] **Step 4: 전체 게이트**
 
 ```sh
 npx tsc --noEmit
@@ -288,7 +288,7 @@ npx next lint
 
 Expected: tsc 출력 없음 / vitest 전체 통과(테스트 수 = 기존 1,235 + 8) / lint 0건.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```sh
 git add lib/timko-point-clusters.ts tests/timko-point-clusters.test.ts \
@@ -300,7 +300,7 @@ git commit
 본문에 **왜**: 좌표가 같은 항목은 뒤 점이 앞 점을 덮어 번호가 사라진다는 것, 점을 밀지
 않고 번호만 모으는 이유(칸 = 가중치). 트레일러는 CLAUDE.md 저장소 관례를 따른다.
 
-- [ ] **Step 6: 보고서를 둘째 커밋으로**
+- [x] **Step 6: 보고서를 둘째 커밋으로**
 
 `docs/superpowers/reports/2026-09-08-timko-overlap-labels/task-1.md`, 커밋 메시지
 `docs: Task 1 결과 보고서`. VERIFIED BY 에 Step 1 의 RED 마지막 줄, Step 3 의 stryker 표
