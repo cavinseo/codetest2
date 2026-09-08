@@ -3,11 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import MoneyInput from '@/components/ui/MoneyInput';
 import { formatMoney } from '@/lib/money';
-import {
-    generateFundingAiDraft,
-    parseSourceYear,
-    type FundingAiDraftResult,
-} from '@/lib/funding-ai-agent';
+import { parseSourceYear } from '@/lib/funding-ai-agent';
 
 interface FundingPlan {
     id: string;
@@ -159,21 +155,6 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
         )
     );
 
-    const applyAiResult = (result: FundingAiDraftResult) => {
-        setPlans(result.plans);
-        setSources(result.sources);
-        const messages = [
-            result.summary.filledPlanCells > 0 ? `소요자금 ${result.summary.filledPlanCells}칸을 채웠습니다.` : '',
-            result.summary.filledSourceCells > 0 ? `조달계획 ${result.summary.filledSourceCells}칸을 채웠습니다.` : '',
-            ...result.issues.map((issue) => issue.message),
-        ].filter(Boolean);
-        setAiMessage(messages.join(' ') || 'AI 초안이 반영되었습니다.');
-    };
-
-    const handleGenerateAiDraft = () => {
-        applyAiResult(generateFundingAiDraft({ plans, sources }));
-    };
-
     if (isLoading) {
         return <div className="p-8 text-center text-gray-400">로딩 중...</div>;
     }
@@ -192,8 +173,8 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    <button onClick={handleGenerateAiDraft} className="btn-secondary text-sm flex items-center gap-1.5">
-                        AI 초안
+                    <button type="button" disabled className="btn-secondary text-sm flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50">
+                        AI 초안 (사용 중지)
                     </button>
                     <button onClick={handleSave} disabled={isSaving} className="btn-primary">
                         {isSaving ? '저장 중...' : '저장'}
