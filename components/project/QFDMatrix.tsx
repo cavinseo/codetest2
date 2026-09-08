@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import HeaderToast from '@/components/HeaderToast';
 import Link from 'next/link';
 import { buildQfdSpecFooterRows } from '@/lib/qfd-footer-rows';
 import {
@@ -604,15 +605,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                     <option key={option} value={option} />
                 ))}
             </datalist>
-            {toast && (
-                <div className={`fixed right-6 bottom-6 z-[100] flex items-center gap-3 rounded-xl border px-5 py-3 shadow-2xl animate-fade-in ${
-                    toast.type === 'success'
-                        ? 'border-emerald-500/40 bg-emerald-900/90 text-emerald-200'
-                        : 'border-red-500/40 bg-red-900/90 text-red-200'
-                }`}>
-                    <span className="text-sm font-medium">{toast.message}</span>
-                </div>
-            )}
+            {toast && <HeaderToast message={toast.message} type={toast.type} />}
 
             <section className="glass-strong p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

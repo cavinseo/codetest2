@@ -2,6 +2,7 @@
 // WS-11 개선포인트도출 표를 렌더링하는 클라이언트 컴포넌트입니다.
 
 import { useEffect, useRef, useState } from 'react';
+import HeaderToast from '@/components/HeaderToast';
 import { buildImprovementSuggestionsFromQfd } from '@/lib/worksheet-links';
 
 interface ImprovementRow {
@@ -334,14 +335,7 @@ export default function ImprovementsTable({ projectId }: Props) {
 
     return (
         <div className="relative space-y-6">
-            {toast && (
-                <div className="fixed right-6 bottom-6 z-[100] flex items-center gap-3 rounded-xl border border-emerald-500/40 bg-emerald-900/90 px-5 py-3 text-emerald-200 shadow-2xl animate-fade-in">
-                    <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span className="text-sm font-medium">{toast}</span>
-                </div>
-            )}
+            {toast && <HeaderToast message={toast} />}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>

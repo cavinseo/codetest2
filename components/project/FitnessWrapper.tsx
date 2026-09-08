@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import HeaderToast from '@/components/HeaderToast';
 import {
     buildCustomerNamesByMarketSegment,
     dedupeByAttributeName,
@@ -476,14 +477,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                 ))}
             </datalist>
             {/* 토스트 */}
-            {toast && (
-                <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border animate-fade-in ${toast.type === 'success' ? 'bg-emerald-900/90 border-emerald-500/40 text-emerald-200' : 'bg-red-900/90 border-red-500/40 text-red-200'}`}>
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={toast.type === 'success' ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'} />
-                    </svg>
-                    <span className="text-sm font-medium">{toast.message}</span>
-                </div>
-            )}
+            {toast && <HeaderToast message={toast.message} type={toast.type} />}
 
             {/* 헤더 */}
             <div className="flex items-center justify-between">
