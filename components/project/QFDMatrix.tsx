@@ -331,6 +331,12 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         expandAllTechnicalGroups();
     };
 
+    // 지울 열에 실제로 입력해 둔 관계 강도가 몇 개인지. 확인창이 "정말?"을 한 번 더
+    // 묻는 대신 무엇을 잃는지 숫자로 보여 주게 한다 — 반사적으로 누르는 두 번째 확인보다
+    // 이쪽이 실수를 막는다.
+    const countEnteredRelationships = (technicalCharId: string) =>
+        relationships.filter((item) => item.technicalCharId === technicalCharId && item.strength !== 'NONE').length;
+
     const handleDeleteTechnical = async () => {
         if (!deletingTech) return;
 
@@ -743,7 +749,9 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                 세부기능 &apos;{deletingTech.name || '(이름 없음)'}&apos; 열을 삭제할까요?
                             </p>
                             <p className="mt-0.5 text-xs text-rose-200/70">
-                                이 열에 입력한 관계 강도와 상관관계도 함께 지워집니다. 되돌릴 수 없습니다.
+                                {countEnteredRelationships(deletingTech.id) > 0
+                                    ? `입력해 둔 관계 강도 ${countEnteredRelationships(deletingTech.id)}개와 이 열의 상관관계가 함께 지워집니다. 되돌릴 수 없습니다.`
+                                    : '이 열에는 입력된 관계 강도가 없습니다. 열과 상관관계만 지워지며 되돌릴 수 없습니다.'}
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
