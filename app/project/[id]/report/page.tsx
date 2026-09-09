@@ -219,6 +219,9 @@ export default function FinalReportPage() {
             <div className="flex flex-col items-center justify-center gap-3 p-12">
                 <div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" />
                 <p className="text-sm text-gray-500">워크시트 불러오는 중 {loadedCount}/12</p>
+                {/* 주소의 프로젝트 식별자를 그대로 보여 준다. 안내문의 자리표시자를 그대로
+                    넣어 열었던 일이 있어, 화면만 보고도 그 경우를 가릴 수 있어야 한다. */}
+                <p className="text-xs text-gray-600">프로젝트 {projectId}</p>
             </div>
         );
     }
