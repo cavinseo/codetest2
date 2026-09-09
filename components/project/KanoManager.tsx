@@ -8,6 +8,7 @@ import CategoryPieChart from '@/components/CategoryPieChart';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import KanoRespondentTable from '@/components/project/KanoRespondentTable';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
 import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
 import {
@@ -85,7 +86,6 @@ interface KanoManagerProps {
     initialView?: 'manage' | 'analysis';
 }
 
-type ToastType = 'success' | 'error' | 'info';
 type ExcelUploadFormat = 'template' | 'googleForms';
 
 export default function KanoManager({ projectId, initialView }: KanoManagerProps) {
@@ -133,16 +133,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [kanoQuestions, setKanoQuestions] = useState<Record<string, { positive: string; negative: string }>>({});
     const [isSavingQuestions, setIsSavingQuestions] = useState(false);
 
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const { toast, showToast } = useToast(3500);
     const excelInputRef = useRef<HTMLInputElement | null>(null);
     const offlineInputRef = useRef<HTMLInputElement | null>(null);
-
-    const showToast = (message: string, type: ToastType = 'success') => {
-        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        setToast({ message, type });
-        toastTimerRef.current = setTimeout(() => setToast(null), 3500);
-    };
 
     const loadData = useCallback(async () => {
         setIsLoading(true);

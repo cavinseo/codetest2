@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import { buildQfdSpecFooterRows } from '@/lib/qfd-footer-rows';
 import {
@@ -86,7 +87,6 @@ interface QFDMatrixProps {
 type DisplayTechnical = TechnicalChar & { isPlaceholder?: boolean };
 /** 표 아래쪽에서 직접 고쳐 쓰는 기술특성 칸. 둘 다 TechnicalCharacteristic 의 열이다. */
 type TechnicalTextField = 'unit' | 'targetValue';
-type ToastType = 'success' | 'error';
 type VisibleTechnicalColumn = { tech: DisplayTechnical; index: number };
 type PendingBenchmarkScores = Record<string, number>;
 
@@ -179,9 +179,8 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const [techFieldDrafts, setTechFieldDrafts] = useState<Record<string, string>>({});
     const [deletingTech, setDeletingTech] = useState<DisplayTechnical | null>(null);
     const [isDeletingTech, setIsDeletingTech] = useState(false);
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    const { toast, showToast } = useToast();
     const [dataError, setDataError] = useState<string | null>(null);
-    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const competitorColumns = useMemo(() => {
         const companies = [
@@ -213,12 +212,6 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const benchmarkColumnCount = 1 + competitorColumns.length;
     const rightSideColumnSpan = 8 + competitorColumns.length;
     const scoreSelectClassName = 'h-[31px] w-full cursor-pointer border-none bg-white p-1 text-center font-semibold text-slate-950 outline-none hover:bg-cyan-50';
-
-    const showToast = (message: string, type: ToastType = 'success') => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast({ message, type });
-        toastTimer.current = setTimeout(() => setToast(null), 3000);
-    };
 
     const loadData = useCallback(async () => {
         setIsLoading(true);

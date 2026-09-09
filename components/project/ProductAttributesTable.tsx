@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 import AttributeMentorWizard from './AttributeMentorWizard';
 import type { MentorAppliedRow } from '@/lib/attribute-mentor-utils';
 import {
@@ -38,8 +39,6 @@ interface ProductAttributesTableProps {
     projectId: string;
     onSaved?: () => void;
 }
-
-type ToastType = 'success' | 'error';
 
 // ─────────────────────────────────────────
 // AS-IS 스펙 엑셀 워크시트 형식 테이블 컴포넌트
@@ -193,18 +192,11 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [productName, setProductName] = useState('');
     const [importedFields, setImportedFields] = useState<Set<string>>(new Set());
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+    const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [showMentor, setShowMentor] = useState(false);
     const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
-    const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const excelInputRef = useRef<HTMLInputElement | null>(null);
-
-    const showToast = (message: string, type: ToastType = 'success') => {
-        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        setToast({ message, type });
-        toastTimerRef.current = setTimeout(() => setToast(null), 3000);
-    };
 
     const loadData = useCallback(async () => {
         setIsLoading(true);

@@ -1,8 +1,9 @@
 'use client';
 // WS-10 기능기술체계도 표를 렌더링하는 클라이언트 컴포넌트입니다.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 import { getTopRankedQfdRequirements, type RankedTechTreeRequirement } from '@/lib/tech-tree-qfd';
 import { buildBlankTechTreeRows, buildTechTreeSpecOptions, applyTechTreeSpecSelection, findTechTreeSpecOptions, type TechTreeSpecOption } from '@/lib/tech-tree-utils';
 
@@ -68,14 +69,7 @@ export default function TechTreeTable({ projectId }: Props) {
     const [isSaving, setIsSaving] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [specPicker, setSpecPicker] = useState<{ rowIndex: number; rowIds: string[] } | null>(null);
-    const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
-    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast({ message, type });
-        toastTimer.current = setTimeout(() => setToast(null), 3000);
-    };
+    const { toast, showToast } = useToast();
 
     const buildGeneratedRows = (sourceRequirements: SourceRequirement[], sourceSpecs: SpecFunction[]) =>
         buildBlankTechTreeRows(sourceRequirements, sourceSpecs);

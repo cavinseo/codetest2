@@ -1,7 +1,8 @@
 'use client';
 
-import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Fragment, useState, useEffect, useCallback, useMemo } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 import {
     buildCustomerNamesByMarketSegment,
     dedupeByAttributeName,
@@ -136,14 +137,7 @@ export default function FitnessWrapper({ projectId }: Props) {
     const [isSaving, setIsSaving] = useState(false);
     const [managerComment, setManagerComment] = useState('');
     const [savedConsultantComment, setSavedConsultantComment] = useState('');
-    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast({ message, type });
-        toastTimer.current = setTimeout(() => setToast(null), 3000);
-    };
+    const { toast, showToast } = useToast();
 
     // ── 데이터 로드 ──
     const loadData = useCallback(async () => {

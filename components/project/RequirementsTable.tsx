@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, KeyboardEvent } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import {
     shouldShowPrimaryGroup,
@@ -20,8 +21,6 @@ interface Requirement {
 interface RequirementsTableProps {
     projectId: string;
 }
-
-type ToastType = 'success' | 'error';
 
 // 카테고리별 색상 팔레트 (최대 10개 순환)
 const CATEGORY_COLORS = [
@@ -59,20 +58,13 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     const [isAddingNew, setIsAddingNew] = useState(false);
     const newCatRef = useRef<HTMLInputElement>(null);
 
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const { toast, showToast } = useToast();
     const excelInputRef = useRef<HTMLInputElement | null>(null);
 
     // 카테고리 목록 (자동완성용)
     const categoryList = [...new Set(requirements.map(r => r.category).filter(Boolean))];
     const subcategoryList = [...new Set(requirements.map(r => r.subcategory).filter(Boolean))];
     const categoryColors = useCategoryColor(categoryList);
-
-    const showToast = (message: string, type: ToastType = 'success') => {
-        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        setToast({ message, type });
-        toastTimerRef.current = setTimeout(() => setToast(null), 3000);
-    };
 
     // AI 자동생성 (규칙 기반)
     const handleGenerateAI = async (mode: 'append' | 'overwrite') => {

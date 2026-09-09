@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { dedupeByAttributeName } from '@/lib/product-attributes-utils';
@@ -26,8 +27,6 @@ interface AttributeFitness {
     targetLevel: number;
     note?: string;
 }
-
-type ToastType = 'success' | 'error';
 
 function ScoreSlider({
     value,
@@ -124,14 +123,7 @@ export default function AttributeFitnessPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [savedAt, setSavedAt] = useState<string | null>(null);
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-    const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const showToast = (message: string, type: ToastType = 'success') => {
-        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        setToast({ message, type });
-        toastTimerRef.current = setTimeout(() => setToast(null), 3000);
-    };
+    const { toast, showToast } = useToast();
 
     useEffect(() => {
         async function loadData() {
