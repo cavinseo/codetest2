@@ -80,6 +80,8 @@ export default function FinalReportPage() {
     const [isLoading, setIsLoading] = useState(true);
     // 어디까지 받았는지 보여 준다. 열두 곳을 한꺼번에 부르므로 멈춘 것과 느린 것을 구별해야 한다.
     const [loadedCount, setLoadedCount] = useState(0);
+    // 못 받은 곳을 화면에 드러낸다. 조용히 null 로 넘기면 표가 왜 비었는지 알 수 없다.
+    const [failedKeys, setFailedKeys] = useState<string[]>([]);
     const [free, setFree] = useState<FinalReportFreeInput>(EMPTY_FREE_INPUT);
     const [progress, setProgress] = useState<string | null>(null);
     // 원본은 되돌리기와 "몇 곳 고쳤는지"를 위해 그대로 남기고, 편집은 draft 에만 쌓는다.
@@ -108,7 +110,10 @@ export default function FinalReportPage() {
             setLoadedCount((count) => count + 1);
             return result;
         })))
-            .then((results) => setPayloads(Object.fromEntries(keys.map((key, i) => [key, results[i]]))))
+            .then((results) => {
+                setPayloads(Object.fromEntries(keys.map((key, i) => [key, results[i]])));
+                setFailedKeys(keys.filter((_, i) => results[i] === null));
+            })
             .finally(() => setIsLoading(false));
     }, [projectId]);
 
@@ -232,6 +237,18 @@ export default function FinalReportPage() {
     return (
         <div className="mx-auto w-full max-w-[1400px] space-y-6 p-6">
             {toast && <HeaderToast message={toast.message} type={toast.type} />}
+
+            {failedKeys.length > 0 && (
+                <div className="card border-amber-500/40 bg-amber-500/10">
+                    <p className="text-sm text-amber-200">
+                        <span className="font-semibold">{failedKeys.length}개 워크시트를 불러오지 못했습니다.</span>{' '}
+                        해당 절은 빈 채로 문서에 들어갑니다 — {failedKeys.join(', ')}
+                    </p>
+                    <p className="mt-1 text-xs text-amber-200/70">
+                        프로젝트 {projectId} · 권한이 없거나(코치명 등) 아직 입력하지 않은 워크시트라면 정상입니다.
+                    </p>
+                </div>
+            )}
 
             <div className="flex items-center justify-between">
                 <div>
