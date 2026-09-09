@@ -33,6 +33,7 @@
         "lib/technical-benchmark-guards.ts",
         "lib/timko-point-clusters.ts",
         "lib/final-report-inputs.ts",
+        "lib/final-report-edit.ts",
         "lib/final-report-document.ts",
         "lib/report-image-fit.ts"
     ],

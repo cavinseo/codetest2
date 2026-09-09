@@ -14,7 +14,9 @@ import FitnessWrapper from '@/components/project/FitnessWrapper';
 import KanoSatisfactionGraph from '@/components/project/KanoSatisfactionGraph';
 import QFDMatrix from '@/components/project/QFDMatrix';
 import { buildWorksheetData, pickCoachName, toKanoChartPoints, type WorksheetPayloads } from '@/lib/final-report-inputs';
-import { buildFinalReportModel, type CapturedWorksheetImage, type FinalReportFreeInput } from '@/lib/final-report-document';
+import FinalReportPreview from '@/components/project/FinalReportPreview';
+import { buildFinalReportModel, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel } from '@/lib/final-report-document';
+import { applyBlockEdit, countEditedBlocks, withEditedBlocks, type BlockEdit } from '@/lib/final-report-edit';
 import { renderFinalReportDocx } from '@/lib/final-report-docx';
 import { captureWorksheetNode } from '@/lib/worksheet-capture';
 
@@ -65,6 +67,9 @@ export default function FinalReportPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [free, setFree] = useState<FinalReportFreeInput>(EMPTY_FREE_INPUT);
     const [progress, setProgress] = useState<string | null>(null);
+    // 원본은 되돌리기와 "몇 곳 고쳤는지"를 위해 그대로 남기고, 편집은 draft 에만 쌓는다.
+    const [model, setModel] = useState<FinalReportModel | null>(null);
+    const [draft, setDraft] = useState<FinalReportModel | null>(null);
     const { toast, showToast } = useToast();
 
     useEffect(() => {
@@ -126,7 +131,7 @@ export default function FinalReportPage() {
         reader.readAsDataURL(file);
     };
 
-    const handleGenerate = useCallback(async () => {
+    const handleBuildPreview = useCallback(async () => {
         if (!worksheets || !payloads) return;
         setProgress('0/3 캡처 중...');
         try {
@@ -154,11 +159,29 @@ export default function FinalReportPage() {
                 images,
             );
 
-            const blob = await renderFinalReportDocx(model);
+            setModel(model);
+            setDraft(model);
+            showToast('미리보기를 만들었습니다. 확인하고 고친 뒤 내려받으세요.');
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : '미리보기 생성에 실패했습니다.', 'error');
+        } finally {
+            setProgress(null);
+        }
+    }, [worksheets, payloads, free, showToast]);
+
+    const handleEdit = useCallback((edit: BlockEdit) => {
+        setDraft((prev) => (prev ? withEditedBlocks(prev, applyBlockEdit(prev.blocks, edit)) : prev));
+    }, []);
+
+    const handleDownload = useCallback(async () => {
+        if (!draft) return;
+        setProgress('문서 만드는 중...');
+        try {
+            const blob = await renderFinalReportDocx(draft);
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = model.fileName;
+            link.download = draft.fileName;
             // 문서에 붙였다가 눌러야 한다. 붙이지 않은 요소의 click 을 무시하는 브라우저가 있다.
             document.body.appendChild(link);
             link.click();
@@ -167,17 +190,18 @@ export default function FinalReportPage() {
             setTimeout(() => URL.revokeObjectURL(url), 10000);
             showToast('결과보고서를 내려받았습니다.');
         } catch (error) {
-            showToast(error instanceof Error ? error.message : '결과보고서 생성에 실패했습니다.', 'error');
+            showToast(error instanceof Error ? error.message : '문서를 만들지 못했습니다.', 'error');
         } finally {
             setProgress(null);
         }
-    }, [worksheets, payloads, free, showToast]);
+    }, [draft, showToast]);
 
     if (isLoading) {
         return <div className="flex items-center justify-center p-12"><div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" /></div>;
     }
 
     const requirementCount = worksheets?.requirements.length ?? 0;
+    const editedCount = model && draft ? countEditedBlocks(model.blocks, draft.blocks) : 0;
 
     return (
         <div className="mx-auto w-full max-w-[1400px] space-y-6 p-6">
@@ -192,8 +216,11 @@ export default function FinalReportPage() {
                 </div>
                 <div className="flex items-center gap-2">
                     <Link href={`/project/${projectId}`} className="btn-secondary text-sm">워크시트로</Link>
-                    <button onClick={handleGenerate} disabled={progress !== null} className="btn-primary text-sm disabled:opacity-50">
-                        {progress ?? '결과보고서 생성'}
+                    <button onClick={handleBuildPreview} disabled={progress !== null} className="btn-secondary text-sm disabled:opacity-50">
+                        {progress ?? (draft ? '미리보기 다시 만들기' : '미리보기 만들기')}
+                    </button>
+                    <button onClick={handleDownload} disabled={progress !== null || !draft} className="btn-primary text-sm disabled:opacity-50">
+                        Word 내려받기
                     </button>
                 </div>
             </div>
@@ -227,9 +254,31 @@ export default function FinalReportPage() {
                 ))}
             </div>
 
+            {draft && model && (
+                <section className="card space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <h2 className="text-lg font-semibold text-white">미리보기 · 교정</h2>
+                            <p className="mt-1 text-sm text-gray-500">
+                                문서에 들어갈 내용입니다. 칸을 눌러 바로 고칠 수 있고, 고친 내용은 워크시트에 저장되지 않습니다.
+                                {editedCount > 0 && <span className="ml-1 text-amber-300">{editedCount}곳 교정함</span>}
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => setDraft(model)}
+                            disabled={editedCount === 0}
+                            className="btn-secondary text-sm disabled:opacity-40"
+                        >
+                            원본으로 되돌리기
+                        </button>
+                    </div>
+                    <FinalReportPreview blocks={draft.blocks} onEdit={handleEdit} />
+                </section>
+            )}
+
             <div className="space-y-6">
                 <p className="text-sm text-gray-500">
-                    아래 세 화면이 그대로 그림으로 들어갑니다. 값이 다 나온 뒤에 「결과보고서 생성」을 누르세요.
+                    아래 세 화면이 그대로 그림으로 들어갑니다. 값이 다 나온 뒤에 「미리보기 만들기」를 누르세요.
                 </p>
 
                 <section className="card p-0 overflow-hidden">
