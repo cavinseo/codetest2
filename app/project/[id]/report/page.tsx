@@ -159,8 +159,12 @@ export default function FinalReportPage() {
             const link = document.createElement('a');
             link.href = url;
             link.download = model.fileName;
+            // 문서에 붙였다가 눌러야 한다. 붙이지 않은 요소의 click 을 무시하는 브라우저가 있다.
+            document.body.appendChild(link);
             link.click();
-            URL.revokeObjectURL(url);
+            document.body.removeChild(link);
+            // 누른 직후 바로 해제하면 내려받기가 시작되기 전에 주소가 무효가 될 수 있다.
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
             showToast('결과보고서를 내려받았습니다.');
         } catch (error) {
             showToast(error instanceof Error ? error.message : '결과보고서 생성에 실패했습니다.', 'error');
