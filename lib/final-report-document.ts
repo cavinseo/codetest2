@@ -118,7 +118,7 @@ export function buildFinalReportModel(
         });
     };
 
-    heading('표지', 1);
+    heading('KS-QFD 결과보고서', 1);
     blocks.push({ kind: 'keyValueTable', rows: [
         { label: '기업명', value: overview.projectName },
         { label: '작성일', value: overview.generatedAt },

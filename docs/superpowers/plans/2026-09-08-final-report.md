@@ -323,8 +323,8 @@ export async function renderFinalReportDocx(model: FinalReportModel): Promise<Bl
 
 ### Task 3: 캡처 — `lib/worksheet-capture.ts` + 의존성
 
-- [ ] **Step 1: `html-to-image` 를 설치한다** (`npm install html-to-image`, lock 파일 커밋)
-- [ ] **Step 2: 캡처 함수를 만든다**
+- [x] **Step 1: `html-to-image` 를 설치한다** (`npm install html-to-image`, lock 파일 커밋)
+- [x] **Step 2: 캡처 함수를 만든다**
 
 ```typescript
 // 브라우저 전용. 워크시트 루트 노드를 PNG dataURL 로 만든다.
@@ -338,7 +338,7 @@ export async function captureWorksheetNode(node: HTMLElement, options?: { pixelR
   - WS-9 는 가로 스크롤(`overflow-x-auto`) 표라 캡처 전 컨테이너 폭을 스크롤 폭만큼
     일시적으로 넓혀 잘리지 않게 한다.
   - `pixelRatio` 기본 2.
-- [ ] **Step 3: 커밋** — `feat: 워크시트 DOM 을 PNG 로 캡처하는 유틸`
+- [x] **Step 3: 커밋** — `feat: 워크시트 DOM 을 PNG 로 캡처하는 유틸`
 
 컴포넌트 테스트 인프라가 없어 이 파일은 단위 테스트 대상이 아니다. 실화면 검증 항목으로 넘긴다.
 
