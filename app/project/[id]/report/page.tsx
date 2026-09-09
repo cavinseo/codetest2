@@ -48,8 +48,13 @@ const FREE_FIELDS: Array<{ key: keyof FinalReportFreeInput; label: string; place
     { key: 'improvedProductDescription', label: '개선 제품설명', placeholder: '개선 후 제품 설명' },
 ];
 
-/** 한 라우트가 늦어도 화면 전체가 멈추지 않도록 끊는 시간. */
-const FETCH_TIMEOUT_MS = 20000;
+/**
+ * 한 라우트가 늦어도 화면 전체가 멈추지 않도록 끊는 시간.
+ * 넉넉히 잡은 이유는 dev 서버가 이 화면에서 처음 열두 라우트를 그 자리에서
+ * 컴파일하기 때문이다. 짧게 끊으면 첫 진입에서 모든 절이 빈 채로 그려진다.
+ * 컴파일이 끝난 뒤와 배포판에서는 이 시간까지 갈 일이 없다.
+ */
+const FETCH_TIMEOUT_MS = 60000;
 
 async function getJson(url: string): Promise<unknown> {
     // 타임아웃이 없으면 라우트 하나가 응답하지 않을 때 화면이 영영 로딩 상태로 남는다.
