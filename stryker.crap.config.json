@@ -29,7 +29,9 @@
         "lib/kano-offline-response.ts",
         "lib/feature-flags.ts",
         "lib/technical-benchmark-guards.ts",
-        "lib/timko-point-clusters.ts"
+        "lib/timko-point-clusters.ts",
+        "lib/final-report-document.ts",
+        "lib/report-image-fit.ts"
     ],
     "ignorePatterns": [
         ".claude/**",
