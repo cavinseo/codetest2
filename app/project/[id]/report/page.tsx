@@ -17,7 +17,6 @@ import { buildWorksheetData, pickCoachName, toKanoChartPoints, type WorksheetPay
 import FinalReportPreview from '@/components/project/FinalReportPreview';
 import { buildFinalReportModel, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel } from '@/lib/final-report-document';
 import { applyBlockEdit, countEditedBlocks, withEditedBlocks, type BlockEdit } from '@/lib/final-report-edit';
-import { renderFinalReportDocx } from '@/lib/final-report-docx';
 import { captureWorksheetNode } from '@/lib/worksheet-capture';
 
 /** 캡처 컨테이너의 고정 폭. 화면 폭에 따라 캡처 결과가 달라지지 않게 한다. */
@@ -207,6 +206,9 @@ export default function FinalReportPage() {
         if (!draft) return;
         setProgress('문서 만드는 중...');
         try {
+            // docx 는 이 버튼을 누를 때만 필요하다. 화면을 열 때 함께 불러오면 번들러가
+            // 브라우저용으로 바꾸다 깨지면서(SyntaxError) 페이지 전체가 죽는다.
+            const { renderFinalReportDocx } = await import('@/lib/final-report-docx');
             const blob = await renderFinalReportDocx(draft);
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');

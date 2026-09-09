@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // docx 는 브라우저에서 그대로 번들되면 'super' 구문에서 깨진다. Next 가 직접
+  // 트랜스파일하게 맡긴다. 서버 라우트만 쓰던 때에는 드러나지 않던 문제다.
+  transpilePackages: ['docx'],
   experimental: {
     serverActions: {
       allowedOrigins: ['localhost:3000', '127.0.0.1:5000', 'localhost:5000'],
