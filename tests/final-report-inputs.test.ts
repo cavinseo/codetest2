@@ -13,7 +13,9 @@ describe('pickArray', () => {
     it('키가 가리키는 배열을 그대로 돌려준다', () => {
         expect(pickArray({ rows: [1, 2] }, 'rows')).toEqual([1, 2]);
     });
-    it.each([
+    // 케이스마다 타입이 달라 튜플로 못박는다. 안 그러면 tsc 가 배열 union 으로 추론해
+    // 콜백 인자와 맞지 않는다고 본다.
+    const nonArrayCases: Array<[unknown, string]> = [
         [null, 'rows'],
         [undefined, 'rows'],
         ['문자열', 'rows'],
@@ -21,7 +23,8 @@ describe('pickArray', () => {
         [{ rows: null }, 'rows'],
         [{ rows: { 0: 'a' } }, 'rows'],
         [{ entries: [1] }, 'rows'],
-    ])('배열이 아니면 빈 배열이다 (%s)', (payload, key) => {
+    ];
+    it.each(nonArrayCases)('배열이 아니면 빈 배열이다 (%s)', (payload, key) => {
         expect(pickArray(payload, key)).toEqual([]);
     });
 });
@@ -76,7 +79,7 @@ describe('pickCoachName', () => {
         expect(pickCoachName(payload)).toBe('이코치');
     });
 
-    it.each([
+    const noCoachCases: Array<[unknown]> = [
         [null],
         [{}],
         [{ mentors: [] }],
@@ -84,7 +87,8 @@ describe('pickCoachName', () => {
         [{ mentors: [{ user: null }] }],
         [{ mentors: [{ user: { name: null } }] }],
         [{ mentors: [{ user: { name: 42 } }] }],
-    ])('배정이 없거나 403 이면 null 이다 (%s)', (payload) => {
+    ];
+    it.each(noCoachCases)('배정이 없거나 403 이면 null 이다 (%s)', (payload) => {
         expect(pickCoachName(payload)).toBeNull();
     });
 });
@@ -98,12 +102,13 @@ describe('toKanoChartPoints', () => {
         ]);
     });
 
-    it.each([
+    const unmatchedCases: Array<[Array<{ id: string; requirement: string | null }>]> = [
         [[{ id: 'other', requirement: '다른 것' }]],
         [[{ id: 'r1', requirement: '' }]],
         [[{ id: 'r1', requirement: null }]],
         [[]],
-    ])('짝을 못 찾으면 이름을 비운다 (%s)', (requirements) => {
+    ];
+    it.each(unmatchedCases)('짝을 못 찾으면 이름을 비운다 (%s)', (requirements) => {
         expect(toKanoChartPoints(kano, requirements)[0].requirementName).toBeUndefined();
     });
 
