@@ -84,6 +84,7 @@ describe('pickCoachName', () => {
         [{}],
         [{ mentors: [] }],
         [{ mentors: [{}] }],
+        [{ mentors: [null] }],
         [{ mentors: [{ user: null }] }],
         [{ mentors: [{ user: { name: null } }] }],
         [{ mentors: [{ user: { name: 42 } }] }],

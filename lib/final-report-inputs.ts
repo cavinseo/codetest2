@@ -5,9 +5,14 @@
 // 여기에 모은다. 화면은 fetch 만 하고 이 파일이 뜻을 붙인다.
 import type { FinalReportWorksheetData } from './final-report-document';
 
-/** 응답에서 배열을 꺼낸다. 한 워크시트가 비어도 보고서 전체는 나와야 하므로 빈 배열로 떨어뜨린다. */
+/**
+ * 응답에서 배열을 꺼낸다. 한 워크시트가 비어도 보고서 전체는 나와야 하므로 빈 배열로 떨어뜨린다.
+ * null·undefined 만 걸러내면 충분하다. 문자열·숫자 같은 값에 속성으로 접근해도 undefined 가
+ * 나올 뿐이고 그것은 아래 Array.isArray 가 막는다. typeof 로 객체인지까지 따지던 것은
+ * 함수에만 의미가 있었는데, fetch().json() 이 함수를 돌려주는 일은 없다.
+ */
 export function pickArray<T = Record<string, unknown>>(payload: unknown, key: string): T[] {
-    if (!payload || typeof payload !== 'object') return [];
+    if (!payload) return [];
     const value = (payload as Record<string, unknown>)[key];
     return Array.isArray(value) ? (value as T[]) : [];
 }
