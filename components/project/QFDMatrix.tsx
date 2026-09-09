@@ -272,7 +272,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, showToast]);
 
     useEffect(() => {
         loadData();

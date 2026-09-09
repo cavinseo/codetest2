@@ -115,7 +115,7 @@ export default function TechTreeTable({ projectId }: Props) {
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, showToast]);
 
     useEffect(() => {
         loadData();

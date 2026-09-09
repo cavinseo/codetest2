@@ -110,7 +110,7 @@ export default function ImprovementsTable({ projectId }: Props) {
                 showToast('개선포인트 데이터를 불러오지 못했습니다.');
             })
             .finally(() => setIsLoading(false));
-    }, [projectId]);
+    }, [projectId, showToast]);
 
     useEffect(() => {
         setFeatures((currentFeatures) => {
