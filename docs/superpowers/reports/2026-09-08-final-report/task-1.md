@@ -22,10 +22,10 @@ Task 1의 순수 모델 조립 및 그림 크기 계산을 구현했다. 표지�
 ## COMMIT
 
 - 브랜치 `claude/notification-warning-position-p3vlxx`.
-- 작업 커밋 `f259f4804211c33e55cd9172178fb0244bfc22ba`.
+- 작업 커밋 `5d43ed35c04479c72ede02f36bffa2441de63e48` (Task 2 후속 승인으로 rebase하기 전 `f259f4804211c33e55cd9172178fb0244bfc22ba`).
 - 작업 커밋 제목 `feat: 결과보고서 문서 모델과 그림 크기 계산(순수)`.
 - 보고서 커밋 제목 `docs: Task 1 결과 보고서`.
-- push·병합·배포는 수행하지 않았다.
+- Task 1 완료 당시 push·병합·배포는 수행하지 않았다. 이후 Task 2의 명시적 푸시 지시와 사용자 승인에 따라 원격 문서 커밋 위로 rebase하고 Task 1·2를 함께 정상 푸시했다. 병합·배포는 수행하지 않았다.
 
 ## VERIFIED BY
 
