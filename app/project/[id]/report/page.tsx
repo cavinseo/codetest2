@@ -48,14 +48,22 @@ const FREE_FIELDS: Array<{ key: keyof FinalReportFreeInput; label: string; place
     { key: 'improvedProductDescription', label: '개선 제품설명', placeholder: '개선 후 제품 설명' },
 ];
 
+/** 한 라우트가 늦어도 화면 전체가 멈추지 않도록 끊는 시간. */
+const FETCH_TIMEOUT_MS = 20000;
+
 async function getJson(url: string): Promise<unknown> {
+    // 타임아웃이 없으면 라우트 하나가 응답하지 않을 때 화면이 영영 로딩 상태로 남는다.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-        const response = await fetch(url);
+        const response = await fetch(url, { signal: controller.signal });
         // 코치명 라우트는 권한이 없으면 403 이다. 그것 하나 때문에 보고서 생성이
         // 막히면 안 되므로 실패는 전부 빈 값으로 떨어뜨린다.
         return response.ok ? await response.json() : null;
     } catch {
         return null;
+    } finally {
+        clearTimeout(timer);
     }
 }
 
@@ -65,6 +73,8 @@ export default function FinalReportPage() {
 
     const [payloads, setPayloads] = useState<Record<string, unknown> | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    // 어디까지 받았는지 보여 준다. 열두 곳을 한꺼번에 부르므로 멈춘 것과 느린 것을 구별해야 한다.
+    const [loadedCount, setLoadedCount] = useState(0);
     const [free, setFree] = useState<FinalReportFreeInput>(EMPTY_FREE_INPUT);
     const [progress, setProgress] = useState<string | null>(null);
     // 원본은 되돌리기와 "몇 곳 고쳤는지"를 위해 그대로 남기고, 편집은 draft 에만 쌓는다.
@@ -89,7 +99,10 @@ export default function FinalReportPage() {
             mentors: `${base}/mentors`,
         };
         const keys = Object.keys(urls) as Array<keyof typeof urls>;
-        Promise.all(keys.map((key) => getJson(urls[key])))
+        Promise.all(keys.map((key) => getJson(urls[key]).then((result) => {
+            setLoadedCount((count) => count + 1);
+            return result;
+        })))
             .then((results) => setPayloads(Object.fromEntries(keys.map((key, i) => [key, results[i]]))))
             .finally(() => setIsLoading(false));
     }, [projectId]);
@@ -197,7 +210,12 @@ export default function FinalReportPage() {
     }, [draft, showToast]);
 
     if (isLoading) {
-        return <div className="flex items-center justify-center p-12"><div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" /></div>;
+        return (
+            <div className="flex flex-col items-center justify-center gap-3 p-12">
+                <div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" />
+                <p className="text-sm text-gray-500">워크시트 불러오는 중 {loadedCount}/12</p>
+            </div>
+        );
     }
 
     const requirementCount = worksheets?.requirements.length ?? 0;
