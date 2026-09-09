@@ -106,15 +106,22 @@ export default function FinalReportPage() {
             mentors: `${base}/mentors`,
         };
         const keys = Object.keys(urls) as Array<keyof typeof urls>;
-        Promise.all(keys.map((key) => getJson(urls[key]).then((result) => {
-            setLoadedCount((count) => count + 1);
-            return result;
-        })))
-            .then((results) => {
-                setPayloads(Object.fromEntries(keys.map((key, i) => [key, results[i]])));
-                setFailedKeys(keys.filter((_, i) => results[i] === null));
-            })
-            .finally(() => setIsLoading(false));
+        // 열두 개를 한꺼번에 던지면 원격 DB 쪽 커넥션이 모자라 전부 대기에 걸린다.
+        // 서너 개씩 끊어 보내면 끝나는 대로 진행 수가 올라가 어디서 막히는지도 보인다.
+        const BATCH = 3;
+        (async () => {
+            const results: unknown[] = [];
+            for (let start = 0; start < keys.length; start += BATCH) {
+                const batch = keys.slice(start, start + BATCH);
+                const done = await Promise.all(batch.map((key) => getJson(urls[key]).then((result) => {
+                    setLoadedCount((count) => count + 1);
+                    return result;
+                })));
+                results.push(...done);
+            }
+            setPayloads(Object.fromEntries(keys.map((key, i) => [key, results[i]])));
+            setFailedKeys(keys.filter((_, i) => results[i] === null));
+        })().finally(() => setIsLoading(false));
     }, [projectId]);
 
     const worksheets = useMemo(
