@@ -52,9 +52,18 @@
    ADMIN·PROGRAM_MANAGER 에게만 열려 있어 **멘티가 호출하면 403 이다.
    403 을 오류로 띄우지 말고 coachName 을 null 로 넘겨라**(모델이 '미배정'으로 찍는다).
 
+8. **토스트 상태는 공용 훅 `components/useToast.ts` 가 이미 담당한다.** 이 Task 보다
+   먼저 병합된 리팩터링에서, 13개 화면에 복붙돼 있던 useState·toastTimer·showToast
+   세 벌을 훅 하나로 모았다. `const { toast, showToast } = useToast();` 를 쓰고
+   `{toast && <HeaderToast message={toast.message} type={toast.type} />}` 로 렌더한다.
+   **타이머 상태를 직접 만들지 마라** — 그 복붙을 없앤 것이 그 작업의 목적이었다.
+   시그니처는 `showToast(message: string, type?: ToastType)` 이고 기본값은 'success' 다.
+   ToastType 은 `components/HeaderToast.tsx` 에서 import 한다(다른 곳에 재정의 금지).
+
 [용어·규칙]
 - 들여쓰기 4칸. 주석은 한국어 "~다" 체이고, 무엇이 아니라 **왜**를 적는다.
-- 토스트는 기존 `components/HeaderToast.tsx` 를 쓴다. 새로 만들지 마라.
+- 토스트는 `components/useToast.ts` 훅 + `components/HeaderToast.tsx` 조합을 쓴다.
+  둘 다 이미 있다 — 새로 만들지 마라.
 - 키·비밀번호·이메일을 문서·로그·응답 본문에 남기지 않는다.
 - 커밋 메시지는 한국어, 본문에 "왜"를 적는다.
   트레일러: Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
