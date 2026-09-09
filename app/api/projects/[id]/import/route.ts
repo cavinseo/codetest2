@@ -111,6 +111,10 @@ function selectedSheetsInclude(selectedSheets: string[], keywords: string[]) {
     });
 }
 
+/** 시트가 많은 워크북도 한 트랜잭션 안에서 끝내야 하므로 넉넉히 잡는다. */
+const IMPORT_TIMEOUT_MS = 60_000;
+const IMPORT_MAX_WAIT_MS = 15_000;
+
 async function applyImportedRecords(
     projectId: string,
     records: WorkbookImportRecords,
@@ -121,6 +125,10 @@ async function applyImportedRecords(
         Object.entries(records).map(([key, value]) => [key, value.length])
     ) as Record<keyof WorkbookImportRecords, number>;
 
+    // 워크북 하나가 11개 테이블을 지우고 다시 채운다. 원격 DB 에서는 이 왕복이
+    // Prisma 기본 제한(5초)을 쉽게 넘겨, 중간에 트랜잭션이 닫히고 P2028 로 전부
+    // 롤백된다(실제로 9.4초 지점에서 끊겼다). 시트가 많은 파일까지 감안해 넉넉히 준다.
+    // maxWait 는 커넥션을 기다리는 시간이라, 여러 요청이 겹칠 때를 위해 함께 늘린다.
     await prisma.$transaction(async (tx) => {
         if (writePolicy === 'replace') {
             if (records.specFunctions.length > 0) await tx.specFunction.deleteMany({ where: { projectId } });
@@ -204,7 +212,7 @@ async function applyImportedRecords(
                 status: 'SUCCESS',
             },
         });
-    });
+    }, { timeout: IMPORT_TIMEOUT_MS, maxWait: IMPORT_MAX_WAIT_MS });
 
     return counts;
 }
