@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { requireProjectAccess } from '@/lib/authorization';
+import { isProjectWriteRole, requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
+import { dedupeNonBlank, findMissingTechnicalCharNames } from '@/lib/qfd-technical-sync';
 
 const log = createLogger('api/qfd/technical');
 
@@ -36,9 +37,37 @@ export async function GET(
             orderBy: { id: 'asc' },
         });
 
-        return NextResponse.json({
-            technicalCharacteristics: projectTechs,
+        // WS-9 세부기능은 WS-10 세부스펙에서 자동으로 채운다 — 사용자가 하나씩 골라
+        // 넣지 않아도 빈칸이 남지 않게 한다. 핵심기능별 그룹 선택은 당분간 쓰지 않으므로
+        // 세부스펙 이름을 그대로 옮기기만 한다.
+        // 조회(GET)라도 VIEWER·COACH 처럼 쓰기 권한이 없는 역할은 이 부수적 쓰기를
+        // 건드리면 안 된다 — 읽기만 했는데 DB 가 바뀌는 권한 경계 붕괴다.
+        if (!isProjectWriteRole(accessResult.role)) {
+            return NextResponse.json({ technicalCharacteristics: projectTechs });
+        }
+
+        const techTreeEntries = await prisma.techTreeEntry.findMany({
+            where: { projectId },
+            select: { subSpec: true },
         });
+        const subSpecNames = dedupeNonBlank(techTreeEntries.map((entry) => entry.subSpec));
+        const missingNames = findMissingTechnicalCharNames(subSpecNames, projectTechs.map((tech) => tech.name));
+
+        if (missingNames.length === 0) {
+            return NextResponse.json({ technicalCharacteristics: projectTechs });
+        }
+
+        await prisma.technicalCharacteristic.createMany({
+            data: missingNames.map((name) => ({ id: generateId('tech'), projectId, name })),
+        });
+        log.info('기술특성 자동 채움', { projectId, count: missingNames.length });
+
+        const allTechs = await prisma.technicalCharacteristic.findMany({
+            where: { projectId },
+            orderBy: { id: 'asc' },
+        });
+
+        return NextResponse.json({ technicalCharacteristics: allTechs });
     } catch (error: unknown) {
         log.error('기술특성 조회 오류', error);
         return NextResponse.json({ error: '기술특성 조회 실패' }, { status: 500 });
