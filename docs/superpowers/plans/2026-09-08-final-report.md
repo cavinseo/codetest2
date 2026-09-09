@@ -147,6 +147,7 @@ DB 값이라 `docx` 표로 그대로 재현하는 편이 화면 캡처보다 더
 | `lib/final-report-document.ts` | 모든 절 데이터 + FREE 입력 + 그림 → `FinalReportModel` (순수) | Create |
 | `lib/report-image-fit.ts` | 캡처 px 크기 → 문서 폭에 맞춘 mm 크기 계산 (순수) | Create |
 | `lib/final-report-docx.ts` | `FinalReportModel` → `.docx` Blob (동형, 브라우저 실행) | Create |
+| `lib/final-report-inputs.ts` | 워크시트 API 응답 → 모델 입력 매핑 (순수) | Create |
 | `lib/worksheet-capture.ts` | DOM 노드 → PNG dataURL (브라우저 전용, html-to-image 감싸기) | Create |
 | `app/project/[id]/report/page.tsx` | 데이터 로딩 + FREE 입력 폼 + WS-4/7/9 마운트 + 「생성」 | Create |
 | `app/project/[id]/page.tsx` | 헤더에 "결과보고서" 진입 버튼 추가(팀원 초대 옆) | Modify |
@@ -346,18 +347,22 @@ export async function captureWorksheetNode(node: HTMLElement, options?: { pixelR
 
 ### Task 4: 화면 — `app/project/[id]/report/page.tsx` + 진입점
 
-- [ ] **Step 1: 데이터 로딩** — 「필요 GET 엔드포인트 정리」의 라우트를 병렬 fetch.
+- [x] **Step 1: 데이터 로딩** — 「필요 GET 엔드포인트 정리」의 라우트를 병렬 fetch.
   `mentors` 는 403 이면 `coachName: null` 로 넘기고 다른 오류로 취급하지 않는다.
-- [ ] **Step 2: FREE 입력 폼** — 텍스트 5개(시장정의·목표고객·최종목표스펙설명·개선제품명·
+- [x] **Step 2: FREE 입력 폼** — 텍스트 5개(시장정의·목표고객·최종목표스펙설명·개선제품명·
   개선제품설명) + 제품 이미지 업로드(`<input type="file">` → dataURL, 서버 전송 없음).
-- [ ] **Step 3: WS-4/WS-7/WS-9 세 컴포넌트를 인쇄 폭 컨테이너에 마운트** — 각각
+- [x] **Step 3: WS-4/WS-7/WS-9 세 컴포넌트를 인쇄 폭 컨테이너에 마운트** — 각각
   `data-worksheet-id` 를 붙여 캡처 대상을 찾는다.
-- [ ] **Step 4: 「결과보고서 생성」 버튼** — 캡처(3장) → `buildFinalReportModel` →
+- [x] **Step 4: 「결과보고서 생성」 버튼** — 캡처(3장) → `buildFinalReportModel` →
   `renderFinalReportDocx` → `URL.createObjectURL` 로 내려받기. 진행 중 버튼 잠금 +
   "n/3 캡처 중" 표시. 실패하면 어느 워크시트에서 실패했는지 `HeaderToast` 로 알린다.
-- [ ] **Step 5: 진입점** — `app/project/[id]/page.tsx` 헤더에 버튼 추가.
+- [x] **Step 5: 진입점** — `app/project/[id]/page.tsx` 헤더에 버튼 추가.
 - [ ] **Step 6: 게이트** — `npx tsc --noEmit && npx vitest run && npx next lint`
-- [ ] **Step 7: 커밋** — `feat: 결과보고서 미리보기·생성 화면`
+  **미실행.** 감리 세션에 node_modules 가 없고 npm 레지스트리가 403 이라 프로젝트
+  설정으로 돌릴 수 없었다. 대신 전역 tsc 로 (1) 신규 파일 파싱, (2) 수정한
+  `app/project/[id]/page.tsx` 의 변경 전후 오류 프로파일 동일, (3) 순수 lib 3개
+  모듈의 `--strict` 타입 검사 0건을 확인했다. 사용자 환경에서 실행이 남아 있다.
+- [x] **Step 7: 커밋** — `feat: 결과보고서 미리보기·생성 화면`
 
 ---
 
