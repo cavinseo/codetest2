@@ -100,6 +100,13 @@ function getMarketNameTextSize(name: string) {
     return 'text-sm';
 }
 
+// 세분화명 입력칸 너비. 고정 70px 이었을 때는 "서래마을점"처럼 조금만 길어도
+// 글자가 잘려 보였다 — 글자 수에 맞춰 넓히되 표가 과하게 늘어나지 않게 상한을 둔다.
+function getSubSegmentInputWidthPx(name: string) {
+    const length = name.trim().length;
+    return Math.max(84, Math.min(200, length * 13 + 36));
+}
+
 // ──────────────────────────────────
 // 셀 컴포넌트 (클릭 순환)
 // ──────────────────────────────────
@@ -550,7 +557,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                     {mkt.subSegments.map(sub => (
                                         <th
                                             key={sub.id}
-                                            className="border border-gray-600/60 px-1 py-1 text-center min-w-[60px] group"
+                                            className="border border-gray-600/60 px-1.5 py-1.5 text-center group"
                                         >
                                             <div className="flex items-center justify-center gap-1">
                                                 <input
@@ -558,7 +565,8 @@ export default function FitnessWrapper({ projectId }: Props) {
                                                     list={`fitness-sub-segment-options-${projectId}`}
                                                     value={sub.name}
                                                     onChange={e => renameSubSegment(mkt.id, sub.id, e.target.value)}
-                                                    className="text-center bg-transparent text-gray-400 outline-none w-[70px] text-xs focus:text-white focus:bg-white/10 rounded px-1"
+                                                    style={{ width: `${getSubSegmentInputWidthPx(sub.name)}px` }}
+                                                    className="text-center bg-transparent text-gray-300 outline-none text-sm focus:text-white focus:bg-white/10 rounded px-1 py-0.5"
                                                 />
                                                 {mkt.subSegments.length > 1 && (
                                                     <button

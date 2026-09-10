@@ -8,6 +8,16 @@ export type ProjectAccessRole = 'OWNER' | 'EDITOR' | 'COACH' | 'ADMIN' | 'VIEWER
 const WRITE_ROLES = new Set<ProjectAccessRole>(['OWNER', 'EDITOR', 'ADMIN']);
 
 /**
+ * 이 역할로 프로젝트에 쓸 수 있는가. requireProjectAccess 의 쓰기 판정과 같은
+ * 기준을 써야 한다 — GET 라우트가 조회 도중 부수적으로 쓰기를 해야 할 때(예:
+ * 자동 채움) 이 판정이 따로 복제되면 VIEWER·COACH 가 읽기만 해도 쓰기가
+ * 일어나는 권한 경계 붕괴가 생긴다.
+ */
+export function isProjectWriteRole(role: ProjectAccessRole): boolean {
+    return WRITE_ROLES.has(role);
+}
+
+/**
  * 프로젝트에서 유효한 역할을 정한다. requireProjectAccess 와 목록 API 가
  * 같은 답을 내야 하므로 판정을 한 곳에 둔다. 예전에는 두 곳에 복제돼 있어
  * 목록은 VIEWER 라고 하는데 상세는 편집을 허용하는 어긋남이 생겼다.

@@ -1,5 +1,6 @@
 'use client';
 // 배정 멘토의 보고서 초안을 저장하고 완료한 문서만 참여자에게 공개한다.
+// 화면의 문서 모델을 서버에 보내 Word 파일로 직렬화한다.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -305,8 +306,17 @@ export default function FinalReportPage() {
     async function handleDownload() {
         if (!shownDocument || !begin('Word 문서 만드는 중...')) return;
         try {
-            const { renderFinalReportDocx } = await import('@/lib/final-report-docx');
-            const blob = await renderFinalReportDocx(shownDocument);
+            // docx 패키지를 브라우저 번들에 포함하지 않도록 서버에서 직렬화한다.
+            const res = await fetch(`/api/projects/${projectId}/report/docx`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(shownDocument),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                throw new Error(body?.error || '문서를 만들지 못했습니다.');
+            }
+            const blob = await res.blob();
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;

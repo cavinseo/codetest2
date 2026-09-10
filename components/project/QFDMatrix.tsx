@@ -7,14 +7,12 @@ import Link from 'next/link';
 import { buildQfdSpecFooterRows } from '@/lib/qfd-footer-rows';
 import {
     chunkTechnicalIndexes,
-    findCoreIdForSubName,
-    getQfdCoreOptions,
-    getQfdSubOptions,
     parseCollapsedGroups,
     qfdCollapsedGroupsStorageKey,
     serializeCollapsedGroups,
     toggleGroupVisibility,
 } from '@/lib/qfd-technical-header';
+import { dedupeNonBlank } from '@/lib/qfd-technical-sync';
 
 interface Requirement {
     id: string;
@@ -30,12 +28,9 @@ interface TechnicalChar {
     targetValue?: string | null;
 }
 
-interface SpecFunction {
-    id: string;
-    level: 'CORE' | 'SUB' | 'DETAIL';
-    parentId?: string | null;
-    name: string;
-    order?: number | null;
+/** WS-10 기능기술체계도 한 행. 세부기능 자동 채움에는 subSpec 만 쓴다. */
+interface TechTreeEntry {
+    subSpec?: string | null;
 }
 
 interface Relationship {
@@ -155,7 +150,7 @@ function getRequirementGroupRowSpan(
 export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [technicalChars, setTechnicalChars] = useState<TechnicalChar[]>([]);
-    const [specFunctions, setSpecFunctions] = useState<SpecFunction[]>([]);
+    const [techTreeEntries, setTechTreeEntries] = useState<TechTreeEntry[]>([]);
     const [relationships, setRelationships] = useState<Relationship[]>([]);
     const [reqAnalysis, setReqAnalysis] = useState<RequirementAnalysis[]>([]);
     const [techAnalysis, setTechAnalysis] = useState<TechnicalAnalysis[]>([]);
@@ -170,7 +165,6 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const [newCompetitorName, setNewCompetitorName] = useState('');
     const [extraCompetitors, setExtraCompetitors] = useState<string[]>([]);
     const [isAddingCompetitor, setIsAddingCompetitor] = useState(false);
-    const [selectedCoreByGroup, setSelectedCoreByGroup] = useState<Record<number, string>>({});
     const [collapsedTechnicalGroups, setCollapsedTechnicalGroups] = useState<Record<number, boolean>>({});
     const [removingCompetitor, setRemovingCompetitor] = useState<string | null>(null);
     // 빈 세부기능 열은 기본 15칸이다. 그 칸을 다 쓴 뒤에도 열을 더 만들 수 있어야 해서
@@ -217,19 +211,20 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         setIsLoading(true);
         setDataError(null);
         try {
-            const [requirementsRes, technicalRes, relationshipsRes, analysisRes, benchmarksRes, specRes, techBenchmarksRes] = await Promise.all([
+            const [requirementsRes, technicalRes, relationshipsRes, analysisRes, benchmarksRes, treeRes, techBenchmarksRes] = await Promise.all([
                 fetch(`/api/projects/${projectId}/requirements`),
                 fetch(`/api/projects/${projectId}/qfd/technical`),
                 fetch(`/api/projects/${projectId}/qfd/relationships`),
                 fetch(`/api/projects/${projectId}/qfd/analysis`),
                 fetch(`/api/projects/${projectId}/qfd/benchmarks`),
-                fetch(`/api/projects/${projectId}/spec`),
+                // WS-10 세부스펙 목록 — 세부기능 자동 채움과, 남는 빈 칸을 직접 고를 때 쓴다.
+                fetch(`/api/projects/${projectId}/tech-tree`),
                 // 아래 실패 판정에서 일부러 뺀다 — 이 줄 하나 때문에 QFD 표 전체가
                 // 열리지 않으면 손해가 더 크다. 값이 없으면 그 줄만 비어 보인다.
                 fetch(`/api/projects/${projectId}/qfd/technical-benchmarks`).catch(() => null),
             ]);
 
-            const failedResponse = [requirementsRes, technicalRes, relationshipsRes, analysisRes, benchmarksRes, specRes].find((response) => !response.ok);
+            const failedResponse = [requirementsRes, technicalRes, relationshipsRes, analysisRes, benchmarksRes, treeRes].find((response) => !response.ok);
             if (failedResponse) {
                 const body = await failedResponse.json().catch(() => null);
                 throw new Error(body?.error || 'QFD 데이터를 불러오지 못했습니다.');
@@ -256,9 +251,9 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                 const data = await benchmarksRes.json();
                 setBenchmarksData(data.benchmarks || []);
             }
-            if (specRes.ok) {
-                const data = await specRes.json();
-                setSpecFunctions(data.specFunctions || []);
+            if (treeRes.ok) {
+                const data = await treeRes.json();
+                setTechTreeEntries(data.entries || []);
             }
             if (techBenchmarksRes?.ok) {
                 const data = await techBenchmarksRes.json();
@@ -704,8 +699,12 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const hasRequirements = requirements.length > 0;
     const specFooterRows = buildQfdSpecFooterRows(competitorColumns, getCompetitorLabel);
     const specBlockRowSpan = specFooterRows.filter((row) => row.kind !== 'target').length;
-    const coreOptions = useMemo(() => getQfdCoreOptions(specFunctions), [specFunctions]);
-    const allSubOptions = useMemo(() => getQfdSubOptions(specFunctions), [specFunctions]);
+    // WS-9 세부기능은 WS-10 세부스펙에서 자동으로 채워지므로(서버 GET), 남는 빈 칸을
+    // 직접 고를 때도 핵심기능별로 나누지 않고 이 목록을 그대로 쓴다.
+    const subFunctionOptions = useMemo(
+        () => dedupeNonBlank(techTreeEntries.map((entry) => entry.subSpec)).map((name) => ({ id: name, name })),
+        [techTreeEntries]
+    );
     const technicalGroups = useMemo(() => chunkTechnicalIndexes(displayTechnicalCols.length, 3), [displayTechnicalCols.length]);
     const visibleTechnicalColumns = useMemo<VisibleTechnicalColumn[]>(() => {
         const columns: VisibleTechnicalColumn[] = [];
@@ -754,32 +753,6 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     };
     const toggleTechnicalGroup = (groupIndex: number) => {
         updateCollapsedTechnicalGroups(toggleGroupVisibility(collapsedTechnicalGroups, groupIndex));
-    };
-
-    const getCoreForTechnicalGroup = (groupIndex: number) => {
-        if (selectedCoreByGroup[groupIndex]) return selectedCoreByGroup[groupIndex];
-        const group = technicalGroups[groupIndex];
-        if (!group) return '';
-
-        for (let index = group.start; index < group.start + group.size; index++) {
-            const tech = displayTechnicalCols[index];
-            if (!tech || tech.isPlaceholder) continue;
-            const coreId = findCoreIdForSubName(specFunctions, tech.name);
-            if (coreId) return coreId;
-        }
-
-        return '';
-    };
-
-    const getCoreNameForTechnicalGroup = (groupIndex: number) => {
-        const coreId = getCoreForTechnicalGroup(groupIndex);
-        return coreOptions.find((core) => core.id === coreId)?.name || `그룹 ${groupIndex + 1}`;
-    };
-
-    const getSubOptionsForTechnicalColumn = (index: number) => {
-        const coreId = getCoreForTechnicalGroup(Math.floor(index / 3));
-        const options = coreId ? getQfdSubOptions(specFunctions, coreId) : allSubOptions;
-        return options.length > 0 ? options : allSubOptions;
     };
 
     if (isLoading) {
@@ -992,37 +965,26 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         <thead>
                             <tr>
                                 <th className="border border-white/[0.08] bg-cyan-500/15 px-2 py-2 text-center font-bold text-cyan-100" colSpan={3}>고객요구사항</th>
-                                {visibleTechnicalGroups.map((group) => {
-                                    const coreId = getCoreForTechnicalGroup(group.groupIndex);
-                                    return (
-                                        <th key={`core-group-${group.groupIndex}`} className="border border-white/[0.08] bg-indigo-500/15 px-1 py-2 text-center font-bold text-indigo-100" colSpan={group.size}>
-                                            <div className="flex items-center gap-1">
-                                                <select
-                                                    value={coreId}
-                                                    onChange={(event) => setSelectedCoreByGroup((items) => ({ ...items, [group.groupIndex]: event.target.value }))}
-                                                    className="h-8 min-w-0 flex-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-1 text-center text-[11px] font-bold text-indigo-50 outline-none focus:border-indigo-300"
-                                                    title="핵심기능 선택"
-                                                >
-                                                    <option value="">핵심기능</option>
-                                                    {coreOptions.map((core) => (
-                                                        <option key={core.id} value={core.id}>{core.name}</option>
-                                                    ))}
-                                                </select>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => toggleTechnicalGroup(group.groupIndex)}
-                                                    className="inline-flex h-8 w-6 flex-none items-center justify-center rounded-md border border-indigo-200/20 bg-slate-950/80 text-indigo-100 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
-                                                    title={`${getCoreNameForTechnicalGroup(group.groupIndex)} 영역 숨기기`}
-                                                    aria-label={`${getCoreNameForTechnicalGroup(group.groupIndex)} 영역 숨기기`}
-                                                >
-                                                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.774 3.162 10.066 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-                                                    </svg>
-                                                </button>
-                                            </div>
-                                        </th>
-                                    );
-                                })}
+                                {visibleTechnicalGroups.map((group) => (
+                                    <th key={`core-group-${group.groupIndex}`} className="border border-white/[0.08] bg-indigo-500/15 px-1 py-2 text-center font-bold text-indigo-100" colSpan={group.size}>
+                                        {/* 핵심기능별 그룹 선택은 당분간 쓰지 않는다 — 세부기능이 WS-10 세부스펙에서
+                                            자동으로 채워지므로 이 그룹은 접기 단위로만 남는다. */}
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span className="flex-1 truncate text-[11px] font-bold text-indigo-50">그룹 {group.groupIndex + 1}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleTechnicalGroup(group.groupIndex)}
+                                                className="inline-flex h-8 w-6 flex-none items-center justify-center rounded-md border border-indigo-200/20 bg-slate-950/80 text-indigo-100 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
+                                                title={`그룹 ${group.groupIndex + 1} 영역 숨기기`}
+                                                aria-label={`그룹 ${group.groupIndex + 1} 영역 숨기기`}
+                                            >
+                                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.774 3.162 10.066 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </th>
+                                ))}
                                 <th className="border border-white/[0.08] bg-rose-500/10 px-2 py-2 text-center font-bold text-rose-100" colSpan={benchmarkColumnCount + 2}>중요도 및 경쟁 비교</th>
                                 <th className="border border-white/[0.08] bg-sky-500/10 px-2 py-2 text-center font-bold text-sky-100" colSpan={5}>기획품질</th>
                             </tr>
@@ -1054,10 +1016,10 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                                 title="세부기능 선택"
                                             >
                                                 <option value="">{index + 1}</option>
-                                                {getSubOptionsForTechnicalColumn(index).map((sub) => (
+                                                {subFunctionOptions.map((sub) => (
                                                     <option key={sub.id} value={sub.name}>{sub.name}</option>
                                                 ))}
-                                                {!tech.isPlaceholder && tech.name && !getSubOptionsForTechnicalColumn(index).some((sub) => sub.name === tech.name) && (
+                                                {!tech.isPlaceholder && tech.name && !subFunctionOptions.some((sub) => sub.name === tech.name) && (
                                                     <option value={tech.name}>{tech.name}</option>
                                                 )}
                                             </select>
