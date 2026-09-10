@@ -3,6 +3,9 @@ const nextConfig = {
   reactStrictMode: true,
   // docx 는 브라우저에서 그대로 번들되면 'super' 구문에서 깨진다. Next 가 직접
   // 트랜스파일하게 맡긴다. 서버 라우트만 쓰던 때에는 드러나지 않던 문제다.
+  // 그래도 빌드가 깨졌다 — SWC 가 오래된 브라우저(Chrome 64 등) 대상으로 클래스
+  // 필드를 다운레벨하다 이 패키지의 번들에서 'super' 파싱이 뒤틀린다. package.json
+  // 의 browserslist 를 최신 에버그린 브라우저로 좁혀 이 다운레벨 자체를 건너뛴다.
   transpilePackages: ['docx'],
   experimental: {
     serverActions: {
