@@ -31,7 +31,7 @@ export function generateInviteCode(): string {
 
 /** 사용자가 붙여넣은 값을 조회용으로 정규화한다. 공백·소문자·구분자 차이를 흡수한다. */
 export function normalizeInviteCode(value: string): string {
-    const cleaned = value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const cleaned = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const body = cleaned.startsWith('KSQF') ? cleaned.slice(4) : cleaned;
 
     const groups: string[] = [];
