@@ -44,6 +44,11 @@ model User {
   usedInviteCode      InviteCode?            @relation("InviteRedeemer")
   profile             MemberProfile?
   aiConnection        UserAiConnection?
+  mentorAssignment    MentorAssignment?      @relation("AssignedMentee")
+  assignedMentees      MentorAssignment[]     @relation("AssignedMentor")
+  projectRequests     ProjectCreationRequest[] @relation("ProjectRequester")
+  reviewedRequests    ProjectCreationRequest[] @relation("ProjectReviewer")
+  worksheetComments   WorksheetComment[]
 
   @@map("users")
 }
@@ -70,6 +75,7 @@ model Program {
   projects    Project[]
   inviteCodes InviteCode[]
   mentees     User[]       @relation("ProgramMentees")
+  projectRequests ProjectCreationRequest[]
 
   @@index([managerId])
   @@map("programs")
@@ -114,10 +120,60 @@ model Project {
   assetItems               AssetItem[]
   fundingPlans             FundingPlan[]
   fundingSources           FundingSource[]
+  worksheetComments        WorksheetComment[]
 
   @@index([ownerId])
   @@index([programId])
   @@map("projects")
+}
+
+// 멘티를 기본 키로 삼아 동시에 두 멘토가 배정되는 것을 막는다.
+model MentorAssignment {
+  menteeId String @id
+  mentorId String
+  assignedAt DateTime @default(now())
+  mentee User @relation("AssignedMentee", fields: [menteeId], references: [id], onDelete: Cascade)
+  mentor User @relation("AssignedMentor", fields: [mentorId], references: [id], onDelete: Cascade)
+
+  @@index([mentorId])
+  @@map("mentor_assignments")
+}
+
+// 승인 한 건을 추가 개설 한 번에만 쓰도록 소비 시각을 기록한다.
+model ProjectCreationRequest {
+  id String @id @default(cuid())
+  menteeId String
+  programId String
+  reason String
+  status String @default("PENDING")
+  reviewNote String?
+  reviewedById String?
+  reviewedAt DateTime?
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  mentee User @relation("ProjectRequester", fields: [menteeId], references: [id], onDelete: Cascade)
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  reviewer User? @relation("ProjectReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([menteeId, status])
+  @@index([programId, status])
+  @@map("project_creation_requests")
+}
+
+// 멘토 의견을 워크시트 원본과 분리해 조회 전용 권한을 유지한다.
+model WorksheetComment {
+  id String @id @default(cuid())
+  projectId String
+  worksheetId String
+  authorId String?
+  content String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, worksheetId, createdAt])
+  @@map("worksheet_comments")
 }
 
 // ... (기존 모델들 보존) ...

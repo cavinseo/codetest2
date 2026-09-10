@@ -8,6 +8,7 @@ import {
 } from '@/lib/business-plan-file';
 import { canCreateProject, canCreateProjectForOthers, type MemberRole } from '@/lib/member-roles';
 import ThemeToggle from '@/components/ThemeToggle';
+import ProjectRequestsPanel from '@/components/ProjectRequestsPanel';
 
 interface Project {
     id: string;
@@ -40,6 +41,7 @@ export default function DashboardPage() {
     const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+    const [approvalRequestId, setApprovalRequestId] = useState('');
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectDesc, setNewProjectDesc] = useState('');
     const [newProjectDetailDesc, setNewProjectDetailDesc] = useState('');
@@ -139,6 +141,7 @@ export default function DashboardPage() {
                     description: newProjectDesc,
                     detailedDescription: newProjectDetailDesc || undefined,
                     businessPlanFile,
+                    approvalRequestId: approvalRequestId || undefined,
                     // 멘티는 보내지 않는다. 서버가 본인 프로그램·본인 소유로 정한다.
                     ...(createsForOthers
                         ? { programId: newProjectProgramId, ownerMenteeId: newProjectOwnerMenteeId }
@@ -154,6 +157,7 @@ export default function DashboardPage() {
             if (!response.ok) throw new Error(data?.error || '프로젝트 생성에 실패했습니다.');
             setProjects([...projects, data.project]);
             setShowNewProjectModal(false);
+            setApprovalRequestId('');
             setNewProjectName('');
             setNewProjectDesc('');
             setNewProjectDetailDesc('');
@@ -266,6 +270,11 @@ export default function DashboardPage() {
             {/* Main Content */}
             <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 page-enter">
                 {/* Stats */}
+                {role === 'MENTEE' && <div className="mb-8"><ProjectRequestsPanel key={projects.length} onCreate={id => {
+                    setApprovalRequestId(id);
+                    setNewProjectError('');
+                    setShowNewProjectModal(true);
+                }} /></div>}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                     {[
                         { label: '전체 프로젝트', value: displayProjects.length, icon: '📁', accent: 'from-blue-500/20 to-cyan-500/20' },
@@ -294,7 +303,7 @@ export default function DashboardPage() {
                     {/* 프로젝트 생성 권한이 없는 역할(멘토·멘티)에게는 버튼을 감춘다. API 가 403 으로 막기 때문이다. */}
                     {role !== null && canCreateProject(role) && (
                         <button
-                            onClick={() => setShowNewProjectModal(true)}
+                            onClick={() => { setApprovalRequestId(''); setShowNewProjectModal(true); }}
                             className="btn-primary flex items-center gap-2"
                         >
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -368,7 +377,7 @@ export default function DashboardPage() {
                             </p>
                             {role !== null && canCreateProject(role) && (
                                 <button
-                                    onClick={() => setShowNewProjectModal(true)}
+                                    onClick={() => { setApprovalRequestId(''); setShowNewProjectModal(true); }}
                                     className="btn-primary"
                                 >
                                     첫 프로젝트 만들기

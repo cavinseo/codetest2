@@ -12,6 +12,7 @@ import {
     canManagePrograms,
     canReadAnyProject,
     canTransitionRole,
+    canCreateProgram,
     canWriteAnyProject,
     isAccessExpired,
     parseInvitableRole,
@@ -174,6 +175,12 @@ describe('전체 프로젝트 읽기·쓰기', () => {
         expect(canWriteAnyProject('PROGRAM_MANAGER')).toBe(false);
         expect(canWriteAnyProject('MENTOR')).toBe(false);
         expect(canWriteAnyProject('MENTEE')).toBe(false);
+    });
+});
+
+describe('프로그램 개설과 운영 분리', () => {
+    it.each(['ADMIN', 'PROGRAM_MANAGER', 'MENTOR', 'MENTEE'] as const)('%s 개설 권한', role => {
+        expect(canCreateProgram(role)).toBe(role === 'ADMIN');
     });
 });
 

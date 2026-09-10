@@ -8,6 +8,7 @@ import SpecTable from '@/components/project/SpecTable';
 import RequirementsTable from '@/components/project/RequirementsTable';
 import QFDMatrix from '@/components/project/QFDMatrix';
 import ThemeToggle from '@/components/ThemeToggle';
+import WorksheetComments from '@/components/project/WorksheetComments';
 import { HEADER_TOAST_SLOT_ID } from '@/components/HeaderToast';
 import KanoManager from '@/components/project/KanoManager';
 import SalesTable from '@/components/project/SalesTable';
@@ -526,12 +527,12 @@ export default function ProjectDetailPage() {
                             <Link href={`/project/${projectId}/report`} className="btn-secondary text-sm">
                                 결과보고서
                             </Link>
-                            <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
+                            {canEditOverview && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 팀원 초대
-                            </Link>
-                            <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
+                            </Link>}
+                            {canEditOverview && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 설정
-                            </Link>
+                            </Link>}
                             <ThemeToggle />
                         </div>
                     </div>
@@ -542,7 +543,7 @@ export default function ProjectDetailPage() {
             <div className="relative z-10 border-b border-white/[0.06] bg-surface-900/80 backdrop-blur-sm">
                 <div className="mx-auto w-full max-w-[1800px] px-3 sm:px-4 lg:px-6 2xl:px-8">
                     <nav className="flex gap-1 py-2 overflow-x-auto">
-                        {tabs.map((tab) => (
+                        {tabs.filter(tab => canEditOverview || tab.id !== 'import').map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
@@ -884,7 +885,11 @@ export default function ProjectDetailPage() {
                     </div>
                 )}
 
-                {activeTab !== 'overview' && renderTabContent(activeTab)}
+                {!canEditOverview && <p className="mb-4 text-sm text-amber-300">읽기 전용입니다. 워크시트 내용은 수정할 수 없습니다.</p>}
+                {activeTab !== 'overview' && (canEditOverview || activeTab !== 'import') && (
+                    <fieldset disabled={!canEditOverview} className="min-w-0">{renderTabContent(activeTab)}</fieldset>
+                )}
+                {activeTab !== 'import' && <WorksheetComments key={`${projectId}-${activeTab}`} projectId={projectId} worksheetId={activeTab} />}
             </main>
         </div>
     );

@@ -377,11 +377,16 @@ describe('시스템 역할에 따른 프로젝트 접근', () => {
 
     it('배정된 멘토는 COACH 로 들어간다', async () => {
         mockAuthUser({ userId: 'mentor_1', role: 'MENTOR', isAdmin: false });
-        mockProject({ ownerId: 'someone_else', members: [{ role: 'COACH' }] });
+        findProject.mockResolvedValue({ ownerId: 'someone_else', members: [], owner: { mentorAssignment: { mentorId: 'mentor_1' } } } as never);
 
         const result = await requireProjectAccess(req(), 'proj_1');
 
         expect((result as ProjectAccess).role).toBe('COACH');
+        const write = await requireProjectAccess(req(), 'proj_1', { write: true });
+        expect((write as NextResponse).status).toBe(403);
+        findProject.mockResolvedValue({ ownerId: 'someone_else', members: [{ role: 'EDITOR' }], owner: { mentorAssignment: null } } as never);
+        const revoked = await requireProjectAccess(req(), 'proj_1');
+        expect((revoked as NextResponse).status).toBe(403);
     });
 
     it('VIEWER 는 roles 로 특정 역할을 요구하는 라우트에서도 막힌다', async () => {

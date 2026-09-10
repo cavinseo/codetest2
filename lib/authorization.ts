@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
-import { requireAuth, SessionUser } from './auth';
+import { requireAuth, SessionUser, type AuthenticatedUser } from './auth';
 import { canReadAnyProject, canWriteAnyProject, type MemberRole } from './member-roles';
 
 export type ProjectAccessRole = 'OWNER' | 'EDITOR' | 'COACH' | 'ADMIN' | 'VIEWER';
@@ -18,7 +18,9 @@ export function resolveProjectRole(params: {
     systemRole: MemberRole;
     isOwner: boolean;
     memberRole: string | null | undefined;
+    isAssignedMentor?: boolean;
 }): ProjectAccessRole | undefined {
+    if (params.systemRole === 'MENTOR') return params.isAssignedMentor ? 'COACH' : undefined;
     const explicitRole = params.isOwner
         ? 'OWNER'
         : (params.memberRole as ProjectAccessRole | undefined) ?? undefined;
@@ -41,7 +43,7 @@ export function resolveProjectRole(params: {
 }
 
 export interface ProjectAccess {
-    user: SessionUser;
+    user: AuthenticatedUser;
     role: ProjectAccessRole;
 }
 
@@ -100,6 +102,7 @@ export async function requireProjectAccess(
         where: { id: projectId },
         select: {
             ownerId: true,
+            owner: { select: { mentorAssignment: { select: { mentorId: true } } } },
             members: {
                 where: { userId: authResult.userId },
                 select: { role: true },
@@ -116,6 +119,7 @@ export async function requireProjectAccess(
         systemRole: authResult.role,
         isOwner: project.ownerId === authResult.userId,
         memberRole: project.members[0]?.role,
+        isAssignedMentor: project.owner?.mentorAssignment?.mentorId === authResult.userId,
     });
 
     if (!role) {

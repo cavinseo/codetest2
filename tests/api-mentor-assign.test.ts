@@ -1,296 +1,106 @@
-// 멘토 배정이 역할 게이트를 지키고 대상 역할을 검사하는지 확인한다.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
-
-const findUniqueUser = vi.fn();
-const findManyUser = vi.fn();
-const findUniqueProject = vi.fn();
-const findUniqueMember = vi.fn();
-const createMember = vi.fn();
-const deleteMember = vi.fn();
-const findManyMember = vi.fn();
-
-vi.mock('../lib/prisma', () => ({
-    prisma: {
-        user: { findUnique: findUniqueUser, findMany: findManyUser },
-        project: { findUnique: findUniqueProject },
-        projectMember: {
-            findUnique: findUniqueMember, create: createMember,
-            delete: deleteMember, findMany: findManyMember,
-        },
-    },
+// 멘티별 단일 배정과 담당 매니저 범위를 API 진입점에서 검증한다.
+import { beforeEach, expect, it, vi } from 'vitest';
+import { NextRequest, NextResponse } from 'next/server';
+const mocks = vi.hoisted(() => ({
+    auth: vi.fn(), user: vi.fn(), users: vi.fn(), project: vi.fn(),
+    assignment: vi.fn(), upsert: vi.fn(), remove: vi.fn(),
 }));
-
-const requireAuth = vi.fn();
-vi.mock('../lib/auth', () => ({
-    requireAuth: (...args: unknown[]) => requireAuth(...(args as [])),
-}));
-
-const { GET, POST, DELETE } = await import('../app/api/projects/[id]/mentors/route');
-
-const params = { params: Promise.resolve({ id: 'proj_1' }) };
-
-function authAs(role: string) {
-    requireAuth.mockResolvedValue({
-        userId: 'actor_1', email: 'a@x.com', name: '실행자',
-        isAdmin: role === 'ADMIN', role, accessExpiresAt: null,
-    });
-}
-
-function jsonRequest(method: string, body: unknown): NextRequest {
-    return new NextRequest('http://localhost/api/projects/proj_1/mentors', {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
-}
-
+vi.mock('../lib/auth', () => ({ requireAuth: mocks.auth }));
+vi.mock('../lib/prisma', () => ({ prisma: {
+    user: { findUnique: mocks.user, findMany: mocks.users },
+    project: { findUnique: mocks.project },
+    mentorAssignment: { findUnique: mocks.assignment, upsert: mocks.upsert, deleteMany: mocks.remove },
+} }));
+import { GET, POST, DELETE } from '../app/api/projects/[id]/mentors/route';
+import { POST as assignMentee } from '../app/api/mentees/[id]/mentor/route';
+const params = { params: Promise.resolve({ id: 'p1' }) };
+const request = (method = 'POST', userId = 'mentor') => new NextRequest('http://localhost/api/projects/p1/mentors', {
+    method, ...(method === 'GET' ? {} : { body: JSON.stringify({ userId }) }),
+});
 beforeEach(() => {
-    findUniqueProject.mockResolvedValue({ id: 'proj_1' });
-    findUniqueUser.mockResolvedValue({ id: 'mentor_1', role: 'MENTOR', name: '멘토', email: 'm@x.com' });
-    findUniqueMember.mockResolvedValue(null);
-    createMember.mockResolvedValue({ id: 'pm_1' });
-    deleteMember.mockResolvedValue({ id: 'pm_1' });
-    findManyMember.mockResolvedValue([]);
-    findManyUser.mockResolvedValue([]);
+    vi.resetAllMocks();
+    mocks.auth.mockResolvedValue({ userId: 'manager', role: 'PROGRAM_MANAGER' });
+    mocks.project.mockResolvedValue({ ownerId: 'mentee' });
+    mocks.user.mockImplementation(async ({ where }) => where.id === 'mentee'
+        ? { id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } }
+        : { id: where.id, role: 'MENTOR', status: 'APPROVED', accessExpiresAt: null });
+    mocks.users.mockResolvedValue([]);
+    mocks.assignment.mockResolvedValue(null);
 });
-
-afterEach(() => {
-    vi.clearAllMocks();
-});
-
-describe('멘토 배정 권한', () => {
-    it('매니저는 배정할 수 있다', async () => {
-        authAs('PROGRAM_MANAGER');
-
-        const res = await POST(jsonRequest('POST', { userId: 'mentor_1' }), params);
-
-        expect(res.status).toBe(200);
-        expect(createMember).toHaveBeenCalled();
-    });
-
-    it('관리자는 배정할 수 있다', async () => {
-        authAs('ADMIN');
-
-        const res = await POST(jsonRequest('POST', { userId: 'mentor_1' }), params);
-
-        expect(res.status).toBe(200);
-    });
-
-    it('멘토는 배정할 수 없다', async () => {
-        authAs('MENTOR');
-
-        const res = await POST(jsonRequest('POST', { userId: 'mentor_1' }), params);
-
-        expect(res.status).toBe(403);
-        expect(createMember).not.toHaveBeenCalled();
-    });
-
-    it('멘티는 배정할 수 없다', async () => {
-        authAs('MENTEE');
-
-        const res = await POST(jsonRequest('POST', { userId: 'mentor_1' }), params);
-
-        expect(res.status).toBe(403);
+it.each(['ADMIN', 'PROGRAM_MANAGER'])('%s는 멘티에게 단일 멘토를 배정한다', async role => {
+    mocks.auth.mockResolvedValue({ userId: 'manager', role });
+    expect((await POST(request(), params)).status).toBe(200);
+    expect(mocks.upsert).toHaveBeenCalledWith({
+        where: { menteeId: 'mentee' }, create: { menteeId: 'mentee', mentorId: 'mentor' },
+        update: { mentorId: 'mentor', assignedAt: expect.any(Date) },
     });
 });
-
-describe('배정 대상 역할', () => {
-    beforeEach(() => authAs('ADMIN'));
-
-    it('COACH 로 기록한다', async () => {
-        // 새 프로젝트 역할을 만들지 않는다. COACH 는 이미 읽기 전용이다.
-        await POST(jsonRequest('POST', { userId: 'mentor_1' }), params);
-
-        expect(createMember.mock.calls[0][0].data.role).toBe('COACH');
-    });
-
-    it('요청한 사람이 아니라 지정한 대상을 배정한다', async () => {
-        // userId 를 안 보면 실행자가 자기 자신을 배정해도 통과한다.
-        await POST(jsonRequest('POST', { userId: 'mentor_1' }), params);
-
-        expect(createMember.mock.calls[0][0].data.userId).toBe('mentor_1');
-    });
-
-    it('매니저도 멘토로 배정할 수 있다', async () => {
-        // 매니저는 멘토에서 승격되므로 겸직이 성립해야 한다.
-        findUniqueUser.mockResolvedValue({ id: 'pm_2', role: 'PROGRAM_MANAGER', name: '매니저', email: 'p@x.com' });
-
-        const res = await POST(jsonRequest('POST', { userId: 'pm_2' }), params);
-
-        expect(res.status).toBe(200);
-    });
-
-    it('멘티는 멘토로 배정할 수 없다', async () => {
-        findUniqueUser.mockResolvedValue({ id: 'mentee_1', role: 'MENTEE', name: '멘티', email: 'e@x.com' });
-
-        const res = await POST(jsonRequest('POST', { userId: 'mentee_1' }), params);
-
-        expect(res.status).toBe(400);
-        expect(createMember).not.toHaveBeenCalled();
-    });
-
-    it('관리자는 멘토로 배정할 수 없다', async () => {
-        // 관리자는 독립적인 관리자 역할만 한다. 모든 프로젝트를 열람하고
-        // 멘토를 배정하되, 스스로 멘토로 배정되지는 않는다.
-        findUniqueUser.mockResolvedValue({ id: 'admin_2', role: 'ADMIN', name: '관리자', email: 'a2@x.com' });
-
-        const res = await POST(jsonRequest('POST', { userId: 'admin_2' }), params);
-
-        expect(res.status).toBe(400);
-        expect(createMember).not.toHaveBeenCalled();
-    });
-
-    it('이미 배정된 사람은 중복 배정하지 않는다', async () => {
-        findUniqueMember.mockResolvedValue({ id: 'pm_existing', role: 'COACH' });
-
-        const res = await POST(jsonRequest('POST', { userId: 'mentor_1' }), params);
-
-        expect(res.status).toBe(409);
-        expect(createMember).not.toHaveBeenCalled();
-    });
+it.each(['MENTOR', 'MENTEE'])('%s는 배정·해제·목록을 사용할 수 없다', async role => {
+    mocks.auth.mockResolvedValue({ userId: 'manager', role });
+    for (const [handler, method] of [[POST, 'POST'], [DELETE, 'DELETE'], [GET, 'GET']] as const) {
+        expect((await handler(request(method), params)).status).toBe(403);
+    }
+    expect(mocks.upsert).not.toHaveBeenCalled();
+    expect(mocks.remove).not.toHaveBeenCalled();
 });
-
-describe('배정 해제', () => {
-    beforeEach(() => authAs('PROGRAM_MANAGER'));
-
-    it('매니저가 해제할 수 있다', async () => {
-        findUniqueMember.mockResolvedValue({ id: 'pm_1', role: 'COACH' });
-
-        const res = await DELETE(jsonRequest('DELETE', { userId: 'mentor_1' }), params);
-
-        expect(res.status).toBe(200);
-        expect(deleteMember).toHaveBeenCalled();
-    });
-
-    it('COACH 가 아닌 행은 해제 대상이 아니다', async () => {
-        // 해제는 배정된 멘토(COACH)만 대상으로 한다. 편집자나 소유자를
-        // 이 엔드포인트로 떼어내는 일반 삭제 도구가 되면 안 된다.
-        findUniqueMember.mockResolvedValue({ id: 'pm_1', role: 'EDITOR' });
-
-        const res = await DELETE(jsonRequest('DELETE', { userId: 'editor_1' }), params);
-
-        expect(res.status).toBe(400);
-        expect(deleteMember).not.toHaveBeenCalled();
-    });
-
-    it('멘토는 해제할 수 없다', async () => {
-        // 게이트를 떼도 나머지 테스트는 전부 통과한다. 여기서 잡는다.
-        authAs('MENTOR');
-        findUniqueMember.mockResolvedValue({ id: 'pm_1', role: 'COACH' });
-
-        const res = await DELETE(jsonRequest('DELETE', { userId: 'mentor_1' }), params);
-
-        expect(res.status).toBe(403);
-        expect(deleteMember).not.toHaveBeenCalled();
-    });
+it.each(['POST', 'DELETE', 'GET'])('다른 매니저의 %s 요청을 차단한다', async method => {
+    mocks.auth.mockResolvedValue({ userId: 'other', role: 'PROGRAM_MANAGER' });
+    expect((await GET(request(method), params)).status).toBe(403);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+    expect(mocks.remove).not.toHaveBeenCalled();
 });
-
-describe('배정 목록', () => {
-    it('멘티는 목록을 볼 수 없다', async () => {
-        authAs('MENTEE');
-
-        const res = await GET(new NextRequest('http://localhost/api/projects/proj_1/mentors'), params);
-
-        expect(res.status).toBe(403);
-    });
-
-    it('매니저는 그 프로젝트의 COACH 만 받는다', async () => {
-        // 필터가 빠지면 다른 프로젝트나 편집자 행까지 새어 나간다.
-        authAs('PROGRAM_MANAGER');
-
-        const res = await GET(new NextRequest('http://localhost/api/projects/proj_1/mentors'), params);
-
-        expect(res.status).toBe(200);
-        expect(findManyMember).toHaveBeenCalled();
-        expect(findManyMember.mock.calls[0][0].where).toEqual({ projectId: 'proj_1', role: 'COACH' });
-    });
+it('프로젝트가 없어도 멘티에게 배정한다', async () => {
+    expect((await assignMentee(request(), { params: Promise.resolve({ id: 'mentee' }) })).status).toBe(200);
+    expect(mocks.project).not.toHaveBeenCalled();
 });
-
-describe('배정 후보 목록', () => {
-    // /api/admin/users 는 requireAdmin 이라 매니저에게 403 을 준다. 매니저도
-    // 배정 후보를 볼 수 있도록 이 라우트의 ?candidates=1 분기가 대신 응답한다.
-    it('매니저는 후보 목록을 받는다', async () => {
-        authAs('PROGRAM_MANAGER');
-        findManyUser.mockResolvedValue([
-            { id: 'mentor_1', name: '멘토', email: 'm@x.com', role: 'MENTOR' },
-        ]);
-
-        const res = await GET(
-            new NextRequest('http://localhost/api/projects/proj_1/mentors?candidates=1'),
-            params
-        );
-        const body = await res.json();
-
-        expect(res.status).toBe(200);
-        expect(body.candidates).toEqual([
-            { id: 'mentor_1', name: '멘토', email: 'm@x.com', role: 'MENTOR' },
-        ]);
-    });
-
-    it('멘티는 후보 목록을 볼 수 없다', async () => {
-        authAs('MENTEE');
-
-        const res = await GET(
-            new NextRequest('http://localhost/api/projects/proj_1/mentors?candidates=1'),
-            params
-        );
-
-        expect(res.status).toBe(403);
-        expect(findManyUser).not.toHaveBeenCalled();
-    });
-
-    it('멘티·관리자는 후보에서 빠진다', async () => {
-        // MENTOR·PROGRAM_MANAGER 만 조회해야 하고, MENTEE·ADMIN 은 쿼리 자체에서 걸러진다.
-        authAs('ADMIN');
-
-        await GET(
-            new NextRequest('http://localhost/api/projects/proj_1/mentors?candidates=1'),
-            params
-        );
-
-        expect(findManyUser).toHaveBeenCalledWith({
-            where: { role: { in: ['MENTOR', 'PROGRAM_MANAGER'] }, status: 'APPROVED' },
-            select: { id: true, name: true, email: true, role: true, accessExpiresAt: true },
-            orderBy: { name: 'asc' },
-        });
-    });
-
-    it('승인 대기(PENDING) 회원은 후보에서 빠진다', async () => {
-        // 쿼리 자체가 status: 'APPROVED' 로 걸러야, 가입만 하고 아직 승인되지
-        // 않은 회원이 배정 후보로 뜨지 않는다.
-        authAs('PROGRAM_MANAGER');
-
-        await GET(
-            new NextRequest('http://localhost/api/projects/proj_1/mentors?candidates=1'),
-            params
-        );
-
-        expect(findManyUser.mock.calls[0][0].where).toEqual({
-            role: { in: ['MENTOR', 'PROGRAM_MANAGER'] },
-            status: 'APPROVED',
-        });
-    });
-
-    it('이용 기간이 지난 회원은 응답에서 빠진다', async () => {
-        // status 필터로 못 거르는 만료는 isAccessExpired 로 애플리케이션에서 걸러야 한다.
-        authAs('ADMIN');
-        findManyUser.mockResolvedValue([
-            { id: 'mentor_1', name: '멘토', email: 'm@x.com', role: 'MENTOR', accessExpiresAt: null },
-            {
-                id: 'mentor_2', name: '만료멘토', email: 'exp@x.com', role: 'MENTOR',
-                accessExpiresAt: new Date('2000-01-01T00:00:00Z'),
-            },
-        ]);
-
-        const res = await GET(
-            new NextRequest('http://localhost/api/projects/proj_1/mentors?candidates=1'),
-            params
-        );
-        const body = await res.json();
-
-        expect(body.candidates).toEqual([
-            { id: 'mentor_1', name: '멘토', email: 'm@x.com', role: 'MENTOR' },
-        ]);
-    });
+it('배정 교체는 같은 멘티 키를 갱신한다', async () => {
+    await POST(request('POST', 'replacement'), params);
+    expect(mocks.upsert.mock.calls[0][0].update.mentorId).toBe('replacement');
+});
+it('삭제는 요청한 멘티와 현재 멘토 조합으로 한정한다', async () => {
+    expect((await DELETE(request('DELETE'), params)).status).toBe(200);
+    expect(mocks.remove).toHaveBeenCalledWith({ where: { menteeId: 'mentee', mentorId: 'mentor' } });
+});
+it.each(['MENTEE', 'ADMIN'])('%s는 멘토로 지정할 수 없다', async role => {
+    mocks.user.mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } })
+        .mockResolvedValueOnce({ id: 'target', role, status: 'APPROVED' });
+    expect((await POST(request(), params)).status).toBe(400);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+});
+it.each([
+    { role: 'MENTOR', status: 'PENDING' },
+    { role: 'MENTOR', status: 'APPROVED', accessExpiresAt: new Date('2000-01-01') },
+    null,
+])('미승인·만료·없는 멘토를 차단한다', async target => {
+    mocks.user.mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } }).mockResolvedValueOnce(target);
+    expect((await POST(request(), params)).status).toBe(400);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+});
+it('프로그램 매니저를 멘토로 지정할 수 있다', async () => {
+    mocks.user.mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } })
+        .mockResolvedValueOnce({ id: 'mentor', role: 'PROGRAM_MANAGER', status: 'APPROVED' });
+    expect((await POST(request(), params)).status).toBe(200);
+});
+it('해당 멘티의 배정 한 건만 조회한다', async () => {
+    mocks.assignment.mockResolvedValue({ mentorId: 'mentor', mentor: { name: '멘토', role: 'MENTOR' } });
+    const response = await GET(request('GET'), params);
+    expect((await response.json()).mentors).toEqual([{ id: 'mentee', userId: 'mentor', user: { name: '멘토', role: 'MENTOR' } }]);
+    expect(mocks.assignment.mock.calls[0][0].where).toEqual({ menteeId: 'mentee' });
+});
+it('후보는 승인된 멘토·매니저로 제한하고 만료자는 제외한다', async () => {
+    mocks.users.mockResolvedValue([{ id: 'ok', accessExpiresAt: null }, { id: 'expired', accessExpiresAt: new Date('2000-01-01') }]);
+    const response = await GET(new NextRequest('http://localhost/api/projects/p1/mentors?candidates=1'), params);
+    expect((await response.json()).candidates).toEqual([{ id: 'ok' }]);
+    expect(mocks.users.mock.calls[0][0].where).toEqual({ role: { in: ['MENTOR', 'PROGRAM_MANAGER'] }, status: 'APPROVED' });
+});
+it('없는 프로젝트는 404로 처리한다', async () => {
+    mocks.project.mockResolvedValue(null);
+    expect((await POST(request(), params)).status).toBe(404);
+});
+it('빈 대상은 400으로 처리한다', async () => {
+    expect((await POST(request('POST', ''), params)).status).toBe(400);
+});
+it('인증 실패를 그대로 반환한다', async () => {
+    mocks.auth.mockResolvedValue(NextResponse.json({}, { status: 401 }));
+    expect((await POST(request(), params)).status).toBe(401);
 });

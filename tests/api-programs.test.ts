@@ -4,10 +4,13 @@ import { NextRequest } from 'next/server';
 
 const findManyProgram = vi.fn();
 const createProgram = vi.fn();
+const findManager = vi.fn();
+const listManagers = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
         program: { findMany: findManyProgram, create: createProgram },
+        user: { findUnique: findManager, findMany: listManagers },
     },
 }));
 
@@ -38,6 +41,8 @@ const validBody = {
 };
 
 beforeEach(() => {
+    findManager.mockResolvedValue({ role: 'PROGRAM_MANAGER', status: 'APPROVED', accessExpiresAt: null });
+    listManagers.mockResolvedValue([]);
     findManyProgram.mockResolvedValue([]);
     createProgram.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
         ...data, createdAt: new Date(),
@@ -58,12 +63,13 @@ describe('프로그램 개설 권한', () => {
         expect(createProgram).toHaveBeenCalled();
     });
 
-    it('매니저도 개설할 수 있다', async () => {
+    it('매니저는 프로그램을 개설할 수 없다', async () => {
         authAs('PROGRAM_MANAGER');
 
         const res = await POST(postRequest(validBody));
 
-        expect(res.status).toBe(200);
+        expect(res.status).toBe(403);
+        expect(createProgram).not.toHaveBeenCalled();
     });
 
     it('멘토는 개설할 수 없다', async () => {
@@ -85,7 +91,24 @@ describe('프로그램 개설 권한', () => {
 });
 
 describe('프로그램 개설 규칙', () => {
-    beforeEach(() => authAs('PROGRAM_MANAGER', 'pm_1'));
+    beforeEach(() => authAs('ADMIN', 'pm_1'));
+
+    it('관리자가 고른 매니저에게 새 프로그램 운영을 배정한다', async () => {
+        expect((await POST(postRequest({ ...validBody, managerId: 'manager' }))).status).toBe(200);
+        expect(createProgram.mock.calls[0][0].data.managerId).toBe('manager');
+    });
+
+    it.each([
+        null,
+        { role: 'MENTEE', status: 'APPROVED' },
+        { role: 'MENTOR', status: 'APPROVED' },
+        { role: 'PROGRAM_MANAGER', status: 'PENDING' },
+        { role: 'PROGRAM_MANAGER', status: 'APPROVED', accessExpiresAt: new Date('2000-01-01') },
+    ])('유효하지 않은 담당자는 지정하지 않는다 (%j)', async manager => {
+        findManager.mockResolvedValue(manager);
+        expect((await POST(postRequest({ ...validBody, managerId: 'manager' }))).status).toBe(400);
+        expect(createProgram).not.toHaveBeenCalled();
+    });
 
     it('개설한 사람이 담당 매니저가 된다', async () => {
         await POST(postRequest(validBody));
@@ -121,6 +144,14 @@ describe('프로그램 개설 규칙', () => {
 });
 
 describe('프로그램 목록 범위', () => {
+    it('관리자만 담당 매니저 후보를 조회한다', async () => {
+        authAs('PROGRAM_MANAGER');
+        expect((await GET(new NextRequest('http://localhost/api/programs?managers=1'))).status).toBe(403);
+        expect(listManagers).not.toHaveBeenCalled();
+        authAs('ADMIN');
+        expect((await GET(new NextRequest('http://localhost/api/programs?managers=1'))).status).toBe(200);
+        expect(listManagers.mock.calls[0][0].where).toMatchObject({ role: 'PROGRAM_MANAGER', status: 'APPROVED' });
+    });
     it('관리자는 전체를 본다', async () => {
         authAs('ADMIN');
 

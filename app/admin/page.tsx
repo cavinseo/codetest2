@@ -766,7 +766,7 @@ export default function AdminModePage() {
                         {tab === 'invites' && canInvite && <InvitesTab />}
 
                         {/* ── Programs Tab ─────────────────────────────── */}
-                        {tab === 'programs' && canManageProgramsUI && <ProgramsTab />}
+                        {tab === 'programs' && canManageProgramsUI && <ProgramsTab canCreate={role === 'ADMIN'} />}
 
                         {/* ── Projects Tab ─────────────────────────────── */}
                         {tab === 'projects' && (

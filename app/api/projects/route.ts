@@ -14,6 +14,7 @@ import {
     validateBusinessPlanFileStorageValue,
 } from '@/lib/business-plan-file';
 import { DEFAULT_PROJECT_AI_MODE, projectAiModeSchema } from '@/lib/ai/project-ai-mode';
+import { createProjectWithApproval, ProjectApprovalError } from '@/lib/project-creation-approval';
 
 const log = createLogger('api/projects');
 
@@ -28,6 +29,7 @@ const createProjectSchema = z.object({
     // 소유자로 지정해 열 때만 필요하다(아래 POST 참고).
     programId: z.string().min(1, '프로그램을 선택하세요.').optional(),
     ownerMenteeId: z.string().min(1, '소유할 멘티를 선택하세요.').optional(),
+    approvalRequestId: z.string().min(1).optional(),
 });
 
 // ─── GET: 프로젝트 목록 조회 ──────────────────────────────────────────
@@ -42,6 +44,8 @@ export async function GET(request: NextRequest) {
         // 관리자와 매니저는 배정 대상을 고르기 위해 전체 목록을 본다.
         const scope = canListAllProjects(authResult.role)
             ? {}
+            : authResult.role === 'MENTOR'
+                ? { owner: { mentorAssignment: { is: { mentorId: userId } } } }
             : { OR: [{ ownerId: userId }, { members: { some: { userId } } }] };
 
         const userProjects = await prisma.project.findMany({
@@ -52,6 +56,7 @@ export async function GET(request: NextRequest) {
                 description: true,
                 detailedDescription: true,
                 ownerId: true,
+                owner: { select: { mentorAssignment: { select: { mentorId: true } } } },
                 createdAt: true,
                 updatedAt: true,
                 programId: true,
@@ -86,6 +91,7 @@ export async function GET(request: NextRequest) {
                     systemRole: authResult.role,
                     isOwner: p.ownerId === userId,
                     memberRole: p.members[0]?.role,
+                    isAssignedMentor: p.owner?.mentorAssignment?.mentorId === userId,
                 }) ?? 'EDITOR',
             })),
         });
@@ -112,7 +118,7 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json();
-        const { name, description, detailedDescription, businessPlanFile, aiMode, programId, ownerMenteeId } =
+        const { name, description, detailedDescription, businessPlanFile, aiMode, programId, ownerMenteeId, approvalRequestId } =
             createProjectSchema.parse(body);
         const validatedBusinessPlanFile = validateBusinessPlanFileStorageValue(businessPlanFile);
 
@@ -177,18 +183,16 @@ export async function POST(request: NextRequest) {
             programName = program.name;
         }
 
-        const newProject = await prisma.project.create({
-            data: {
-                id: generateId('proj'),
-                name,
-                description,
-                detailedDescription,
-                businessPlanFile: validatedBusinessPlanFile,
-                aiMode,
-                programId: targetProgramId,
-                ownerId,
-            },
-        });
+        const newProject = await createProjectWithApproval({
+            id: generateId('proj'),
+            name,
+            description,
+            detailedDescription,
+            businessPlanFile: validatedBusinessPlanFile,
+            aiMode,
+            programId: targetProgramId,
+            ownerId,
+        }, authResult.role === 'MENTEE', approvalRequestId);
 
         log.info('프로젝트 생성', { userId, projectId: newProject.id, programId: targetProgramId, ownerId });
 
@@ -210,6 +214,7 @@ export async function POST(request: NextRequest) {
             },
         });
     } catch (error: unknown) {
+        if (error instanceof ProjectApprovalError) return NextResponse.json({ error: error.message, approvalRequired: true }, { status: 403 });
         if (error instanceof z.ZodError || error instanceof BusinessPlanFileValidationError) {
             const message = error instanceof z.ZodError ? error.errors[0].message : error.message;
             return NextResponse.json({ error: message }, { status: 400 });

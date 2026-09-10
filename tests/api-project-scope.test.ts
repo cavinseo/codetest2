@@ -6,9 +6,12 @@ const findManyProject = vi.fn();
 const createProject = vi.fn();
 const findUniqueProgram = vi.fn();
 const findUniqueUser = vi.fn();
+const countOwnedProjects = vi.fn();
+const consumeApproval = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
+        $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({ $queryRaw: vi.fn(), project: { count: countOwnedProjects, create: createProject }, projectCreationRequest: { updateMany: consumeApproval } }),
         project: { findMany: findManyProject, create: createProject },
         program: { findUnique: findUniqueProgram },
         user: { findUnique: findUniqueUser },
@@ -59,6 +62,8 @@ function projectRow(overrides: {
 }
 
 beforeEach(() => {
+    countOwnedProjects.mockResolvedValue(0);
+    consumeApproval.mockResolvedValue({ count: 1 });
     findManyProject.mockResolvedValue([]);
     createProject.mockResolvedValue({
         id: 'proj_new', name: '새 과제', description: null, detailedDescription: null,
@@ -116,6 +121,28 @@ describe('멘티가 자기 과제를 만들 때', () => {
     beforeEach(() => {
         authAs('MENTEE', 'mentee_1');
         findUniqueUser.mockResolvedValue({ programId: 'prog_1', program: { name: '프로그램 1' } });
+    });
+
+    it('두 번째 프로젝트는 조작한 권한을 보내도 승인 없으면 403이다', async () => {
+        countOwnedProjects.mockResolvedValue(1);
+        const response = await POST(postRequest({ name: '추가 과제', role: 'ADMIN', requiresApproval: false }));
+        expect(response.status).toBe(403);
+        expect((await response.json()).approvalRequired).toBe(true);
+        expect(createProject).not.toHaveBeenCalled();
+    });
+
+    it('승인된 신청 ID를 보내면 본인의 미사용 승인으로 생성한다', async () => {
+        countOwnedProjects.mockResolvedValue(1);
+        expect((await POST(postRequest({ name: '추가 과제', approvalRequestId: 'approved' }))).status).toBe(200);
+        expect(consumeApproval.mock.calls[0][0].where).toEqual({ id: 'approved', menteeId: 'mentee_1', programId: 'prog_1', status: 'APPROVED', usedAt: null });
+        expect(createProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('이미 사용된 승인은 API에서 403으로 반환하고 생성하지 않는다', async () => {
+        countOwnedProjects.mockResolvedValue(1);
+        consumeApproval.mockResolvedValue({ count: 0 });
+        expect((await POST(postRequest({ name: '추가 과제', approvalRequestId: 'used' }))).status).toBe(403);
+        expect(createProject).not.toHaveBeenCalled();
     });
 
     it('자기 프로그램에 자기 소유로 만든다', async () => {
@@ -253,14 +280,14 @@ describe('프로젝트 목록 범위', () => {
         expect(where).toEqual({});
     });
 
-    it('멘토는 소유·참여한 것만 본다', async () => {
+    it('멘토는 배정된 멘티의 프로젝트만 본다', async () => {
         authAs('MENTOR', 'mentor_1');
 
         await GET(new NextRequest('http://localhost/api/projects'));
 
         const where = findManyProject.mock.calls[0][0].where;
         expect(where).toEqual({
-            OR: [{ ownerId: 'mentor_1' }, { members: { some: { userId: 'mentor_1' } } }],
+            owner: { mentorAssignment: { is: { mentorId: 'mentor_1' } } },
         });
     });
 });

@@ -99,9 +99,14 @@ export function canCreateProjectForOthers(role: MemberRole): boolean {
     return role === 'ADMIN' || role === 'PROGRAM_MANAGER';
 }
 
-/** 프로그램을 새로 개설할 수 있는가. */
+/** 프로그램 운영 화면에 접근할 수 있는가. 개설 권한과 분리한다. */
 export function canManagePrograms(role: MemberRole): boolean {
     return role === 'ADMIN' || role === 'PROGRAM_MANAGER';
+}
+
+/** 프로그램 개설은 운영 담당자의 권한보다 좁게 제한한다. */
+export function canCreateProgram(role: MemberRole): boolean {
+    return role === 'ADMIN';
 }
 
 /**

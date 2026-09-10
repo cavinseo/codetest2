@@ -1,8 +1,10 @@
 'use client';
 // 프로그램(기관 단위로 개설하는 주제별 단위) 개설·목록 화면. 관리자와
-// 프로그램 매니저가 함께 쓴다. 매니저는 자신이 개설한 프로그램만 본다.
+// 프로그램 매니저가 함께 쓴다. 매니저는 자신이 담당하는 프로그램만 본다.
 
 import { useCallback, useEffect, useState } from 'react';
+import ProgramMentors from './ProgramMentors';
+import ProjectRequestsPanel from '@/components/ProjectRequestsPanel';
 
 interface ProgramRow {
     id: string;
@@ -32,14 +34,23 @@ interface MenteeCandidate {
     programName: string | null;
 }
 
-const EMPTY_FORM = { name: '', organization: '', startsAt: '', endsAt: '' };
+const EMPTY_FORM = { name: '', organization: '', startsAt: '', endsAt: '', managerId: '' };
 
-export default function ProgramsTab() {
+export default function ProgramsTab({ canCreate = false }: { canCreate?: boolean }) {
     const [programs, setPrograms] = useState<ProgramRow[]>([]);
     const [form, setForm] = useState(EMPTY_FORM);
     const [showCreate, setShowCreate] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [isBusy, setIsBusy] = useState(false);
+    const [managers, setManagers] = useState<{ id: string; name: string | null }[]>([]);
+    useEffect(() => {
+        if (!canCreate) return;
+        fetch('/api/programs?managers=1').then(async res => {
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '담당자 목록 조회에 실패했습니다.');
+            setManagers(data.managers);
+        }).catch(() => setMessage({ type: 'error', text: '담당자 목록을 불러오지 못했습니다.' }));
+    }, [canCreate]);
 
     // 프로젝트 불러오기: 프로그램마다 패널을 따로 열고 닫으므로 programId 로 키를 잡는다.
     const [openImport, setOpenImport] = useState<Record<string, boolean>>({});
@@ -78,7 +89,7 @@ export default function ProgramsTab() {
             const res = await fetch('/api/programs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(form),
+                body: JSON.stringify({ ...form, managerId: form.managerId || undefined }),
             });
             const data = await res.json().catch(() => null);
             if (!res.ok) throw new Error(data?.error || '개설에 실패했습니다.');
@@ -223,17 +234,25 @@ export default function ProgramsTab() {
 
     return (
         <div className="space-y-4">
+            <ProjectRequestsPanel reviewer />
             <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-white">프로그램 ({programs.length})</h3>
-                <button type="button" onClick={() => setShowCreate((v) => !v)}
+                {canCreate && <button type="button" onClick={() => setShowCreate((v) => !v)}
                     className="btn-secondary text-sm" id="programs-create-toggle">
                     {showCreate ? '닫기' : '프로그램 개설'}
-                </button>
+                </button>}
             </div>
 
-            {showCreate && (
+            {canCreate && showCreate && (
                 <div className="card space-y-4">
                     <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="block text-sm font-medium text-gray-400">
+                            담당 프로그램 매니저
+                            <select className="input mt-2" value={form.managerId} onChange={e => setForm({ ...form, managerId: e.target.value })}>
+                                <option value="">관리자 본인이 담당</option>
+                                {managers.map(m => <option key={m.id} value={m.id}>{m.name || '프로그램 매니저'}</option>)}
+                            </select>
+                        </label>
                         <label className="block text-sm font-medium text-gray-400">
                             프로그램명
                             <input className="input mt-2" value={form.name}
@@ -300,6 +319,7 @@ export default function ProgramsTab() {
                                     </div>
                                 </div>
                                 <div className="divider my-3" />
+                                <ProgramMentors programId={p.id} />
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-4 text-[11px] text-gray-500">
                                         <span>멘티 {p.menteeCount}명</span>

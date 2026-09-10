@@ -8,7 +8,7 @@ import { requireAuth } from '@/lib/auth';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
-import { canManagePrograms } from '@/lib/member-roles';
+import { canManagePrograms, canCreateProgram } from '@/lib/member-roles';
 import { isValidProgramPeriod } from '@/lib/program';
 
 const log = createLogger('api/programs');
@@ -18,6 +18,7 @@ const createProgramSchema = z.object({
     organization: z.string().min(1, '주관기관명을 입력하세요.'),
     startsAt: z.coerce.date({ errorMap: () => ({ message: '시작일을 입력하세요.' }) }),
     endsAt: z.coerce.date({ errorMap: () => ({ message: '종료일을 입력하세요.' }) }),
+    managerId: z.string().min(1).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -28,7 +29,15 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-        // 매니저는 자신이 개설한 프로그램만 본다. 관리자는 전체를 본다.
+        if (request.nextUrl.searchParams.get('managers') === '1') {
+            if (!canCreateProgram(authResult.role)) return NextResponse.json({ error: '담당자 선택은 관리자만 가능합니다.' }, { status: 403 });
+            const managers = await prisma.user.findMany({
+                where: { role: 'PROGRAM_MANAGER', status: 'APPROVED', OR: [{ accessExpiresAt: null }, { accessExpiresAt: { gt: new Date() } }] },
+                select: { id: true, name: true }, orderBy: { name: 'asc' },
+            });
+            return NextResponse.json({ managers });
+        }
+        // 매니저는 자신이 담당하는 프로그램만 본다. 관리자는 전체를 본다.
         const scope = authResult.role === 'ADMIN' ? {} : { managerId: authResult.userId };
 
         const programs = await prisma.program.findMany({
@@ -65,7 +74,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
-    if (!canManagePrograms(authResult.role)) {
+    if (!canCreateProgram(authResult.role)) {
         return NextResponse.json({ error: '프로그램을 개설할 권한이 없습니다.' }, { status: 403 });
     }
 
@@ -74,14 +83,19 @@ export async function POST(request: NextRequest) {
         if (!parsed.success) {
             return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
         }
-        const { name, organization, startsAt, endsAt } = parsed.data;
+        const { name, organization, startsAt, endsAt, managerId } = parsed.data;
 
         if (!isValidProgramPeriod(startsAt, endsAt)) {
             return NextResponse.json({ error: '종료일은 시작일보다 뒤여야 합니다.' }, { status: 400 });
         }
 
-        // 개설한 사람이 곧 그 프로그램의 담당 매니저다. 관리자가 개설하면
-        // 관리자가 담당자가 된다 — 다른 사람에게 담당을 넘기는 것은 이 API 밖의 일이다.
+        if (managerId) {
+            const manager = await prisma.user.findUnique({ where: { id: managerId }, select: { role: true, status: true, accessExpiresAt: true } });
+            if (!manager || manager.role !== 'PROGRAM_MANAGER' || manager.status !== 'APPROVED' || (manager.accessExpiresAt && manager.accessExpiresAt <= new Date())) {
+                return NextResponse.json({ error: '이용 가능한 프로그램 매니저를 선택하세요.' }, { status: 400 });
+            }
+        }
+        // 별도 담당자를 고르지 않으면 개설한 관리자가 직접 운영한다.
         const program = await prisma.program.create({
             data: {
                 id: generateId('prog'),
@@ -89,11 +103,11 @@ export async function POST(request: NextRequest) {
                 organization,
                 startsAt,
                 endsAt,
-                managerId: authResult.userId,
+                managerId: managerId ?? authResult.userId,
             },
         });
 
-        log.info('프로그램 개설', { programId: program.id, managerId: authResult.userId });
+        log.info('프로그램 개설', { programId: program.id, managerId: program.managerId });
 
         return NextResponse.json({
             program: {

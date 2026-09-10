@@ -296,6 +296,9 @@ export default function MembersTab({
                                         </div>
                                     </td>
                                     <td className="px-5 py-4">
+                                        {m.role === 'MENTEE' || m.role === 'ADMIN' ? (
+                                            <span className="text-xs text-gray-400">{MEMBER_ROLE_LABELS[m.role]} · 변경 불가</span>
+                                        ) : (
                                         <select
                                             value={m.role}
                                             onChange={(e) => onSetRole(m.id, e.target.value as MemberRole)}
@@ -306,6 +309,7 @@ export default function MembersTab({
                                                 <option key={r} value={r}>{MEMBER_ROLE_LABELS[r]}</option>
                                             ))}
                                         </select>
+                                        )}
                                     </td>
                                     <td className="px-5 py-4">
                                         {/* 프로그램에 속하는 것은 멘티뿐이다. 이미 등록된 멘티도
