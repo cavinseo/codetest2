@@ -3,8 +3,11 @@
 //
 // 표 절은 기존 워크시트 API 값을 그대로 쓰고, 표로 재현하기 어려운 세 곳
 // (WS-4 적합도·WS-7 산점도·WS-9 QFD 관계도)만 화면을 그려 두었다가 그림으로 캡처한다.
-// 문서 조립과 직렬화까지 브라우저에서 끝낸다 — 그림이 브라우저에만 있고, 서버로
-// 올리면 요청 본문 한도에 걸릴 수 있기 때문이다. 새 서버 라우트는 쓰지 않는다.
+// 모델 조립(워크시트 캡처·교정)은 화면에서 하지만, .docx 직렬화는
+// POST /api/projects/[id]/report/docx 로 넘겨 서버에서 한다 — docx 패키지가
+// 브라우저 번들에서 깨지기 때문이다(클래스 필드가 SWC 다운레벨에서 'super'
+// 파싱 오류를 낸다). 그림은 캡처 시점에 이미 압축된 PNG data URL이라 본문
+// 한도 위험은 낮다.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
@@ -206,10 +209,18 @@ export default function FinalReportPage() {
         if (!draft) return;
         setProgress('문서 만드는 중...');
         try {
-            // docx 는 이 버튼을 누를 때만 필요하다. 화면을 열 때 함께 불러오면 번들러가
-            // 브라우저용으로 바꾸다 깨지면서(SyntaxError) 페이지 전체가 죽는다.
-            const { renderFinalReportDocx } = await import('@/lib/final-report-docx');
-            const blob = await renderFinalReportDocx(draft);
+            // .docx 직렬화는 서버에서 한다 — docx 패키지를 브라우저 번들에 넣으면
+            // 빌드가 깨진다(클래스 필드가 SWC 다운레벨에서 'super' 파싱 오류를 낸다).
+            const res = await fetch(`/api/projects/${projectId}/report/docx`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(draft),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                throw new Error(body?.error || '문서를 만들지 못했습니다.');
+            }
+            const blob = await res.blob();
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
@@ -226,7 +237,7 @@ export default function FinalReportPage() {
         } finally {
             setProgress(null);
         }
-    }, [draft, showToast]);
+    }, [draft, projectId, showToast]);
 
     if (isLoading) {
         return (
