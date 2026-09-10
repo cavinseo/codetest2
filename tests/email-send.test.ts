@@ -54,6 +54,21 @@ afterEach(() => {
 });
 
 describe('sendMail', () => {
+    it('SMTP 설정 조회에서 예외가 나도 false를 돌려주고 수신자나 비밀번호를 로그로 남기지 않는다', async () => {
+        const recipient = 'real.person@example.com';
+        const secret = 'private-smtp-password';
+        getSmtpSettings.mockRejectedValue(new Error(`Configuration lookup failed for ${recipient}: ${secret}`));
+
+        const result = await sendMail({ to: recipient, subject: '초대 코드', html: '<p>EXISTING-CODE</p>' });
+
+        expect(result).toBe(false);
+        expect(createTransportMock).not.toHaveBeenCalled();
+        expect(sendMailMock).not.toHaveBeenCalled();
+        expect(allLoggedText()).not.toContain(recipient);
+        expect(allLoggedText()).not.toContain(secret);
+        expect(allLoggedText()).not.toContain('EXISTING-CODE');
+    });
+
     it('SMTP 가 설정되지 않았으면 false 를 돌려주고 수신자 주소를 남기지 않는다', async () => {
         getSmtpSettings.mockResolvedValue({ configured: false });
 
