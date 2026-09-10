@@ -32,7 +32,7 @@ const heading = (text: string, level: 1 | 2 = 2): FinalReportBlock => ({ kind: '
 const table = (headers: string[], rows: string[][]): FinalReportBlock => ({ kind: 'dataTable', headers, rows });
 const missing: FinalReportBlock = { kind: 'paragraph', text: '그림을 캡처하지 못했습니다' };
 const expected: FinalReportBlock[] = [
-    heading('표지', 1), { kind: 'keyValueTable', rows: [{ label: '기업명', value: '제품 A' }, { label: '작성일', value: overview.generatedAt }, { label: '코치명', value: '코치' }] },
+    heading('KS-QFD 결과보고서', 1), { kind: 'keyValueTable', rows: [{ label: '기업명', value: '제품 A' }, { label: '작성일', value: overview.generatedAt }, { label: '코치명', value: '코치' }] },
     heading('Ⅰ. 제품/서비스 개요', 1), { kind: 'keyValueTable', rows: [{ label: '제품명', value: '제품 A' }, { label: '제품설명', value: '제품 설명' }] },
     heading('매출처별 매출 현황'), table(['매출처', '매출액', '경쟁사명'], [['현재 고객', '1,234', '현재 경쟁사']]),
     heading('향후 1년 목표매출액'), table(['매출처', '매출액', '경쟁사명'], [['미래 고객', '2,345', '미래 경쟁사']]),
@@ -63,6 +63,12 @@ it('maps every DB section, original field meaning, row order and caller time exa
     const before = JSON.stringify({ overview, data, free });
     expect(buildFinalReportModel(overview, data, free, [])).toEqual({ title: 'KS-QFD 결과보고서', fileName: '결과보고서_제품 A.docx', blocks: expected });
     expect(JSON.stringify({ overview, data, free })).toBe(before);
+});
+
+it('puts the report title in the first visible heading', () => {
+    const report = buildFinalReportModel(overview, data, free, []);
+    expect(report.blocks[0]).toEqual({ kind: 'heading', level: 1, text: report.title });
+    expect(report.blocks[0]).not.toEqual({ kind: 'heading', level: 1, text: '표지' });
 });
 
 it('keeps every empty section and missing capture placeholder', () => {

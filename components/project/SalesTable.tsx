@@ -3,8 +3,9 @@
 import MoneyInput from '@/components/ui/MoneyInput';
 import { formatMoney } from '@/lib/money';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 
 type SalesPeriod = 'Y' | 'Y_PLUS_1';
 
@@ -59,9 +60,8 @@ export default function SalesTable({ projectId, onSaved }: Props) {
     const [rows, setRows] = useState<SalesRow[]>([createRow('Y'), createRow('Y_PLUS_1')]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [toast, setToast] = useState<string | null>(null);
+    const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
-    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const rowsByPeriod = useMemo(() => {
         const grouped: Record<SalesPeriod, SalesRow[]> = { Y: [], Y_PLUS_1: [] };
@@ -82,12 +82,6 @@ export default function SalesTable({ projectId, onSaved }: Props) {
             competitors: uniqueValues(allRows.map((row) => row.competitor)),
         };
     }, [rowsByPeriod]);
-
-    const showToast = (msg: string) => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast(msg);
-        toastTimer.current = setTimeout(() => setToast(null), 3000);
-    };
 
     useEffect(() => {
         fetch(`/api/projects/${projectId}/sales`)
@@ -223,7 +217,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
 
     return (
         <div className="relative space-y-5">
-            {toast && <HeaderToast message={toast} />}
+            {toast && <HeaderToast message={toast.message} type={toast.type} />}
 
             <div className="flex items-center justify-between">
                 <div>

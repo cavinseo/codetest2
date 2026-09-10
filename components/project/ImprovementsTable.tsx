@@ -1,8 +1,9 @@
 'use client';
 // WS-11 개선포인트도출 표를 렌더링하는 클라이언트 컴포넌트입니다.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 import { buildImprovementSuggestionsFromQfd } from '@/lib/worksheet-links';
 
 interface ImprovementRow {
@@ -84,15 +85,8 @@ export default function ImprovementsTable({ projectId }: Props) {
     const [qfdData, setQfdData] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [toast, setToast] = useState<string | null>(null);
+    const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
-    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const showToast = (message: string) => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast(message);
-        toastTimer.current = setTimeout(() => setToast(null), 3000);
-    };
 
     const getQfdSuggestions = (source = qfdData?.requirements || []) => buildImprovementSuggestionsFromQfd(source);
 
@@ -116,7 +110,7 @@ export default function ImprovementsTable({ projectId }: Props) {
                 showToast('개선포인트 데이터를 불러오지 못했습니다.');
             })
             .finally(() => setIsLoading(false));
-    }, [projectId]);
+    }, [projectId, showToast]);
 
     useEffect(() => {
         setFeatures((currentFeatures) => {
@@ -335,7 +329,7 @@ export default function ImprovementsTable({ projectId }: Props) {
 
     return (
         <div className="relative space-y-6">
-            {toast && <HeaderToast message={toast} />}
+            {toast && <HeaderToast message={toast.message} type={toast.type} />}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>

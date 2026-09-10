@@ -36,7 +36,13 @@ export default function RootLayout({
     `;
 
     return (
-        <html lang="ko" className="dark">
+        // suppressHydrationWarning 은 바로 아래 스크립트 때문이다. 서버는 늘 dark 로
+        // 그리는데 그 스크립트가 저장된 취향을 읽어 light 로 바꾸므로, React 가
+        // 이 태그의 class 불일치를 오류로 잡는다. 깜빡임 없이 테마를 입히려면
+        // 스크립트가 hydration 보다 먼저 돌아야 하니 불일치 자체는 피할 수 없다.
+        // 이 속성은 이 태그의 속성 차이만 덮고 자식 트리에는 번지지 않으므로,
+        // 다른 진짜 hydration 오류는 그대로 드러난다.
+        <html lang="ko" className="dark" suppressHydrationWarning>
             <head>
                 <script dangerouslySetInnerHTML={{ __html: themeScript }} />
             </head>

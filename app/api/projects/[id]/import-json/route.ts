@@ -35,6 +35,11 @@ function linkId(map: Map<string, string>, oldId: string): string {
     return map.get(oldId) ?? oldId;
 }
 
+// 가져오기 한 번이 여러 테이블을 지우고 다시 채운다. 원격 DB 에서는 Prisma 기본
+// 제한(5초)을 넘겨 중간에 트랜잭션이 닫히므로(P2028) 넉넉히 잡는다.
+const IMPORT_JSON_TIMEOUT_MS = 60_000;
+const IMPORT_JSON_MAX_WAIT_MS = 15_000;
+
 export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -235,7 +240,7 @@ export async function POST(
                     },
                 });
             }
-        });
+        }, { timeout: IMPORT_JSON_TIMEOUT_MS, maxWait: IMPORT_JSON_MAX_WAIT_MS });
 
         log.info('Data imported successfully', { projectId });
 

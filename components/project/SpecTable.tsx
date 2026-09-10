@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
@@ -118,15 +119,8 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const relayAbortRef = useRef<AbortController | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
-    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const { toast, showToast } = useToast();
     const excelInputRef = useRef<HTMLInputElement | null>(null);
-
-    const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast({ message, type });
-        toastTimer.current = setTimeout(() => setToast(null), 3000);
-    };
 
     const buildRowsFromSpecs = useCallback((loadedSpecs: SpecFunction[]) => {
         return buildFlatSpecRowsFromFunctions(loadedSpecs);

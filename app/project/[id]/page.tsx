@@ -523,6 +523,9 @@ export default function ProjectDetailPage() {
                                 display:contents 라 알림이 없을 때는 상자를 만들지 않는다 —
                                 빈 div 를 두면 gap-3 이 그대로 남아 버튼이 늘 밀린다. */}
                             <div id={HEADER_TOAST_SLOT_ID} className="contents" />
+                            <Link href={`/project/${projectId}/report`} className="btn-secondary text-sm">
+                                결과보고서
+                            </Link>
                             <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 팀원 초대
                             </Link>

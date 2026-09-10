@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 
 interface DevPlanRow {
     id: string; phase: string; task: string; description: string;
@@ -20,14 +21,8 @@ export default function DevPlanTable({ projectId }: Props) {
     const [rows, setRows] = useState<DevPlanRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [toast, setToast] = useState<string | null>(null);
+    const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
-    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const showToast = (msg: string) => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast(msg); toastTimer.current = setTimeout(() => setToast(null), 3000);
-    };
 
     useEffect(() => {
         fetch(`/api/projects/${projectId}/dev-plan`)
@@ -66,7 +61,7 @@ export default function DevPlanTable({ projectId }: Props) {
 
     return (
         <div className="space-y-4 relative">
-            {toast && <HeaderToast message={toast} />}
+            {toast && <HeaderToast message={toast.message} type={toast.type} />}
             <div className="flex items-center justify-between">
                 <div><h2 className="text-xl font-display font-bold text-white">[WS-14] 개발계획서</h2><p className="text-sm text-gray-500 mt-1">단계별 개발 일정 및 담당 계획</p></div>
                 <div className="flex items-center gap-2">

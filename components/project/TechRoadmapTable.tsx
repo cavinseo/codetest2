@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getImprovementCustomerNeeds, mergeRoadmapWithCustomerNeeds, type RoadmapLinkRow } from '@/lib/worksheet-links';
 import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 
 type FutureCustomerRow = RoadmapLinkRow;
 
@@ -14,14 +15,7 @@ export default function TechRoadmapTable({ projectId }: Props) {
     const [rows, setRows] = useState<FutureCustomerRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [toast, setToast] = useState<string | null>(null);
-    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const showToast = (msg: string) => {
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast(msg);
-        toastTimer.current = setTimeout(() => setToast(null), 3000);
-    };
+    const { toast, showToast } = useToast();
 
     useEffect(() => {
         Promise.all([
@@ -120,7 +114,7 @@ export default function TechRoadmapTable({ projectId }: Props) {
 
     return (
         <div className="space-y-4 relative">
-            {toast && <HeaderToast message={toast} />}
+            {toast && <HeaderToast message={toast.message} type={toast.type} />}
 
             <div className="flex items-center justify-between">
                 <div>
