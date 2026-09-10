@@ -12,16 +12,16 @@
 ## 구현 계약.
 
 - `FinalReport` 테이블을 프로젝트별 1개로 생성한다. `projectId`, `draft`(자유 입력과 교정 문서), `published`(완료 문서), `version`, `publishedVersion`, `updatedById`, `publishedById`, `publishedAt`, `updatedAt`을 저장한다. 프로젝트 삭제 시만 보고서를 함께 삭제하며 작성자 삭제로 보고서가 삭제되지 않게 작성자 ID는 감사 값으로 보관한다. 공개 Data API에는 RLS로 차단한다.
-- `/api/projects/[id]/report`의 GET은 `{ canEdit, view, version, hasPublishedReport, hasUnpublishedChanges, publishedAt, updatedAt, mentorName, draft? 또는 document? }`를 반환한다. `view=published`는 완료본을 요청한다. 멘티·일반 참여자는 query와 무관하게 공개본만 받는다. 초안은 `{ free: FinalReportFreeInput, document: FinalReportModel | null }`이다.
+- `/api/projects/[id]/report`의 GET은 `{ canEdit, view, version, hasPublishedReport, hasUnpublishedChanges, publishedAt, updatedAt, mentorName, draft? 또는 document? }`를 반환한다. `view=published`는 완료본을 요청한다. 멘티·일반 참여자는 query와 무관하게 공개본만 받는다. 초안은 `{ free: FinalReportFreeInput, document: FinalReportModel | null, previewNeedsRefresh: boolean }`이다. 생성 이후 자유 입력을 바꾸면 재생성 필요 상태를 저장하고 완료를 차단한다.
 - PUT `{ version, draft }`는 초안을 저장하고 version을 증가시킨다. POST `{ version }`는 저장된 문서를 완료본으로 복사하고 version과 publishedVersion을 같은 새 값으로 올린다. 미리보기가 없는 초안은 저장 가능하지만 완료할 수 없다. 두 변경 응답은 본문 없이 `{ success, version, hasPublishedReport, hasUnpublishedChanges, publishedAt, updatedAt }`이다. 오래된 버전은 409로 거절한다.
 - 화면은 먼저 보고서 권한과 저장 내용을 조회한다. 작성 권한이 있을 때만 워크시트를 읽어 생성 UI를 표시한다. 작성 중 저장, 완료, 현재 공개본 보기, 새로고침 후 복구와 실패 안내를 제공한다. 완료 전 변경 내용은 먼저 저장하고 해당 버전으로 완료 요청한다. 일반 열람자는 저장된 완료본만 렌더링한다.
 
 ## 실행 단계.
 
 - [x] 검토. 현재 메모리 전용 보고서, 권한 경계, 캡처 크기, 일반 API 노출 경로 및 완료 후 수정 정책을 확인했다.
-- [ ] 저장·권한 구현 및 단위 검수. 스키마·입력 검증·전용 API와 권한·버전·공개본 유지 테스트를 구현한다.
-- [ ] 화면 구현 및 검수. 작성·저장·완료·공개본 조회와 읽기 전용 미리보기, 이미지 최적화를 구현한다.
-- [ ] 통합 검수. 격리 로컬 PostgreSQL에서 권한·배정 변경·동시 저장·완료 교체·RLS를 확인한다. 실제 브라우저에서 멘토 작성과 멘티 열람을 확인한다.
-- [ ] 최종 검수. 전체 테스트·타입·lint·빌드 및 회귀 테스트 역검증을 수행하고 구현과 결과 보고서를 커밋한다.
+- [x] 저장·권한 구현 및 단위 검수. 스키마·입력 검증·전용 API와 권한·버전·공개본 유지 테스트를 구현했다.
+- [x] 화면 구현 및 검수. 작성·저장·완료·공개본 조회, 읽기 전용 미리보기, 이미지 최적화 및 미저장 내부 이동 확인창을 구현했다.
+- [x] 통합 검수. 격리 로컬 PostgreSQL에서 권한·배정 변경·동시 저장·완료 교체·실제 비소유자 RLS 차단 11개 테스트를 통과했다. 실제 브라우저에서 멘토 작성·새로고침 복구·완료·기존 공개본 유지·재완료 교체·멘티 읽기 전용 열람·Word 내려받기와 미저장 이동 확인을 검수했다.
+- [x] 최종 검수. 전체 134개 파일·1,728개 테스트, 타입·lint·빌드 및 JPEG·입력 검증 회귀 역검증을 통과했다. 구현 커밋 뒤 별도 결과 보고서 커밋으로 증거를 남긴다.
 
 운영 DB 마이그레이션·푸시·배포는 이번 구현 완료 후 별도 운영 반영 단계에서 수행한다.

@@ -121,6 +121,7 @@ model Project {
   fundingPlans             FundingPlan[]
   fundingSources           FundingSource[]
   worksheetComments        WorksheetComment[]
+  finalReport              FinalReport?
 
   @@index([ownerId])
   @@index([programId])
@@ -137,6 +138,22 @@ model MentorAssignment {
 
   @@index([mentorId])
   @@map("mentor_assignments")
+}
+
+// 수정 중인 초안과 멘티에게 공개한 완료본을 분리해 재작성 중에도 완료본을 보존한다.
+model FinalReport {
+  projectId        String   @id
+  draft            Json
+  published        Json?
+  version          Int      @default(0)
+  publishedVersion Int?
+  updatedById      String
+  publishedById    String?
+  publishedAt      DateTime?
+  updatedAt        DateTime @updatedAt
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("final_reports")
 }
 
 // 승인 한 건을 추가 개설 한 번에만 쓰도록 소비 시각을 기록한다.

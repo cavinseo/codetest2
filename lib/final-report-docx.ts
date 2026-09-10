@@ -56,7 +56,7 @@ function renderBlock(block: FinalReportBlock): Paragraph | Table {
             });
         case 'image':
             return new Paragraph({ children: [new ImageRun({
-                type: 'png',
+                type: block.pngDataUrl.startsWith('data:image/jpeg;') ? 'jpg' : 'png',
                 // docx가 dataURL을 atob로 해독하므로 브라우저에 없는 Buffer를 사용하지 않는다.
                 data: block.pngDataUrl,
                 // 설치된 docx는 픽셀에 9,525를 곱해 EMU로 바꾸므로 96dpi로 mm를 환산한다.

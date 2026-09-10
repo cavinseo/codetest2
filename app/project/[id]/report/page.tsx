@@ -1,44 +1,31 @@
 'use client';
-// 결과보고서(.docx) 생성 화면이다.
-//
-// 표 절은 기존 워크시트 API 값을 그대로 쓰고, 표로 재현하기 어려운 세 곳
-// (WS-4 적합도·WS-7 산점도·WS-9 QFD 관계도)만 화면을 그려 두었다가 그림으로 캡처한다.
-// 문서 조립과 직렬화까지 브라우저에서 끝낸다 — 그림이 브라우저에만 있고, 서버로
-// 올리면 요청 본문 한도에 걸릴 수 있기 때문이다. 새 서버 라우트는 쓰지 않는다.
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+// 배정 멘토의 보고서 초안을 저장하고 완료한 문서만 참여자에게 공개한다.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import FitnessWrapper from '@/components/project/FitnessWrapper';
 import KanoSatisfactionGraph from '@/components/project/KanoSatisfactionGraph';
 import QFDMatrix from '@/components/project/QFDMatrix';
-import { buildWorksheetData, pickCoachName, toKanoChartPoints, type WorksheetPayloads } from '@/lib/final-report-inputs';
 import FinalReportPreview from '@/components/project/FinalReportPreview';
+import { buildWorksheetData, toKanoChartPoints, type WorksheetPayloads } from '@/lib/final-report-inputs';
 import { buildFinalReportModel, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel } from '@/lib/final-report-document';
 import { applyBlockEdit, countEditedBlocks, withEditedBlocks, type BlockEdit } from '@/lib/final-report-edit';
+import { REPORT_MAX_BYTES, type ReportDraft } from '@/lib/final-report-payload';
+import { optimizeReportImage } from '@/lib/final-report-image';
 import { captureWorksheetNode } from '@/lib/worksheet-capture';
 
-/** 캡처 컨테이너의 고정 폭. 화면 폭에 따라 캡처 결과가 달라지지 않게 한다. */
 const CAPTURE_WIDTH_PX = 1280;
-
 const CAPTURE_TARGETS: Array<{ id: CapturedWorksheetImage['worksheetId']; title: string }> = [
     { id: 'fitness', title: '제품/서비스 속성 적합도' },
     { id: 'kano-aggregation', title: 'Kano 2D 산점도' },
     { id: 'qfd', title: '고객수요기반 기술스펙 관계도' },
 ];
-
 const EMPTY_FREE_INPUT: FinalReportFreeInput = {
-    productImageDataUrl: null,
-    productImageWidthPx: null,
-    productImageHeightPx: null,
-    marketDefinition: '',
-    targetCustomer: '',
-    finalSpecExplanation: '',
-    improvedProductName: '',
-    improvedProductDescription: '',
+    productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null,
+    marketDefinition: '', targetCustomer: '', finalSpecExplanation: '', improvedProductName: '', improvedProductDescription: '',
 };
-
 const FREE_FIELDS: Array<{ key: keyof FinalReportFreeInput; label: string; placeholder: string }> = [
     { key: 'marketDefinition', label: '시장정의', placeholder: '어떤 시장을 대상으로 하는지 서술하세요.' },
     { key: 'targetCustomer', label: '목표고객', placeholder: '핵심 목표고객을 서술하세요.' },
@@ -46,23 +33,50 @@ const FREE_FIELDS: Array<{ key: keyof FinalReportFreeInput; label: string; place
     { key: 'improvedProductName', label: '개선 제품(서비스)명', placeholder: '개선 후 제품명' },
     { key: 'improvedProductDescription', label: '개선 제품설명', placeholder: '개선 후 제품 설명' },
 ];
+interface ReportMetadata {
+    version: number;
+    hasPublishedReport: boolean;
+    hasUnpublishedChanges: boolean;
+    publishedAt: string | null;
+    updatedAt: string | null;
+}
+interface ReportResponse extends ReportMetadata {
+    canEdit: boolean;
+    mentorName: string | null;
+    view: 'draft' | 'published';
+    draft?: ReportDraft | null;
+    document?: FinalReportModel | null;
+}
 
-/**
- * 한 라우트가 늦어도 화면 전체가 멈추지 않도록 끊는 시간.
- * 넉넉히 잡은 이유는 dev 서버가 이 화면에서 처음 열두 라우트를 그 자리에서
- * 컴파일하기 때문이다. 짧게 끊으면 첫 진입에서 모든 절이 빈 채로 그려진다.
- * 컴파일이 끝난 뒤와 배포판에서는 이 시간까지 갈 일이 없다.
- */
-const FETCH_TIMEOUT_MS = 60000;
-
-async function getJson(url: string): Promise<unknown> {
-    // 타임아웃이 없으면 라우트 하나가 응답하지 않을 때 화면이 영영 로딩 상태로 남는다.
+async function requestReport(url: string, method = 'GET', body?: string): Promise<ReportResponse> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), 60000);
+    try {
+        const response = await fetch(url, {
+            method, signal: controller.signal, cache: 'no-store',
+            ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            if (response.status === 409) throw new Error('다른 창에서 보고서가 변경되었거나 멘토 배정이 바뀌었습니다. 현재 입력은 유지됩니다. 저장 상태와 배정을 확인한 후 다시 열어 주세요.');
+            throw new Error(data.error || '결과보고서를 처리하지 못했습니다.');
+        }
+        return data;
+    } catch (error) {
+        if (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')) {
+            throw new Error('서버 응답을 확인하지 못했습니다. 현재 입력은 유지됩니다. 다시 시도하기 전에 다른 창에서 저장 상태를 확인해 주세요.');
+        }
+        throw error;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function getWorksheetJson(url: string): Promise<unknown> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
     try {
         const response = await fetch(url, { signal: controller.signal });
-        // 코치명 라우트는 권한이 없으면 403 이다. 그것 하나 때문에 보고서 생성이
-        // 막히면 안 되므로 실패는 전부 빈 값으로 떨어뜨린다.
         return response.ok ? await response.json() : null;
     } catch {
         return null;
@@ -73,289 +87,347 @@ async function getJson(url: string): Promise<unknown> {
 
 export default function FinalReportPage() {
     const params = useParams();
+    const router = useRouter();
     const projectId = String(params.id);
-
+    const reportUrl = `/api/projects/${projectId}/report`;
+    const [report, setReport] = useState<ReportResponse | null>(null);
+    const [initialError, setInitialError] = useState<string | null>(null);
+    const [activeView, setActiveView] = useState<'draft' | 'published'>('published');
+    const [publishedDocument, setPublishedDocument] = useState<FinalReportModel | null>(null);
+    const [publishedAt, setPublishedAt] = useState<string | null>(null);
     const [payloads, setPayloads] = useState<Record<string, unknown> | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    // 어디까지 받았는지 보여 준다. 열두 곳을 한꺼번에 부르므로 멈춘 것과 느린 것을 구별해야 한다.
+    const [worksheetsLoading, setWorksheetsLoading] = useState(false);
     const [loadedCount, setLoadedCount] = useState(0);
-    // 못 받은 곳을 화면에 드러낸다. 조용히 null 로 넘기면 표가 왜 비었는지 알 수 없다.
     const [failedKeys, setFailedKeys] = useState<string[]>([]);
     const [free, setFree] = useState<FinalReportFreeInput>(EMPTY_FREE_INPUT);
-    const [progress, setProgress] = useState<string | null>(null);
-    // 원본은 되돌리기와 "몇 곳 고쳤는지"를 위해 그대로 남기고, 편집은 draft 에만 쌓는다.
     const [model, setModel] = useState<FinalReportModel | null>(null);
     const [draft, setDraft] = useState<FinalReportModel | null>(null);
+    const [previewNeedsRefresh, setPreviewNeedsRefresh] = useState(false);
+    const [hasLocalChanges, setHasLocalChanges] = useState(false);
+    const [progress, setProgress] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
+    const [confirmation, setConfirmation] = useState<'publish' | 'rebuild' | 'leave' | null>(null);
+    const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+    const dialog = useRef<HTMLDialogElement>(null);
+    const busy = useRef(false);
+    const worksheetLoad = useRef(0);
     const { toast, showToast } = useToast();
 
-    useEffect(() => {
+    const loadWorksheets = useCallback(async () => {
+        const generation = ++worksheetLoad.current;
+        setWorksheetsLoading(true);
+        setLoadedCount(0);
         const base = `/api/projects/${projectId}`;
         const urls = {
-            overview: `${base}/overview`,
-            exportData: `${base}/export`,
-            sales: `${base}/sales`,
-            kanoAnalysis: `${base}/kano/analysis`,
-            qfdAnalysis: `${base}/qfd/analysis`,
-            improvements: `${base}/improvements`,
-            techTree: `${base}/tech-tree`,
-            targetSpec: `${base}/target-spec`,
-            techRoadmap: `${base}/tech-roadmap`,
-            assets: `${base}/assets`,
-            funding: `${base}/funding`,
-            mentors: `${base}/mentors`,
+            overview: `${base}/overview`, exportData: `${base}/export`, sales: `${base}/sales`,
+            kanoAnalysis: `${base}/kano/analysis`, qfdAnalysis: `${base}/qfd/analysis`,
+            improvements: `${base}/improvements`, techTree: `${base}/tech-tree`, targetSpec: `${base}/target-spec`,
+            techRoadmap: `${base}/tech-roadmap`, assets: `${base}/assets`, funding: `${base}/funding`,
         };
         const keys = Object.keys(urls) as Array<keyof typeof urls>;
-        // 열두 개를 한꺼번에 던지면 원격 DB 쪽 커넥션이 모자라 전부 대기에 걸린다.
-        // 서너 개씩 끊어 보내면 끝나는 대로 진행 수가 올라가 어디서 막히는지도 보인다.
-        const BATCH = 3;
-        (async () => {
-            const results: unknown[] = [];
-            for (let start = 0; start < keys.length; start += BATCH) {
-                const batch = keys.slice(start, start + BATCH);
-                const done = await Promise.all(batch.map((key) => getJson(urls[key]).then((result) => {
-                    setLoadedCount((count) => count + 1);
-                    return result;
-                })));
-                results.push(...done);
-            }
-            setPayloads(Object.fromEntries(keys.map((key, i) => [key, results[i]])));
-            setFailedKeys(keys.filter((_, i) => results[i] === null));
-        })().finally(() => setIsLoading(false));
+        const results: unknown[] = [];
+        // DB 커넥션을 한꺼번에 점유하지 않도록 세 요청씩 불러온다.
+        for (let start = 0; start < keys.length; start += 3) {
+            if (generation !== worksheetLoad.current) return;
+            const done = await Promise.all(keys.slice(start, start + 3).map(async (key) => {
+                const value = await getWorksheetJson(urls[key]);
+                if (generation === worksheetLoad.current) setLoadedCount(count => count + 1);
+                return value;
+            }));
+            results.push(...done);
+        }
+        if (generation !== worksheetLoad.current) return;
+        setPayloads(Object.fromEntries(keys.map((key, index) => [key, results[index]])));
+        setFailedKeys(keys.filter((_, index) => results[index] === null));
+        setWorksheetsLoading(false);
     }, [projectId]);
 
-    const worksheets = useMemo(
-        () => (payloads ? buildWorksheetData(payloads as unknown as WorksheetPayloads) : null),
-        [payloads],
-    );
+    useEffect(() => {
+        let cancelled = false;
+        setReport(null);
+        setInitialError(null);
+        setPayloads(null);
+        setHasLocalChanges(false);
+        void requestReport(reportUrl).then(data => {
+            if (cancelled) return;
+            setReport(data);
+            setActiveView(data.view);
+            setPublishedAt(data.publishedAt);
+            setPublishedDocument(data.view === 'published' ? data.document ?? null : null);
+            setFree(data.draft?.free ?? EMPTY_FREE_INPUT);
+            setDraft(data.draft?.document ?? null);
+            setModel(data.draft?.document ?? null);
+            setPreviewNeedsRefresh(data.draft?.previewNeedsRefresh ?? false);
+            if (data.canEdit) void loadWorksheets();
+        }).catch(error => {
+            if (!cancelled) setInitialError(error instanceof Error ? error.message : '결과보고서를 불러오지 못했습니다.');
+        });
+        return () => { cancelled = true; worksheetLoad.current += 1; };
+    }, [reportUrl, loadWorksheets]);
 
-    // WS-7 만 projectId 가 아니라 점 배열을 주입받는다. Kano 분석 응답에는 요구사항
-    // 문구가 없어 요구사항 목록과 id 로 이어 붙여야 한다.
-    const kanoPoints = useMemo(
-        () => (worksheets ? toKanoChartPoints(worksheets.kanoAggregation, worksheets.requirements) : []),
-        [worksheets],
-    );
+    useEffect(() => {
+        if (confirmation && dialog.current && !dialog.current.open) dialog.current.showModal();
+    }, [confirmation]);
 
-    const updateFree = (key: keyof FinalReportFreeInput, value: string) =>
-        setFree((prev) => ({ ...prev, [key]: value }));
-
-    const handleImage = (file: File | undefined) => {
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            const dataUrl = String(reader.result);
-            // 원본 픽셀 크기를 함께 넘겨야 모델이 비율을 지킨다. 못 구하면 모델이
-            // 고정 크기로 떨어뜨리므로 여기서 실패해도 보고서는 나온다.
-            const image = new Image();
-            image.onload = () => setFree((prev) => ({
-                ...prev,
-                productImageDataUrl: dataUrl,
-                productImageWidthPx: image.naturalWidth,
-                productImageHeightPx: image.naturalHeight,
-            }));
-            image.onerror = () => setFree((prev) => ({
-                ...prev, productImageDataUrl: dataUrl, productImageWidthPx: null, productImageHeightPx: null,
-            }));
-            image.src = dataUrl;
+    useEffect(() => {
+        if (!hasLocalChanges) return;
+        const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+        // 공통 메뉴의 Next Link도 보고서 페이지에서 막아 미저장 교정이 사라지지 않게 한다.
+        const guardInternalLink = (event: MouseEvent) => {
+            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+            if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download')) return;
+            if (link.target && link.target.toLowerCase() !== '_self') return;
+            const destination = new URL(link.href, window.location.href);
+            if (destination.origin !== window.location.origin) return;
+            if (destination.pathname === window.location.pathname && destination.search === window.location.search) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            setPendingNavigation(`${destination.pathname}${destination.search}${destination.hash}`);
+            setConfirmation('leave');
         };
-        reader.readAsDataURL(file);
-    };
+        window.addEventListener('beforeunload', warn);
+        document.addEventListener('click', guardInternalLink, true);
+        return () => {
+            window.removeEventListener('beforeunload', warn);
+            document.removeEventListener('click', guardInternalLink, true);
+        };
+    }, [hasLocalChanges]);
 
-    const handleBuildPreview = useCallback(async () => {
-        if (!worksheets || !payloads) return;
-        setProgress('0/3 캡처 중...');
+    const worksheets = useMemo(() => payloads ? buildWorksheetData(payloads as unknown as WorksheetPayloads) : null, [payloads]);
+    const kanoPoints = useMemo(() => worksheets ? toKanoChartPoints(worksheets.kanoAggregation, worksheets.requirements) : [], [worksheets]);
+    const editing = report?.canEdit && activeView === 'draft';
+    const shownDocument = activeView === 'published' ? publishedDocument : draft;
+    const editedCount = model && draft ? countEditedBlocks(model.blocks, draft.blocks) : 0;
+
+    function begin(label: string) {
+        if (busy.current) return false;
+        busy.current = true;
+        setProgress(label);
+        setActionError(null);
+        return true;
+    }
+    function finish() { busy.current = false; setProgress(null); }
+    function fail(error: unknown, fallback: string) { setActionError(error instanceof Error ? error.message : fallback); }
+    function updateFree(patch: Partial<FinalReportFreeInput>) {
+        if (busy.current) return;
+        setFree(previous => ({ ...previous, ...patch }));
+        if (draft) setPreviewNeedsRefresh(true);
+        setHasLocalChanges(true);
+    }
+    async function handleImage(file: File | undefined) {
+        if (!file || !begin('이미지 최적화 중...')) return;
+        try {
+            const image = await optimizeReportImage(file);
+            setFree(previous => ({ ...previous, productImageDataUrl: image.dataUrl, productImageWidthPx: image.widthPx, productImageHeightPx: image.heightPx }));
+            if (draft) setPreviewNeedsRefresh(true);
+            setHasLocalChanges(true);
+        } catch (error) { fail(error, '이미지를 처리하지 못했습니다.'); }
+        finally { finish(); }
+    }
+    async function handleBuildPreview() {
+        if (!worksheets || !payloads || !report?.canEdit || worksheetsLoading || failedKeys.length || !begin('0/3 캡처 중...')) return;
         try {
             const images: CapturedWorksheetImage[] = [];
             for (const [index, target] of CAPTURE_TARGETS.entries()) {
                 setProgress(`${index}/3 캡처 중...`);
                 const node = document.querySelector<HTMLElement>(`[data-worksheet-id="${target.id}"]`);
                 if (!node) throw new Error(`${target.title} 화면을 찾지 못했습니다.`);
-                const shot = await captureWorksheetNode(node);
-                images.push({ worksheetId: target.id, title: target.title, ...shot });
+                if (node.querySelector('.animate-spin')) throw new Error(`${target.title} 화면을 불러오는 중입니다. 값이 표시된 뒤 다시 만들어 주세요.`);
+                if (target.id === 'qfd' && node.textContent?.includes('QFD 데이터를 불러오지 못했습니다.')) {
+                    throw new Error('QFD 화면을 불러오지 못했습니다. 워크시트를 다시 불러온 뒤 미리보기를 만들어 주세요.');
+                }
+                const shot = await captureWorksheetNode(node, { pixelRatio: 1 });
+                const image = await optimizeReportImage(shot.pngDataUrl);
+                images.push({ worksheetId: target.id, title: target.title, pngDataUrl: image.dataUrl, widthPx: image.widthPx, heightPx: image.heightPx });
             }
             setProgress('문서 만드는 중...');
-
             const project = (payloads.overview as { project?: { name?: string; description?: string | null } } | null)?.project;
-            const model = buildFinalReportModel(
-                {
-                    projectName: project?.name ?? '프로젝트',
-                    description: project?.description ?? null,
-                    coachName: pickCoachName(payloads.mentors),
-                    // 문서에 그대로 찍히는 값이라 ISO 가 아니라 사람이 읽는 날짜로 넘긴다.
-                    generatedAt: new Date().toLocaleDateString('ko-KR'),
-                },
-                worksheets,
-                free,
-                images,
-            );
-
-            setModel(model);
-            setDraft(model);
-            showToast('미리보기를 만들었습니다. 확인하고 고친 뒤 내려받으세요.');
-        } catch (error) {
-            showToast(error instanceof Error ? error.message : '미리보기 생성에 실패했습니다.', 'error');
-        } finally {
-            setProgress(null);
+            const next = buildFinalReportModel({
+                projectName: project?.name ?? '프로젝트', description: project?.description ?? null,
+                coachName: report.mentorName, generatedAt: new Date().toLocaleDateString('ko-KR'),
+            }, worksheets, free, images);
+            setModel(next);
+            setDraft(next);
+            setPreviewNeedsRefresh(false);
+            setHasLocalChanges(true);
+            showToast('미리보기를 만들었습니다. 내용을 확인하고 저장하거나 완료해 주세요.');
+        } catch (error) { fail(error, '미리보기 생성에 실패했습니다.'); }
+        finally { finish(); }
+    }
+    function handleEdit(edit: BlockEdit) {
+        if (busy.current || !editing) return;
+        setDraft(previous => previous ? withEditedBlocks(previous, applyBlockEdit(previous.blocks, edit)) : previous);
+        setHasLocalChanges(true);
+    }
+    async function saveDraft() {
+        if (!report) throw new Error('보고서 정보를 불러온 후 저장해 주세요.');
+        const savedDraft: ReportDraft = { free, document: draft, previewNeedsRefresh };
+        const body = JSON.stringify({ version: report.version, draft: savedDraft });
+        if (new TextEncoder().encode(body).byteLength > REPORT_MAX_BYTES) {
+            throw new Error('보고서 저장 용량(3.5MB)을 초과했습니다. 제품 사진의 크기나 보고서 내용을 줄인 뒤 미리보기를 다시 만들어 주세요.');
         }
-    }, [worksheets, payloads, free, showToast]);
-
-    const handleEdit = useCallback((edit: BlockEdit) => {
-        setDraft((prev) => (prev ? withEditedBlocks(prev, applyBlockEdit(prev.blocks, edit)) : prev));
-    }, []);
-
-    const handleDownload = useCallback(async () => {
-        if (!draft) return;
-        setProgress('문서 만드는 중...');
+        const metadata = await requestReport(reportUrl, 'PUT', body);
+        setReport(previous => previous ? { ...previous, ...metadata } : previous);
+        setHasLocalChanges(false);
+        return metadata;
+    }
+    async function handleSave() {
+        if (!editing || !begin('초안 저장 중...')) return;
+        try { await saveDraft(); showToast('결과보고서 초안을 저장했습니다.'); }
+        catch (error) { fail(error, '초안 저장에 실패했습니다.'); }
+        finally { finish(); }
+    }
+    async function handlePublish() {
+        setConfirmation(null);
+        if (!editing || !draft || previewNeedsRefresh || !begin('최신 초안 저장 중...')) return;
         try {
-            // docx 는 이 버튼을 누를 때만 필요하다. 화면을 열 때 함께 불러오면 번들러가
-            // 브라우저용으로 바꾸다 깨지면서(SyntaxError) 페이지 전체가 죽는다.
+            const saved = await saveDraft();
+            setProgress('결과보고서 완료 중...');
+            const metadata = await requestReport(reportUrl, 'POST', JSON.stringify({ version: saved.version }));
+            setReport(previous => previous ? { ...previous, ...metadata } : previous);
+            setPublishedDocument(draft);
+            setPublishedAt(metadata.publishedAt);
+            showToast('결과보고서를 완료했습니다. 멘티가 완료본을 열람할 수 있습니다.');
+        } catch (error) { fail(error, '결과보고서 완료에 실패했습니다.'); }
+        finally { finish(); }
+    }
+    async function showPublished() {
+        if (!begin('완료본 불러오는 중...')) return;
+        try {
+            const published = await requestReport(`${reportUrl}?view=published`);
+            setPublishedDocument(published.document ?? null);
+            setPublishedAt(published.publishedAt);
+            setActiveView('published');
+        } catch (error) { fail(error, '완료본을 불러오지 못했습니다.'); }
+        finally { finish(); }
+    }
+    async function handleDownload() {
+        if (!shownDocument || !begin('Word 문서 만드는 중...')) return;
+        try {
             const { renderFinalReportDocx } = await import('@/lib/final-report-docx');
-            const blob = await renderFinalReportDocx(draft);
+            const blob = await renderFinalReportDocx(shownDocument);
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = draft.fileName;
-            // 문서에 붙였다가 눌러야 한다. 붙이지 않은 요소의 click 을 무시하는 브라우저가 있다.
+            link.download = shownDocument.fileName;
             document.body.appendChild(link);
             link.click();
-            document.body.removeChild(link);
-            // 누른 직후 바로 해제하면 내려받기가 시작되기 전에 주소가 무효가 될 수 있다.
+            link.remove();
             setTimeout(() => URL.revokeObjectURL(url), 10000);
             showToast('결과보고서를 내려받았습니다.');
-        } catch (error) {
-            showToast(error instanceof Error ? error.message : '문서를 만들지 못했습니다.', 'error');
-        } finally {
-            setProgress(null);
-        }
-    }, [draft, showToast]);
-
-    if (isLoading) {
-        return (
-            <div className="flex flex-col items-center justify-center gap-3 p-12">
-                <div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" />
-                <p className="text-sm text-gray-500">워크시트 불러오는 중 {loadedCount}/12</p>
-                {/* 주소의 프로젝트 식별자를 그대로 보여 준다. 안내문의 자리표시자를 그대로
-                    넣어 열었던 일이 있어, 화면만 보고도 그 경우를 가릴 수 있어야 한다. */}
-                <p className="text-xs text-gray-600">프로젝트 {projectId}</p>
-            </div>
-        );
+        } catch (error) { fail(error, 'Word 문서를 만들지 못했습니다.'); }
+        finally { finish(); }
     }
 
-    const requirementCount = worksheets?.requirements.length ?? 0;
-    const editedCount = model && draft ? countEditedBlocks(model.blocks, draft.blocks) : 0;
+    if (!report) return <div className="space-y-4 p-12">
+        {initialError ? <p role="alert" className="text-red-400">{initialError}</p> : <p className="text-gray-400">결과보고서와 열람 권한을 확인하고 있습니다.</p>}
+        <Link href={`/project/${projectId}`} className="btn-secondary inline-block text-sm">프로젝트로</Link>
+    </div>;
 
-    return (
-        <div className="mx-auto w-full max-w-[1400px] space-y-6 p-6">
-            {toast && <HeaderToast message={toast.message} type={toast.type} />}
-
-            {failedKeys.length > 0 && (
-                <div className="card border-amber-500/40 bg-amber-500/10">
-                    <p className="text-sm text-amber-200">
-                        <span className="font-semibold">{failedKeys.length}개 워크시트를 불러오지 못했습니다.</span>{' '}
-                        해당 절은 빈 채로 문서에 들어갑니다 — {failedKeys.join(', ')}
-                    </p>
-                    <p className="mt-1 text-xs text-amber-200/70">
-                        프로젝트 {projectId} · 권한이 없거나(코치명 등) 아직 입력하지 않은 워크시트라면 정상입니다.
-                    </p>
-                </div>
-            )}
-
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-display font-bold text-white">결과보고서</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        워크시트에 입력한 값으로 KS-QFD 결과보고서를 만듭니다. 아래 세 화면은 그림으로 첨부됩니다.
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Link href={`/project/${projectId}`} className="btn-secondary text-sm">워크시트로</Link>
-                    <button onClick={handleBuildPreview} disabled={progress !== null} className="btn-secondary text-sm disabled:opacity-50">
-                        {progress ?? (draft ? '미리보기 다시 만들기' : '미리보기 만들기')}
-                    </button>
-                    <button onClick={handleDownload} disabled={progress !== null || !draft} className="btn-primary text-sm disabled:opacity-50">
-                        Word 내려받기
-                    </button>
-                </div>
+    return <div className="mx-auto w-full max-w-[1400px] space-y-6 p-6">
+        {toast && <HeaderToast message={toast.message} type={toast.type} />}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <h1 className="text-2xl font-display font-bold text-white">결과보고서</h1>
+                <p className="mt-1 text-sm text-gray-400">{activeView === 'published' ? '멘토가 완료한 결과보고서입니다.' : editing ? '배정 멘토가 작성하고 완료하면 멘티에게 공개됩니다.' : '저장된 초안을 열람하고 있습니다. 배정 멘토만 작성·완료할 수 있습니다.'}</p>
+                {report.mentorName && <p className="mt-1 text-sm text-gray-400">배정 멘토 {report.mentorName}</p>}
             </div>
-
-            <div className="card space-y-4">
-                <div>
-                    <h2 className="text-lg font-semibold text-white">보고서에만 쓰는 항목</h2>
-                    <p className="text-sm text-gray-500 mt-1">
-                        워크시트에 저장할 자리가 없는 항목입니다. 저장되지 않으니 생성 전에 채워 주세요.
-                    </p>
-                </div>
-                <label className="block text-sm text-gray-300">
-                    제품/서비스 이미지
-                    <input type="file" accept="image/*" onChange={(event) => handleImage(event.target.files?.[0])} className="input-field block mt-1" />
-                </label>
-                {free.productImageDataUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element -- 업로드한 dataURL 미리보기라 최적화 대상이 아니다.
-                    <img src={free.productImageDataUrl} alt="제품 이미지 미리보기" className="max-h-40 rounded border border-white/10" />
-                )}
-                {FREE_FIELDS.map((field) => (
-                    <label key={field.key} className="block text-sm text-gray-300">
-                        {field.label}
-                        <textarea
-                            value={String(free[field.key] ?? '')}
-                            onChange={(event) => updateFree(field.key, event.target.value)}
-                            placeholder={field.placeholder}
-                            rows={2}
-                            className="input-field block w-full mt-1"
-                        />
-                    </label>
-                ))}
-            </div>
-
-            {draft && model && (
-                <section className="card space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                            <h2 className="text-lg font-semibold text-white">미리보기 · 교정</h2>
-                            <p className="mt-1 text-sm text-gray-500">
-                                문서에 들어갈 내용입니다. 칸을 눌러 바로 고칠 수 있고, 고친 내용은 워크시트에 저장되지 않습니다.
-                                {editedCount > 0 && <span className="ml-1 text-amber-300">{editedCount}곳 교정함</span>}
-                            </p>
-                        </div>
-                        <button
-                            onClick={() => setDraft(model)}
-                            disabled={editedCount === 0}
-                            className="btn-secondary text-sm disabled:opacity-40"
-                        >
-                            원본으로 되돌리기
-                        </button>
-                    </div>
-                    <FinalReportPreview blocks={draft.blocks} onEdit={handleEdit} />
-                </section>
-            )}
-
-            <div className="space-y-6">
-                <p className="text-sm text-gray-500">
-                    아래 세 화면이 그대로 그림으로 들어갑니다. 값이 다 나온 뒤에 「미리보기 만들기」를 누르세요.
-                </p>
-
-                <section className="card p-0 overflow-hidden">
-                    <h3 className="px-4 py-3 text-sm font-semibold text-white border-b border-white/[0.06]">[WS-4] 제품속성적합도</h3>
-                    <div data-worksheet-id="fitness" style={{ width: CAPTURE_WIDTH_PX }} className="p-4">
-                        <FitnessWrapper projectId={projectId} />
-                    </div>
-                </section>
-
-                <section className="card p-0 overflow-hidden">
-                    <h3 className="px-4 py-3 text-sm font-semibold text-white border-b border-white/[0.06]">[WS-7] TIMKO/만족계수 그래프</h3>
-                    <div data-worksheet-id="kano-aggregation" style={{ width: CAPTURE_WIDTH_PX }} className="p-4">
-                        {kanoPoints.length > 0
-                            ? <KanoSatisfactionGraph analysis={kanoPoints} />
-                            : <p className="text-sm text-gray-500">Kano 응답이 없어 산점도를 그릴 수 없습니다. (요구사항 {requirementCount}개)</p>}
-                    </div>
-                </section>
-
-                <section className="card p-0 overflow-hidden">
-                    <h3 className="px-4 py-3 text-sm font-semibold text-white border-b border-white/[0.06]">[WS-9] QFD</h3>
-                    <div data-worksheet-id="qfd" style={{ width: CAPTURE_WIDTH_PX }} className="p-4">
-                        <QFDMatrix projectId={projectId} />
-                    </div>
-                </section>
+            <div className="flex flex-wrap items-center gap-2">
+                <Link href={`/project/${projectId}`} className="btn-secondary text-sm">워크시트로</Link>
+                {report.view === 'draft' && activeView === 'published' && <button disabled={progress !== null} onClick={() => setActiveView('draft')} className="btn-secondary text-sm">{report.canEdit ? '초안 작성으로' : '초안 보기'}</button>}
+                {report.hasPublishedReport && activeView === 'draft' && <button disabled={progress !== null} onClick={() => void showPublished()} className="btn-secondary text-sm">현재 공개본 보기</button>}
+                {editing && <>
+                    <button disabled={progress !== null} onClick={() => void handleSave()} className="btn-secondary text-sm disabled:opacity-50">초안 저장</button>
+                    <button disabled={progress !== null || !draft || previewNeedsRefresh} onClick={() => setConfirmation('publish')} className="btn-primary text-sm disabled:opacity-50">완료</button>
+                </>}
+                <button disabled={progress !== null || !shownDocument} onClick={() => void handleDownload()} className="btn-secondary text-sm disabled:opacity-50">Word 내려받기</button>
             </div>
         </div>
-    );
+
+        {progress && <p role="status" className="text-sm text-primary-300">{progress}</p>}
+        {actionError && <div role="alert" className="card border-red-500/40 text-sm text-red-300">{actionError}</div>}
+        {activeView === 'draft' && <div className="card space-y-1 text-sm text-gray-400">
+            <p>{hasLocalChanges ? '아직 저장하지 않은 변경사항이 있습니다.' : report.updatedAt ? `마지막 저장 ${new Date(report.updatedAt).toLocaleString('ko-KR')}` : '아직 저장된 초안이 없습니다.'}</p>
+            <p>{report.hasPublishedReport ? (report.hasUnpublishedChanges || hasLocalChanges ? '수정 중에도 기존 완료본은 계속 공개됩니다. 다시 완료하면 새 문서로 교체됩니다.' : '현재 저장한 문서가 멘티에게 공개되어 있습니다.') : '멘토가 완료하기 전에는 멘티에게 보고서가 공개되지 않습니다.'}</p>
+        </div>}
+        {activeView === 'published' && <p className="text-sm text-gray-400">{publishedDocument ? `완료일 ${publishedAt ? new Date(publishedAt).toLocaleString('ko-KR') : ''}` : '아직 완료된 결과보고서가 없습니다. 멘토가 완료하면 이 화면에서 열람할 수 있습니다.'}</p>}
+
+        {editing && <>
+            <fieldset disabled={progress !== null} className="card space-y-4">
+                <div><h2 className="text-lg font-semibold text-white">보고서에만 쓰는 항목</h2><p className="mt-1 text-sm text-gray-400">초안 저장으로 보관할 수 있습니다. 입력한 내용은 미리보기를 만들 때 문서에 반영됩니다.</p></div>
+                <label className="block text-sm text-gray-300">제품/서비스 이미지
+                    <input type="file" accept="image/*" onChange={event => { void handleImage(event.target.files?.[0]); event.target.value = ''; }} className="input-field mt-1 block" />
+                </label>
+                {free.productImageDataUrl && <div className="flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- 저장할 dataURL 이미지를 직접 확인한다. */}
+                    <img src={free.productImageDataUrl} alt="제품 이미지 미리보기" className="max-h-40 rounded border border-white/10" />
+                    <button type="button" className="btn-secondary text-sm" onClick={() => updateFree({ productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null })}>이미지 제거</button>
+                </div>}
+                {FREE_FIELDS.map(field => <label key={field.key} className="block text-sm text-gray-300">{field.label}
+                    <textarea value={String(free[field.key] ?? '')} onChange={event => updateFree({ [field.key]: event.target.value })} placeholder={field.placeholder} rows={2} className="input-field mt-1 block w-full" />
+                </label>)}
+            </fieldset>
+            {previewNeedsRefresh && <p role="status" className="text-sm text-amber-300">입력 항목이 변경되었습니다. 미리보기를 다시 만들어야 완료할 수 있습니다. 기존 교정 내용은 재생성 전까지 유지됩니다.</p>}
+            <div className="flex flex-wrap items-center gap-3">
+                <button onClick={() => draft ? setConfirmation('rebuild') : void handleBuildPreview()} disabled={progress !== null || worksheetsLoading || !worksheets || failedKeys.length > 0} className="btn-secondary text-sm disabled:opacity-50">{draft ? '미리보기 다시 만들기' : '미리보기 만들기'}</button>
+                <button disabled={progress !== null || worksheetsLoading} onClick={() => void loadWorksheets()} className="btn-secondary text-sm disabled:opacity-50">워크시트 다시 불러오기</button>
+                {worksheetsLoading && <p role="status" className="text-sm text-gray-400">워크시트 불러오는 중 {loadedCount}/11</p>}
+                {failedKeys.length > 0 && !worksheetsLoading && <div role="alert" className="text-sm text-amber-300">
+                    <p>워크시트 {failedKeys.length}개를 불러오지 못해 새 문서를 만들 수 없습니다. 저장된 초안은 유지됩니다. ({failedKeys.join(', ')})</p>
+                </div>}
+            </div>
+        </>}
+
+        {shownDocument && <section className="card space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <div><h2 className="text-lg font-semibold text-white">{editing ? '미리보기 · 교정' : activeView === 'published' ? '완료 보고서' : '저장된 초안'}</h2>
+                    {editing && <p className="mt-1 text-sm text-gray-400">문서의 칸을 눌러 교정할 수 있습니다. 교정은 보고서에만 저장됩니다.{editedCount > 0 && <span className="ml-1 text-amber-300">{editedCount}곳 교정함</span>}</p>}
+                </div>
+                {editing && <button onClick={() => { setDraft(model); setHasLocalChanges(true); }} disabled={progress !== null || editedCount === 0} className="btn-secondary text-sm disabled:opacity-40">미리보기 기준으로 되돌리기</button>}
+            </div>
+            <FinalReportPreview blocks={shownDocument.blocks} onEdit={editing ? handleEdit : undefined} readOnly={!editing} disabled={progress !== null} />
+        </section>}
+
+        {!report.canEdit && activeView === 'draft' && <section className="card space-y-3">
+            <h2 className="text-lg font-semibold text-white">저장된 보고서 입력 항목</h2>
+            {previewNeedsRefresh && <p className="text-sm text-amber-300">입력 항목이 변경되어 문서 미리보기를 다시 만들어야 하는 초안입니다.</p>}
+            {free.productImageDataUrl && <>
+                {/* eslint-disable-next-line @next/next/no-img-element -- 서버에 저장된 보고서 사진을 읽기 전용으로 표시한다. */}
+                <img src={free.productImageDataUrl} alt="제품/서비스 이미지" className="max-h-60 max-w-full" />
+            </>}
+            <dl className="space-y-3">{FREE_FIELDS.map(field => <div key={field.key}><dt className="text-sm font-semibold text-gray-300">{field.label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-400">{String(free[field.key] || '입력 없음')}</dd></div>)}</dl>
+        </section>}
+
+        {editing && !worksheetsLoading && worksheets && <div className="space-y-6">
+            <p className="text-sm text-gray-400">아래 워크시트는 읽기 전용이며 문서의 그림으로 저장됩니다. 값이 표시된 뒤 미리보기를 만들어 주세요.</p>
+            <section className="card overflow-x-auto p-0"><h3 className="border-b border-white/[0.06] px-4 py-3 text-sm font-semibold text-white">[WS-4] 제품속성적합도</h3>
+                <div inert data-worksheet-id="fitness" style={{ width: CAPTURE_WIDTH_PX }} className="p-4"><FitnessWrapper projectId={projectId} /></div>
+            </section>
+            <section className="card overflow-x-auto p-0"><h3 className="border-b border-white/[0.06] px-4 py-3 text-sm font-semibold text-white">[WS-7] TIMKO/만족계수 그래프</h3>
+                <div inert data-worksheet-id="kano-aggregation" style={{ width: CAPTURE_WIDTH_PX }} className="p-4">{kanoPoints.length ? <KanoSatisfactionGraph analysis={kanoPoints} /> : <p className="text-sm text-gray-400">Kano 응답이 없어 산점도를 그릴 수 없습니다. (요구사항 {worksheets.requirements.length}개)</p>}</div>
+            </section>
+            <section className="card overflow-x-auto p-0"><h3 className="border-b border-white/[0.06] px-4 py-3 text-sm font-semibold text-white">[WS-9] QFD</h3>
+                <div inert data-worksheet-id="qfd" style={{ width: CAPTURE_WIDTH_PX }} className="p-4"><QFDMatrix projectId={projectId} /></div>
+            </section>
+        </div>}
+
+        {confirmation && <dialog ref={dialog} onCancel={() => { setConfirmation(null); setPendingNavigation(null); }} className="w-full max-w-lg rounded-xl border border-white/10 bg-gray-900 p-6 text-white shadow-xl backdrop:bg-black/60" aria-labelledby="report-confirm-title">
+            <h2 id="report-confirm-title" className="text-lg font-semibold">{confirmation === 'leave' ? '저장하지 않고 이동하시겠습니까?' : confirmation === 'publish' ? '결과보고서를 완료하시겠습니까?' : '미리보기를 다시 만드시겠습니까?'}</h2>
+            <p className="mt-3 text-sm text-gray-300">{confirmation === 'leave' ? '아직 저장하지 않은 입력과 교정 내용이 사라집니다. 저장된 초안과 기존 완료본은 유지됩니다. 계속 작성하려면 취소해 주세요.' : confirmation === 'publish' ? report.hasPublishedReport ? '현재 문서를 저장하고 기존 완료본을 교체합니다. 멘티에게 새 완료본이 공개됩니다.' : '현재 문서를 저장하고 완료본으로 공개합니다. 멘티가 열람하고 Word 파일을 내려받을 수 있습니다.' : '최신 워크시트와 위 입력 항목으로 문서를 다시 만듭니다. 현재 미리보기에서 직접 교정한 내용은 교체됩니다. 기존 공개본은 그대로 유지됩니다.'}</p>
+            <div className="mt-6 flex justify-end gap-2">
+                <button autoFocus onClick={() => { setConfirmation(null); setPendingNavigation(null); }} className="btn-secondary text-sm">취소</button>
+                <button onClick={() => {
+                    const action = confirmation;
+                    setConfirmation(null);
+                    if (action === 'leave' && pendingNavigation) {
+                        setHasLocalChanges(false);
+                        setPendingNavigation(null);
+                        router.push(pendingNavigation);
+                    } else if (action === 'publish') void handlePublish();
+                    else if (action === 'rebuild') void handleBuildPreview();
+                }} className="btn-primary text-sm">{confirmation === 'leave' ? '저장하지 않고 이동' : confirmation === 'publish' ? '완료하고 공개' : '다시 만들기'}</button>
+            </div>
+        </dialog>}
+    </div>;
 }

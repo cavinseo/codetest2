@@ -87,3 +87,16 @@ it('does not add empty portrait sections around consecutive landscape images', a
     expect(xml).not.toContain('w:orient="portrait"');
     expect(xml.match(/<w:drawing>/g)).toHaveLength(2);
 });
+
+it('embeds JPEG report images as JPEG media without mislabeling them as PNG', async () => {
+    // 1×1 흰색 JPEG의 실제 바이트로 이미지 최적화 후 Word 저장을 검증한다.
+    const jpeg = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9U6KKKAP/2Q==';
+    const { zip, xml } = await unpack(model([{ ...picture, pngDataUrl: `data:image/jpeg;base64,${jpeg}` }]));
+    const images = zip.file(/^word\/media\/.*\.(?:jpg|jpeg)$/);
+    expect(images).toHaveLength(1);
+    expect(await images[0].async('base64')).toBe(jpeg);
+    expect(zip.file(/^word\/media\/.*\.png$/)).toHaveLength(0);
+    expect(xml).toContain('<w:drawing>');
+    const contentTypes = await zip.file('[Content_Types].xml')!.async('string');
+    expect(contentTypes).toMatch(/<Default(?=[^>]*\bExtension="jpe?g")(?=[^>]*\bContentType="image\/jpeg")[^>]*\/>/);
+});

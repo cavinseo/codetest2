@@ -9,34 +9,44 @@ import type { BlockEdit } from '@/lib/final-report-edit';
 
 interface Props {
     blocks: FinalReportBlock[];
-    onEdit: (edit: BlockEdit) => void;
+    onEdit?: (edit: BlockEdit) => void;
+    readOnly?: boolean;
+    disabled?: boolean;
 }
 
 const cellClass = 'w-full bg-transparent px-2 py-1 text-sm outline-none focus:bg-black/5';
 
-export default function FinalReportPreview({ blocks, onEdit }: Props) {
+export default function FinalReportPreview({ blocks, onEdit, readOnly = false, disabled = false }: Props) {
+    const isReadOnly = readOnly || !onEdit;
     return (
         // 인쇄면을 흉내 낸 흰 바탕이다. 문서가 흰 종이에 찍히므로 여기서도 같은 대비로 본다.
         <div className="rounded-lg bg-white p-8 text-slate-900 shadow-inner">
             {blocks.map((block, blockIndex) => {
                 if (block.kind === 'heading') {
+                    if (isReadOnly) {
+                        const Heading = block.level === 1 ? 'h2' : 'h3';
+                        return <Heading key={blockIndex} className={`${block.level === 1 ? 'mt-8 text-xl font-bold' : 'mt-6 text-base font-semibold'} whitespace-pre-wrap break-words`}>{block.text}</Heading>;
+                    }
                     return (
                         <input
                             key={blockIndex}
                             value={block.text}
-                            onChange={(event) => onEdit({ kind: 'text', blockIndex, text: event.target.value })}
+                            onChange={(event) => onEdit?.({ kind: 'text', blockIndex, text: event.target.value })}
+                            disabled={disabled}
                             aria-label={`제목 ${blockIndex + 1}`}
                             className={`${block.level === 1 ? 'mt-8 text-xl font-bold' : 'mt-6 text-base font-semibold'} w-full bg-transparent outline-none focus:bg-black/5`}
                         />
                     );
                 }
                 if (block.kind === 'paragraph') {
+                    if (isReadOnly) return <p key={blockIndex} className="mt-2 whitespace-pre-wrap break-words text-sm">{block.text}</p>;
                     return (
                         <textarea
                             key={blockIndex}
                             value={block.text}
                             rows={2}
-                            onChange={(event) => onEdit({ kind: 'text', blockIndex, text: event.target.value })}
+                            onChange={(event) => onEdit?.({ kind: 'text', blockIndex, text: event.target.value })}
+                            disabled={disabled}
                             aria-label={`문단 ${blockIndex + 1}`}
                             className="mt-2 w-full resize-y bg-transparent text-sm outline-none focus:bg-black/5"
                         />
@@ -50,12 +60,13 @@ export default function FinalReportPreview({ blocks, onEdit }: Props) {
                                     <tr key={rowIndex}>
                                         <th className="w-1/3 border border-slate-300 bg-slate-100 p-2 text-left font-semibold">{row.label}</th>
                                         <td className="border border-slate-300 p-0">
-                                            <input
+                                            {isReadOnly ? <div className="whitespace-pre-wrap break-words px-2 py-1">{row.value}</div> : <input
                                                 value={row.value}
-                                                onChange={(event) => onEdit({ kind: 'keyValue', blockIndex, row: rowIndex, value: event.target.value })}
+                                                onChange={(event) => onEdit?.({ kind: 'keyValue', blockIndex, row: rowIndex, value: event.target.value })}
+                                                disabled={disabled}
                                                 aria-label={row.label}
                                                 className={cellClass}
-                                            />
+                                            />}
                                         </td>
                                     </tr>
                                 ))}
@@ -71,12 +82,13 @@ export default function FinalReportPreview({ blocks, onEdit }: Props) {
                                     <tr>
                                         {block.headers.map((text, col) => (
                                             <th key={col} className="border border-slate-300 bg-slate-100 p-0">
-                                                <input
+                                                {isReadOnly ? <div className="whitespace-pre-wrap break-words px-2 py-1 text-center">{text}</div> : <input
                                                     value={text}
-                                                    onChange={(event) => onEdit({ kind: 'tableHeader', blockIndex, col, value: event.target.value })}
+                                                    onChange={(event) => onEdit?.({ kind: 'tableHeader', blockIndex, col, value: event.target.value })}
+                                                    disabled={disabled}
                                                     aria-label={`머리글 ${col + 1}`}
                                                     className={`${cellClass} text-center font-semibold`}
-                                                />
+                                                />}
                                             </th>
                                         ))}
                                     </tr>
@@ -86,12 +98,13 @@ export default function FinalReportPreview({ blocks, onEdit }: Props) {
                                         <tr key={rowIndex}>
                                             {cells.map((cell, col) => (
                                                 <td key={col} className="border border-slate-300 p-0">
-                                                    <input
+                                                    {isReadOnly ? <div className="whitespace-pre-wrap break-words px-2 py-1">{cell}</div> : <input
                                                         value={cell}
-                                                        onChange={(event) => onEdit({ kind: 'tableCell', blockIndex, row: rowIndex, col, value: event.target.value })}
+                                                        onChange={(event) => onEdit?.({ kind: 'tableCell', blockIndex, row: rowIndex, col, value: event.target.value })}
+                                                        disabled={disabled}
                                                         aria-label={`${rowIndex + 1}행 ${col + 1}열`}
                                                         className={cellClass}
-                                                    />
+                                                    />}
                                                 </td>
                                             ))}
                                         </tr>
