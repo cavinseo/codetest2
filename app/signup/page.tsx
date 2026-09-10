@@ -71,8 +71,8 @@ export default function SignupPage() {
                 throw new Error(data.error || '회원가입에 실패했습니다.');
             }
 
-            // 가입 직후에는 승인 대기 상태라 바로 로그인할 수 없다. 로그인 화면에서 안내한다.
-            router.push('/login?signup=pending');
+            // 초대 가입은 첫 로그인까지 완료되며, 일반 가입만 승인 대기 안내로 보낸다.
+            router.push(data.pendingApproval ? '/login?signup=pending' : '/dashboard');
         } catch (err: any) {
             setError(err.message);
         } finally {

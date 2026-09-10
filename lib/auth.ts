@@ -2,7 +2,8 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from './constants';
-import { isAccessExpired, parseMemberRole, type MemberRole } from './member-roles';
+import { parseMemberRole, type MemberRole } from './member-roles';
+import { isUserAccessExpired } from './invite-access';
 import { isProfileCompleteForRole } from './member-profile';
 
 export interface SessionUser {
@@ -142,6 +143,8 @@ export async function requireAuth(
             id: true, email: true, name: true, status: true, isAdmin: true,
             sessionVersion: true, role: true, accessExpiresAt: true,
             mustChangePassword: true,
+            programId: true,
+            usedInviteCode: { select: { usedAt: true, expiresAt: true, programId: true, program: { select: { endsAt: true } } } },
             profile: {
                 select: {
                     organization: true, phone: true,
@@ -168,7 +171,7 @@ export async function requireAuth(
         );
     }
     // 초대 코드로 들어온 계정은 이용 기간이 정해져 있다.
-    if (isAccessExpired(dbUser.accessExpiresAt)) {
+    if (isUserAccessExpired(dbUser)) {
         return NextResponse.json(
             { error: '이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.' },
             { status: 403 }

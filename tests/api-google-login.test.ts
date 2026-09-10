@@ -34,6 +34,7 @@ vi.mock('../lib/prisma', () => ({
 const isAccessExpired = vi.fn();
 const parseMemberRole = vi.fn();
 vi.mock('../lib/member-roles', () => ({
+    DEFAULT_ACCESS_DURATION_DAYS: 90,
     isAccessExpired: (...args: unknown[]) => isAccessExpired(...(args as [])),
     parseMemberRole: (...args: unknown[]) => parseMemberRole(...(args as [])),
 }));
@@ -227,6 +228,15 @@ describe('Google 회원 로그인 콜백 state', () => {
 });
 
 describe('Google 회원 로그인 콜백 회원 게이트', () => {
+    it('초대 프로그램 종료가 회원 기한보다 빠르면 Google 로그인도 막는다', async () => {
+        findFirstUser.mockResolvedValue(approvedUser({
+            programId: 'p', usedInviteCode: { programId: 'p', usedAt: new Date(), expiresAt: new Date(Date.now() + 86400000), program: { endsAt: new Date(0) } },
+        }));
+        const response = await finishGoogleLogin(validCallbackRequest());
+        expect(redirectError(response)).toBe('expired');
+        expect(responseCookie(response, 'session')).toBeUndefined();
+    });
+
     it('검증되지 않은 Google 이메일은 차단한다', async () => {
         exchangeLoginCodeForEmail.mockResolvedValue({
             email: 'member@example.com',
@@ -254,6 +264,7 @@ describe('Google 회원 로그인 콜백 회원 게이트', () => {
         await finishGoogleLogin(validCallbackRequest());
 
         expect(findFirstUser).toHaveBeenCalledWith({
+            include: { usedInviteCode: { include: { program: { select: { endsAt: true } } } } },
             where: {
                 email: {
                     equals: 'Member@Example.com',

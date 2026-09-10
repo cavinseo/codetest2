@@ -1,20 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
-import { BCRYPT_ROUNDS } from '@/lib/constants';
+import { BCRYPT_ROUNDS, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
+import { encodeSessionCookie } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { SIGNUP_RATE_LIMIT, clientIpFrom, consumeRateLimit } from '@/lib/rate-limit';
 import { checkInviteCode, normalizeInviteCode, INVITE_CODE_MESSAGES } from '@/lib/invite-code';
 import { accessExpiryFrom, parseInvitableRole, type MemberRole } from '@/lib/member-roles';
 import { memberProfileSchemaFor } from '@/lib/member-profile';
+import { inviteAccessExpiresAt } from '@/lib/invite-access';
+import { errorCodeOf } from '@/lib/api-error';
 
 const log = createLogger('api/auth/signup');
 
 const signupSchema = z.object({
     name: z.string().min(1, '이름을 입력하세요'),
-    email: z.string().email('유효한 이메일을 입력하세요'),
+    email: z.string().trim().email('유효한 이메일을 입력하세요').transform((value) => value.toLowerCase()),
     password: z.string().min(8, '비밀번호는 최소 8자 이상이어야 합니다'),
     inviteCode: z.string().optional(),
     // 코드가 없을 때 가입자가 스스로 고른 역할. 코드가 있으면 무시되고 코드의
@@ -28,6 +32,7 @@ const signupSchema = z.object({
 
 /** 코드를 쓰려는 순간 다른 요청이 먼저 써 버린 경우. */
 class InviteAlreadyUsedError extends Error {}
+class InviteExpiredError extends Error {}
 
 export async function POST(request: NextRequest) {
     try {
@@ -58,12 +63,12 @@ export async function POST(request: NextRequest) {
         // status: 'PENDING' 으로 남고 관리자가 승인해야 로그인할 수 있으므로
         // 권한 상승 구멍이 아니다. 초대 코드가 있으면 역할이 코드로 정해지고,
         // 그 역할에 맞는 프로필을 받는다(클라이언트가 고른 role 은 무시한다).
-        let invite: { id: string; role: MemberRole; accessDurationDays: number; programId: string } | null = null;
+        let invite: { id: string; role: MemberRole; accessDurationDays: number; programId: string; endsAt: Date } | null = null;
         let role: MemberRole = requestedRole ?? 'MENTEE';
 
         if (inviteCode) {
             const normalized = normalizeInviteCode(inviteCode);
-            const record = await prisma.inviteCode.findUnique({ where: { code: normalized } });
+            const record = await prisma.inviteCode.findUnique({ where: { code: normalized }, include: { program: { select: { endsAt: true } } } });
             const rejection = checkInviteCode(record, email);
             if (rejection || !record) {
                 return NextResponse.json(
@@ -75,9 +80,13 @@ export async function POST(request: NextRequest) {
             if (!inviteRole) {
                 return NextResponse.json({ error: INVITE_CODE_MESSAGES.NOT_FOUND }, { status: 400 });
             }
+            if (record.program.endsAt.getTime() <= Date.now()) {
+                return NextResponse.json({ error: INVITE_CODE_MESSAGES.EXPIRED }, { status: 400 });
+            }
             invite = {
                 id: record.id, role: inviteRole,
                 accessDurationDays: record.accessDurationDays, programId: record.programId,
+                endsAt: record.program.endsAt,
             };
             role = inviteRole;
         }
@@ -95,8 +104,17 @@ export async function POST(request: NextRequest) {
 
         // 사용자 생성·프로필 저장·코드 사용 처리를 한 트랜잭션으로 묶는다.
         // 그렇지 않으면 프로필 없는 회원이나, 계정 없이 소진된 코드가 남을 수 있다.
-        const now = new Date();
         const newUser = await prisma.$transaction(async (tx) => {
+            if (invite) {
+                await tx.$queryRaw`SELECT id FROM invite_codes WHERE id = ${invite.id} FOR UPDATE`;
+                const current = await tx.inviteCode.findUnique({ where: { id: invite.id }, include: { program: { select: { endsAt: true } } } });
+                if (!current || current.usedAt || current.usedById) throw new InviteAlreadyUsedError();
+                if (checkInviteCode(current, email) || current.role !== 'MENTEE'
+                    || current.program.endsAt.getTime() <= Date.now()) throw new InviteExpiredError();
+                invite = { id: current.id, role: 'MENTEE', accessDurationDays: current.accessDurationDays,
+                    programId: current.programId, endsAt: current.program.endsAt };
+            }
+            const now = new Date();
             const user = await tx.user.create({
                 data: {
                     id: generateId('user'),
@@ -107,7 +125,10 @@ export async function POST(request: NextRequest) {
                     // 코드를 발급한 행위 자체가 승인이다. 승인 대기로 두면
                     // 3개월 접근 기간이 대기 중에도 흘러가 버린다.
                     status: invite ? 'APPROVED' : 'PENDING',
-                    accessExpiresAt: invite ? accessExpiryFrom(now, invite.accessDurationDays) : null,
+                    accessExpiresAt: invite ? inviteAccessExpiresAt({
+                        usedAt: now, expiresAt: now, program: { endsAt: invite.endsAt },
+                        usedBy: { accessExpiresAt: accessExpiryFrom(now, Math.min(90, invite.accessDurationDays)) },
+                    }) : null,
                     // 코드로 들어온 멘티는 그 코드의 프로그램에 묶인다. 다른
                     // 프로그램의 프로젝트 소유자로는 지정될 수 없다(lib/program.ts).
                     programId: invite?.programId ?? null,
@@ -131,11 +152,9 @@ export async function POST(request: NextRequest) {
             });
 
             if (invite) {
-                // 코드 조회는 트랜잭션 밖에서 했으므로 그 사이에 다른 요청이
-                // 먼저 쓸 수 있다. usedAt 이 아직 비어 있을 때만 쓰고, 못 쓰면
-                // 이미 누가 쓴 것이라 가입 전체를 되돌린다.
+                // 잠금 상태에서 미사용 코드만 계정에 연결하고, 실패하면 가입 전체를 되돌린다.
                 const marked = await tx.inviteCode.updateMany({
-                    where: { id: invite.id, usedAt: null },
+                    where: { id: invite.id, usedAt: null, usedById: null },
                     data: { usedAt: now, usedById: user.id },
                 });
                 if (marked.count !== 1) {
@@ -146,6 +165,16 @@ export async function POST(request: NextRequest) {
             return user;
         });
 
+        if (invite) {
+            // 기존 코드 가입도 최초 로그인으로 완료하여 이용 기간의 시작 시각을 일치시킨다.
+            const cookieStore = await cookies();
+            cookieStore.set(SESSION_COOKIE_NAME, encodeSessionCookie({ userId: newUser.id, email: newUser.email, name: newUser.name }, {
+                sessionVersion: newUser.sessionVersion,
+            }), {
+                httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production',
+                maxAge: SESSION_MAX_AGE_SECONDS, path: '/',
+            });
+        }
         log.info('회원가입 완료', { userId: newUser.id, role, viaInvite: Boolean(invite) });
         return NextResponse.json({
             success: true,
@@ -165,7 +194,9 @@ export async function POST(request: NextRequest) {
                 { status: 409 }
             );
         }
-        log.error('회원가입 중 예상치 못한 오류', error);
+        if (error instanceof InviteExpiredError) return NextResponse.json({ error: INVITE_CODE_MESSAGES.EXPIRED }, { status: 400 });
+        if (errorCodeOf(error) === 'P2002') return NextResponse.json({ error: '이미 사용 중인 이메일 또는 초대 코드입니다.' }, { status: 409 });
+        log.error('회원가입 중 예상치 못한 오류', undefined, { code: errorCodeOf(error) ?? undefined });
         return NextResponse.json({ error: '회원가입 중 오류가 발생했습니다.' }, { status: 500 });
     }
 }

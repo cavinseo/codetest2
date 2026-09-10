@@ -8,6 +8,7 @@ const findUniqueInvite = vi.fn();
 const updateInvite = vi.fn();
 const findUniqueUser = vi.fn();
 const findUniqueProgram = vi.fn();
+const lock = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
@@ -17,6 +18,12 @@ vi.mock('../lib/prisma', () => ({
         },
         user: { findUnique: findUniqueUser },
         program: { findUnique: findUniqueProgram },
+        $transaction: async (fn: (tx: unknown) => unknown) => fn({
+            $queryRaw: lock,
+            program: { findUnique: findUniqueProgram },
+            user: { findFirst: findUniqueUser },
+            inviteCode: { findMany: findManyInvite, create: createInvite },
+        }),
     },
 }));
 
@@ -54,7 +61,7 @@ beforeEach(() => {
     findManyInvite.mockResolvedValue([]);
     // 기본값은 발행자 자신이 담당 매니저인 프로그램이다. 대부분의 테스트가
     // "이 프로그램을 만질 수 있다"는 전제를 깔고 있어, 그 전제를 여기서 채운다.
-    findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: ISSUER_ID });
+    findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: ISSUER_ID, endsAt: new Date(Date.now() + 180 * 86400000) });
     createInvite.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
         ...data, id: 'inv_1', createdAt: new Date(), usedAt: null, usedById: null,
     }));
@@ -109,6 +116,28 @@ describe('초대 코드 발행 권한', () => {
 describe('초대 코드 발행 규칙', () => {
     beforeEach(() => authAs('ADMIN'));
 
+    it('종료된 프로그램 발급과 90일 이외의 기간 입력을 거절한다', async () => {
+        findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: ISSUER_ID, endsAt: new Date(0) });
+        expect((await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1' }))).status).toBe(400);
+        expect((await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', accessDurationDays: 365 }))).status).toBe(400);
+        expect(createInvite).not.toHaveBeenCalled();
+    });
+
+    it('같은 이메일의 유효 코드를 중복 발급하지 않는다', async () => {
+        findManyInvite.mockResolvedValue([{ usedAt: null, expiresAt: new Date(Date.now() + 86400000), program: { endsAt: new Date(Date.now() + 86400000) } }]);
+        expect((await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1' }))).status).toBe(409);
+        expect(createInvite).not.toHaveBeenCalled();
+    });
+
+    it('신규 코드는 프로그램 종료까지 최초 사용 가능하며 로그인 메일을 보낸다', async () => {
+        const end = new Date(Date.now() + 180 * 86400000);
+        findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: ISSUER_ID, endsAt: end });
+        await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1' }));
+        expect(createInvite.mock.calls[0][0].data.expiresAt).toEqual(end);
+        expect(sendMail.mock.calls[0][0].html).toContain('/login?mode=invite');
+        expect(lock).toHaveBeenCalled();
+    });
+
     it('멘토 역할로는 코드를 만들 수 없다', async () => {
         // 멘토는 정식 등록으로만 들어온다. 코드는 프로그램에 묶이는데, 멘토는
         // 여러 프로그램의 프로젝트에 배정될 수 있어 이 모델과 맞지 않는다.
@@ -150,7 +179,7 @@ describe('초대 코드 발행 규칙', () => {
 
     it('매니저는 다른 매니저의 프로그램에는 발행할 수 없다', async () => {
         authAs('PROGRAM_MANAGER');
-        findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: 'other_manager' });
+        findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: 'other_manager', endsAt: new Date(Date.now() + 86400000) });
 
         const res = await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1' }));
 
@@ -159,7 +188,7 @@ describe('초대 코드 발행 규칙', () => {
     });
 
     it('관리자는 자신이 개설하지 않은 프로그램에도 발행할 수 있다', async () => {
-        findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: 'other_manager' });
+        findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: 'other_manager', endsAt: new Date(Date.now() + 86400000) });
 
         const res = await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1' }));
 
@@ -260,6 +289,14 @@ describe('초대 코드 회수', () => {
 });
 
 describe('초대 코드 목록', () => {
+    it('사용된 코드도 프로그램 종료일을 실효 만료일로 제공한다', async () => {
+        authAs('ADMIN');
+        const end = new Date(0);
+        findManyInvite.mockResolvedValue([{ id: 'i', usedAt: new Date(), expiresAt: new Date(Date.now() + 86400000), program: { name: '종료 프로그램', endsAt: end }, usedBy: { accessExpiresAt: null } }]);
+        const result = await GET(new NextRequest('http://localhost/api/invites'));
+        expect((await result.json()).invites[0]).toMatchObject({ expiresAt: end.toISOString(), programName: '종료 프로그램' });
+    });
+
     it('멘토는 목록을 볼 수 없다', async () => {
         authAs('MENTOR');
 

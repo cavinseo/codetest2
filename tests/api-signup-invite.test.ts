@@ -9,6 +9,9 @@ const transaction = vi.fn();
 const txCreateUser = vi.fn();
 const txCreateProfile = vi.fn();
 const txUpdateInvite = vi.fn();
+const cookieSet = vi.fn();
+vi.mock('next/headers', () => ({ cookies: async () => ({ set: cookieSet }) }));
+vi.mock('../lib/auth', () => ({ encodeSessionCookie: () => 'signup-first-session' }));
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
@@ -51,9 +54,10 @@ beforeEach(() => {
     txUpdateInvite.mockResolvedValue({ count: 1 });
     transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
+            $queryRaw: vi.fn(),
             user: { create: txCreateUser },
             memberProfile: { create: txCreateProfile },
-            inviteCode: { updateMany: txUpdateInvite },
+            inviteCode: { updateMany: txUpdateInvite, findUnique: findUniqueInvite },
         })
     );
 });
@@ -76,6 +80,7 @@ describe('초대 코드 없는 가입', () => {
         expect(created.status).toBe('PENDING');
         expect(created.role).toBe('MENTEE');
         expect(created.accessExpiresAt).toBeNull();
+        expect(cookieSet).not.toHaveBeenCalled();
     });
 
     it('role 을 멘토로 보내면 멘토 역할로 승인 대기시킨다', async () => {
@@ -143,8 +148,26 @@ describe('초대 코드 가입', () => {
     const validInvite = {
         id: 'inv_1', code: 'KSQF-ABCD-EFGH-JKMN', email: 'm@x.com', role: 'MENTEE',
         programId: 'prog_1',
+        program: { endsAt: new Date(Date.now() + 180 * 86400000) },
         expiresAt: new Date(Date.now() + 86400000), accessDurationDays: 90, usedAt: null,
     };
+
+    it('가입에서도 프로그램 종료일을 넘기지 않으며 90일 상한을 지킨다', async () => {
+        const end = new Date(Date.now() + 30 * 86400000);
+        findUniqueInvite.mockResolvedValue({ ...validInvite, accessDurationDays: 365, program: { endsAt: end } });
+        const res = await POST(signupRequest({ name: '새회원', email: 'm@x.com', password: 'password123', inviteCode: validInvite.code, profile: menteeProfile }));
+        expect(res.status).toBe(200);
+        expect(txCreateUser.mock.calls[0][0].data.accessExpiresAt).toEqual(end);
+    });
+
+    it('종료 프로그램과 잠금 이후 만료된 코드를 거부한다', async () => {
+        findUniqueInvite.mockResolvedValueOnce({ ...validInvite, program: { endsAt: new Date(0) } });
+        const body = { name: '새회원', email: 'm@x.com', password: 'password123', inviteCode: validInvite.code, profile: menteeProfile };
+        expect((await POST(signupRequest(body))).status).toBe(400);
+        findUniqueInvite.mockResolvedValueOnce(validInvite).mockResolvedValueOnce({ ...validInvite, expiresAt: new Date(0) });
+        expect((await POST(signupRequest(body))).status).toBe(400);
+        expect(txCreateUser).not.toHaveBeenCalled();
+    });
 
     it('코드의 역할을 부여하고 자동 승인한다', async () => {
         // 관리자가 특정 이메일로 코드를 발급한 행위 자체가 승인이다.
@@ -161,6 +184,7 @@ describe('초대 코드 가입', () => {
         expect(created.role).toBe('MENTEE');
         expect(created.status).toBe('APPROVED');
         expect(created.accessExpiresAt).toBeInstanceOf(Date);
+        expect(cookieSet).toHaveBeenCalledWith(expect.any(String), 'signup-first-session', expect.objectContaining({ httpOnly: true }));
     });
 
     it('코드의 프로그램을 계정에 담는다', async () => {
@@ -200,7 +224,7 @@ describe('초대 코드 가입', () => {
         }));
 
         expect(txUpdateInvite).toHaveBeenCalled();
-        expect(txUpdateInvite.mock.calls[0][0].where).toEqual({ id: 'inv_1', usedAt: null });
+        expect(txUpdateInvite.mock.calls[0][0].where).toEqual({ id: 'inv_1', usedAt: null, usedById: null });
         expect(txUpdateInvite.mock.calls[0][0].data.usedAt).toBeInstanceOf(Date);
         expect(txUpdateInvite.mock.calls[0][0].data.usedById).toBe('user_new');
     });

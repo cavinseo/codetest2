@@ -5,7 +5,8 @@ import { encodeSessionCookie } from '@/lib/auth';
 import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
 import { exchangeLoginCodeForEmail } from '@/lib/google-auth';
 import { verifyLoginState } from '@/lib/login-state';
-import { isAccessExpired, parseMemberRole } from '@/lib/member-roles';
+import { parseMemberRole } from '@/lib/member-roles';
+import { isUserAccessExpired } from '@/lib/invite-access';
 import { isProfileCompleteForRole } from '@/lib/member-profile';
 import { createLogger } from '@/lib/logger';
 
@@ -44,11 +45,12 @@ export async function GET(request: NextRequest) {
         // 정규화해 주므로 DB 의 혼합 표기(Mentee1@…)와 대소문자 무시로 맞춘다.
         const user = await prisma.user.findFirst({
             where: { email: { equals: email, mode: 'insensitive' } },
+            include: { usedInviteCode: { include: { program: { select: { endsAt: true } } } } },
         });
 
         if (!user) return fail(origin, 'no_account');
         if (user.status !== 'APPROVED') return fail(origin, 'pending');
-        if (isAccessExpired(user.accessExpiresAt)) return fail(origin, 'expired');
+        if (isUserAccessExpired(user)) return fail(origin, 'expired');
 
         const [profile] = await Promise.all([
             prisma.memberProfile.findUnique({ where: { userId: user.id } }),

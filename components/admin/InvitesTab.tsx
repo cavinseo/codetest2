@@ -133,7 +133,7 @@ export default function InvitesTab() {
                     </button>
                 </div>
                 <p className="text-xs text-gray-500">
-                    이 코드로 가입한 멘티는 선택한 프로그램에만 참여할 수 있습니다.
+                    멘티별 이메일과 개인 코드로 로그인합니다. 최초 로그인 후 90일과 프로그램 종료 중 빠른 시점에 만료됩니다.
                 </p>
             </div>
 
@@ -169,10 +169,10 @@ export default function InvitesTab() {
                                     <td className="px-5 py-4 text-sm text-gray-400">{invite.programName}</td>
                                     <td className="px-5 py-4 text-sm text-gray-400">{invite.expiresAt.slice(0, 10)}</td>
                                     <td className="px-5 py-4">
-                                        {invite.usedAt ? (
-                                            <span className="badge-emerald text-[10px]">사용됨</span>
-                                        ) : isExpired(invite) ? (
+                                        {isExpired(invite) ? (
                                             <span className="badge-rose text-[10px]">만료</span>
+                                        ) : invite.usedAt ? (
+                                            <span className="badge-emerald text-[10px]">이용 중</span>
                                         ) : (
                                             <span className="badge-amber text-[10px]">대기</span>
                                         )}

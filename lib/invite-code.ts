@@ -108,17 +108,17 @@ export function buildInviteEmail(params: {
             <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0; font-size: 14px;">${roleLabel}로 초대되었습니다</p>
         </div>
         <div style="background: white; padding: 28px; border-radius: 0 0 12px 12px;">
-            <p style="color: #333; font-size: 15px;">아래 초대 코드로 회원가입을 진행해 주세요.</p>
+            <p style="color: #333; font-size: 15px;">이메일과 아래 초대 코드만 입력하여 로그인해 주세요. 비밀번호는 필요하지 않습니다.</p>
             <div style="margin: 20px 0; padding: 16px; background: #f1f5f9; border-radius: 8px; text-align: center;">
                 <span style="font-family: monospace; font-size: 20px; font-weight: 700; letter-spacing: 2px; color: #0f172a;">${code}</span>
             </div>
             <ul style="color: #555; font-size: 13px; line-height: 1.8; padding-left: 18px;">
-                <li>이 메일을 받은 주소로만 가입할 수 있습니다.</li>
-                <li>코드 사용 기한: <strong>${expiry}</strong>까지</li>
-                <li>가입 후 <strong>${params.accessDurationDays}일</strong>간 이용할 수 있습니다.</li>
+                <li>이 메일을 받은 주소로만 로그인할 수 있습니다. 같은 이메일과 코드를 계속 사용하세요.</li>
+                <li>최초 로그인 가능 기한: <strong>${expiry}</strong>까지</li>
+                <li>최초 로그인 후 <strong>${params.accessDurationDays}일</strong>과 프로그램 종료 중 빠른 시점까지 이용할 수 있습니다.</li>
             </ul>
             <div style="text-align: center; margin: 26px 0 8px;">
-                <a href="${signupUrl}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 13px 36px; border-radius: 8px; text-decoration: none; font-size: 15px; font-weight: 600; display: inline-block;">회원가입 하러 가기</a>
+                <a href="${signupUrl}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 13px 36px; border-radius: 8px; text-decoration: none; font-size: 15px; font-weight: 600; display: inline-block;">초대 코드로 로그인</a>
             </div>
         </div>
     </div>

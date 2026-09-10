@@ -119,6 +119,15 @@ describe('세션 만료', () => {
 });
 
 describe('requireAuth', () => {
+    it('초대 프로그램 종료 후에는 아직 유효한 세션도 거부한다', async () => {
+        findUser.mockResolvedValue(approvedUser({
+            programId: 'p', accessExpiresAt: new Date(Date.now() + 86400000),
+            usedInviteCode: { programId: 'p', usedAt: new Date(), expiresAt: new Date(Date.now() + 86400000), program: { endsAt: new Date(0) } },
+        }) as never);
+        const result = await requireAuth(requestWithSessionCookie(encodeSessionCookie(SESSION)));
+        expect((result as NextResponse).status).toBe(403);
+    });
+
     it('쿠키가 없으면 401', async () => {
         const result = await requireAuth(requestWithSessionCookie());
 

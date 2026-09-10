@@ -8,7 +8,8 @@ import { encodeSessionCookie } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { LOGIN_RATE_LIMIT, clientIpFrom, consumeRateLimit, resetRateLimit } from '@/lib/rate-limit';
 import { isProfileCompleteForRole } from '@/lib/member-profile';
-import { isAccessExpired, parseMemberRole } from '@/lib/member-roles';
+import { parseMemberRole } from '@/lib/member-roles';
+import { isUserAccessExpired } from '@/lib/invite-access';
 
 const log = createLogger('api/auth/login');
 
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
 
         const user = await prisma.user.findUnique({
             where: { email },
+            include: { usedInviteCode: { include: { program: { select: { endsAt: true } } } } },
         });
 
         // 타이밍 공격 방지: 사용자가 없어도 bcrypt 비교 수행.
@@ -71,7 +73,7 @@ export async function POST(request: NextRequest) {
 
         // 이용 기간이 끝난 계정은 로그인시켜도 모든 요청이 requireAuth 에서 403 이 되어
         // 빈 대시보드만 보게 된다. 여기서 requireAuth 와 같은 문구로 미리 막는다.
-        if (isAccessExpired(user.accessExpiresAt)) {
+        if (isUserAccessExpired(user)) {
             log.warn('로그인 거부 — 이용 기간 만료 계정', { userId: user.id });
             return NextResponse.json(
                 { error: '이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.' },

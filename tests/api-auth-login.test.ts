@@ -66,6 +66,16 @@ afterEach(() => {
 });
 
 describe('로그인 이용 기간 확인', () => {
+    it('초대 프로그램 종료 후에는 비밀번호가 맞아도 거부한다', async () => {
+        findUniqueUser.mockResolvedValue(approvedUser({
+            programId: 'p', accessExpiresAt: new Date(Date.now() + 86400000),
+            usedInviteCode: { programId: 'p', usedAt: new Date(), expiresAt: new Date(Date.now() + 86400000), program: { endsAt: new Date(0) } },
+        }));
+        const res = await POST(loginRequest({ email: 'u@x.com', password: 'password123' }));
+        expect(res.status).toBe(403);
+        expect(cookieSet).not.toHaveBeenCalled();
+    });
+
     it('이용 기간이 지난 계정은 403 으로 막고 쿠키를 심지 않는다', async () => {
         findUniqueUser.mockResolvedValue(approvedUser({
             accessExpiresAt: new Date('2000-01-01T00:00:00Z'),

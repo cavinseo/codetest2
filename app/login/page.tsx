@@ -9,6 +9,8 @@ export default function LoginPage() {
     const router = useRouter();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [inviteCode, setInviteCode] = useState('');
+    const [mode, setMode] = useState<'password' | 'invite'>('password');
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -17,6 +19,7 @@ export default function LoginPage() {
     // 가입 직후 리다이렉트로 들어온 경우 승인 대기 안내를 보여준다.
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
+        if (params.get('mode') === 'invite') setMode('invite');
         if (params.get('signup') === 'pending') {
             setNotice('가입이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.');
         }
@@ -43,10 +46,10 @@ export default function LoginPage() {
         setIsLoading(true);
 
         try {
-            const response = await fetch('/api/auth/login', {
+            const response = await fetch(mode === 'invite' ? '/api/auth/invite-login' : '/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify(mode === 'invite' ? { email, inviteCode } : { email, password }),
             });
 
             const data = await response.json();
@@ -102,10 +105,17 @@ export default function LoginPage() {
                         </div>
                     )}
 
+                    <div className="flex gap-2 mb-5" role="group" aria-label="로그인 방식">
+                        <button type="button" aria-pressed={mode === 'invite'} className={mode === 'invite' ? 'btn-primary flex-1' : 'btn-secondary flex-1'}
+                            onClick={() => { setMode('invite'); setError(''); }}>멘티 초대 코드</button>
+                        <button type="button" aria-pressed={mode === 'password'} className={mode === 'password' ? 'btn-primary flex-1' : 'btn-secondary flex-1'}
+                            onClick={() => { setMode('password'); setError(''); }}>일반 로그인</button>
+                    </div>
+                    {mode === 'invite' && <p className="text-sm text-gray-400 mb-5">초대받은 이메일과 개인 코드를 입력하세요. 최초 로그인 후 90일과 프로그램 종료 중 빠른 시점까지 이용할 수 있습니다.</p>}
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div>
                             <label htmlFor="email" className={`block text-sm font-medium mb-2 transition-colors duration-200 ${focusedField === 'email' ? 'text-primary-400' : 'text-gray-400'}`}>
-                                ID
+                                {mode === 'invite' ? '이메일' : 'ID'}
                             </label>
                             <div className="relative">
                                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
@@ -126,23 +136,23 @@ export default function LoginPage() {
                         </div>
 
                         <div>
-                            <label htmlFor="password" className={`block text-sm font-medium mb-2 transition-colors duration-200 ${focusedField === 'password' ? 'text-primary-400' : 'text-gray-400'}`}>
-                                비밀번호
+                            <label htmlFor={mode === 'invite' ? 'invite-code' : 'password'} className={`block text-sm font-medium mb-2 transition-colors duration-200 ${focusedField === 'password' ? 'text-primary-400' : 'text-gray-400'}`}>
+                                {mode === 'invite' ? '초대 코드' : '비밀번호'}
                             </label>
                             <div className="relative">
                                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
                                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                                 </div>
                                 <input
-                                    id="password"
-                                    type="password"
+                                    id={mode === 'invite' ? 'invite-code' : 'password'}
+                                    type={mode === 'invite' ? 'text' : 'password'}
                                     required
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
+                                    value={mode === 'invite' ? inviteCode : password}
+                                    onChange={(e) => mode === 'invite' ? setInviteCode(e.target.value) : setPassword(e.target.value)}
                                     onFocus={() => setFocusedField('password')}
                                     onBlur={() => setFocusedField(null)}
                                     className="input pl-12"
-                                    placeholder="••••••••"
+                                    placeholder={mode === 'invite' ? 'KSQF-XXXX-XXXX-XXXX' : '••••••••'}
                                 />
                             </div>
                         </div>
@@ -161,7 +171,7 @@ export default function LoginPage() {
                         </button>
                     </form>
 
-                    <div className="flex items-center gap-4 my-6">
+                    {mode === 'password' && <><div className="flex items-center gap-4 my-6">
                         <div className="h-px flex-1 bg-white/10" />
                         <span className="text-xs text-gray-500">또는</span>
                         <div className="h-px flex-1 bg-white/10" />
@@ -172,7 +182,7 @@ export default function LoginPage() {
                         className="w-full btn-secondary py-3.5 text-base font-semibold flex items-center justify-center"
                     >
                         Google 계정으로 로그인
-                    </a>
+                    </a></>}
 
                     <div className="mt-6 text-center">
                         <p className="text-gray-500 text-sm">
