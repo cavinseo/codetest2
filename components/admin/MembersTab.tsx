@@ -16,7 +16,7 @@ interface ProgramOption {
 
 export interface User {
     id: string;
-    name: string;
+    name: string | null;
     email: string;
     status: 'PENDING' | 'APPROVED';
     isAdmin: boolean;
@@ -95,7 +95,7 @@ export default function MembersTab({
     const filteredMembers = members
         .filter((m) => roleFilter === 'ALL' || m.role === roleFilter)
         .filter(
-            (m) => m.name.toLowerCase().includes(searchMember.toLowerCase()) || m.email.toLowerCase().includes(searchMember.toLowerCase())
+            (m) => (m.name ?? '').toLowerCase().includes(searchMember.toLowerCase()) || m.email.toLowerCase().includes(searchMember.toLowerCase())
         );
 
     /**
@@ -283,11 +283,11 @@ export default function MembersTab({
                                     <td className="px-5 py-4">
                                         <div className="flex items-center gap-3">
                                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500/30 to-accent-500/30 flex items-center justify-center text-sm font-bold text-white">
-                                                {m.name.charAt(0)}
+                                                {(m.name || '이름 미등록').charAt(0)}
                                             </div>
                                             <div>
                                                 <p className="text-sm font-medium text-white">
-                                                    {m.name}
+                                                    {m.name || '이름 미등록'}
                                                     {m.isAdmin && <span className="ml-2 badge-amber text-[10px]">관리자</span>}
                                                     {m.mustChangePassword && <span className="ml-2 badge-purple text-[10px]">비밀번호 변경 필요</span>}
                                                 </p>
@@ -377,7 +377,7 @@ export default function MembersTab({
                                                 </button>
                                             )}
                                             <button
-                                                onClick={() => onRequestDelete({ id: m.id, name: m.name })}
+                                                onClick={() => onRequestDelete({ id: m.id, name: m.name || m.email })}
                                                 className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"
                                                 id={`admin-delete-user-${m.id}`}
                                             >

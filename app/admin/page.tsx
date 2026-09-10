@@ -67,7 +67,10 @@ export default function AdminModePage() {
         stage: DeleteStage;
         preview?: MenteeDeletionPreview;
         reason?: DeletionReason;
+        cascadeWarning?: string;
+        error?: string;
     } | null>(null);
+    const [isDeletingUser, setIsDeletingUser] = useState(false);
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [accessDenied, setAccessDenied] = useState(false);
     const [needsLogin, setNeedsLogin] = useState(false);
@@ -133,39 +136,42 @@ export default function AdminModePage() {
         userId: string,
         options: { confirmCascade?: boolean; reason?: DeletionReason } = {}
     ) => {
-        const res = await fetch('/api/admin/users', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId,
-                ...(options.confirmCascade ? { confirmCascade: true } : {}),
-                ...(options.reason ? { reason: options.reason } : {}),
-            }),
-        });
-        const data = await res.json().catch(() => null);
+        if (isDeletingUser) return;
+        setIsDeletingUser(true);
+        setConfirmDelete((prev) => prev ? { ...prev, error: undefined } : prev);
+        try {
+            const res = await fetch('/api/admin/users', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId,
+                    ...(options.confirmCascade ? { confirmCascade: true } : {}),
+                    ...(options.reason ? { reason: options.reason } : {}),
+                }),
+            });
+            const data = await res.json().catch(() => null);
 
-        // 서버가 409 로 되묻는다. 멘티는 사전 점검 결과가 실려 오므로 확인창 안에서
-        // 보여 주고 사유까지 받는다. 다른 역할은 예전대로 브라우저 확인창을 쓴다 —
-        // 그쪽은 보여 줄 것이 프로젝트 건수뿐이라 창을 새로 만들 값어치가 없다.
-        if (res.status === 409 && data?.needsCascadeConfirm) {
-            if (data.preview) {
-                setConfirmDelete((prev) => (prev ? { ...prev, stage: 2, preview: data.preview } : prev));
+            // 브라우저 기본 확인창이 차단돼도 삭제 영향과 마지막 확인이 보이게 한다.
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                setConfirmDelete((prev) => prev ? {
+                    ...prev, stage: 2, preview: data.preview,
+                    cascadeWarning: data.error || '연결된 프로젝트와 모든 워크시트가 함께 삭제됩니다.',
+                } : prev);
                 return;
             }
-            setConfirmDelete(null);
-            if (window.confirm(`${data.error}\n\n그래도 삭제하시겠습니까?`)) {
-                await handleDeleteUser(userId, { confirmCascade: true });
-            }
-            return;
-        }
 
-        if (res.ok) {
-            setUsers((prev) => prev.filter((u) => u.id !== userId));
-            showMsg('success', '사용자가 삭제되었습니다.');
-        } else {
-            showMsg('error', data?.error || '삭제 실패');
+            if (res.ok) {
+                setUsers((prev) => prev.filter((u) => u.id !== userId));
+                showMsg('success', '사용자가 삭제되었습니다.');
+                setConfirmDelete(null);
+            } else {
+                setConfirmDelete((prev) => prev ? { ...prev, error: data?.error || '사용자 삭제에 실패했습니다.' } : prev);
+            }
+        } catch {
+            setConfirmDelete((prev) => prev ? { ...prev, error: '삭제 결과를 확인하지 못했습니다. 연결 상태를 확인하고 목록을 새로고침하세요.' } : prev);
+        } finally {
+            setIsDeletingUser(false);
         }
-        setConfirmDelete(null);
     };
 
     const handleApproval = async (userId: string, action: 'approve' | 'revoke') => {
@@ -468,11 +474,11 @@ export default function AdminModePage() {
             {/* Delete Confirm Modal */}
             {confirmDelete && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                    <div className="card max-w-sm w-full mx-4 border-rose-500/20">
+                    <div role="dialog" aria-modal="true" aria-labelledby="admin-delete-title" className="card max-w-sm w-full mx-4 max-h-[90vh] overflow-y-auto border-rose-500/20">
                         <div className="w-12 h-12 rounded-xl bg-rose-500/20 flex items-center justify-center mb-4">
                             <svg className="w-6 h-6 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                         </div>
-                        <h3 className="text-lg font-bold text-white mb-2">
+                        <h3 id="admin-delete-title" className="text-lg font-bold text-white mb-2">
                             {confirmDelete.stage === 2
                                 ? '마지막 확인'
                                 : confirmDelete.type === 'user' ? '사용자 삭제' : '프로젝트 삭제'}
@@ -494,6 +500,12 @@ export default function AdminModePage() {
                                             <li>QFD 행렬·기술특성·설문 초대 전체</li>
                                         </ul>
                                     </div>
+                                )}
+
+                                {confirmDelete.cascadeWarning && !confirmDelete.preview && (
+                                    <p className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 mb-4 text-sm text-amber-300">
+                                        {confirmDelete.cascadeWarning}
+                                    </p>
                                 )}
 
                                 {confirmDelete.preview && (
@@ -546,16 +558,23 @@ export default function AdminModePage() {
                             </>
                         )}
 
+                        {confirmDelete.error && (
+                            <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                                {confirmDelete.error}
+                            </p>
+                        )}
+
                         <div className="flex gap-3 mt-4">
                             <button
                                 onClick={() => cancelGoesBack(confirmDelete)
                                     // 되돌아갈 자리를 준다. 마지막 확인에서 취소만 가능하면
                                     // 실수로 다음 단계에 온 사람이 처음부터 다시 해야 한다.
-                                    ? setConfirmDelete({ ...confirmDelete, stage: 1 })
+                                    ? setConfirmDelete({ ...confirmDelete, stage: 1, error: undefined })
                                     : setConfirmDelete(null)
                                 }
                                 className="btn-ghost flex-1"
                                 id="admin-cancel-delete-btn"
+                                disabled={isDeletingUser}
                             >
                                 {confirmDelete.stage === 2 ? '뒤로' : '취소'}
                             </button>
@@ -570,7 +589,7 @@ export default function AdminModePage() {
                                         // 확정은 점검 결과를 보고 있는 stage 2 에서만 한다. preview 만
                                         // 보고 판단하면, "뒤로"로 stage 1 에 돌아온 뒤 다시 누를 때
                                         // 마지막 확인을 건너뛰고 지워진다 — preview 는 남아 있으므로.
-                                        handleDeleteUser(confirmDelete.id, confirmDelete.stage === 2 && confirmDelete.preview
+                                        handleDeleteUser(confirmDelete.id, confirmDelete.stage === 2 && (confirmDelete.preview || confirmDelete.cascadeWarning)
                                             ? { confirmCascade: true, reason: confirmDelete.reason }
                                             : {});
                                         return;
@@ -579,11 +598,11 @@ export default function AdminModePage() {
                                 }}
                                 // 사유를 고르기 전에는 확정할 수 없다. 서버도 400 으로 막지만,
                                 // 되돌릴 수 없는 조작이라 누르기 전에 알려 주는 편이 낫다.
-                                disabled={confirmDelete.stage === 2 && Boolean(confirmDelete.preview) && !confirmDelete.reason}
+                                disabled={isDeletingUser || (confirmDelete.stage === 2 && Boolean(confirmDelete.preview) && !confirmDelete.reason)}
                                 className="flex-1 px-4 py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-sm font-medium hover:bg-rose-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 id="admin-confirm-delete-btn"
                             >
-                                {deleteActionFor(confirmDelete) === 'advance' ? '계속' : '삭제'}
+                                {isDeletingUser ? '처리 중...' : deleteActionFor(confirmDelete) === 'advance' ? '계속' : '삭제'}
                             </button>
                         </div>
                     </div>

@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+    oxc: { jsx: { runtime: 'automatic' } },
     resolve: {
         // 앱 코드는 tsconfig 의 "@/*" 별칭으로 import 한다. 라우트 핸들러를 직접
         // 부르는 테스트를 쓰려면 vitest 도 같은 별칭을 알아야 한다.
