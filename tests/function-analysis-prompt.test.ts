@@ -236,7 +236,19 @@ describe('외부 AI가 따라야 할 FAST 분석 계약', () => {
         expect(rules).toMatch(/외부[^\n]*(?:의존|요청)[^\n]*없이/);
     });
 
-    it('고정된 8개 출력 절을 지정된 순서로 요구한다', () => {
+    it('마지막에 WS-2 엑셀 붙여넣기용 4열 표를 요구한다', () => {
+        const rules = withoutInput(buildFunctionAnalysisPrompt(answers()));
+        const finalTable = rules.slice(rules.indexOf('### 최종 표. WS-2 엑셀 붙여넣기용'));
+        expect(rules.indexOf('### 최종 표. WS-2 엑셀 붙여넣기용')).toBeGreaterThan(rules.indexOf('### 8. 리스크와 다음 확인사항'));
+        expect(finalTable).toContain('표 머리글: 핵심기술 | 세부기술 | 세세부기술 | 적용기술');
+        expect(finalTable).toContain('4절에서 검토한 현행 기능');
+        expect(finalTable).toContain('rowspan·colspan');
+        expect(finalTable).toMatch(/상위 핵심·세부 이름을[^\n]*매 행 반복/);
+        expect(finalTable).toMatch(/데이터 셀만[^\n]*복사/);
+        expect(finalTable).toMatch(/표 뒤에는[^\n]*추가하지 않는다/);
+    });
+
+    it('고정된 8개 분석 절을 지정된 순서로 요구한다', () => {
         const rules = withoutInput(buildFunctionAnalysisPrompt(answers()));
         const headings = [...rules.matchAll(/^#{1,6}\s*\d+[.)]\s*(.+)$/gm)].map(match => match[1]);
         expect(headings).toHaveLength(8);

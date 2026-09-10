@@ -169,7 +169,7 @@ export default function FunctionAnalysisAssistant({ open, project, existingRows,
 
                 {isPreview && <div className="space-y-4">
                     <div className="rounded-lg border border-primary-500/20 bg-primary-500/5 p-3 text-sm text-gray-300">
-                        <p>모델마다 분석 내용은 달라질 수 있습니다. 이 프롬프트는 8개 분석 절과 WS-2 표를 갖춘 HTML 보고서 형식을 요청합니다.</p>
+                        <p>모델마다 분석 내용은 달라질 수 있습니다. 이 프롬프트는 8개 분석 절을 작성하고 맨 마지막에 WS-2 엑셀 붙여넣기용 4열 표를 배치한 HTML 보고서를 요청합니다.</p>
                         <p className="mt-2 text-xs text-gray-400">{includeExisting && availableRows.length > 0 ? `현재 WS-2 내용 ${availableRows.length}개 행이 포함되어 있습니다.` : '현재 WS-2 내용은 포함되지 않았습니다.'}</p>
                     </div>
                     <label className="block text-sm font-medium text-gray-200" htmlFor={`${id}-prompt`}>생성된 기능분석 프롬프트</label>
