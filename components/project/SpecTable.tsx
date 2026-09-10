@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
 import { readBusinessPlanForSpec } from '@/lib/business-plan-sections';
 import { describeAiEngine } from '@/lib/ai/engine-label';
+import FunctionAnalysisAssistant from '@/components/project/FunctionAnalysisAssistant';
 import {
     BrowserLocalError,
     callBrowserLocalLlm,
@@ -29,6 +30,7 @@ interface ProjectData {
     name: string;
     description?: string;
     detailedDescription?: string;
+    role?: 'OWNER' | 'EDITOR' | 'ADMIN' | 'COACH' | 'VIEWER';
 }
 
 interface SpecTableProps {
@@ -101,6 +103,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [activeMode, setActiveMode] = useState<'manual' | 'auto'>('manual');
     const [showAiDetailPopup, setShowAiDetailPopup] = useState(false);
+    const [showFunctionAnalysisAssistant, setShowFunctionAnalysisAssistant] = useState(false);
     const [aiDetailInput, setAiDetailInput] = useState('');
     const [aiWizardStep, setAiWizardStep] = useState<SpecAiWizardStep>('guide');
     const [aiQuestionInput, setAiQuestionInput] = useState({
@@ -121,6 +124,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const { toast, showToast } = useToast();
     const excelInputRef = useRef<HTMLInputElement | null>(null);
+    const canUseFunctionAnalysisAssistant = project?.id === projectId && ['OWNER', 'EDITOR', 'ADMIN'].includes(project.role ?? '');
 
     const buildRowsFromSpecs = useCallback((loadedSpecs: SpecFunction[]) => {
         return buildFlatSpecRowsFromFunctions(loadedSpecs);
@@ -1043,13 +1047,21 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                     </div>
                 </div>
             )}
-            <div className="flex items-center justify-between mb-6">
+            {canUseFunctionAnalysisAssistant && <FunctionAnalysisAssistant key={projectId}
+                open={showFunctionAnalysisAssistant} project={project} existingRows={rows}
+                onClose={() => setShowFunctionAnalysisAssistant(false)} />}
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                 <div>
                     <h2 className="text-xl font-display font-bold text-white">[WS-2] AS-IS 스펙표</h2>
                     <p className="text-sm text-gray-400 mt-1">{project?.name || '기능 스펙 정의'}</p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    {canUseFunctionAnalysisAssistant && <button type="button"
+                        onClick={() => setShowFunctionAnalysisAssistant(true)} disabled={isSaving || isGenerating || isUploadingExcel}
+                        className="px-3 py-1.5 bg-primary-900/40 hover:bg-primary-800/60 border border-primary-500/30 text-primary-200 text-sm rounded transition-colors disabled:opacity-50">
+                        기능분석 작성 도우미
+                    </button>}
                     <a
                         href={templateDownloadUrl}
                         className="px-3 py-1.5 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/30 text-blue-200 text-sm rounded transition-colors flex items-center gap-1"
