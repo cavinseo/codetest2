@@ -793,7 +793,11 @@ export default function AdminModePage() {
                         {tab === 'invites' && canInvite && <InvitesTab />}
 
                         {/* ── Programs Tab ─────────────────────────────── */}
-                        {tab === 'programs' && canManageProgramsUI && <ProgramsTab canCreate={role === 'ADMIN'} />}
+                        {tab === 'programs' && canManageProgramsUI && <ProgramsTab canCreate={role === 'ADMIN'} canDelete={role === 'ADMIN'}
+                            onDeleted={id => {
+                                setProjectPrograms(prev => prev.filter(p => p.id !== id));
+                                setProjectProgramId(prev => prev === id ? '' : prev);
+                            }} />}
 
                         {/* ── Projects Tab ─────────────────────────────── */}
                         {tab === 'projects' && (
