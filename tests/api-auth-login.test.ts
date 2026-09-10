@@ -7,7 +7,7 @@ const findUniqueProfile = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
-        user: { findUnique: findUniqueUser },
+        user: { findFirst: findUniqueUser },
         memberProfile: { findUnique: findUniqueProfile },
     },
 }));
@@ -66,6 +66,26 @@ afterEach(() => {
 });
 
 describe('로그인 이용 기간 확인', () => {
+    it.each([
+        ['user@example.com', 'User@Example.com'],
+        ['User@Example.com', 'user@example.com'],
+    ])('저장 이메일 %s는 입력 %s로 로그인할 수 있다', async (storedEmail, inputEmail) => {
+        findUniqueUser.mockImplementation(async ({ where }: { where: { email: string | { equals: string; mode: string } } }) => {
+            const matches = typeof where.email === 'string' ? where.email === storedEmail
+                : where.email.mode === 'insensitive' && where.email.equals.toLowerCase() === storedEmail.toLowerCase();
+            return matches ? approvedUser({ email: storedEmail }) : null;
+        });
+        const result = await POST(loginRequest({ email: inputEmail, password: 'password123' }));
+        expect(result.status).toBe(200);
+        expect((await result.json()).user.email).toBe(storedEmail);
+    });
+
+    it('이메일 앞뒤 공백을 제거하고 소문자로 조회한다', async () => {
+        const result = await POST(loginRequest({ email: '  User@Example.com  ', password: 'password123' }));
+        expect(result.status).toBe(200);
+        expect(findUniqueUser).toHaveBeenCalledWith(expect.objectContaining({ where: { email: { equals: 'user@example.com', mode: 'insensitive' } } }));
+    });
+
     it('초대 프로그램 종료 후에는 비밀번호가 맞아도 거부한다', async () => {
         findUniqueUser.mockResolvedValue(approvedUser({
             programId: 'p', accessExpiresAt: new Date(Date.now() + 86400000),

@@ -20,7 +20,7 @@ const INVALID_CREDENTIALS_MSG = '이메일 또는 비밀번호가 올바르지 �
 const TIMING_SAFE_DUMMY_HASH = bcrypt.hashSync('timing-safe-dummy-password', BCRYPT_ROUNDS);
 
 const loginSchema = z.object({
-    email: z.string().email('유효한 이메일을 입력하세요'),
+    email: z.string().trim().email('유효한 이메일을 입력하세요').transform((value) => value.toLowerCase()),
     password: z.string().min(1, '비밀번호를 입력하세요'),
 });
 
@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email },
+        const user = await prisma.user.findFirst({
+            where: { email: { equals: email, mode: 'insensitive' } },
             include: { usedInviteCode: { include: { program: { select: { endsAt: true } } } } },
         });
 

@@ -28,6 +28,14 @@ beforeEach(() => {
     mocks.profile.mockResolvedValue(null);
 });
 describe('초대 코드 로그인', () => {
+    it.each([30, 365])('미사용 코드의 과거 %s일 설정과 무관하게 90일을 부여한다', async (accessDurationDays) => {
+        mocks.findInvite.mockResolvedValue({ ...invite, accessDurationDays });
+        expect((await POST(request())).status).toBe(200);
+        const firstLogin = mocks.update.mock.calls[0][0].data.usedAt as Date;
+        const expiry = mocks.create.mock.calls[0][0].data.accessExpiresAt as Date;
+        expect(expiry.getTime() - firstLogin.getTime()).toBe(90 * 86400000);
+    });
+
     it('비밀번호 없이 멘티 계정을 생성하고 온보딩 세션을 발급한다', async () => {
         const res = await POST(request());
         expect(res.status).toBe(200);

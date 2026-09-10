@@ -15,7 +15,7 @@ vi.mock('../lib/auth', () => ({ encodeSessionCookie: () => 'signup-first-session
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
-        user: { findUnique: findUniqueUser },
+        user: { findFirst: findUniqueUser },
         inviteCode: { findUnique: findUniqueInvite },
         $transaction: (fn: unknown) => transaction(fn),
     },
@@ -67,6 +67,19 @@ afterEach(() => {
 });
 
 describe('초대 코드 없는 가입', () => {
+    it('기존 혼합 대소문자 이메일과 같은 주소의 중복 가입을 거절한다', async () => {
+        findUniqueUser.mockImplementation(async ({ where }: { where: { email: string | { equals: string; mode: string } } }) => {
+            const storedEmail = 'User@Example.com';
+            const matches = typeof where.email === 'string' ? where.email === storedEmail
+                : where.email.mode === 'insensitive' && where.email.equals.toLowerCase() === storedEmail.toLowerCase();
+            return matches ? { id: 'existing' } : null;
+        });
+        const res = await POST(signupRequest({ name: '중복회원', email: 'user@example.com', password: 'password123', profile: menteeProfile }));
+        expect(res.status).toBe(409);
+        expect(transaction).not.toHaveBeenCalled();
+        expect(txCreateUser).not.toHaveBeenCalled();
+    });
+
     it('승인 대기 상태로 만들고 멘티 역할을 준다', async () => {
         const res = await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123', profile: menteeProfile,
@@ -151,6 +164,15 @@ describe('초대 코드 가입', () => {
         program: { endsAt: new Date(Date.now() + 180 * 86400000) },
         expiresAt: new Date(Date.now() + 86400000), accessDurationDays: 90, usedAt: null,
     };
+
+    it.each([30, 365])('미사용 코드의 과거 %s일 설정과 무관하게 첫 로그인부터 90일을 부여한다', async (accessDurationDays) => {
+        findUniqueInvite.mockResolvedValue({ ...validInvite, accessDurationDays });
+        const res = await POST(signupRequest({ name: '새회원', email: 'm@x.com', password: 'password123', inviteCode: validInvite.code, profile: menteeProfile }));
+        expect(res.status).toBe(200);
+        const firstLogin = txUpdateInvite.mock.calls[0][0].data.usedAt as Date;
+        const expiry = txCreateUser.mock.calls[0][0].data.accessExpiresAt as Date;
+        expect(expiry.getTime() - firstLogin.getTime()).toBe(90 * 86400000);
+    });
 
     it('가입에서도 프로그램 종료일을 넘기지 않으며 90일 상한을 지킨다', async () => {
         const end = new Date(Date.now() + 30 * 86400000);

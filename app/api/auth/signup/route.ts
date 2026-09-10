@@ -9,7 +9,7 @@ import { encodeSessionCookie } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { SIGNUP_RATE_LIMIT, clientIpFrom, consumeRateLimit } from '@/lib/rate-limit';
 import { checkInviteCode, normalizeInviteCode, INVITE_CODE_MESSAGES } from '@/lib/invite-code';
-import { accessExpiryFrom, parseInvitableRole, type MemberRole } from '@/lib/member-roles';
+import { parseInvitableRole, type MemberRole } from '@/lib/member-roles';
 import { memberProfileSchemaFor } from '@/lib/member-profile';
 import { inviteAccessExpiresAt } from '@/lib/invite-access';
 import { errorCodeOf } from '@/lib/api-error';
@@ -50,8 +50,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const existingUser = await prisma.user.findUnique({
-            where: { email },
+        const existingUser = await prisma.user.findFirst({
+            where: { email: { equals: email, mode: 'insensitive' } },
         });
 
         if (existingUser) {
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
         // status: 'PENDING' 으로 남고 관리자가 승인해야 로그인할 수 있으므로
         // 권한 상승 구멍이 아니다. 초대 코드가 있으면 역할이 코드로 정해지고,
         // 그 역할에 맞는 프로필을 받는다(클라이언트가 고른 role 은 무시한다).
-        let invite: { id: string; role: MemberRole; accessDurationDays: number; programId: string; endsAt: Date } | null = null;
+        let invite: { id: string; role: MemberRole; programId: string; endsAt: Date } | null = null;
         let role: MemberRole = requestedRole ?? 'MENTEE';
 
         if (inviteCode) {
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
             }
             invite = {
                 id: record.id, role: inviteRole,
-                accessDurationDays: record.accessDurationDays, programId: record.programId,
+                programId: record.programId,
                 endsAt: record.program.endsAt,
             };
             role = inviteRole;
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
                 if (!current || current.usedAt || current.usedById) throw new InviteAlreadyUsedError();
                 if (checkInviteCode(current, email) || current.role !== 'MENTEE'
                     || current.program.endsAt.getTime() <= Date.now()) throw new InviteExpiredError();
-                invite = { id: current.id, role: 'MENTEE', accessDurationDays: current.accessDurationDays,
+                invite = { id: current.id, role: 'MENTEE',
                     programId: current.programId, endsAt: current.program.endsAt };
             }
             const now = new Date();
@@ -127,7 +127,6 @@ export async function POST(request: NextRequest) {
                     status: invite ? 'APPROVED' : 'PENDING',
                     accessExpiresAt: invite ? inviteAccessExpiresAt({
                         usedAt: now, expiresAt: now, program: { endsAt: invite.endsAt },
-                        usedBy: { accessExpiresAt: accessExpiryFrom(now, Math.min(90, invite.accessDurationDays)) },
                     }) : null,
                     // 코드로 들어온 멘티는 그 코드의 프로그램에 묶인다. 다른
                     // 프로그램의 프로젝트 소유자로는 지정될 수 없다(lib/program.ts).
