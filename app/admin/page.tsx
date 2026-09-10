@@ -23,6 +23,7 @@ interface Project {
     name: string;
     description?: string;
     ownerId: string;
+    programId: string;
     createdAt: string;
     updatedAt: string;
     ownerEmail: string | null;
@@ -52,6 +53,8 @@ export default function AdminModePage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchProject, setSearchProject] = useState('');
+    const [projectProgramId, setProjectProgramId] = useState('');
+    const [projectPrograms, setProjectPrograms] = useState<{ id: string; name: string; organization: string }[]>([]);
     // 프로젝트 삭제는 되돌릴 수 없고 하위 22개 모델을 함께 지운다. 그래서 확인을
     // 두 번 받는다. stage 1 은 "무엇을 지우는지", stage 2 는 "정말 지울 것인지"다.
     // 사용자 삭제는 서버가 409 로 되물어보는 자체 2단계가 있어 stage 1 에서 요청을
@@ -102,7 +105,11 @@ export default function AdminModePage() {
 
             if (statsRes.ok) setStats(await statsRes.json());
             if (usersRes.ok) { const d = await usersRes.json(); setUsers(d.users); }
-            if (projectsRes.ok) { const d = await projectsRes.json(); setProjects(d.projects); }
+            if (projectsRes.ok) {
+                const d = await projectsRes.json();
+                setProjects(d.projects);
+                setProjectPrograms(d.programs);
+            }
             if (meRes.ok) {
                 const d = await meRes.json();
                 setRole(d.role ?? null);
@@ -307,6 +314,7 @@ export default function AdminModePage() {
     };
 
     const filteredProjects = projects.filter((p) => {
+        if (projectProgramId && p.programId !== projectProgramId) return false;
         const q = searchProject.toLowerCase();
         return (
             p.name.toLowerCase().includes(q) ||
@@ -771,8 +779,8 @@ export default function AdminModePage() {
                         {/* ── Projects Tab ─────────────────────────────── */}
                         {tab === 'projects' && (
                             <div className="space-y-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="relative flex-1 max-w-sm">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <div className="relative w-full sm:flex-1 sm:max-w-sm">
                                         <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                         <input
                                             type="text"
@@ -783,7 +791,19 @@ export default function AdminModePage() {
                                             id="admin-project-search"
                                         />
                                     </div>
-                                    <span className="text-sm text-gray-500">{filteredProjects.length}개</span>
+                                    <select
+                                        id="admin-project-program-filter"
+                                        aria-label="프로그램별 프로젝트 보기"
+                                        className="input w-full sm:w-72"
+                                        value={projectProgramId}
+                                        onChange={(e) => setProjectProgramId(e.target.value)}
+                                    >
+                                        <option value="">전체 프로그램</option>
+                                        {projectPrograms.map(program => (
+                                            <option key={program.id} value={program.id}>{program.name} ({program.organization})</option>
+                                        ))}
+                                    </select>
+                                    <span className="text-sm text-gray-500" aria-live="polite">{filteredProjects.length}개</span>
                                 </div>
 
                                 {filteredProjects.length === 0 ? (
@@ -791,7 +811,7 @@ export default function AdminModePage() {
                                         <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-4">
                                             <svg className="w-8 h-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                                         </div>
-                                        <p className="text-gray-500 text-sm">{searchProject ? '검색 결과가 없습니다' : '등록된 프로젝트가 없습니다'}</p>
+                                        <p className="text-gray-500 text-sm">{searchProject || projectProgramId ? '선택한 조건에 맞는 프로젝트가 없습니다.' : '등록된 프로젝트가 없습니다.'}</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-3">

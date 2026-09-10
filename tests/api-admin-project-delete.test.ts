@@ -10,10 +10,12 @@ import { NextRequest, NextResponse } from 'next/server';
 const findProject = vi.fn();
 const deleteProject = vi.fn();
 const findManyProject = vi.fn();
+const findManyProgram = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
         project: { findUnique: findProject, delete: deleteProject, findMany: findManyProject },
+        program: { findMany: findManyProgram },
     },
 }));
 
@@ -35,6 +37,7 @@ function deleteRequest(body: unknown): NextRequest {
 }
 
 beforeEach(() => {
+    findManyProgram.mockResolvedValue([]);
     requireAdmin.mockResolvedValue(ADMIN);
     findProject.mockResolvedValue({ name: '음료 신제품 개발' });
     deleteProject.mockResolvedValue({ id: 'proj_2' });
@@ -129,6 +132,29 @@ describe('admin projects DELETE', () => {
 });
 
 describe('admin projects GET', () => {
+    it('프로그램 ID와 프로젝트가 없는 프로그램까지 선택 목록으로 제공한다', async () => {
+        findManyProgram.mockResolvedValue([
+            { id: 'program_1', name: '육성 프로그램', organization: '기관 A' },
+            { id: 'program_2', name: '육성 프로그램', organization: '기관 B' },
+        ]);
+        findManyProject.mockResolvedValue([{
+            id: 'proj_1', name: '과제', programId: 'program_1', ownerId: 'owner', owner: null,
+            createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'),
+            _count: { requirements: 0, kanoResponses: 0, members: 0 },
+        }]);
+        const res = await GET(new NextRequest('http://localhost/api/admin/projects'));
+        const body = await res.json();
+        expect(res.status).toBe(200);
+        expect(body.projects[0].programId).toBe('program_1');
+        expect(body.programs).toEqual([
+            { id: 'program_1', name: '육성 프로그램', organization: '기관 A' },
+            { id: 'program_2', name: '육성 프로그램', organization: '기관 B' },
+        ]);
+        expect(findManyProgram).toHaveBeenCalledWith({
+            select: { id: true, name: true, organization: true },
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        });
+    });
     it('관리자가 아니면 목록을 볼 수 없다', async () => {
         requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Admin access required.' }, { status: 403 }));
 
@@ -136,6 +162,7 @@ describe('admin projects GET', () => {
 
         expect(res.status).toBe(403);
         expect(findManyProject).not.toHaveBeenCalled();
+        expect(findManyProgram).not.toHaveBeenCalled();
     });
 
     it('멤버 수는 소유자를 포함해 센다', async () => {

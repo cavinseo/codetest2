@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     if (adminResult instanceof NextResponse) return adminResult;
 
     try {
-        const projects = await prisma.project.findMany({
+        const [projects, programs] = await Promise.all([prisma.project.findMany({
             include: {
                 owner: {
                     select: { email: true, name: true },
@@ -26,13 +26,17 @@ export async function GET(request: NextRequest) {
                 },
             },
             orderBy: { createdAt: 'desc' },
-        });
+        }), prisma.program.findMany({
+            select: { id: true, name: true, organization: true },
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        })]);
 
         const formattedProjects = projects.map((p: any) => ({
             id: p.id,
             name: p.name,
             description: p.description,
             ownerId: p.ownerId,
+            programId: p.programId,
             ownerEmail: p.owner?.email ?? null,
             ownerName: p.owner?.name ?? null,
             createdAt: p.createdAt.toISOString(),
@@ -42,7 +46,7 @@ export async function GET(request: NextRequest) {
             memberCount: p._count.members + 1, // +1 for owner
         }));
 
-        return NextResponse.json({ projects: formattedProjects });
+        return NextResponse.json({ projects: formattedProjects, programs });
     } catch (error: unknown) {
         log.error('프로젝트 목록 조회 실패', error);
         return NextResponse.json({ error: '프로젝트 목록 조회 실패' }, { status: 500 });
