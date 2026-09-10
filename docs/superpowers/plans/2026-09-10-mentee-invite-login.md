@@ -2,7 +2,7 @@
 title: 멘티 초대코드 로그인과 프로그램 연동 만료
 type: feature
 created: 2026-09-10
-status: in-progress
+status: done
 baseline_commit: e876014
 context: [AGENTS.md]
 ---
@@ -46,10 +46,10 @@ context: [AGENTS.md]
 
 ## Tasks & Acceptance
 
-- [ ] 만료 계산과 이메일·계정 연결 검증을 순수 함수 및 테스트로 정의한다.
-- [ ] 발급 API·메일·관리 UI를 재사용 가능한 멘티 코드와 프로그램 만료 기준으로 바꾼다.
-- [ ] 코드 로그인 API와 로그인 화면을 구현하고, 기존 가입 및 인증 경로의 만료 확인을 일치시킨다.
-- [ ] API·실제 PostgreSQL 동시 요청·브라우저·전체 회귀를 검증한다.
+- [x] 만료 계산과 이메일·계정 연결 검증을 순수 함수 및 테스트로 정의한다.
+- [x] 발급 API·메일·관리 UI를 재사용 가능한 멘티 코드와 프로그램 만료 기준으로 바꾼다.
+- [x] 코드 로그인 API와 로그인 화면을 구현하고, 기존 가입 및 인증 경로의 만료 확인을 일치시킨다.
+- [x] API·실제 PostgreSQL 동시 요청·브라우저·전체 회귀를 검증한다.
 
 **Acceptance Criteria:**
 
@@ -68,3 +68,28 @@ context: [AGENTS.md]
 - 변경한 기존 뮤테이션 대상은 Stryker 재검수.
 
 ## Spec Change Log
+
+- 2026-09-10. 기존 초대 가입도 생성 즉시 세션을 발급하여 최초 로그인 시점과 기간 시작을 일치시켰다. 일반 가입은 승인 대기를 유지한다.
+- 2026-09-10. 뮤테이션 검수에서 날짜 형식과 빈 오류 안내 검증 공백을 보완했다. 정규식이 이미 제거하는 공백의 중복 trim만 삭제했으며 동작은 동일하다. 최종 뮤테이션 재검수와 독립 리뷰를 진행한다.
+
+- 2026-09-10. 독립 검토의 이메일 대소문자 조회와 신규 첫 이용기간 불일치를 수정했다. 전체 1,499개·통합 17개, 타입·린트·빌드 및 최종 브라우저 검수를 통과했다.
+
+## Suggested Review Order
+
+- 개인 코드 로그인과 최초 계정 연결을 확인한다.
+  [route.ts:26](../../../app/api/auth/invite-login/route.ts#L26)
+
+- 최초 사용·회원 기한·프로그램 종료의 최솟값을 확인한다.
+  [invite-access.ts:11](../../../lib/invite-access.ts#L11)
+
+- 기존 세션에도 프로그램 만료를 적용한다.
+  [auth.ts:174](../../../lib/auth.ts#L174)
+
+- 발급 권한과 이메일별 동시 발급 잠금을 확인한다.
+  [route.ts:73](../../../app/api/invites/route.ts#L73)
+
+- 비밀번호 없는 로그인 화면의 진입 경로를 확인한다.
+  [page.tsx:1](../../../app/login/page.tsx#L1)
+
+- 실제 DB에서 경합과 만료를 검증한다.
+  [invite-login.integration.test.ts:1](../../../tests/integration/invite-login.integration.test.ts#L1)
