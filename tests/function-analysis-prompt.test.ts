@@ -214,6 +214,28 @@ describe('기존 WS-2 참고 자료', () => {
 });
 
 describe('외부 AI가 따라야 할 FAST 분석 계약', () => {
+    it('분석 결과를 저장해서 열 수 있는 단일 한국어 HTML 문서로 요구한다', () => {
+        const rules = withoutInput(buildFunctionAnalysisPrompt(answers()));
+        for (const markup of ['<!DOCTYPE html>', '<html lang="ko">', '<meta charset="UTF-8">', '<style>', '</html>']) {
+            expect(rules).toContain(markup);
+        }
+        expect(rules).toMatch(/하나의 html 코드블록/);
+        expect(rules).toMatch(/\.html[^\n]*브라우저/);
+        expect(rules).not.toContain('Markdown 표를 사용하고');
+        expect(rules).not.toContain('HTML 대시보드·실행 코드·파일 생성은 요청하지 않는다');
+    });
+
+    it('HTML 표 구조·인쇄와 사용자 입력의 텍스트 표현을 지시한다', () => {
+        const rules = withoutInput(buildFunctionAnalysisPrompt(answers()));
+        for (const markup of ['<h1>', '<h2>', '<table>', '<thead>', '<tbody>', '<th scope="col">', '<td>', '@media print']) {
+            expect(rules).toContain(markup);
+        }
+        expect(rules).toMatch(/행 병합[^\n]*하지 않는다/);
+        expect(rules).toContain('HTML 이스케이프');
+        expect(rules).toMatch(/JavaScript[^\n]*사용하지 않는다/);
+        expect(rules).toMatch(/외부[^\n]*(?:의존|요청)[^\n]*없이/);
+    });
+
     it('고정된 8개 출력 절을 지정된 순서로 요구한다', () => {
         const rules = withoutInput(buildFunctionAnalysisPrompt(answers()));
         const headings = [...rules.matchAll(/^#{1,6}\s*\d+[.)]\s*(.+)$/gm)].map(match => match[1]);

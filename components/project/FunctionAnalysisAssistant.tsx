@@ -112,7 +112,7 @@ export default function FunctionAnalysisAssistant({ open, project, existingRows,
             <div className="flex items-start justify-between gap-3 border-b border-white/10 px-6 py-5">
                 <div>
                     <h2 id={`${id}-title`} className="text-lg font-semibold">기능분석 작성 도우미</h2>
-                    <p id={`${id}-description`} className="mt-1 text-sm text-gray-400">질문에 답하면 Claude·OpenAI에 붙여 넣을 프롬프트를 만듭니다.</p>
+                    <p id={`${id}-description`} className="mt-1 text-sm text-gray-400">질문에 답하면 Claude·OpenAI에 HTML 기능분석 보고서를 요청할 프롬프트를 만듭니다.</p>
                 </div>
                 <button type="button" onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10 hover:text-white" aria-label="기능분석 작성 도우미 닫기">닫기</button>
             </div>
@@ -127,7 +127,7 @@ export default function FunctionAnalysisAssistant({ open, project, existingRows,
                 </ol>
                 <div>
                     <h3 ref={stepHeading} tabIndex={-1} className="text-base font-semibold outline-none">{isPreview ? '프롬프트 검토·복사' : `${stepIndex + 1}단계. ${step.title}`}</h3>
-                    <p className="mt-1 text-xs text-gray-400">{isPreview ? '복사한 프롬프트를 Claude 또는 OpenAI의 대화창에 붙여 넣어 분석을 요청하세요.' : '필수 항목은 반드시 입력해 주세요. 선택 항목을 모르면 비워 둘 수 있습니다.'}</p>
+                    <p className="mt-1 text-xs text-gray-400">{isPreview ? '복사한 프롬프트를 Claude 또는 OpenAI에 붙여 넣으세요. 결과의 HTML 코드를 .html 파일로 저장하면 브라우저에서 열 수 있습니다.' : '필수 항목은 반드시 입력해 주세요. 선택 항목을 모르면 비워 둘 수 있습니다.'}</p>
                 </div>
 
                 {error && <p ref={errorNotice} tabIndex={-1} role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200 outline-none">{error}</p>}
@@ -169,7 +169,7 @@ export default function FunctionAnalysisAssistant({ open, project, existingRows,
 
                 {isPreview && <div className="space-y-4">
                     <div className="rounded-lg border border-primary-500/20 bg-primary-500/5 p-3 text-sm text-gray-300">
-                        <p>모델마다 분석 내용은 달라질 수 있습니다. 이 프롬프트는 분석 절차와 결과 표의 구조를 맞추는 데 사용합니다.</p>
+                        <p>모델마다 분석 내용은 달라질 수 있습니다. 이 프롬프트는 8개 분석 절과 WS-2 표를 갖춘 HTML 보고서 형식을 요청합니다.</p>
                         <p className="mt-2 text-xs text-gray-400">{includeExisting && availableRows.length > 0 ? `현재 WS-2 내용 ${availableRows.length}개 행이 포함되어 있습니다.` : '현재 WS-2 내용은 포함되지 않았습니다.'}</p>
                     </div>
                     <label className="block text-sm font-medium text-gray-200" htmlFor={`${id}-prompt`}>생성된 기능분석 프롬프트</label>
