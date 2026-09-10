@@ -86,7 +86,7 @@ export default function ManagePage() {
                                 <span className="w-6 h-6 rounded-md bg-gradient-to-br from-primary-500/30 to-accent-500/30 flex items-center justify-center text-xs">🧭</span>
                                 프로그램 관리
                             </h1>
-                            <p className="text-xs text-gray-500 mt-0.5">프로그램 개설, 초대 코드 발행, 멘토 배정</p>
+                            <p className="text-xs text-gray-500 mt-0.5">담당 프로그램 관리, 초대 코드 발행, 멘토 배정</p>
                         </div>
                     </div>
                     <ThemeToggle />
