@@ -20,6 +20,8 @@ model User {
   // 프로젝트 단위 역할(ProjectMember.role)과는 별개다. 이쪽은 "이 사람이 무엇을
   // 할 수 있는가", 저쪽은 "이 프로젝트에서 무엇을 할 수 있는가"를 정한다.
   role                String                 @default("MENTEE")
+  // 관리자가 멘토별로 허용하는 배정 멘티 프로젝트 대리 개설 권한.
+  mentorProjectCreationEnabled Boolean        @default(false)
   // 초대 코드로 가입한 계정의 접근 만료 시각. null 이면 만료 없음(관리자 생성 계정).
   accessExpiresAt     DateTime?
   // 발급된 세션을 한꺼번에 무효화하기 위한 값. 비밀번호 변경이나 승인 취소 때

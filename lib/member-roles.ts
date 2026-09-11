@@ -82,9 +82,10 @@ export function canAssignMentor(role: MemberRole): boolean {
  * "누가 만드는가"와 "누가 갖는가"가 갈리는 곳이라, 소유자 쪽 판정은
  * lib/program.ts 의 canOwnProjectIn 이 따로 맡는다.
  *
- * 멘토는 만들지 못한다. 멘토는 배정된 멘티의 과제를 열람·편집한다.
+ * 멘토는 관리자에게 개별 허용을 받은 경우 배정 멘티의 과제를 대신 개설한다.
  */
-export function canCreateProject(role: MemberRole): boolean {
+export function canCreateProject(role: MemberRole, mentorProjectCreationEnabled = false): boolean {
+    if (role === 'MENTOR') return mentorProjectCreationEnabled === true;
     return role === 'ADMIN' || role === 'PROGRAM_MANAGER' || role === 'MENTEE';
 }
 

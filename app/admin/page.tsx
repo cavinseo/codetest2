@@ -200,7 +200,7 @@ export default function AdminModePage() {
         const data = await res.json().catch(() => null);
         if (res.ok) {
             setUsers((prev) => prev.map((u) => (
-                u.id === userId ? { ...u, role: data.user.role, isAdmin: data.user.isAdmin } : u
+                u.id === userId ? { ...u, role: data.user.role, isAdmin: data.user.isAdmin, mentorProjectCreationEnabled: data.user.mentorProjectCreationEnabled === true } : u
             )));
             showMsg('success', `역할을 ${MEMBER_ROLE_LABELS[role]}(으)로 변경했습니다.`);
         } else {

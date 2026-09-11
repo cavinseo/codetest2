@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
                 status: true,
                 isAdmin: true,
                 role: true,
+                mentorProjectCreationEnabled: true,
                 accessExpiresAt: true,
                 mustChangePassword: true,
                 createdAt: true,
@@ -82,10 +83,10 @@ export async function PATCH(request: NextRequest) {
         const userId: string | undefined = body?.userId;
         const action: string | undefined = body?.action;
 
-        const allowedActions = ['approve', 'revoke', 'setRole', 'extendAccess'];
+        const allowedActions = ['approve', 'revoke', 'setRole', 'extendAccess', 'setMentorProjectCreation'];
         if (!userId || !allowedActions.includes(action ?? '')) {
             return NextResponse.json(
-                { error: 'userId 와 action(approve|revoke|setRole|extendAccess)이 필요합니다.' },
+                { error: 'userId 와 유효한 action이 필요합니다.' },
                 { status: 400 }
             );
         }
@@ -93,6 +94,19 @@ export async function PATCH(request: NextRequest) {
         const target = await prisma.user.findUnique({ where: { id: userId } });
         if (!target) {
             return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 });
+        }
+
+        if (action === 'setMentorProjectCreation') {
+            if (target.role !== 'MENTOR' || typeof body.enabled !== 'boolean') {
+                return NextResponse.json({ error: '멘토 계정과 활성화 여부(true/false)를 지정하세요.' }, { status: 400 });
+            }
+            const updated = await prisma.user.updateMany({
+                where: { id: userId, role: 'MENTOR' },
+                data: { mentorProjectCreationEnabled: body.enabled },
+            });
+            if (updated.count !== 1) return NextResponse.json({ error: '회원 역할이 변경되었습니다. 목록을 새로고침하세요.' }, { status: 409 });
+            log.info('멘토 프로젝트 생성 권한 변경', { userId, enabled: body.enabled, actorId: adminResult.userId });
+            return NextResponse.json({ success: true, mentorProjectCreationEnabled: body.enabled });
         }
 
         if (action === 'setRole') {
@@ -126,9 +140,10 @@ export async function PATCH(request: NextRequest) {
                 where: { id: userId },
                 data: {
                     role: nextRole,
+                    ...(currentRole !== nextRole ? { mentorProjectCreationEnabled: false } : {}),
                     ...(losesPower ? { sessionVersion: { increment: 1 } } : {}),
                 },
-                select: { id: true, email: true, role: true, isAdmin: true },
+                select: { id: true, email: true, role: true, isAdmin: true, mentorProjectCreationEnabled: true },
             });
 
             log.info('역할 변경', { userId, role: nextRole });

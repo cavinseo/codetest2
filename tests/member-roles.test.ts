@@ -102,6 +102,13 @@ describe('권한 경계 요약', () => {
     });
 });
 
+it('멘토는 명시적으로 활성화한 경우에만 프로젝트를 만든다', () => {
+    expect(canCreateProject('MENTOR')).toBe(false);
+    expect(canCreateProject('MENTOR', false)).toBe(false);
+    expect(canCreateProject('MENTOR', true)).toBe(true);
+    expect(canCreateProjectForOthers('MENTOR')).toBe(false);
+});
+
 describe('canCreateProjectForOthers', () => {
     // "만들 수 있다" 와 "남의 것을 만들어 줄 수 있다" 는 다른 권한이다. 이 둘이
     // 한 함수로 합쳐지면 멘티가 ownerMenteeId 를 실어 남의 이름으로 과제를 연다.
