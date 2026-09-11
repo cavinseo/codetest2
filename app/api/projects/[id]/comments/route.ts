@@ -22,24 +22,24 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
             const comments = await prisma.worksheetComment.findMany({ where: scope, include: { author: { select: { name: true } } }, orderBy: { createdAt: 'asc' } });
             return NextResponse.json({ comments, canComment, userId: access.user.userId });
         }
-        if (!canComment) return NextResponse.json({ error: '배정된 멘토만 코멘트를 작성할 수 있습니다.' }, { status: 403 });
+        if (!canComment) return NextResponse.json({ error: '배정된 멘토만 의견을 작성할 수 있습니다.' }, { status: 403 });
         const parsed = z.object({ id: z.string().min(1).optional(), content: contentSchema.optional() }).safeParse(await request.json());
-        if (!parsed.success) return NextResponse.json({ error: '코멘트는 1~5,000자로 입력하세요.' }, { status: 400 });
+        if (!parsed.success) return NextResponse.json({ error: '의견은 1~5,000자로 입력하세요.' }, { status: 400 });
         if (request.method === 'POST') {
-            if (!parsed.data.content) return NextResponse.json({ error: '코멘트를 입력하세요.' }, { status: 400 });
+            if (!parsed.data.content) return NextResponse.json({ error: '의견을 입력하세요.' }, { status: 400 });
             const comment = await prisma.worksheetComment.create({ data: { ...scope, authorId: access.user.userId, content: parsed.data.content } });
             return NextResponse.json({ comment }, { status: 201 });
         }
-        if (!parsed.data.id) return NextResponse.json({ error: '코멘트를 선택하세요.' }, { status: 400 });
+        if (!parsed.data.id) return NextResponse.json({ error: '의견을 선택하세요.' }, { status: 400 });
         const where = { ...scope, id: parsed.data.id, authorId: access.user.userId };
         if (request.method === 'DELETE') {
             const result = await prisma.worksheetComment.deleteMany({ where });
             return NextResponse.json({ success: result.count === 1 }, { status: result.count === 1 ? 200 : 403 });
         }
-        if (!parsed.data.content) return NextResponse.json({ error: '코멘트를 입력하세요.' }, { status: 400 });
+        if (!parsed.data.content) return NextResponse.json({ error: '의견을 입력하세요.' }, { status: 400 });
         const result = await prisma.worksheetComment.updateMany({ where, data: { content: parsed.data.content } });
         return NextResponse.json({ success: result.count === 1 }, { status: result.count === 1 ? 200 : 403 });
-    } catch (error) { return toErrorResponse(error, { log, message: '코멘트 처리에 실패했습니다.' }); }
+    } catch (error) { return toErrorResponse(error, { log, message: '의견 처리에 실패했습니다.' }); }
 }
 export const POST = GET;
 export const PATCH = GET;
