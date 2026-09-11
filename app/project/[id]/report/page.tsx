@@ -11,7 +11,7 @@ import KanoSatisfactionGraph from '@/components/project/KanoSatisfactionGraph';
 import QFDMatrix from '@/components/project/QFDMatrix';
 import FinalReportPreview from '@/components/project/FinalReportPreview';
 import { buildWorksheetData, toKanoChartPoints, type WorksheetPayloads } from '@/lib/final-report-inputs';
-import { buildFinalReportModel, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel } from '@/lib/final-report-document';
+import { buildFinalReportModel, hasProductOverviewSource, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel, type FinalReportOverviewInput } from '@/lib/final-report-document';
 import { applyBlockEdit, countEditedBlocks, withEditedBlocks, type BlockEdit } from '@/lib/final-report-edit';
 import { REPORT_MAX_BYTES, type ReportDraft } from '@/lib/final-report-payload';
 import { optimizeReportImage } from '@/lib/final-report-image';
@@ -198,6 +198,14 @@ export default function FinalReportPage() {
     const worksheets = useMemo(() => payloads ? buildWorksheetData(payloads as unknown as WorksheetPayloads) : null, [payloads]);
     const kanoPoints = useMemo(() => worksheets ? toKanoChartPoints(worksheets.kanoAggregation, worksheets.requirements) : [], [worksheets]);
     const editing = report?.canEdit && activeView === 'draft';
+    const overviewSource = (payloads?.overview as { project?: Partial<FinalReportOverviewInput> & { name?: string } } | null)?.project;
+    const usesOverview = hasProductOverviewSource(overviewSource ?? {});
+    const worksheetAnalysis = report?.draft?.worksheetAnalysis;
+    const legacyFields = FREE_FIELDS.filter(field => {
+        if (field.key === 'marketDefinition' || field.key === 'targetCustomer') return !usesOverview;
+        if (field.key === 'finalSpecExplanation') return worksheetAnalysis?.['target-spec'] === undefined;
+        return worksheetAnalysis?.['tech-roadmap'] === undefined;
+    });
     const shownDocument = activeView === 'published' ? publishedDocument : draft;
     const editedCount = model && draft ? countEditedBlocks(model.blocks, draft.blocks) : 0;
 
@@ -229,6 +237,10 @@ export default function FinalReportPage() {
     async function handleBuildPreview() {
         if (!worksheets || !payloads || !report?.canEdit || worksheetsLoading || failedKeys.length || !begin('0/3 캡처 중...')) return;
         try {
+            const latest = await requestReport(reportUrl);
+            if (!latest.canEdit || latest.version !== report.version) {
+                throw new Error('다른 화면에서 분석 또는 보고서가 변경되었습니다. 워크시트를 다시 불러온 뒤 미리보기를 만들어 주세요. 현재 교정 내용은 유지됩니다.');
+            }
             const images: CapturedWorksheetImage[] = [];
             for (const [index, target] of CAPTURE_TARGETS.entries()) {
                 setProgress(`${index}/3 캡처 중...`);
@@ -243,11 +255,12 @@ export default function FinalReportPage() {
                 images.push({ worksheetId: target.id, title: target.title, pngDataUrl: image.dataUrl, widthPx: image.widthPx, heightPx: image.heightPx });
             }
             setProgress('문서 만드는 중...');
-            const project = (payloads.overview as { project?: { name?: string; description?: string | null } } | null)?.project;
+            const project = overviewSource;
             const next = buildFinalReportModel({
+                ...project,
                 projectName: project?.name ?? '프로젝트', description: project?.description ?? null,
                 coachName: report.mentorName, generatedAt: new Date().toLocaleDateString('ko-KR'),
-            }, worksheets, free, images);
+            }, worksheets, free, images, worksheetAnalysis);
             setModel(next);
             setDraft(next);
             setPreviewNeedsRefresh(false);
@@ -263,7 +276,7 @@ export default function FinalReportPage() {
     }
     async function saveDraft() {
         if (!report) throw new Error('보고서 정보를 불러온 후 저장해 주세요.');
-        const savedDraft: ReportDraft = { free, document: draft, previewNeedsRefresh };
+        const savedDraft: ReportDraft = { free, document: draft, previewNeedsRefresh, ...(worksheetAnalysis ? { worksheetAnalysis } : {}) };
         const body = JSON.stringify({ version: report.version, draft: savedDraft });
         if (new TextEncoder().encode(body).byteLength > REPORT_MAX_BYTES) {
             throw new Error('보고서 저장 용량(3.5MB)을 초과했습니다. 제품 사진의 크기나 보고서 내용을 줄인 뒤 미리보기를 다시 만들어 주세요.');
@@ -277,6 +290,22 @@ export default function FinalReportPage() {
         if (!editing || !begin('초안 저장 중...')) return;
         try { await saveDraft(); showToast('결과보고서 초안을 저장했습니다.'); }
         catch (error) { fail(error, '초안 저장에 실패했습니다.'); }
+        finally { finish(); }
+    }
+    async function reloadSources() {
+        if (hasLocalChanges && !window.confirm('저장하지 않은 보고서 입력과 교정을 버리고 최신 저장본을 불러올까요?')) return;
+        if (!begin('최신 분석과 워크시트 불러오는 중...')) return;
+        try {
+            const latest = await requestReport(reportUrl);
+            setReport(latest); setActiveView(latest.view);
+            setFree(latest.draft?.free ?? EMPTY_FREE_INPUT);
+            setDraft(latest.draft?.document ?? null); setModel(latest.draft?.document ?? null);
+            setPublishedDocument(latest.view === 'published' ? latest.document ?? null : publishedDocument);
+            setPublishedAt(latest.publishedAt);
+            setPreviewNeedsRefresh(Boolean(latest.draft?.document) || (latest.draft?.previewNeedsRefresh ?? false));
+            setHasLocalChanges(Boolean(latest.canEdit));
+            if (latest.canEdit) await loadWorksheets();
+        } catch (error) { fail(error, '최신 분석을 불러오지 못했습니다.'); }
         finally { finish(); }
     }
     async function handlePublish() {
@@ -365,23 +394,27 @@ export default function FinalReportPage() {
 
         {editing && <>
             <fieldset disabled={progress !== null} className="card space-y-4">
-                <div><h2 className="text-lg font-semibold text-white">보고서에만 쓰는 항목</h2><p className="mt-1 text-sm text-gray-400">초안 저장으로 보관할 수 있습니다. 입력한 내용은 미리보기를 만들 때 문서에 반영됩니다.</p></div>
-                <label className="block text-sm text-gray-300">제품/서비스 이미지
+                <div><h2 className="text-lg font-semibold text-white">보고서 원본 연결</h2><p className="mt-1 text-sm text-gray-400">제품 정보는 개요에서, 분석은 각 워크시트의 ‘멘토 분석(보고)’에서 불러옵니다. 아래 보완 입력은 연결된 원본이 없는 항목에만 사용됩니다.</p></div>
+                <div className="flex flex-wrap gap-3 text-sm text-primary-300">
+                    <Link href={`/project/${projectId}`}>개요</Link>
+                    {['spec', 'attributes', 'attributes/fitness', 'target-spec', 'tech-roadmap', 'assets', 'funding-plan', 'funding-source'].map((path, index) => <Link key={path} href={`/project/${projectId}/${path}`}>WS-{[2, 3, 4, 12, 13, 15, 16, 17][index]} 분석</Link>)}
+                </div>
+                {!usesOverview && <label className="block text-sm text-gray-300">제품/서비스 이미지
                     <input type="file" accept="image/*" onChange={event => { void handleImage(event.target.files?.[0]); event.target.value = ''; }} className="input-field mt-1 block" />
-                </label>
-                {free.productImageDataUrl && <div className="flex items-center gap-3">
+                </label>}
+                {!usesOverview && free.productImageDataUrl && <div className="flex items-center gap-3">
                     {/* eslint-disable-next-line @next/next/no-img-element -- 저장할 dataURL 이미지를 직접 확인한다. */}
                     <img src={free.productImageDataUrl} alt="제품 이미지 미리보기" className="max-h-40 rounded border border-white/10" />
                     <button type="button" className="btn-secondary text-sm" onClick={() => updateFree({ productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null })}>이미지 제거</button>
                 </div>}
-                {FREE_FIELDS.map(field => <label key={field.key} className="block text-sm text-gray-300">{field.label}
+                {legacyFields.map(field => <label key={field.key} className="block text-sm text-gray-300">{field.label}
                     <textarea value={String(free[field.key] ?? '')} onChange={event => updateFree({ [field.key]: event.target.value })} placeholder={field.placeholder} rows={2} className="input-field mt-1 block w-full" />
                 </label>)}
             </fieldset>
             {previewNeedsRefresh && <p role="status" className="text-sm text-amber-300">입력 항목이 변경되었습니다. 미리보기를 다시 만들어야 완료할 수 있습니다. 기존 교정 내용은 재생성 전까지 유지됩니다.</p>}
             <div className="flex flex-wrap items-center gap-3">
                 <button onClick={() => draft ? setConfirmation('rebuild') : void handleBuildPreview()} disabled={progress !== null || worksheetsLoading || !worksheets || failedKeys.length > 0} className="btn-secondary text-sm disabled:opacity-50">{draft ? '미리보기 다시 만들기' : '미리보기 만들기'}</button>
-                <button disabled={progress !== null || worksheetsLoading} onClick={() => void loadWorksheets()} className="btn-secondary text-sm disabled:opacity-50">워크시트 다시 불러오기</button>
+                <button disabled={progress !== null || worksheetsLoading} onClick={() => void reloadSources()} className="btn-secondary text-sm disabled:opacity-50">워크시트 다시 불러오기</button>
                 {worksheetsLoading && <p role="status" className="text-sm text-gray-400">워크시트 불러오는 중 {loadedCount}/11</p>}
                 {failedKeys.length > 0 && !worksheetsLoading && <div role="alert" className="text-sm text-amber-300">
                     <p>워크시트 {failedKeys.length}개를 불러오지 못해 새 문서를 만들 수 없습니다. 저장된 초안은 유지됩니다. ({failedKeys.join(', ')})</p>

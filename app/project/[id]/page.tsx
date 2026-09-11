@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import ProductAttributesTable from '@/components/project/ProductAttributesTable';
@@ -9,6 +9,7 @@ import RequirementsTable from '@/components/project/RequirementsTable';
 import QFDMatrix from '@/components/project/QFDMatrix';
 import ThemeToggle from '@/components/ThemeToggle';
 import WorksheetComments from '@/components/project/WorksheetComments';
+import MentorWorksheetAnalysis from '@/components/project/MentorWorksheetAnalysis';
 import ProductOverviewFields from '@/components/project/ProductOverviewFields';
 import type { ProductOverview } from '@/lib/product-overview';
 import { HEADER_TOAST_SLOT_ID } from '@/components/HeaderToast';
@@ -71,6 +72,12 @@ export default function ProjectDetailPage() {
     const params = useParams();
     const projectId = params.id as string;
     const [activeTab, setActiveTab] = useState('overview');
+    const mentorAnalysisDirty = useRef(false);
+    const setMentorAnalysisDirty = useCallback((dirty: boolean) => { mentorAnalysisDirty.current = dirty; }, []);
+    const changeTab = (next: string) => {
+        if (mentorAnalysisDirty.current && !window.confirm('저장하지 않은 멘토 분석이 있습니다. 저장하지 않고 이동할까요?')) return;
+        setActiveTab(next);
+    };
     const [project, setProject] = useState<ProjectData | null>(null);
     const [reqCount, setReqCount] = useState(0);
     const [kanoCount, setKanoCount] = useState(0);
@@ -79,6 +86,7 @@ export default function ProjectDetailPage() {
     const [kanoRequirements, setKanoRequirements] = useState<any[]>([]);
     const [worksheetCompleteness, setWorksheetCompleteness] = useState<WorksheetCompleteness | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
     const [isOverviewEditing, setIsOverviewEditing] = useState(false);
     const [isOverviewSaving, setIsOverviewSaving] = useState(false);
     const [isProductImageReading, setIsProductImageReading] = useState(false);
@@ -97,6 +105,7 @@ export default function ProjectDetailPage() {
 
     useEffect(() => {
         async function loadData() {
+            setIsLoading(true); setLoadError(''); setProject(null);
             try {
                 // 프로젝트 목록에서 현재 프로젝트 찾기
                 const projRes = await fetch('/api/projects');
@@ -104,10 +113,13 @@ export default function ProjectDetailPage() {
                     const projData = await projRes.json();
                     const found = projData.projects?.find((p: any) => p.id === projectId);
                     if (found) setProject(found);
-                    else setProject({ id: projectId, name: '프로젝트', description: '', createdAt: new Date().toISOString(), memberCount: 1, role: 'OWNER' });
                 }
 
                 const overviewRes = await fetch(`/api/projects/${projectId}/overview`);
+                if (!overviewRes.ok) {
+                    throw new Error(overviewRes.status === 403 ? '이 프로젝트에 접근할 권한이 없습니다. 멘토는 현재 배정된 멘티의 프로젝트만 열람·수정할 수 있습니다.'
+                        : overviewRes.status === 401 ? '로그인이 필요합니다.' : '프로젝트를 불러오지 못했습니다. 다시 시도해 주세요.');
+                }
                 if (overviewRes.ok) {
                     const overviewData = await overviewRes.json();
                     setWorksheetCompleteness(overviewData.worksheetCompleteness || null);
@@ -156,8 +168,8 @@ export default function ProjectDetailPage() {
                     setSpecCount(specData.specFunctions?.length || 0);
                 }
             } catch (error) {
-                console.error('데이터 로딩 실패:', error);
-                setProject({ id: projectId, name: '프로젝트', description: '', createdAt: new Date().toISOString(), memberCount: 1, role: 'OWNER' });
+                setProject(null);
+                setLoadError(error instanceof Error ? error.message : '프로젝트를 불러오지 못했습니다.');
             } finally {
                 setIsLoading(false);
             }
@@ -299,12 +311,12 @@ export default function ProjectDetailPage() {
         try {
             const payload = {
                 name: overviewForm.name,
-                productName: overviewForm.productName,
+                productName: overviewForm.productName ?? '',
                 productImageDataUrl: overviewForm.productImageDataUrl,
                 productImageWidthPx: overviewForm.productImageWidthPx,
                 productImageHeightPx: overviewForm.productImageHeightPx,
-                marketDefinition: overviewForm.marketDefinition,
-                targetCustomer: overviewForm.targetCustomer,
+                marketDefinition: overviewForm.marketDefinition ?? '',
+                targetCustomer: overviewForm.targetCustomer ?? '',
                 description: overviewForm.description,
                 detailedDescription: overviewForm.detailedDescription,
                 ...(isOverviewFileDirty ? { businessPlanFile: overviewForm.businessPlanFile } : {}),
@@ -419,11 +431,11 @@ export default function ProjectDetailPage() {
 
     const tabComponents: Record<string, React.ReactNode> = {
         attributes: <ProductAttributesTable projectId={projectId} />,
-        spec: <SpecTable projectId={projectId} onSaved={() => setActiveTab('attributes')} />,
+        spec: <SpecTable projectId={projectId} onSaved={() => changeTab('attributes')} />,
         requirements: <RequirementsTable projectId={projectId} />,
         qfd: <QFDMatrix projectId={projectId} />,
         kano: <KanoManager projectId={projectId} />,
-        sales: <SalesTable projectId={projectId} onSaved={() => setActiveTab('spec')} />,
+        sales: <SalesTable projectId={projectId} onSaved={() => changeTab('spec')} />,
         fitness: <FitnessWrapper projectId={projectId} />,
         improvements: <ImprovementsTable projectId={projectId} />,
         'target-spec': <TargetSpecTable projectId={projectId} />,
@@ -508,6 +520,11 @@ export default function ProjectDetailPage() {
         );
     };
 
+    if (loadError) return <div className="min-h-screen space-y-4 bg-surface-900 p-12">
+        <p role="alert" className="text-rose-300">{loadError}</p>
+        <Link href="/dashboard" className="btn-secondary inline-block">대시보드로</Link>
+    </div>;
+
     if (isLoading || !project) {
         return (
             <div className="min-h-screen bg-surface-900 flex items-center justify-center">
@@ -550,7 +567,7 @@ export default function ProjectDetailPage() {
                             <Link href={`/project/${projectId}/report`} className="btn-secondary text-sm">
                                 결과보고서
                             </Link>
-                            {canEditOverview && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
+                            {['OWNER', 'ADMIN'].includes(project.role) && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 팀원 초대
                             </Link>}
                             {canEditOverview && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
@@ -569,7 +586,9 @@ export default function ProjectDetailPage() {
                         {tabs.filter(tab => canEditOverview || tab.id !== 'import').map((tab) => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => {
+                                    if (tab.id !== activeTab) changeTab(tab.id);
+                                }}
                                 className={activeTab === tab.id ? 'nav-tab-active' : 'nav-tab'}
                             >
                                 <span className="flex items-center gap-2">
@@ -913,6 +932,7 @@ export default function ProjectDetailPage() {
                 {activeTab !== 'overview' && (canEditOverview || activeTab !== 'import') && (
                     <fieldset disabled={!canEditOverview} className="min-w-0">{renderTabContent(activeTab)}</fieldset>
                 )}
+                <MentorWorksheetAnalysis projectId={projectId} worksheetId={activeTab} onDirtyChange={setMentorAnalysisDirty} />
                 {activeTab !== 'import' && <WorksheetComments key={`${projectId}-${activeTab}`} projectId={projectId} worksheetId={activeTab} />}
             </main>
         </div>

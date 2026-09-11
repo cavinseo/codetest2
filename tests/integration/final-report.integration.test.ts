@@ -12,7 +12,7 @@ const db = new PrismaClient({ datasources: { db: { url: dbUrl } } });
 const racer = new PrismaClient({ datasources: { db: { url: dbUrl } } });
 vi.mock('../../lib/prisma', () => ({ get prisma() { return db; } }));
 import { encodeSessionCookie } from '../../lib/auth';
-import { GET, PUT, POST } from '../../app/api/projects/[id]/report/route';
+import { GET, PUT, POST, PATCH } from '../../app/api/projects/[id]/report/route';
 import { GET as exportProject } from '../../app/api/projects/[id]/export/route';
 import { GET as readOverview } from '../../app/api/projects/[id]/overview/route';
 import { POST as writeSpec } from '../../app/api/projects/[id]/spec/route';
@@ -68,18 +68,21 @@ afterAll(async () => {
     else process.env.SESSION_SECRET = originalSessionSecret;
 });
 
-it('실제 세션과 배정으로 작성자를 제한하고 관리자·PM은 초안만 조회한다', async () => {
+it('실제 세션과 배정으로 작성자를 제한하고 미배정 관리자·PM에게 초안을 공개하지 않는다', async () => {
     const p = await project();
     expect((await GET(req(p.id, null), params(p.id))).status).toBe(401);
     for (const userId of [ids.otherMentor, ids.otherMentee]) expect((await GET(req(p.id, userId), params(p.id))).status).toBe(403);
     for (const userId of [ids.admin, ids.pm, ids.mentee]) {
         expect((await PUT(req(p.id, userId, 'PUT', { version: 0, draft: draft('거절') }), params(p.id))).status).toBe(403);
         expect((await POST(req(p.id, userId, 'POST', { version: 0 }), params(p.id))).status).toBe(403);
+        expect((await PATCH(req(p.id, userId, 'PATCH', { version: 0, worksheetId: 'spec', analysis: { analysis: '차단' } }), params(p.id))).status).toBe(403);
     }
     await save(p.id);
     for (const userId of [ids.admin, ids.pm]) {
         const result = await (await GET(req(p.id, userId), params(p.id))).json();
-        expect(result).toMatchObject({ canEdit: false, view: 'draft', draft: { free: { marketDefinition: '비공개 초안' } } });
+        expect(result).toMatchObject({ canEdit: false, view: 'published', document: null });
+        expect(result).not.toHaveProperty('draft');
+        expect(JSON.stringify(result)).not.toContain('비공개 초안');
     }
 });
 
@@ -180,10 +183,13 @@ it('배정 변경과 저장이 경합하면 잠금 뒤 현재 멘토를 재검�
     }
 });
 
-it('보고서 작성 권한을 부여해도 멘토의 워크시트 수정은 허용하지 않는다', async () => {
+it('배정 멘토는 멘티의 워크시트를 수정할 수 있고 미배정 멘토는 거절된다', async () => {
     const p = await project();
     await save(p.id);
-    expect((await writeSpec(req(p.id, ids.mentor, 'POST', { specFunctions: [] }), params(p.id))).status).toBe(403);
+    const specFunctions = [{ id: 'core_0', level: 'CORE', name: '멘토가 보완한 핵심 기능', order: 0 }];
+    expect((await writeSpec(req(p.id, ids.mentor, 'POST', { specFunctions }), params(p.id))).status).toBe(200);
+    expect(await db.specFunction.findMany({ where: { projectId: p.id }, select: { name: true } })).toEqual([{ name: '멘토가 보완한 핵심 기능' }]);
+    expect((await writeSpec(req(p.id, ids.otherMentor, 'POST', { specFunctions }), params(p.id))).status).toBe(403);
 });
 
 it('멘토로 배정된 PM은 작성할 수 있고 배정 해제 후에는 조회만 가능하다', async () => {
@@ -208,6 +214,53 @@ it('프로젝트 삭제만 보고서를 함께 지우며 작성자의 회원 삭
     expect((await db.finalReport.findUniqueOrThrow({ where: { projectId: p.id } })).published).not.toBeNull();
     await db.project.delete({ where: { id: p.id } });
     expect(await db.finalReport.findUnique({ where: { projectId: p.id } })).toBeNull();
+});
+
+it('워크시트 분석을 영속 저장하고 현재 배정 멘토에게만 반환하며 완료본을 계속 보존한다', async () => {
+    const p = await project();
+    await save(p.id, '공개본 유지');
+    expect((await POST(req(p.id, ids.mentor, 'POST', { version: 1 }), params(p.id))).status).toBe(200);
+    const analysis = { core: '비공개 핵심 자산', complementary: '비공개 보완 자산' };
+    expect((await PATCH(req(p.id, ids.mentor, 'PATCH', { version: 2, worksheetId: 'assets', analysis }), params(p.id))).status).toBe(200);
+    const restored = await (await GET(req(p.id, ids.mentor, 'GET', undefined, '?worksheetId=assets'), params(p.id))).json();
+    expect(restored).toMatchObject({ canEdit: true, version: 3, analysis });
+    for (const userId of [ids.admin, ids.pm, ids.mentee]) {
+        const privateResponse = await GET(req(p.id, userId, 'GET', undefined, '?worksheetId=assets'), params(p.id));
+        expect(privateResponse.headers.get('cache-control')).toContain('no-store');
+        expect(await privateResponse.json()).toEqual({ canEdit: false });
+        const visible = await (await GET(req(p.id, userId, 'GET', undefined, '?view=draft'), params(p.id))).json();
+        expect(visible.document).toEqual(draft('공개본 유지').document);
+        expect(JSON.stringify(visible)).not.toContain('비공개');
+    }
+    const stored = await db.finalReport.findUniqueOrThrow({ where: { projectId: p.id } });
+    expect(stored.draft).toMatchObject({ previewNeedsRefresh: true, worksheetAnalysis: { assets: analysis }, free: draft('공개본 유지').free });
+    expect((await POST(req(p.id, ids.mentor, 'POST', { version: 3 }), params(p.id))).status).toBe(400);
+    expect((await db.finalReport.findUniqueOrThrow({ where: { projectId: p.id } })).published).toEqual(stored.published);
+});
+
+it('서로 다른 워크시트의 동시 첫 분석 저장은 버전 충돌을 표시하고 재시도로 두 내용을 보존한다', async () => {
+    const p = await project();
+    const inputs = [{ worksheetId: 'spec', analysis: { analysis: '기능 분석' } }, { worksheetId: 'fitness', analysis: { analysis: '적합도 분석' } }] as const;
+    const responses = await Promise.all(inputs.map(input => PATCH(req(p.id, ids.mentor, 'PATCH', { version: 0, ...input }), params(p.id))));
+    expect(responses.map(response => response.status).sort()).toEqual([200, 409]);
+    const rejected = inputs[responses.findIndex(response => response.status === 409)];
+    expect((await PATCH(req(p.id, ids.mentor, 'PATCH', { version: 1, ...rejected }), params(p.id))).status).toBe(200);
+    const stored = await db.finalReport.findUniqueOrThrow({ where: { projectId: p.id } });
+    expect(stored.version).toBe(2);
+    expect(stored.draft).toMatchObject({ worksheetAnalysis: { spec: { analysis: '기능 분석' }, fitness: { analysis: '적합도 분석' } } });
+});
+
+it('분석을 누락한 구버전 보고서 저장은 최신 분석을 지우거나 완료를 우회하지 못한다', async () => {
+    const p = await project();
+    expect((await PATCH(req(p.id, ids.mentor, 'PATCH', { version: 0, worksheetId: 'spec', analysis: { analysis: '완료에 반영할 분석' } }), params(p.id))).status).toBe(200);
+    expect((await PUT(req(p.id, ids.mentor, 'PUT', { version: 1, draft: draft('분석 없는 문서') }), params(p.id))).status).toBe(200);
+    expect((await POST(req(p.id, ids.mentor, 'POST', { version: 2 }), params(p.id))).status).toBe(400);
+    const restored = await (await GET(req(p.id, ids.mentor), params(p.id))).json();
+    expect(restored.draft).toMatchObject({ previewNeedsRefresh: true, worksheetAnalysis: { spec: { analysis: '완료에 반영할 분석' } } });
+    const refreshed = { ...draft('완료에 반영할 분석'), worksheetAnalysis: restored.draft.worksheetAnalysis };
+    expect((await PUT(req(p.id, ids.mentor, 'PUT', { version: 2, draft: refreshed }), params(p.id))).status).toBe(200);
+    expect((await POST(req(p.id, ids.mentor, 'POST', { version: 3 }), params(p.id))).status).toBe(200);
+    expect((await (await GET(req(p.id, ids.mentee), params(p.id))).json()).document).toEqual(refreshed.document);
 });
 
 it('보고서 RLS가 권한을 받은 비소유자의 SQL 조회·수정·삽입을 차단한다', async () => {

@@ -1,6 +1,7 @@
 // 각 절의 열 의미와 순서를 고정하여 같은 이름의 원본 필드가 잘못 섞이지 않게 한다.
 import { expect, it } from 'vitest';
-import { buildFinalReportModel, finalReportFileName, type FinalReportWorksheetData, type FinalReportBlock, type FinalReportFreeInput } from '../lib/final-report-document';
+import { buildFinalReportModel, finalReportFileName, hasProductOverviewSource, type FinalReportWorksheetData, type FinalReportBlock, type FinalReportFreeInput } from '../lib/final-report-document';
+import type { WorksheetAnalysis } from '../lib/mentor-worksheet-analysis';
 
 const overview = { projectName: '제품 A', description: '제품 설명', coachName: '코치', generatedAt: '2026-09-09T02:00:00Z' };
 const free: FinalReportFreeInput = { productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null, marketDefinition: '', targetCustomer: '', finalSpecExplanation: '', improvedProductName: '', improvedProductDescription: '' };
@@ -152,4 +153,123 @@ it.each([[null, null], [960, null], [null, 960]])('uses the product image fallba
     expect(buildFinalReportModel(overview, data, input, []).blocks).toContainEqual({
         kind: 'image', title: '제품/서비스 이미지', pngDataUrl: 'photo', landscape: false, widthMm: 120, heightMm: 80,
     });
+});
+
+it('places all eight worksheet analyses immediately beside their corresponding worksheet content', () => {
+    const analysis: WorksheetAnalysis = {
+        spec: { analysis: '기능 구성 검토' }, attributes: { analysis: '혜택과 속성 검토' }, fitness: { analysis: '적합도 검토' },
+        'target-spec': { items: [{ label: '분류 / 항목 / 특성', explanation: '항목별 목표 근거' }, { label: '이전 항목', explanation: '이름이 바뀌어도 보존한 설명' }] },
+        'tech-roadmap': { productName: '개선 서비스명', description: '개선 서비스 설명' },
+        assets: { core: '핵심자산 검토', complementary: '보완자산 검토' },
+        'funding-plan': { analysis: '소요자금 검토' }, 'funding-source': { analysis: '조달자금 검토' },
+    };
+    const before = JSON.stringify(analysis);
+    const legacyFree = { ...free, finalSpecExplanation: '이전 통합 설명', improvedProductName: '이전 개선 이름', improvedProductDescription: '이전 개선 설명' };
+    const blocks = buildFinalReportModel(overview, data, legacyFree, [], analysis).blocks;
+    const expanded = [...expected];
+    const insertAfterTable = (title: string, additions: FinalReportBlock[]) => {
+        const index = expanded.findIndex(block => block.kind === 'heading' && block.text === title);
+        expanded.splice(index + 2, 0, ...additions);
+    };
+    for (const [worksheetTitle, analysisTitle, text] of [
+        ['(AS-IS) 스펙표', 'WS-2 멘토 분석', '기능 구성 검토'],
+        ['제품속성서', 'WS-3 멘토 분석', '혜택과 속성 검토'],
+        ['제품/서비스 속성 적합도', 'WS-4 멘토 분석', '적합도 검토'],
+        ['핵심자산 도출표', 'WS-15 멘토 분석 · 핵심자산', '핵심자산 검토'],
+        ['보완자산 도출표', 'WS-15 멘토 분석 · 보완자산', '보완자산 검토'],
+        ['자금소요계획표', 'WS-16 멘토 분석', '소요자금 검토'],
+        ['자금조달계획표', 'WS-17 멘토 분석', '조달자금 검토'],
+    ]) insertAfterTable(worksheetTitle, [heading(analysisTitle), { kind: 'paragraph', text }]);
+    insertAfterTable('최종 제품/서비스 제공 스펙 List', [
+        heading('WS-12 멘토 분석 · 최종 목표 스펙 항목별 설명'),
+        table(['항목', '설명'], [['분류 / 항목 / 특성', '항목별 목표 근거'], ['이전 항목', '이름이 바뀌어도 보존한 설명']]),
+    ]);
+    const roadmapIndex = expanded.findIndex(block => block.kind === 'heading' && block.text === 'KS-QFD 개선 방향성');
+    expanded.splice(roadmapIndex, 0, heading('개선 제품명'), { kind: 'paragraph', text: '개선 서비스명' }, heading('개선 제품설명'), { kind: 'paragraph', text: '개선 서비스 설명' });
+    expect(blocks).toEqual(expanded);
+    expect(JSON.stringify(analysis)).toBe(before);
+});
+
+it('preserves fitness analysis after a captured fitness image', () => {
+    const blocks = buildFinalReportModel(overview, data, free, [
+        { worksheetId: 'fitness', title: '적합도 이미지', pngDataUrl: 'fitness-image', widthPx: 100, heightPx: 100 },
+    ], { fitness: { analysis: '적합도 분석 내용' } }).blocks;
+    const imageIndex = blocks.findIndex(block => block.kind === 'image' && block.title === '적합도 이미지');
+    expect(blocks.slice(imageIndex + 1, imageIndex + 3)).toEqual([
+        heading('WS-4 멘토 분석'), { kind: 'paragraph', text: '적합도 분석 내용' },
+    ]);
+});
+
+it('does not revive legacy free text when a worksheet analysis has been explicitly cleared', () => {
+    const analysis: WorksheetAnalysis = {
+        spec: { analysis: '' }, attributes: { analysis: ' ' }, fitness: { analysis: '\n' },
+        'target-spec': { items: [] }, 'tech-roadmap': { productName: '', description: '' },
+        assets: { core: '', complementary: '' }, 'funding-plan': { analysis: '' }, 'funding-source': { analysis: '' },
+    };
+    const legacyFree = { ...free, finalSpecExplanation: '지운 설명', improvedProductName: '지운 이름', improvedProductDescription: '지운 제품설명' };
+    expect(buildFinalReportModel(overview, data, legacyFree, [], analysis).blocks).toEqual(expected);
+});
+
+it('keeps legacy free entries independently for worksheets without a saved analysis', () => {
+    const legacyFree = { ...free, finalSpecExplanation: '이전 스펙 설명', improvedProductName: '이전 개선 이름', improvedProductDescription: '이전 개선 설명' };
+    const targetOnly = buildFinalReportModel(overview, data, legacyFree, [], { 'target-spec': { items: [] } }).blocks;
+    expect(targetOnly).toContainEqual({ kind: 'paragraph', text: '이전 개선 이름' });
+    expect(targetOnly).toContainEqual({ kind: 'paragraph', text: '이전 개선 설명' });
+    expect(targetOnly).not.toContainEqual({ kind: 'paragraph', text: '이전 스펙 설명' });
+    const roadmapOnly = buildFinalReportModel(overview, data, legacyFree, [], { 'tech-roadmap': { productName: '', description: '' } }).blocks;
+    expect(roadmapOnly).toContainEqual({ kind: 'paragraph', text: '이전 스펙 설명' });
+    expect(roadmapOnly).not.toContainEqual({ kind: 'paragraph', text: '이전 개선 이름' });
+});
+
+it('uses the new overview as a whole source, including product name and image proportions', () => {
+    const newOverview = { ...overview, productName: '별도 제품명', productImageDataUrl: 'new-photo', productImageWidthPx: 960,
+        productImageHeightPx: 1920, marketDefinition: '새 개요 시장', targetCustomer: '새 개요 고객' };
+    const legacyFree = { ...free, productImageDataUrl: 'old-photo', productImageWidthPx: 100, productImageHeightPx: 100,
+        marketDefinition: '이전 보고서 시장', targetCustomer: '이전 보고서 고객' };
+    const before = JSON.stringify({ newOverview, legacyFree });
+    const model = buildFinalReportModel(newOverview, data, legacyFree, []);
+    expect(model.fileName).toBe('결과보고서_제품 A.docx');
+    expect(model.blocks[1]).toEqual(expected[1]);
+    expect(model.blocks[3]).toEqual({ kind: 'keyValueTable', rows: [{ label: '제품명', value: '별도 제품명' }, { label: '제품설명', value: '제품 설명' }] });
+    expect(model.blocks).toContainEqual({ kind: 'image', title: '제품/서비스 이미지', pngDataUrl: 'new-photo', widthMm: 128.5, heightMm: 257, landscape: false });
+    expect(model.blocks).toContainEqual({ kind: 'paragraph', text: '새 개요 시장' });
+    expect(model.blocks).toContainEqual({ kind: 'paragraph', text: '새 개요 고객' });
+    expect(JSON.stringify(model)).not.toContain('old-photo');
+    expect(JSON.stringify(model)).not.toContain('이전 보고서');
+    expect(JSON.stringify({ newOverview, legacyFree })).toBe(before);
+});
+
+it('retains free overview data for legacy projects whose six new fields are all null or absent', () => {
+    const legacyFree = { ...free, productImageDataUrl: 'legacy-photo', marketDefinition: '기존 시장', targetCustomer: '기존 고객' };
+    const nullOverview = { ...overview, productName: null, productImageDataUrl: null, productImageWidthPx: null,
+        productImageHeightPx: null, marketDefinition: null, targetCustomer: null };
+    expect(hasProductOverviewSource(nullOverview)).toBe(false);
+    expect(hasProductOverviewSource({})).toBe(false);
+    expect(buildFinalReportModel(nullOverview, data, legacyFree, [])).toEqual(buildFinalReportModel(overview, data, legacyFree, []));
+});
+
+it.each([
+    { productName: '' }, { marketDefinition: '' }, { targetCustomer: '' }, { productImageDataUrl: 'photo' },
+    { productImageWidthPx: 96 }, { productImageHeightPx: 96 },
+])('identifies a saved overview from any new field, including deliberate blank text: %j', (partial) => {
+    expect(hasProductOverviewSource(partial)).toBe(true);
+});
+
+it('keeps an explicitly blank product name and removed image without restoring report free fields', () => {
+    const clearedOverview = { ...overview, productName: '', productImageDataUrl: null, productImageWidthPx: null,
+        productImageHeightPx: null, marketDefinition: '', targetCustomer: '' };
+    const legacyFree = { ...free, productImageDataUrl: 'deleted-photo', marketDefinition: '삭제한 시장', targetCustomer: '삭제한 고객' };
+    const blocks = buildFinalReportModel(clearedOverview, data, legacyFree, []).blocks;
+    expect(blocks[3]).toEqual({ kind: 'keyValueTable', rows: [{ label: '제품명', value: '' }, { label: '제품설명', value: '제품 설명' }] });
+    expect(blocks.filter(block => block.kind === 'image')).toHaveLength(0);
+    expect(JSON.stringify(blocks)).not.toContain('삭제한');
+});
+
+it('does not mix legacy image or market data into a partially populated new overview', () => {
+    const legacyFree = { ...free, productImageDataUrl: 'stale-photo', marketDefinition: '이전 시장', targetCustomer: '이전 고객' };
+    const model = buildFinalReportModel({ ...overview, productName: null, targetCustomer: '현재 목표고객' }, data, legacyFree, []);
+    expect(model.blocks[3]).toEqual(expected[3]);
+    expect(model.blocks).toContainEqual({ kind: 'paragraph', text: '현재 목표고객' });
+    expect(JSON.stringify(model)).not.toContain('이전 시장');
+    expect(JSON.stringify(model)).not.toContain('stale-photo');
 });
