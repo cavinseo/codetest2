@@ -2,29 +2,55 @@
 import { toCanvas } from 'html-to-image';
 import type { CapturedWorksheetImage } from './final-report-document';
 
+/** 가로 스크롤로 잘려 있는 안쪽 상자들. 캡처 전에 전부 펼쳐야 표 전체가 담긴다. */
+const SCROLLABLE_SELECTOR = '.overflow-x-auto, .overflow-auto, .overflow-x-scroll, .overflow-scroll';
+
+const DEFAULT_PIXEL_RATIO = 2;
+
+type InlineStyleSnapshot = { element: HTMLElement; style: string | null };
+
+function snapshotInlineStyles(elements: HTMLElement[]): InlineStyleSnapshot[] {
+    return elements.map(element => ({ element, style: element.getAttribute('style') }));
+}
+
+function restoreInlineStyles(snapshots: InlineStyleSnapshot[]): void {
+    for (const { element, style } of snapshots) {
+        if (style === null) element.removeAttribute('style');
+        else element.setAttribute('style', style);
+    }
+}
+
+/** 흰 배경만 지정하면 흰 글자가 남으므로 기존 .light 하위 색상 규칙도 적용한다. */
+function forcePrintTheme(node: HTMLElement): void {
+    node.classList.remove('dark');
+    node.classList.add('light');
+    node.style.setProperty('background-color', '#ffffff', 'important');
+    node.style.setProperty('color', '#0f172a', 'important');
+}
+
+/** 안쪽 스크롤부터 펼쳐야 바깥 컨테이너가 QFD 표 전체 폭을 측정할 수 있다. */
+function expandScrollableWidths(elements: HTMLElement[]): void {
+    for (const element of [...elements].reverse()) {
+        if (element.scrollWidth > element.clientWidth) {
+            element.style.setProperty('width', `${element.scrollWidth}px`, 'important');
+            element.style.setProperty('max-width', 'none', 'important');
+            element.style.setProperty('overflow', 'visible', 'important');
+        }
+    }
+}
+
 export async function captureWorksheetNode(node: HTMLElement, options: { pixelRatio?: number } = {}):
     Promise<Pick<CapturedWorksheetImage, 'pngDataUrl' | 'widthPx' | 'heightPx'>> {
     const worksheetId = node.dataset.worksheetId || node.id || 'unknown';
     const originalClass = node.getAttribute('class');
-    const elements = [node, ...node.querySelectorAll<HTMLElement>('.overflow-x-auto, .overflow-auto, .overflow-x-scroll, .overflow-scroll')];
-    const originals = elements.map(element => ({ element, style: element.getAttribute('style') }));
+    const elements = [node, ...node.querySelectorAll<HTMLElement>(SCROLLABLE_SELECTOR)];
+    const originalStyles = snapshotInlineStyles(elements);
     try {
-        // 흰 배경만 지정하면 흰 글자가 남으므로 기존 .light 하위 색상 규칙도 적용한다.
-        node.classList.remove('dark');
-        node.classList.add('light');
-        node.style.setProperty('background-color', '#ffffff', 'important');
-        node.style.setProperty('color', '#0f172a', 'important');
-        // 안쪽 스크롤부터 펼쳐야 바깥 컨테이너가 QFD 표 전체 폭을 측정할 수 있다.
-        for (const element of [...elements].reverse()) {
-            if (element.scrollWidth > element.clientWidth) {
-                element.style.setProperty('width', `${element.scrollWidth}px`, 'important');
-                element.style.setProperty('max-width', 'none', 'important');
-                element.style.setProperty('overflow', 'visible', 'important');
-            }
-        }
+        forcePrintTheme(node);
+        expandScrollableWidths(elements);
         const canvas = await toCanvas(node, {
             backgroundColor: '#ffffff',
-            pixelRatio: options.pixelRatio ?? 2,
+            pixelRatio: options.pixelRatio ?? DEFAULT_PIXEL_RATIO,
             width: Math.max(node.scrollWidth, node.offsetWidth),
             height: Math.max(node.scrollHeight, node.offsetHeight),
         });
@@ -33,10 +59,7 @@ export async function captureWorksheetNode(node: HTMLElement, options: { pixelRa
     } catch (cause) {
         throw new Error(`워크시트 ${worksheetId} 캡처에 실패했습니다.`, { cause });
     } finally {
-        for (const { element, style } of originals) {
-            if (style === null) element.removeAttribute('style');
-            else element.setAttribute('style', style);
-        }
+        restoreInlineStyles(originalStyles);
         if (originalClass === null) node.removeAttribute('class');
         else node.setAttribute('class', originalClass);
     }
