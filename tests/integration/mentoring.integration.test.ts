@@ -49,7 +49,7 @@ it('동시 첫 개설 요청 중 하나만 생성하고 나머지는 승인 요�
     projectId = (await db.project.findFirstOrThrow({ where: { ownerId: ids.mentee } })).id;
 });
 
-it('담당 PM만 배정하고, 배정 멘토도 기존 EDITOR 권한으로 본문을 수정할 수 없다', async () => {
+it('담당 PM만 배정하고, 배정 멘토가 본문을 작성·수정할 수 있다', async () => {
     const params = { params: Promise.resolve({ id: ids.mentee }) };
     expect((await assign(req(ids.otherPm, '/api/mentees/x/mentor', 'POST', { userId: ids.mentor }), params)).status).toBe(403);
     expect((await assign(req(ids.pm, '/api/mentees/x/mentor', 'POST', { userId: ids.mentor }), params)).status).toBe(200);
@@ -57,8 +57,11 @@ it('담당 PM만 배정하고, 배정 멘토도 기존 EDITOR 권한으로 본�
     await db.projectMember.create({ data: { id: prefix + 'member', projectId, userId: ids.mentor, role: 'EDITOR' } });
     const projectParams = { params: Promise.resolve({ id: projectId }) };
     expect((await readSpec(req(ids.mentor, '/api/projects/x/spec', 'GET'), projectParams)).status).toBe(200);
-    expect((await saveSpec(req(ids.mentor, '/api/projects/x/spec', 'POST', { specFunctions: [] }), projectParams)).status).toBe(403);
-    expect(await db.specFunction.count({ where: { projectId } })).toBe(0);
+    expect((await saveSpec(req(ids.mentor, '/api/projects/x/spec', 'POST', { specFunctions: [{ name: '멘토 작성', level: 'CORE', order: 0 }] }), projectParams)).status).toBe(200);
+    expect((await db.specFunction.findFirstOrThrow({ where: { projectId } })).name).toBe('멘토 작성');
+    expect((await saveSpec(req(ids.mentor, '/api/projects/x/spec', 'POST', { specFunctions: [{ name: '멘토 수정', level: 'CORE', order: 0 }] }), projectParams)).status).toBe(200);
+    expect(await db.specFunction.count({ where: { projectId } })).toBe(1);
+    expect((await db.specFunction.findFirstOrThrow({ where: { projectId } })).name).toBe('멘토 수정');
 });
 
 it('워크시트별 코멘트를 보존하고 타인의 수정 및 해제 후 접근을 차단한다', async () => {
@@ -73,6 +76,8 @@ it('워크시트별 코멘트를 보존하고 타인의 수정 및 해제 후 �
     expect((await editComment(req(ids.admin, '/api/projects/x/comments?worksheetId=spec', 'PATCH', { id, content: '타인 수정' }), params)).status).toBe(403);
     expect((await unassign(req(ids.pm, '/api/mentees/x/mentor', 'DELETE', { userId: ids.mentor }), { params: Promise.resolve({ id: ids.mentee }) })).status).toBe(200);
     expect((await readSpec(req(ids.mentor, '/api/projects/x/spec', 'GET'), params)).status).toBe(403);
+    expect((await saveSpec(req(ids.mentor, '/api/projects/x/spec', 'POST', { specFunctions: [{ name: '해제 후 수정', level: 'CORE', order: 0 }] }), params)).status).toBe(403);
+    expect((await db.specFunction.findFirstOrThrow({ where: { projectId } })).name).toBe('멘토 수정');
     expect(await db.worksheetComment.count({ where: { projectId } })).toBe(1);
 });
 

@@ -375,18 +375,39 @@ describe('시스템 역할에 따른 프로젝트 접근', () => {
         expect((result as NextResponse).status).toBe(403);
     });
 
-    it('배정된 멘토는 COACH 로 들어간다', async () => {
-        mockAuthUser({ userId: 'mentor_1', role: 'MENTOR', isAdmin: false });
+    it.each(['MENTOR', 'PROGRAM_MANAGER'] as const)('배정된 %s는 EDITOR로 읽고 쓰며 해제 후에는 쓰기가 막힌다', async systemRole => {
+        mockAuthUser({ userId: 'mentor_1', role: systemRole, isAdmin: false });
         findProject.mockResolvedValue({ ownerId: 'someone_else', members: [], owner: { mentorAssignment: { mentorId: 'mentor_1' } } } as never);
 
         const result = await requireProjectAccess(req(), 'proj_1');
 
-        expect((result as ProjectAccess).role).toBe('COACH');
+        expect((result as ProjectAccess).role).toBe('EDITOR');
         const write = await requireProjectAccess(req(), 'proj_1', { write: true });
-        expect((write as NextResponse).status).toBe(403);
+        expect(write).not.toBeInstanceOf(NextResponse);
+        expect((write as ProjectAccess).role).toBe('EDITOR');
         findProject.mockResolvedValue({ ownerId: 'someone_else', members: [{ role: 'EDITOR' }], owner: { mentorAssignment: null } } as never);
-        const revoked = await requireProjectAccess(req(), 'proj_1');
+        const revoked = await requireProjectAccess(req(), 'proj_1', { write: true });
         expect((revoked as NextResponse).status).toBe(403);
+        const readAfterRevocation = await requireProjectAccess(req(), 'proj_1');
+        if (systemRole === 'MENTOR') expect(responseStatus(readAfterRevocation)).toBe(403);
+        else expect(readAfterRevocation).toMatchObject({ role: 'VIEWER' });
+    });
+
+    it.each(['OWNER', 'EDITOR', 'COACH', 'ADMIN'])('멘토의 과거 %s 역할은 다른 멘티 접근과 편집을 허용하지 않는다', async memberRole => {
+        mockAuthUser({ userId: 'mentor_1', role: 'MENTOR' });
+        findProject.mockResolvedValue({ ownerId: 'other_mentee', members: [{ role: memberRole }], owner: { mentorAssignment: { mentorId: 'other_mentor' } } } as never);
+
+        expect(responseStatus(await requireProjectAccess(req(), 'other_project'))).toBe(403);
+        expect(responseStatus(await requireProjectAccess(req(), 'other_project', { write: true }))).toBe(403);
+    });
+
+    it.each(['MENTOR', 'PROGRAM_MANAGER'] as const)('배정된 %s라도 과거 OWNER 역할로 소유자 전용 동작을 할 수 없다', async systemRole => {
+        mockAuthUser({ userId: 'mentor_1', role: systemRole });
+        findProject.mockResolvedValue({ ownerId: 'mentee_1', members: [{ role: 'OWNER' }], owner: { mentorAssignment: { mentorId: 'mentor_1' } } } as never);
+
+        const result = await requireProjectAccess(req(), 'proj_1', { roles: ['OWNER'] });
+
+        expect(responseStatus(result)).toBe(403);
     });
 
     it('VIEWER 는 roles 로 특정 역할을 요구하는 라우트에서도 막힌다', async () => {
@@ -445,7 +466,7 @@ describe('시스템 역할에 따른 프로젝트 접근', () => {
         expect(result).not.toBeInstanceOf(NextResponse);
     });
 
-    it('매니저가 코치로 배정돼 있으면 COACH 이고 쓰기는 막힌다', async () => {
+    it('실제 멘토 배정 없이 COACH 멤버 역할만 있는 매니저는 쓰기가 막힌다', async () => {
         mockAuthUser({ userId: 'pm_1', role: 'PROGRAM_MANAGER', isAdmin: false });
         mockProject({ ownerId: 'someone_else', members: [{ role: 'COACH' }] });
 

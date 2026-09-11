@@ -56,7 +56,7 @@ it.each([
     expect(m.update).not.toHaveBeenCalled();
     expect(stored.productImageDataUrl).toBe(png);
 });
-it('멘토의 원본 개요 수정은 기존 쓰기 권한 검사에서 거절한다', async () => {
+it('미배정 멘토의 개요 수정은 공통 쓰기 권한 검사에서 거절한다', async () => {
     m.access.mockResolvedValue(NextResponse.json({ error: 'denied' }, { status: 403 }));
     expect((await PATCH(request({ name: '변경', ...details }), params)).status).toBe(403);
     expect(m.access).toHaveBeenCalledWith(expect.anything(), 'p', { write: true });
