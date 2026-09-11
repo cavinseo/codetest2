@@ -13,7 +13,13 @@ const db = vi.hoisted(() => {
     return { state, models };
 });
 vi.mock('../lib/prisma', () => ({ prisma: { ...db.models, $transaction: async (callback: ((client: typeof db.models) => unknown) | Promise<unknown>[]) => typeof callback === 'function' ? callback(db.models) : Promise.all(callback) } }));
-vi.mock('../lib/authorization', () => ({ requireProjectAccess: async () => ({ role: 'OWNER' }) }));
+// 모듈을 통째로 대체하면 라우트가 쓰는 다른 export 가 undefined 가 된다.
+// funding GET 은 기본행 자동 채움 전에 isProjectWriteRole 로 쓰기 권한을
+// 확인하므로, 실제 구현을 남기고 접근 판정만 OWNER 로 고정한다.
+vi.mock('../lib/authorization', async () => {
+    const actual = await vi.importActual<typeof import('../lib/authorization')>('../lib/authorization');
+    return { ...actual, requireProjectAccess: async () => ({ role: 'OWNER' }) };
+});
 const target = await import('../app/api/projects/[id]/target-spec/route');
 const funding = await import('../app/api/projects/[id]/funding/route');
 const params = { params: Promise.resolve({ id: 'project' }) };

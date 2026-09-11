@@ -1216,7 +1216,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                         </div>
                                         {inv.token && (
                                             <button
-                                                onClick={() => copyInvitationLink(inv.token!)}
+                                                onClick={() => inv.token && copyInvitationLink(inv.token)}
                                                 className="btn-ghost text-sm flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
                                             >
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
