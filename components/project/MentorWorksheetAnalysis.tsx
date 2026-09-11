@@ -22,6 +22,7 @@ export default function MentorWorksheetAnalysis({ projectId, worksheetId, onDirt
 function AnalysisForm({ projectId, id, onDirtyChange }: { projectId: string; id: AnalysisWorksheetId; onDirtyChange?: Props['onDirtyChange'] }) {
     const url = `/api/projects/${projectId}/report?worksheetId=${encodeURIComponent(id)}`;
     const [canEdit, setCanEdit] = useState(false);
+    const [canRead, setCanRead] = useState(false);
     const [value, setValue] = useState<AnalysisValue>(() => emptyWorksheetAnalysis(id));
     const [version, setVersion] = useState(0);
     const [dirty, setDirty] = useState(false);
@@ -42,6 +43,7 @@ function AnalysisForm({ projectId, id, onDirtyChange }: { projectId: string; id:
             if (current !== generation.current) return;
             if (!response.ok) throw new Error(data.error || '멘토 분석을 불러오지 못했습니다.');
             setCanEdit(data.canEdit);
+            setCanRead(data.canRead ?? data.canEdit);
             setValue(data.analysis ?? emptyWorksheetAnalysis(id));
             setVersion(data.version ?? 0);
             setDirty(false); setError(''); setNotice('');
@@ -116,10 +118,10 @@ function AnalysisForm({ projectId, id, onDirtyChange }: { projectId: string; id:
         } catch (cause) { setError(cause instanceof Error ? cause.message : '스펙 조회 실패'); }
         finally { setBusy(false); }
     };
-    if (!canEdit) return error ? <p role="alert" className="mx-auto max-w-[1800px] p-4 text-sm text-rose-400">{error}</p> : null;
+    if (!canRead) return error ? <p role="alert" className="mx-auto max-w-[1800px] p-4 text-sm text-rose-400">{error}</p> : null;
     const field = (label: string, text: string, onChange: (text: string) => void, maxLength = 20_000) => (
         <label className="block text-sm text-gray-300">{label}
-            <textarea className="input mt-2 w-full" rows={4} maxLength={maxLength} value={text} onChange={event => onChange(event.target.value)} />
+            <textarea className="input mt-2 w-full" rows={4} maxLength={maxLength} value={text} readOnly={!canEdit} onChange={event => onChange(event.target.value)} />
         </label>
     );
     return <section aria-label={`${ANALYSIS_WORKSHEETS[id]} 멘토 분석`} className="card mx-auto my-6 w-full max-w-[1800px] space-y-4">
@@ -133,7 +135,8 @@ function AnalysisForm({ projectId, id, onDirtyChange }: { projectId: string; id:
         </dialog>}
         <div>
             <h2 className="font-semibold text-white">멘토 분석(보고) · {ANALYSIS_WORKSHEETS[id]}</h2>
-            <p className="mt-1 text-sm text-gray-400">배정 멘토만 초안을 열람·작성할 수 있습니다. 결과보고서를 완료하면 이 분석이 포함된 완료본을 멘티가 열람할 수 있습니다.</p>
+            <p className="mt-1 text-sm text-gray-400">배정 멘토가 작성하며 관리자는 초안을 열람할 수 있습니다. 결과보고서를 완료하면 이 분석이 포함된 완료본을 멘티가 열람할 수 있습니다.</p>
+            {!canEdit && <p className="mt-1 text-sm text-primary-300">관리자 열람 전용입니다. 작성·저장·완료는 배정 멘토만 가능합니다.</p>}
         </div>
         {error && <p role="alert" className="text-sm text-rose-400">{error}</p>}
         {notice && <p role="status" className="text-sm text-primary-300">{notice}</p>}
@@ -148,22 +151,23 @@ function AnalysisForm({ projectId, id, onDirtyChange }: { projectId: string; id:
                 {field('보완자산 분석', value.complementary, complementary => update({ ...value, complementary }))}
             </>}
             {'items' in value && <>
-                <p className="text-sm text-gray-400">최종 목표 스펙을 저장한 뒤 항목을 불러오세요. 항목명과 설명은 분석에 별도로 보관됩니다.</p>
+                {canEdit && <><p className="text-sm text-gray-400">최종 목표 스펙을 저장한 뒤 항목을 불러오세요. 항목명과 설명은 분석에 별도로 보관됩니다.</p>
                 <div className="flex flex-wrap gap-2">
                     <button type="button" className="btn-secondary text-sm" onClick={() => void importSpecItems()}>WS-12 항목 불러오기</button>
                     <button type="button" className="btn-secondary text-sm" disabled={value.items.length >= 500} onClick={() => update({ items: [...value.items, { label: '', explanation: '' }] })}>설명 항목 추가</button>
-                </div>
+                </div></>}
+                {!canEdit && value.items.length === 0 && <p className="text-sm text-gray-400">저장된 항목별 설명이 없습니다.</p>}
                 {value.items.map((item, index) => <div key={index} className="space-y-2 rounded-lg border border-white/10 p-3">
                     {field(`항목 ${index + 1}`, item.label, label => update({ items: value.items.map((row, i) => i === index ? { ...row, label } : row) }), 2000)}
                     {field(`항목 ${index + 1} 설명`, item.explanation, explanation => update({ items: value.items.map((row, i) => i === index ? { ...row, explanation } : row) }))}
-                    <button type="button" className="text-sm text-rose-400" onClick={() => {
+                    {canEdit && <button type="button" className="text-sm text-rose-400" onClick={() => {
                         if ((item.label || item.explanation) && !window.confirm('이 항목과 설명을 삭제할까요?')) return;
                         update({ items: value.items.filter((_, i) => i !== index) });
-                    }}>항목 삭제</button>
+                    }}>항목 삭제</button>}
                 </div>)}
             </>}
             <div className="flex flex-wrap items-center gap-3">
-                <button type="button" className="btn-primary" disabled={!dirty} onClick={() => void save()}>{busy ? '처리 중…' : '멘토 분석 저장'}</button>
+                {canEdit && <button type="button" className="btn-primary" disabled={!dirty} onClick={() => void save()}>{busy ? '처리 중…' : '멘토 분석 저장'}</button>}
                 <button type="button" className="btn-secondary" onClick={() => {
                     if (!dirty || window.confirm('저장하지 않은 분석을 버리고 저장본을 불러올까요?')) void load();
                 }}>저장본 다시 불러오기</button>

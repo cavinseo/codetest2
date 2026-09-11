@@ -30,7 +30,7 @@ async function getAccess(request: NextRequest, id: string) {
     if (!project) return json({ error: '프로젝트를 찾을 수 없습니다.' }, 404);
     const assignment = project.owner.mentorAssignment;
     const canEdit = canBeAssignedMentor(access) && assignment?.mentorId === access.user.userId;
-    return { access, canEdit, canReadDraft: canEdit, mentorName: assignment?.mentor.name ?? null };
+    return { access, canEdit, canReadDraft: canEdit || access.user.role === 'ADMIN', mentorName: assignment?.mentor.name ?? null };
 }
 
 function worksheetAnalysis(draft: ReportDraft | undefined, worksheetId: AnalysisWorksheetId) {
@@ -67,10 +67,10 @@ export async function GET(request: NextRequest, props: Props) {
         const worksheetId = request.nextUrl.searchParams.get('worksheetId');
         if (worksheetId !== null) {
             if (!isAnalysisWorksheetId(worksheetId)) return json({ error: '지원하는 분석 워크시트를 선택하세요.' }, 400);
-            if (!actor.canEdit) return json({ canEdit: false });
+            if (!actor.canReadDraft) return json({ canEdit: false });
             const report = await prisma.finalReport.findUnique({ where: { projectId: id } });
             const draft = reportDraftSchema.safeParse(report?.draft);
-            return json({ canEdit: true, version: report?.version ?? 0, updatedAt: report?.updatedAt ?? null,
+            return json({ canRead: true, canEdit: actor.canEdit, version: report?.version ?? 0, updatedAt: report?.updatedAt ?? null,
                 analysis: worksheetAnalysis(draft.success ? draft.data : undefined, worksheetId) });
         }
         const report = await prisma.finalReport.findUnique({ where: { projectId: id } });

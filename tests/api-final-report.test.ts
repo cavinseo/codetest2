@@ -155,7 +155,7 @@ describe('프로젝트 접근과 멘토 보고서 권한', () => {
     it('멘토 배정이 없으면 쓰기와 멘토 이름을 제공하지 않는다', async () => {
         m.project.mockResolvedValue({ owner: { mentorAssignment: null } });
         auth('ADMIN', 'admin_1', 'ADMIN');
-        expect(await read()).toMatchObject({ canEdit: false, mentorName: null, view: 'published' });
+        expect(await read()).toMatchObject({ canEdit: false, mentorName: null, view: 'draft' });
         expect((await PUT(req('PUT', { version: 0, draft: draft() }), params)).status).toBe(403);
     });
 });
@@ -173,7 +173,18 @@ describe('초안과 공개본 조회 분리', () => {
         expect(JSON.stringify(body)).not.toContain('기존 완료 본문');
     });
 
-    it.each(['ADMIN', 'PROGRAM_MANAGER'])('미배정 %s는 명시적으로 초안을 요청해도 기존 완료본만 읽는다', async (role) => {
+    it('관리자는 배정 없이 초안과 분석을 읽지만 공개본 조회는 완료본만 반환한다', async () => {
+        auth('ADMIN', 'admin_1', 'ADMIN');
+        record = existingReport(true);
+        record.draft.worksheetAnalysis = { spec: { analysis: '관리자 열람 분석' } };
+        expect(await read()).toMatchObject({ canEdit: false, view: 'draft', draft: record.draft });
+        const published = await read('published');
+        expect(published).toMatchObject({ canEdit: false, view: 'published', document: record.published });
+        expect(published).not.toHaveProperty('draft');
+        expectNoWrite();
+    });
+
+    it.each(['PROGRAM_MANAGER'])('미배정 %s는 명시적으로 초안을 요청해도 기존 완료본만 읽는다', async (role) => {
         auth(role, 'other_user');
         record = existingReport(true);
         record.draft.worksheetAnalysis = { spec: { analysis: '비공개 워크시트 분석' } };
@@ -332,7 +343,7 @@ describe('초안 저장과 완료 문서 유지', () => {
 });
 
 describe('워크시트별 비공개 분석 저장과 조회', () => {
-    it.each(['ADMIN', 'PROGRAM_MANAGER', 'MENTEE'])('미배정 %s 분석 조회에는 권한 유무만 반환하고 초안은 읽지 않는다', async (role) => {
+    it.each(['PROGRAM_MANAGER', 'MENTEE', 'MENTOR'])('미배정 %s 분석 조회에는 권한 유무만 반환하고 초안은 읽지 않는다', async (role) => {
         auth(role, 'other_user');
         record = existingReport(true);
         const response = await GET(analysisRequest('spec'), params);
@@ -353,7 +364,25 @@ describe('워크시트별 비공개 분석 저장과 조회', () => {
         ['assets', { core: '', complementary: '' }], ['funding-plan', { analysis: '' }], ['funding-source', { analysis: '' }],
     ])('새 %s 분석에는 해당 형식의 빈 초안과 version 0을 반환한다', async (id, analysis) => {
         const response = await GET(analysisRequest(id as string), params);
-        expect(await response.json()).toEqual({ canEdit: true, version: 0, updatedAt: null, analysis });
+        expect(await response.json()).toEqual({ canRead: true, canEdit: true, version: 0, updatedAt: null, analysis });
+    });
+
+    it.each([
+        ['spec', { analysis: '기능 분석' }], ['attributes', { analysis: '속성 분석' }], ['fitness', { analysis: '적합도 분석' }],
+        ['target-spec', { items: [{ label: '항목', explanation: '설명' }] }], ['tech-roadmap', { productName: '개선 제품', description: '설명' }],
+        ['assets', { core: '핵심', complementary: '보완' }], ['funding-plan', { analysis: '소요' }], ['funding-source', { analysis: '조달' }],
+    ])('관리자는 배정이 없어도 %s 분석을 읽고 변경할 수 없다', async (id, analysis) => {
+        auth('ADMIN', 'admin_1', 'ADMIN');
+        m.project.mockResolvedValue({ owner: { mentorAssignment: null } });
+        record = existingReport();
+        record.draft.worksheetAnalysis = { [id as string]: analysis };
+        const before = structuredClone(record);
+        const response = await GET(analysisRequest(id as string), params);
+        expect(await response.json()).toMatchObject({ canRead: true, canEdit: false, version: 1, analysis });
+        expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+        expect((await PATCH(req('PATCH', { version: 1, worksheetId: id, analysis }), params)).status).toBe(403);
+        expect(record).toEqual(before);
+        expectNoWrite();
     });
 
     it('기존 최종스펙 설명과 개선 제품 정보를 초기값으로 제공하되 원본을 변경하지 않는다', async () => {

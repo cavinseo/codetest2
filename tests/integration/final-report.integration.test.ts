@@ -68,7 +68,7 @@ afterAll(async () => {
     else process.env.SESSION_SECRET = originalSessionSecret;
 });
 
-it('실제 세션과 배정으로 작성자를 제한하고 미배정 관리자·PM에게 초안을 공개하지 않는다', async () => {
+it('실제 세션과 배정으로 작성자를 제한하고 관리자는 초안 열람만 허용한다', async () => {
     const p = await project();
     expect((await GET(req(p.id, null), params(p.id))).status).toBe(401);
     for (const userId of [ids.otherMentor, ids.otherMentee]) expect((await GET(req(p.id, userId), params(p.id))).status).toBe(403);
@@ -78,7 +78,9 @@ it('실제 세션과 배정으로 작성자를 제한하고 미배정 관리자�
         expect((await PATCH(req(p.id, userId, 'PATCH', { version: 0, worksheetId: 'spec', analysis: { analysis: '차단' } }), params(p.id))).status).toBe(403);
     }
     await save(p.id);
-    for (const userId of [ids.admin, ids.pm]) {
+    const adminDraft = await (await GET(req(p.id, ids.admin), params(p.id))).json();
+    expect(adminDraft).toMatchObject({ canEdit: false, view: 'draft', draft: draft('비공개 초안') });
+    for (const userId of [ids.pm, ids.mentee]) {
         const result = await (await GET(req(p.id, userId), params(p.id))).json();
         expect(result).toMatchObject({ canEdit: false, view: 'published', document: null });
         expect(result).not.toHaveProperty('draft');
@@ -216,7 +218,7 @@ it('프로젝트 삭제만 보고서를 함께 지우며 작성자의 회원 삭
     expect(await db.finalReport.findUnique({ where: { projectId: p.id } })).toBeNull();
 });
 
-it('워크시트 분석을 영속 저장하고 현재 배정 멘토에게만 반환하며 완료본을 계속 보존한다', async () => {
+it('워크시트 분석은 배정 멘토와 관리자만 읽으며 완료본을 계속 보존한다', async () => {
     const p = await project();
     await save(p.id, '공개본 유지');
     expect((await POST(req(p.id, ids.mentor, 'POST', { version: 1 }), params(p.id))).status).toBe(200);
@@ -224,7 +226,10 @@ it('워크시트 분석을 영속 저장하고 현재 배정 멘토에게만 반
     expect((await PATCH(req(p.id, ids.mentor, 'PATCH', { version: 2, worksheetId: 'assets', analysis }), params(p.id))).status).toBe(200);
     const restored = await (await GET(req(p.id, ids.mentor, 'GET', undefined, '?worksheetId=assets'), params(p.id))).json();
     expect(restored).toMatchObject({ canEdit: true, version: 3, analysis });
-    for (const userId of [ids.admin, ids.pm, ids.mentee]) {
+    const adminAnalysis = await (await GET(req(p.id, ids.admin, 'GET', undefined, '?worksheetId=assets'), params(p.id))).json();
+    expect(adminAnalysis).toMatchObject({ canRead: true, canEdit: false, version: 3, analysis });
+    expect((await PATCH(req(p.id, ids.admin, 'PATCH', { version: 3, worksheetId: 'assets', analysis: { core: '거절', complementary: '' } }), params(p.id))).status).toBe(403);
+    for (const userId of [ids.pm, ids.mentee]) {
         const privateResponse = await GET(req(p.id, userId, 'GET', undefined, '?worksheetId=assets'), params(p.id));
         expect(privateResponse.headers.get('cache-control')).toContain('no-store');
         expect(await privateResponse.json()).toEqual({ canEdit: false });
