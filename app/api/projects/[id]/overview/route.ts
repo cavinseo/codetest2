@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { calculateWorksheetCompleteness } from '@/lib/worksheet-completeness';
+import { validateProductOverview } from '@/lib/product-overview';
 import {
     BusinessPlanFileValidationError,
     validateBusinessPlanFileStorageValue,
@@ -54,6 +55,12 @@ export async function GET(
                     name: true,
                     description: true,
                     detailedDescription: true,
+                    productName: true,
+                    productImageDataUrl: true,
+                    productImageWidthPx: true,
+                    productImageHeightPx: true,
+                    marketDefinition: true,
+                    targetCustomer: true,
                     businessPlanFile: true,
                     createdAt: true,
                     updatedAt: true,
@@ -137,6 +144,9 @@ export async function PATCH(
 
         const body = await request.json();
         const data = updateOverviewSchema.parse(body);
+        let productDetails;
+        try { productDetails = validateProductOverview(body); }
+        catch { return NextResponse.json({ error: '제품 정보나 이미지를 확인하세요. 이미지는 PNG/JPEG, 최적화 후 1MB 이하만 저장할 수 있습니다.' }, { status: 400 }); }
         const businessPlanFile = data.businessPlanFile === undefined
             ? undefined
             : validateBusinessPlanFileStorageValue(data.businessPlanFile);
@@ -144,6 +154,7 @@ export async function PATCH(
         const project = await prisma.project.update({
             where: { id: projectId },
             data: {
+                ...productDetails,
                 name: data.name.trim(),
                 description: data.description?.trim() || null,
                 detailedDescription: data.detailedDescription?.trim() || null,
@@ -157,6 +168,12 @@ export async function PATCH(
                 name: project.name,
                 description: project.description,
                 detailedDescription: project.detailedDescription,
+                productName: project.productName,
+                productImageDataUrl: project.productImageDataUrl,
+                productImageWidthPx: project.productImageWidthPx,
+                productImageHeightPx: project.productImageHeightPx,
+                marketDefinition: project.marketDefinition,
+                targetCustomer: project.targetCustomer,
                 createdAt: project.createdAt.toISOString(),
                 updatedAt: project.updatedAt.toISOString(),
             },

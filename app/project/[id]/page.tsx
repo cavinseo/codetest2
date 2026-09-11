@@ -9,6 +9,8 @@ import RequirementsTable from '@/components/project/RequirementsTable';
 import QFDMatrix from '@/components/project/QFDMatrix';
 import ThemeToggle from '@/components/ThemeToggle';
 import WorksheetComments from '@/components/project/WorksheetComments';
+import ProductOverviewFields from '@/components/project/ProductOverviewFields';
+import type { ProductOverview } from '@/lib/product-overview';
 import { HEADER_TOAST_SLOT_ID } from '@/components/HeaderToast';
 import KanoManager from '@/components/project/KanoManager';
 import SalesTable from '@/components/project/SalesTable';
@@ -33,7 +35,7 @@ function isExcelFileName(fileName: string) {
     return /\.(xlsx|xls)$/i.test(fileName.trim());
 }
 
-interface ProjectData {
+interface ProjectData extends ProductOverview {
     id: string;
     name: string;
     description?: string;
@@ -79,13 +81,14 @@ export default function ProjectDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isOverviewEditing, setIsOverviewEditing] = useState(false);
     const [isOverviewSaving, setIsOverviewSaving] = useState(false);
+    const [isProductImageReading, setIsProductImageReading] = useState(false);
     const [isOverviewFileReading, setIsOverviewFileReading] = useState(false);
     const [isOverviewFileDirty, setIsOverviewFileDirty] = useState(false);
     const [overviewError, setOverviewError] = useState('');
     // 사업계획 양식에서 어떤 항목이 자동으로 채워졌는지 알려주는 안내 문구
     const [overviewAutoFillNotice, setOverviewAutoFillNotice] = useState('');
     const overviewFileSelectionRef = useRef(0);
-    const [overviewForm, setOverviewForm] = useState({
+    const [overviewForm, setOverviewForm] = useState<ProductOverview & { name: string; description: string; detailedDescription: string; businessPlanFile: string }>({
         name: '',
         description: '',
         detailedDescription: '',
@@ -115,6 +118,12 @@ export default function ProjectDetailPage() {
                             description: overviewData.project.description || '',
                             detailedDescription: overviewData.project.detailedDescription || '',
                             businessPlanFile: overviewData.project.businessPlanFile || '',
+                            productName: overviewData.project.productName,
+                            productImageDataUrl: overviewData.project.productImageDataUrl,
+                            productImageWidthPx: overviewData.project.productImageWidthPx,
+                            productImageHeightPx: overviewData.project.productImageHeightPx,
+                            marketDefinition: overviewData.project.marketDefinition,
+                            targetCustomer: overviewData.project.targetCustomer,
                             createdAt: overviewData.project.createdAt,
                             memberCount: current?.memberCount ?? 1,
                             role: overviewData.project.role || current?.role || 'COACH',
@@ -159,6 +168,7 @@ export default function ProjectDetailPage() {
     useEffect(() => {
         if (!project) return;
         setOverviewForm({
+            ...project,
             name: project.name || '',
             description: project.description || '',
             detailedDescription: project.detailedDescription || '',
@@ -182,6 +192,7 @@ export default function ProjectDetailPage() {
         setIsOverviewFileReading(false);
         setIsOverviewFileDirty(false);
         setOverviewForm({
+            ...project,
             name: project.name || '',
             description: project.description || '',
             detailedDescription: project.detailedDescription || '',
@@ -288,6 +299,12 @@ export default function ProjectDetailPage() {
         try {
             const payload = {
                 name: overviewForm.name,
+                productName: overviewForm.productName,
+                productImageDataUrl: overviewForm.productImageDataUrl,
+                productImageWidthPx: overviewForm.productImageWidthPx,
+                productImageHeightPx: overviewForm.productImageHeightPx,
+                marketDefinition: overviewForm.marketDefinition,
+                targetCustomer: overviewForm.targetCustomer,
                 description: overviewForm.description,
                 detailedDescription: overviewForm.detailedDescription,
                 ...(isOverviewFileDirty ? { businessPlanFile: overviewForm.businessPlanFile } : {}),
@@ -304,6 +321,12 @@ export default function ProjectDetailPage() {
 
             setProject({
                 ...project,
+                productName: data.project.productName,
+                productImageDataUrl: data.project.productImageDataUrl,
+                productImageWidthPx: data.project.productImageWidthPx,
+                productImageHeightPx: data.project.productImageHeightPx,
+                marketDefinition: data.project.marketDefinition,
+                targetCustomer: data.project.targetCustomer,
                 name: data.project.name,
                 description: data.project.description || '',
                 detailedDescription: data.project.detailedDescription || '',
@@ -572,8 +595,8 @@ export default function ProjectDetailPage() {
                                 <div className="flex items-center gap-2">
                                     {isOverviewEditing ? (
                                         <>
-                                            <button type="button" onClick={handleOverviewCancel} disabled={isOverviewSaving} className="btn-secondary text-xs">취소</button>
-                                            <button type="button" onClick={handleOverviewSave} disabled={isOverviewSaving || isOverviewFileReading} className="btn-primary text-xs">
+                                            <button type="button" onClick={handleOverviewCancel} disabled={isOverviewSaving || isProductImageReading} className="btn-secondary text-xs">취소</button>
+                                            <button type="button" onClick={handleOverviewSave} disabled={isOverviewSaving || isOverviewFileReading || isProductImageReading} className="btn-primary text-xs">
                                                 {isOverviewSaving ? '저장 중...' : isOverviewFileReading ? '파일 읽는 중...' : '저장'}
                                             </button>
                                         </>
@@ -613,6 +636,7 @@ export default function ProjectDetailPage() {
                                 </div>
                             )}
 
+                            <div className="mb-4"><ProductOverviewFields value={isOverviewEditing ? overviewForm : project} editing={isOverviewEditing} disabled={isOverviewSaving || isProductImageReading} onChange={patch => setOverviewForm(current => ({ ...current, ...patch }))} onBusy={setIsProductImageReading} onError={setOverviewError} /></div>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
                                     <p className="text-xs text-gray-500 mb-2">프로젝트명</p>

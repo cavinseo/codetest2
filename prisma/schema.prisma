@@ -94,6 +94,12 @@ model Project {
   updatedAt                DateTime                  @updatedAt
   businessPlanFile         String?
   detailedDescription      String?
+  productName              String?
+  productImageDataUrl       String?
+  productImageWidthPx       Int?
+  productImageHeightPx      Int?
+  marketDefinition         String?
+  targetCustomer           String?
   // AI 에이전트 연결 방식: "rule" | "local" | "personal"
   aiMode                   String                    @default("rule")
   attributeFitnesses       AttributeFitness[]
