@@ -31,6 +31,7 @@ export default function ServiceSettingsPage() {
     const [currentSettings, setCurrentSettings] = useState<SettingsData | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [denied, setDenied] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     useEffect(() => {
@@ -40,6 +41,17 @@ export default function ServiceSettingsPage() {
     const loadSettings = async () => {
         try {
             const res = await fetch('/api/settings');
+            // 이 화면의 구글·SMTP 탭은 /api/settings(requireAdmin)를 쓴다. 403 을
+            // 조용히 넘기면 비관리자에게 빈 "미설정" 폼이 그대로 보여, 안내대로
+            // Client Secret 이나 SMTP 비밀번호를 입력하게 된다.
+            if (res.status === 401) {
+                window.location.replace('/login');
+                return;
+            }
+            if (res.status === 403) {
+                setDenied(true);
+                return;
+            }
             if (res.ok) {
                 const data = await res.json();
                 setCurrentSettings(data);
@@ -119,6 +131,31 @@ export default function ServiceSettingsPage() {
             setIsSaving(false);
         }
     };
+
+    if (denied) {
+        return (
+            <div className="min-h-screen bg-surface-900 bg-grid relative flex items-center justify-center px-4">
+                <div className="bg-orb w-[500px] h-[500px] bg-rose-500/40 top-[-150px] right-[-100px] opacity-10" />
+                <div className="glass-strong relative z-10 w-full max-w-md p-8 text-center animate-fade-in">
+                    <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-rose-500/20 bg-rose-500/10 text-3xl">
+                        🔒
+                    </div>
+                    <h1 className="mb-2 text-2xl font-display font-bold text-white">권한이 없습니다</h1>
+                    <p className="mb-8 text-sm leading-relaxed text-gray-400">
+                        서비스 설정은 관리자만 볼 수 있습니다. 내 AI 연결은 프로필 화면에서 설정할 수 있습니다.
+                    </p>
+                    <div className="flex flex-col gap-3">
+                        <Link href="/profile" className="btn-secondary py-3 text-sm">
+                            프로필에서 내 AI 연결 설정
+                        </Link>
+                        <Link href="/dashboard" className="btn-ghost py-3 text-sm">
+                            대시보드로 돌아가기
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-gray-900">

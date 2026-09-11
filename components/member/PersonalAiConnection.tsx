@@ -238,7 +238,11 @@ export default function PersonalAiConnection() {
                                 value={mode}
                                 checked={aiForm.mode === mode}
                                 onChange={() => {
-                                    setAiForm((prev) => ({ ...prev, mode }));
+                                    // API 탭과 MCP 탭이 같은 apiKey 칸을 공유한다.
+                                    // 비우지 않으면 벤더용으로 입력한 키가 모드를
+                                    // 바꿔 저장하는 순간 사용자가 적은 MCP 주소의
+                                    // 키로 전송된다.
+                                    setAiForm((prev) => ({ ...prev, mode, apiKey: '' }));
                                     setAiMsg(null);
                                 }}
                                 disabled={aiBusy}

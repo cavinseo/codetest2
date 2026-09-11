@@ -225,13 +225,19 @@ export default function DashboardPage() {
                             </div>
                         </Link>
                         <div className="flex items-center gap-3">
-                            <Link href="/settings" className="btn-ghost text-sm">
-                                🔗 서비스 설정
-                            </Link>
+                            {/* /api/settings 도 /api/admin/* 도 requireAdmin 이다.
+                                링크를 모두에게 열어 두면 비관리자가 서비스 설정에
+                                들어가 SMTP 비밀번호·OAuth Secret 입력 폼을 보고
+                                값을 넣게 된다. */}
                             {canAccessAdmin && (
-                                <Link href="/admin" className="btn-ghost text-sm">
-                                    🛡️ 관리자모드
-                                </Link>
+                                <>
+                                    <Link href="/settings" className="btn-ghost text-sm">
+                                        🔗 서비스 설정
+                                    </Link>
+                                    <Link href="/admin" className="btn-ghost text-sm">
+                                        🛡️ 관리자모드
+                                    </Link>
+                                </>
                             )}
                             {role === 'PROGRAM_MANAGER' && (
                                 <Link href="/manage" className="btn-ghost text-sm">

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { requireProjectAccess } from '@/lib/authorization';
+import { isProjectWriteRole, requireProjectAccess } from '@/lib/authorization';
 import { buildFundingPlansWithSales } from '@/lib/worksheet-links';
 import { fundingBodySchema } from '@/lib/bulk-save-schemas';
 
@@ -34,10 +34,15 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
         let sources = await prisma.fundingSource.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
         const salesEstimates = await prisma.salesEstimate.findMany({ where: { projectId } });
 
-        const createMissingDefaults = [
+        // 기본행 자동 채움은 조회 도중의 쓰기라, 쓰기 권한을 따로 확인해야 한다.
+        // 위 requireProjectAccess 는 GET 이라 write:false 로 통과하므로 그것만
+        // 믿으면 VIEWER·COACH 가 탭을 열기만 해도 행이 생긴다(lib/authorization.ts
+        // 의 isProjectWriteRole 주석이 경고하는 그 경계 붕괴다).
+        const canCreateDefaults = isProjectWriteRole(accessResult.role);
+        const createMissingDefaults = canCreateDefaults ? [
             ...(plans.length === 0 ? [prisma.fundingPlan.createMany({ data: INITIAL_FUNDING_PLANS.map(p => ({ ...p, projectId })) })] : []),
             ...(sources.length === 0 ? [prisma.fundingSource.createMany({ data: INITIAL_FUNDING_SOURCES.map(s => ({ ...s, projectId })) })] : []),
-        ];
+        ] : [];
 
         if (createMissingDefaults.length > 0) {
             await prisma.$transaction(createMissingDefaults);

@@ -30,7 +30,9 @@ interface Requirement {
 interface Invitation {
     id: string;
     email: string;
-    token: string;
+    // 읽기 전용 역할에게는 서버가 토큰을 내리지 않는다(설문 제출의 자격증명이라
+    // 위조에 그대로 쓰인다). 그래서 없을 수 있는 값이다.
+    token?: string;
     expiresAt: string;
     respondedAt?: string;
 }
@@ -1212,15 +1214,17 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                                 </p>
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => copyInvitationLink(inv.token)}
-                                            className="btn-ghost text-sm flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                                            </svg>
-                                            링크 복사
-                                        </button>
+                                        {inv.token && (
+                                            <button
+                                                onClick={() => copyInvitationLink(inv.token!)}
+                                                className="btn-ghost text-sm flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                </svg>
+                                                링크 복사
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                             </div>
