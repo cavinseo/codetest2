@@ -144,17 +144,44 @@ export function generateFundingAiDraft({
     };
 }
 
+function toAmountNumber(amount: unknown): number {
+    return Number(String(amount).replace(/,/g, '')) || 0;
+}
+
+function isNumericToken(token: string): boolean {
+    const stripped = token.replace(/,/g, '').trim();
+    return stripped !== '' && Number.isFinite(Number(stripped));
+}
+
 export function parseSourceYear(value?: string | null) {
     if (!value) return { source: '', amount: '', amountNumber: 0 };
 
+    // JSON.parse 는 "5000" 같은 순수 숫자 문자열도 예외 없이 통과시켜 숫자를 준다.
+    // 그것을 객체로 믿으면 amount 가 undefined 가 되어 금액이 0 으로 사라진다 —
+    // workbook-importer 가 출처 칸이 빈 행에서 정확히 그런 값을 만든다.
+    // 그래서 결과가 객체일 때만 JSON 으로 보고, 아니면 "출처:금액" 경로로 떨군다.
+    let parsed: unknown;
     try {
-        const parsed = JSON.parse(value) as Partial<FundingAiSourceYear>;
-        const amount = parsed.amount ?? '';
-        return { source: parsed.source ?? '', amount, amountNumber: Number(String(amount).replace(/,/g, '')) || 0 };
+        parsed = JSON.parse(value);
     } catch {
-        const [source = '', amount = ''] = value.split(':');
-        return { source, amount, amountNumber: Number(String(amount).replace(/,/g, '')) || 0 };
+        parsed = undefined;
     }
+
+    if (parsed !== null && typeof parsed === 'object') {
+        const record = parsed as Partial<FundingAiSourceYear>;
+        const amount = record.amount ?? '';
+        return { source: record.source ?? '', amount, amountNumber: toAmountNumber(amount) };
+    }
+
+    // 레거시 형식은 "출처:금액" 이지만, 임포터가 빈 칸을 버리고 이어 붙이므로
+    // (workbook-importer 의 filter(Boolean).join(':')) 토큰이 하나면 출처만 있는
+    // 행인지 금액만 있는 행인지 문자열만으로는 알 수 없다. 숫자로 읽히면 금액으로
+    // 본다 — 그래야 출처 칸이 빈 행의 금액이 0 으로 사라지지 않는다.
+    const [first = '', second = ''] = value.split(':');
+    if (second === '' && isNumericToken(first)) {
+        return { source: '', amount: first, amountNumber: toAmountNumber(first) };
+    }
+    return { source: first, amount: second, amountNumber: toAmountNumber(second) };
 }
 
 function encodeSourceYear(value: FundingAiSourceYear) {

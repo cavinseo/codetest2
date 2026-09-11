@@ -32,6 +32,36 @@ describe('Kano Google Forms upload parser', () => {
         ]);
     });
 
+    // dysfunctional 이 functional 을 부분문자열로 품고 있어, 부정 열을 먼저 걸러내지
+    // 않으면 긍정 목록에 부정 열까지 들어가 요구사항 순서가 한 칸씩 밀린다.
+    it('keeps English functional/dysfunctional columns paired with the right requirement', () => {
+        const answers = parseGoogleFormsResponseRows([
+            {
+                'Timestamp': '2026-05-29 10:00:00',
+                'Email Address': 'respondent@example.com',
+                'Q1 (functional)': 1,
+                'Q1 (dysfunctional)': 5,
+                'Q2 (functional)': 2,
+                'Q2 (dysfunctional)': 4,
+            },
+        ], 2);
+
+        expect(answers).toEqual([
+            {
+                respondentEmail: 'respondent@example.com',
+                requirementIndex: 0,
+                positiveAnswer: 1,
+                negativeAnswer: 5,
+            },
+            {
+                respondentEmail: 'respondent@example.com',
+                requirementIndex: 1,
+                positiveAnswer: 2,
+                negativeAnswer: 4,
+            },
+        ]);
+    });
+
     it('reads the dedicated upload workbook even when the header starts on row 3', () => {
         const buffer = writeKanoUploadTemplateBuffer([
             { requirement: '빠른 주문 완료' },

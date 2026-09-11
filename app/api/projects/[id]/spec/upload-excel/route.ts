@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
+import { parseWritePolicy, type WritePolicy } from '@/lib/write-policy';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -21,8 +22,6 @@ type ParsedSpec = {
     order: number;
 };
 
-type WritePolicy = 'append' | 'replace';
-
 type SheetLayout = 'asisSpec' | 'productAttribute' | 'targetSpec';
 
 type HeaderMatch = {
@@ -33,10 +32,6 @@ type HeaderMatch = {
 function isSupportedExcelFile(fileName: string) {
     const lowerName = fileName.toLowerCase();
     return lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls');
-}
-
-function parseWritePolicy(rawValue: FormDataEntryValue | null): WritePolicy {
-    return rawValue === 'append' ? 'append' : 'replace';
 }
 
 function normalizeCell(value: unknown) {

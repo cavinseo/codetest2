@@ -4,11 +4,10 @@ import { generateId } from '@/lib/id';
 import { classifyKanoResponse } from '@/lib/kano-algorithm';
 import type { ParsedKanoUploadAnswer } from '@/lib/kano-upload-parser';
 
-export type WritePolicy = 'append' | 'replace';
-
-export function parseWritePolicy(rawValue: FormDataEntryValue | null): WritePolicy {
-    return rawValue === 'replace' ? 'replace' : 'append';
-}
+// 판정은 lib/write-policy.ts 한 곳에 있다. 기존 import 경로를 깨지 않도록
+// 여기서 다시 내보낸다.
+export { parseWritePolicy } from '@/lib/write-policy';
+export type { WritePolicy } from '@/lib/write-policy';
 
 export interface PersistKanoUploadInput {
     projectId: string;
