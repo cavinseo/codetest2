@@ -2,14 +2,15 @@
 export const A4_PORTRAIT_BODY = { widthMm: 170, heightMm: 257 };
 export const A4_LANDSCAPE_BODY = { widthMm: 257, heightMm: 170 };
 
-function positive(values: number[]): void {
+/** 값이 하나라도 양수가 아니면 멈춘다 — 이름이 판정이 아니라 단언임을 드러낸다. */
+function assertAllPositive(values: number[]): void {
     if (values.some(value => !Number.isFinite(value) || value <= 0)) {
         throw new Error('그림과 본문의 크기는 양수여야 합니다.');
     }
 }
 
 export function fitImageToBody(widthPx: number, heightPx: number, body: { widthMm: number; heightMm: number }): { widthMm: number; heightMm: number } {
-    positive([widthPx, heightPx, body.widthMm, body.heightMm]);
+    assertAllPositive([widthPx, heightPx, body.widthMm, body.heightMm]);
     const widthMm = widthPx * 25.4 / 96;
     const heightMm = heightPx * 25.4 / 96;
     const scale = Math.min(1, body.widthMm / widthMm, body.heightMm / heightMm);
@@ -17,7 +18,7 @@ export function fitImageToBody(widthPx: number, heightPx: number, body: { widthM
 }
 
 export function shouldUseLandscape(widthPx: number, heightPx: number, threshold = 257 / 170): boolean {
-    positive([widthPx, heightPx, threshold]);
+    assertAllPositive([widthPx, heightPx, threshold]);
     // 가로 본문보다 더 넓은 종횡비일 때 페이지를 돌려 축소 손실을 줄인다.
     return widthPx / heightPx > threshold;
 }

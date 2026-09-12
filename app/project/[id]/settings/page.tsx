@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import ThemeToggle from '@/components/ThemeToggle';
+import { downloadBlobAsFile } from '@/lib/file-download';
 
 interface Member {
     id: string;
@@ -146,16 +147,8 @@ export default function ProjectSettingsPage() {
             }
 
             const data = await response.json();
-            const dataStr = JSON.stringify(data, null, 2);
-            const blob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${project?.name || '프로젝트'}_${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            downloadBlobAsFile(blob, `${project?.name || '프로젝트'}_${new Date().toISOString().split('T')[0]}.json`);
 
             alert('데이터를 성공적으로 내보냈습니다!');
         } catch (error) {

@@ -24,35 +24,36 @@ export function applyBlockEdit(blocks: FinalReportBlock[], edit: BlockEdit): Fin
     const block = blocks[edit.blockIndex];
     if (!block) return blocks;
 
-    const replace = (next: FinalReportBlock) =>
+    const replaceEditedBlock = (next: FinalReportBlock) =>
         blocks.map((item, index) => (index === edit.blockIndex ? next : item));
 
     if (edit.kind === 'text') {
-        if (block.kind === 'heading') return replace({ ...block, text: edit.text });
-        if (block.kind === 'paragraph') return replace({ ...block, text: edit.text });
+        if (block.kind === 'heading') return replaceEditedBlock({ ...block, text: edit.text });
+        if (block.kind === 'paragraph') return replaceEditedBlock({ ...block, text: edit.text });
         return blocks;
     }
     if (edit.kind === 'keyValue') {
         if (block.kind !== 'keyValueTable' || !block.rows[edit.row]) return blocks;
-        return replace({
+        return replaceEditedBlock({
             ...block,
             rows: block.rows.map((row, index) => (index === edit.row ? { ...row, value: edit.value } : row)),
         });
     }
     if (edit.kind === 'tableHeader') {
         if (block.kind !== 'dataTable' || edit.col >= block.headers.length || edit.col < 0) return blocks;
-        return replace({
+        return replaceEditedBlock({
             ...block,
             headers: block.headers.map((text, index) => (index === edit.col ? edit.value : text)),
         });
     }
+    // 남은 종류는 tableCell 하나다 — 표의 한 칸을 바꾼다.
     if (block.kind !== 'dataTable') return blocks;
     const row = block.rows[edit.row];
     if (!row || edit.col >= row.length || edit.col < 0) return blocks;
-    return replace({
+    return replaceEditedBlock({
         ...block,
         rows: block.rows.map((cells, index) =>
-            index === edit.row ? cells.map((cell, at) => (at === edit.col ? edit.value : cell)) : cells),
+            index === edit.row ? cells.map((cell, cellIndex) => (cellIndex === edit.col ? edit.value : cell)) : cells),
     });
 }
 
