@@ -59,6 +59,19 @@ it('parses commas and decimals in legacy and JSON amounts equally', () => {
     expect(parseSourceYear(JSON.stringify({source:'정부',amount:'1,234.56789'})).amountNumber).toBe(1234.56789);
 });
 
+// 임포터는 [출처, 금액] 중 빈 칸을 버리고 ':' 로 이어 붙이므로(workbook-importer
+// 의 filter(Boolean).join), 출처 칸이 비면 "5000" 같은 토큰 하나만 남는다.
+// JSON.parse("5000") 이 예외 없이 숫자를 돌려주는 탓에 예전에는 이것이 객체로
+// 취급돼 금액이 0 으로 사라졌다.
+it('reads a lone numeric token as the amount, not the source', () => {
+    expect(parseSourceYear('5000')).toEqual({ source: '', amount: '5000', amountNumber: 5000 });
+    expect(parseSourceYear('1,234.5')).toEqual({ source: '', amount: '1,234.5', amountNumber: 1234.5 });
+});
+
+it('still reads a lone non-numeric token as the source', () => {
+    expect(parseSourceYear('정부자금')).toEqual({ source: '정부자금', amount: '', amountNumber: 0 });
+});
+
 it.each([null, 0, 1234.56789])('AI leaves future revenue %s untouched', (value) => {
     const plans = [{ id: 'revenue', category: '매출액', item: '매출액', year1: 100, year2: value, year3: value, order: 0 }];
     expect(generateFundingAiDraft({ plans, sources: [] }).plans).toEqual(plans);

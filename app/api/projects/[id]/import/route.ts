@@ -14,6 +14,7 @@ import {
 } from '@/lib/import-cascade-guard';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
+import { parseWritePolicy } from '@/lib/write-policy';
 
 const log = createLogger('api/import');
 
@@ -36,10 +37,6 @@ function parseRequestedSheetNames(rawValue: FormDataEntryValue | null) {
 
 function parseAction(rawValue: FormDataEntryValue | null) {
     return rawValue === 'apply' ? 'apply' : 'preview';
-}
-
-function parseWritePolicy(rawValue: FormDataEntryValue | null): WorkbookWritePolicy {
-    return rawValue === 'append' ? 'append' : 'replace';
 }
 
 function normalizeSheetName(name: string) {

@@ -57,6 +57,14 @@ function firstAnswer(row: Record<string, unknown>, keys: string[]): KanoAnswer |
     return null;
 }
 
+function isPositiveHeader(key: string): boolean {
+    return /\[?긍정\]?|positive|functional/i.test(key);
+}
+
+function isNegativeHeader(key: string): boolean {
+    return /\[?부정\]?|negative|dysfunctional/i.test(key);
+}
+
 export function parseGoogleFormsResponseRows(
     rows: Record<string, unknown>[],
     requirementCount: number
@@ -65,8 +73,12 @@ export function parseGoogleFormsResponseRows(
 
     rows.forEach((row, rowIndex) => {
         const headers = Object.keys(row).filter((key) => key.trim() && !isMetaHeader(key));
-        const positiveHeaders = headers.filter((key) => /\[?긍정\]?|positive|functional/i.test(key));
-        const negativeHeaders = headers.filter((key) => /\[?부정\]?|negative|dysfunctional/i.test(key));
+        const negativeHeaders = headers.filter(isNegativeHeader);
+        // 부정 판정을 먼저 하고 그 열을 긍정 후보에서 뺀다. functional 이
+        // dysfunctional 의 부분문자열이라, 그냥 두면 영문 헤더에서 부정 열이
+        // 긍정 목록에도 들어가 요구사항 순서가 밀린다 — 2번 요구사항의 긍정 답으로
+        // 1번의 부정 답이 들어가는 식이라 분류가 통째로 뒤집힌다.
+        const positiveHeaders = headers.filter((key) => isPositiveHeader(key) && !isNegativeHeader(key));
         const respondentEmail = getRespondentEmail(row, rowIndex);
 
         for (let reqIndex = 0; reqIndex < requirementCount; reqIndex++) {
