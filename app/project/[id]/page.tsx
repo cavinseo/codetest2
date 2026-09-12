@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import ProductAttributesTable from '@/components/project/ProductAttributesTable';
@@ -68,6 +68,13 @@ export default function ProjectDetailPage() {
     const params = useParams();
     const projectId = params.id as string;
     const [activeTab, setActiveTab] = useState('overview');
+    const qfdDirty = useRef(false);
+    const setQfdDirty = useCallback((dirty: boolean) => { qfdDirty.current = dirty; }, []);
+    const changeTab = (next: string) => {
+        if (next === activeTab) return;
+        if (qfdDirty.current && !window.confirm('저장 중이거나 저장하지 못한 관계 강도가 있습니다. 저장하지 않고 이동할까요?')) return;
+        setActiveTab(next);
+    };
     const [project, setProject] = useState<ProjectData | null>(null);
     const [reqCount, setReqCount] = useState(0);
     const [kanoCount, setKanoCount] = useState(0);
@@ -397,7 +404,7 @@ export default function ProjectDetailPage() {
         attributes: <ProductAttributesTable projectId={projectId} />,
         spec: <SpecTable projectId={projectId} onSaved={() => setActiveTab('attributes')} />,
         requirements: <RequirementsTable projectId={projectId} />,
-        qfd: <QFDMatrix projectId={projectId} />,
+        qfd: <QFDMatrix projectId={projectId} onDirtyChange={setQfdDirty} />,
         kano: <KanoManager projectId={projectId} />,
         sales: <SalesTable projectId={projectId} onSaved={() => setActiveTab('spec')} />,
         fitness: <FitnessWrapper projectId={projectId} />,
@@ -545,7 +552,7 @@ export default function ProjectDetailPage() {
                         {tabs.map((tab) => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => changeTab(tab.id)}
                                 className={activeTab === tab.id ? 'nav-tab-active' : 'nav-tab'}
                             >
                                 <span className="flex items-center gap-2">
