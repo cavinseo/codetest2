@@ -74,8 +74,11 @@ export default function ProjectDetailPage() {
     const [activeTab, setActiveTab] = useState('overview');
     const mentorAnalysisDirty = useRef(false);
     const setMentorAnalysisDirty = useCallback((dirty: boolean) => { mentorAnalysisDirty.current = dirty; }, []);
+    const qfdDirty = useRef(false);
+    const setQfdDirty = useCallback((dirty: boolean) => { qfdDirty.current = dirty; }, []);
     const changeTab = (next: string) => {
         if (mentorAnalysisDirty.current && !window.confirm('저장하지 않은 멘토 분석이 있습니다. 저장하지 않고 이동할까요?')) return;
+        if (qfdDirty.current && !window.confirm('저장 중이거나 저장하지 못한 관계 강도가 있습니다. 저장하지 않고 이동할까요?')) return;
         setActiveTab(next);
     };
     const [project, setProject] = useState<ProjectData | null>(null);
@@ -433,7 +436,7 @@ export default function ProjectDetailPage() {
         attributes: <ProductAttributesTable projectId={projectId} />,
         spec: <SpecTable projectId={projectId} onSaved={() => changeTab('attributes')} />,
         requirements: <RequirementsTable projectId={projectId} />,
-        qfd: <QFDMatrix projectId={projectId} />,
+        qfd: <QFDMatrix projectId={projectId} onDirtyChange={setQfdDirty} />,
         kano: <KanoManager projectId={projectId} />,
         sales: <SalesTable projectId={projectId} onSaved={() => changeTab('spec')} />,
         fitness: <FitnessWrapper projectId={projectId} />,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import Link from 'next/link';
@@ -13,6 +13,7 @@ import {
     toggleGroupVisibility,
 } from '@/lib/qfd-technical-header';
 import { dedupeNonBlank } from '@/lib/qfd-technical-sync';
+import { useQfdRelationshipAutosave, type Relationship } from './useQfdRelationshipAutosave';
 
 interface Requirement {
     id: string;
@@ -33,35 +34,6 @@ interface TechTreeEntry {
     subSpec?: string | null;
 }
 
-interface Relationship {
-    requirementId: string;
-    technicalCharId: string;
-    strength: 'STRONG' | 'MEDIUM' | 'WEAK' | 'NONE';
-}
-
-interface RequirementAnalysis {
-    requirementId: string;
-    weight: number;
-    weightPercent: number;
-    selfScore: number;
-    competitorScore: number;
-    planQuality: number;
-    improvementRate: number;
-    absoluteImportance: number;
-    qualityImportancePercent: number;
-    rank: number | null;
-}
-
-interface TechnicalAnalysis {
-    technicalCharId: string;
-    name: string;
-    unit?: string | null;
-    targetValue?: string | null;
-    totalScore: number;
-    rank: number | null;
-    importancePercent: number;
-}
-
 interface Benchmark {
     requirementId: string;
     company: string;
@@ -77,6 +49,7 @@ interface TechnicalBenchmark {
 
 interface QFDMatrixProps {
     projectId: string;
+    onDirtyChange?: (dirty: boolean) => void;
 }
 
 type DisplayTechnical = TechnicalChar & { isPlaceholder?: boolean };
@@ -147,20 +120,25 @@ function getRequirementGroupRowSpan(
     return span;
 }
 
-export default function QFDMatrix({ projectId }: QFDMatrixProps) {
+export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) {
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [technicalChars, setTechnicalChars] = useState<TechnicalChar[]>([]);
     const [techTreeEntries, setTechTreeEntries] = useState<TechTreeEntry[]>([]);
-    const [relationships, setRelationships] = useState<Relationship[]>([]);
-    const [reqAnalysis, setReqAnalysis] = useState<RequirementAnalysis[]>([]);
-    const [techAnalysis, setTechAnalysis] = useState<TechnicalAnalysis[]>([]);
+    const {
+        relationships, reqAnalysis, techAnalysis, pendingCount, failedRelationships, analysisError, isRefreshingAnalysis,
+        setRelationshipVal, retryRelationship, retryFailedRelationships, refreshAnalysis,
+        captureSnapshot, isCurrentSnapshot, applyServerData, clearSavedRelationships, hasUnsavedRelationships,
+    } = useQfdRelationshipAutosave(projectId, onDirtyChange);
     const [benchmarksData, setBenchmarksData] = useState<Benchmark[]>([]);
     const [technicalBenchmarks, setTechnicalBenchmarks] = useState<TechnicalBenchmark[]>([]);
     const [pendingBenchmarks, setPendingBenchmarks] = useState<PendingBenchmarkScores>({});
     const [isSavingBenchmarks, setIsSavingBenchmarks] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+    const loadRequest = useRef(0);
+    const relationshipSaveBlocked = pendingCount > 0 || failedRelationships.length > 0;
     const [showAddTechModal, setShowAddTechModal] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [isResetting, setIsResetting] = useState(false);
     const [newTech, setNewTech] = useState({ name: '', unit: '', targetValue: '' });
     const [newCompetitorName, setNewCompetitorName] = useState('');
     const [extraCompetitors, setExtraCompetitors] = useState<string[]>([]);
@@ -208,7 +186,10 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     const scoreSelectClassName = 'h-[31px] w-full cursor-pointer border-none bg-white p-1 text-center font-semibold text-slate-950 outline-none hover:bg-cyan-50';
 
     const loadData = useCallback(async () => {
-        setIsLoading(true);
+        const snapshot = captureSnapshot();
+        if (!isCurrentSnapshot(snapshot)) return;
+        const request = ++loadRequest.current;
+        const isCurrent = () => request === loadRequest.current && isCurrentSnapshot(snapshot);
         setDataError(null);
         try {
             const [requirementsRes, technicalRes, relationshipsRes, analysisRes, benchmarksRes, treeRes, techBenchmarksRes] = await Promise.all([
@@ -230,48 +211,78 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                 throw new Error(body?.error || 'QFD 데이터를 불러오지 못했습니다.');
             }
 
-            if (requirementsRes.ok) {
-                const data = await requirementsRes.json();
-                setRequirements(data.requirements || []);
-            }
-            if (technicalRes.ok) {
-                const data = await technicalRes.json();
-                setTechnicalChars(data.technicalCharacteristics || []);
-            }
-            if (relationshipsRes.ok) {
-                const data = await relationshipsRes.json();
-                setRelationships(data.relationships || []);
-            }
-            if (analysisRes.ok) {
-                const data = await analysisRes.json();
-                setReqAnalysis(data.requirements || []);
-                setTechAnalysis(data.technicals || []);
-            }
-            if (benchmarksRes.ok) {
-                const data = await benchmarksRes.json();
-                setBenchmarksData(data.benchmarks || []);
-            }
-            if (treeRes.ok) {
-                const data = await treeRes.json();
-                setTechTreeEntries(data.entries || []);
-            }
-            if (techBenchmarksRes?.ok) {
-                const data = await techBenchmarksRes.json();
-                setTechnicalBenchmarks(data.technicalBenchmarks || []);
-            }
+            const [requirementData, technicalData, relationshipData, analysisData, benchmarkData, treeData, techBenchmarkData] = await Promise.all([
+                requirementsRes.json(), technicalRes.json(), relationshipsRes.json(), analysisRes.json(),
+                benchmarksRes.json(), treeRes.json(), techBenchmarksRes?.ok ? techBenchmarksRes.json() : null,
+            ]);
+            if (!isCurrent()) return;
+            setRequirements(requirementData.requirements || []);
+            setTechnicalChars(technicalData.technicalCharacteristics || []);
+            applyServerData(snapshot, relationshipData.relationships || [], analysisData);
+            setBenchmarksData(benchmarkData.benchmarks || []);
+            setTechTreeEntries(treeData.entries || []);
+            if (techBenchmarkData) setTechnicalBenchmarks(techBenchmarkData.technicalBenchmarks || []);
         } catch (error) {
+            if (!isCurrent()) return;
             console.error(error);
             const message = error instanceof Error ? error.message : 'QFD 데이터를 불러오지 못했습니다.';
             setDataError(message);
             showToast(message, 'error');
+            // 새로고침이 앞선 분석 응답을 무효화한 뒤 실패해도 최종 저장값의 분석은 다시 구한다.
+            if (snapshot.version > 0) void refreshAnalysis();
         } finally {
-            setIsLoading(false);
+            if (isCurrent()) setLoadedProjectId(projectId);
         }
-    }, [projectId, showToast]);
+    }, [applyServerData, captureSnapshot, isCurrentSnapshot, projectId, refreshAnalysis, showToast]);
+
+    useEffect(() => {
+        setRequirements([]);
+        setTechnicalChars([]);
+        setTechTreeEntries([]);
+        setBenchmarksData([]);
+        setTechnicalBenchmarks([]);
+        setPendingBenchmarks({});
+        setTechFieldDrafts({});
+        setExtraCompetitors([]);
+        setDeletingTech(null);
+        setShowResetConfirm(false);
+        setShowAddTechModal(false);
+    }, [projectId]);
 
     useEffect(() => {
         loadData();
     }, [loadData]);
+
+    useEffect(() => {
+        const currentUrl = window.location.href;
+        const currentHistory = window.history.state;
+        const confirmLeave = () => !hasUnsavedRelationships() || window.confirm('저장 중이거나 저장하지 못한 관계 강도가 있습니다. 저장하지 않고 이동할까요?');
+        const warn = (event: BeforeUnloadEvent) => {
+            if (hasUnsavedRelationships()) event.preventDefault();
+        };
+        const guardLink = (event: MouseEvent) => {
+            if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+            if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download') || link.target === '_blank' || link.href === window.location.href) return;
+            if (!confirmLeave()) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
+        };
+        const guardBack = (event: PopStateEvent) => {
+            if (confirmLeave()) return;
+            event.stopImmediatePropagation();
+            window.history.pushState(currentHistory, '', currentUrl);
+        };
+        window.addEventListener('beforeunload', warn);
+        window.addEventListener('popstate', guardBack, true);
+        document.addEventListener('click', guardLink, true);
+        return () => {
+            window.removeEventListener('beforeunload', warn);
+            window.removeEventListener('popstate', guardBack, true);
+            document.removeEventListener('click', guardLink, true);
+        };
+    }, [hasUnsavedRelationships]);
 
     const handleAddTechnical = async () => {
         if (!newTech.name.trim()) return;
@@ -290,20 +301,6 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         } else {
             showToast('기술특성 추가에 실패했습니다.', 'error');
         }
-    };
-
-    const setRelationshipVal = async (requirementId: string, technicalCharId: string, strength: Relationship['strength']) => {
-        const res = await fetch(`/api/projects/${projectId}/qfd/relationships`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ requirementId, technicalCharId, strength }),
-        });
-
-        if (!res.ok) {
-            showToast('관계 강도를 저장하지 못했습니다.', 'error');
-            return;
-        }
-        await loadData();
     };
 
     const setTechnicalSubFunction = async (tech: DisplayTechnical, subName: string) => {
@@ -439,7 +436,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         relationships.filter((item) => item.technicalCharId === technicalCharId && item.strength !== 'NONE').length;
 
     const handleDeleteTechnical = async () => {
-        if (!deletingTech) return;
+        if (!deletingTech || hasUnsavedRelationships()) return;
 
         setIsDeletingTech(true);
         try {
@@ -455,6 +452,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                 return;
             }
 
+            clearSavedRelationships(deletingTech.id);
             setDeletingTech(null);
             await loadData();
             showToast('세부기능을 삭제했습니다.');
@@ -471,6 +469,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     };
 
     const saveBenchmarks = async () => {
+        if (hasUnsavedRelationships()) return;
         const entries = Object.entries(pendingBenchmarks);
         if (entries.length === 0) {
             showToast('저장할 비교 점수가 없습니다.', 'error');
@@ -502,7 +501,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     };
 
     const saveWorksheet = async () => {
-        if (isSavingBenchmarks) return;
+        if (isSavingBenchmarks || hasUnsavedRelationships()) return;
         setIsSavingBenchmarks(true);
         try {
             const save = async (path: string, method: string, body: object) => {
@@ -644,24 +643,36 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     };
 
     const handleReset = async () => {
-        await Promise.all([
-            ...relationships.map((relationship) => fetch(`/api/projects/${projectId}/qfd/relationships`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    requirementId: relationship.requirementId,
-                    technicalCharId: relationship.technicalCharId,
-                    strength: 'NONE',
-                }),
-            })),
-            fetch(`/api/projects/${projectId}/qfd/correlations`, { method: 'DELETE' }),
-            fetch(`/api/projects/${projectId}/qfd/benchmarks`, { method: 'DELETE' }),
-        ]);
-
-        setPendingBenchmarks({});
-        setShowResetConfirm(false);
-        await loadData();
-        showToast('QFD 매트릭스를 초기화했습니다.');
+        if (hasUnsavedRelationships() || isResetting) return;
+        setIsResetting(true);
+        try {
+            const responses = await Promise.allSettled([
+                ...relationships.map((relationship) => fetch(`/api/projects/${projectId}/qfd/relationships`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        requirementId: relationship.requirementId,
+                        technicalCharId: relationship.technicalCharId,
+                        strength: 'NONE',
+                    }),
+                })),
+                fetch(`/api/projects/${projectId}/qfd/correlations`, { method: 'DELETE' }),
+                fetch(`/api/projects/${projectId}/qfd/benchmarks`, { method: 'DELETE' }),
+            ]);
+            if (responses.some((result) => result.status === 'rejected' || !result.value.ok)) {
+                await loadData();
+                throw new Error('QFD 초기화에 실패했습니다. 다시 시도해주세요.');
+            }
+            clearSavedRelationships();
+            setPendingBenchmarks({});
+            setShowResetConfirm(false);
+            await loadData();
+            showToast('QFD 매트릭스를 초기화했습니다.');
+        } catch (error) {
+            showToast(error instanceof Error ? error.message : 'QFD 초기화에 실패했습니다. 다시 시도해주세요.', 'error');
+        } finally {
+            setIsResetting(false);
+        }
     };
 
     const getRelationship = (requirementId: string, technicalCharId: string): Relationship['strength'] =>
@@ -755,7 +766,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
         updateCollapsedTechnicalGroups(toggleGroupVisibility(collapsedTechnicalGroups, groupIndex));
     };
 
-    if (isLoading) {
+    if (loadedProjectId !== projectId) {
         return (
             <div className="flex items-center justify-center p-16">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
@@ -764,7 +775,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
     }
 
     return (
-        <fieldset disabled={isSavingBenchmarks} className="relative min-w-0 space-y-6">
+        <fieldset disabled={isSavingBenchmarks || isDeletingTech || isResetting} className="relative min-w-0 space-y-6">
             <datalist id={`qfd-competitor-options-${projectId}`}>
                 {competitorNameOptions.map((option) => (
                     <option key={option} value={option} />
@@ -810,7 +821,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                             data-worksheet-save
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={saveWorksheet}
-                            disabled={isSavingBenchmarks}
+                            disabled={isSavingBenchmarks || relationshipSaveBlocked}
                             className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {isSavingBenchmarks ? '저장 중...' : '저장'}
@@ -837,7 +848,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         </button>
                         <button
                             onClick={saveBenchmarks}
-                            disabled={isSavingBenchmarks || pendingBenchmarkCount === 0}
+                            disabled={isSavingBenchmarks || relationshipSaveBlocked || pendingBenchmarkCount === 0}
                             className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {isSavingBenchmarks ? '저장 중...' : `비교 점수 저장${pendingBenchmarkCount > 0 ? ` (${pendingBenchmarkCount})` : ''}`}
@@ -848,10 +859,27 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         <button onClick={() => setShowAddTechModal(true)} className="btn-secondary text-sm">
                             + 기술특성
                         </button>
-                        <button onClick={() => setShowResetConfirm(true)} className="rounded-lg px-3 py-2 text-sm font-medium text-rose-300 transition-colors hover:bg-rose-500/10 hover:text-rose-200">
+                        <button onClick={() => setShowResetConfirm(true)} disabled={relationshipSaveBlocked} className="rounded-lg px-3 py-2 text-sm font-medium text-rose-300 transition-colors hover:bg-rose-500/10 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-50">
                             초기화
                         </button>
                     </div>
+                </div>
+
+                <div className="mt-3 min-h-6 text-sm" aria-live="polite">
+                    {pendingCount > 0 && <span className="text-cyan-200">관계 강도 저장 중...</span>}
+                    {failedRelationships.length > 0 && (
+                        <span className="ml-2 text-rose-200">
+                            관계 강도 {failedRelationships.length}개 저장 실패.
+                            <button type="button" onClick={retryFailedRelationships} className="ml-2 underline">실패한 관계 다시 저장</button>
+                        </span>
+                    )}
+                    {pendingCount === 0 && failedRelationships.length === 0 && isRefreshingAnalysis && <span className="text-gray-400">분석 결과 갱신 중...</span>}
+                    {analysisError && (
+                        <div className="text-amber-200">
+                            분석 결과를 갱신하지 못했습니다.
+                            <button type="button" onClick={refreshAnalysis} disabled={pendingCount > 0 || isRefreshingAnalysis} className="ml-2 underline disabled:opacity-50">분석 다시 불러오기</button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -897,7 +925,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                             <button onClick={() => setDeletingTech(null)} className="btn-secondary text-sm">취소</button>
                             <button
                                 onClick={handleDeleteTechnical}
-                                disabled={isDeletingTech}
+                                disabled={isDeletingTech || relationshipSaveBlocked}
                                 className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 {isDeletingTech ? '삭제 중...' : '삭제'}
@@ -916,13 +944,13 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                         </div>
                         <div className="flex items-center gap-2">
                             <button onClick={() => setShowResetConfirm(false)} className="btn-secondary text-sm">취소</button>
-                            <button onClick={handleReset} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-500">초기화</button>
+                            <button onClick={handleReset} disabled={relationshipSaveBlocked || isResetting} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50">초기화</button>
                         </div>
                     </div>
                 </section>
             )}
 
-            {!dataError && <section className="glass-strong overflow-hidden">
+            {(!dataError || requirements.length > 0 || technicalChars.length > 0) && <section className="glass-strong overflow-hidden">
                 <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
                     <div>
                         <h3 className="font-display text-lg font-bold text-white">QFD 매트릭스</h3>
@@ -1001,6 +1029,7 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                                     <button
                                                         type="button"
                                                         onClick={() => setDeletingTech(tech)}
+                                                        disabled={relationshipSaveBlocked}
                                                         className="inline-flex h-4 w-4 items-center justify-center rounded border border-rose-200/20 bg-white/[0.08] text-[11px] font-bold leading-none text-rose-100 transition-colors hover:bg-rose-500/30"
                                                         title={`${tech.name || '세부기능'} 열 삭제`}
                                                         aria-label={`${tech.name || '세부기능'} 열 삭제`}
@@ -1096,11 +1125,15 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
 
                                             const strength = getRelationship(requirement.id, tech.id);
                                             const option = RELATIONSHIP_OPTIONS.find((item) => item.value === strength) || RELATIONSHIP_OPTIONS[0];
+                                            const saveFailed = failedRelationships.some((item) => item.requirementId === requirement.id && item.technicalCharId === tech.id);
+                                            const cellLabel = `${requirement.requirement} / ${tech.name}`;
 
                                             return (
                                                 <td key={tech.id} className="border border-white/[0.08] bg-white/[0.02] p-0 text-center">
                                                     <select
                                                         value={strength}
+                                                        aria-label={`${cellLabel} 관계 강도`}
+                                                        aria-invalid={saveFailed}
                                                         onChange={(event) => setRelationshipVal(requirement.id, tech.id, event.target.value as Relationship['strength'])}
                                                         className={`h-[31px] w-full cursor-pointer border-none bg-transparent p-1 text-center text-base font-bold outline-none hover:bg-cyan-500/10 ${option.className}`}
                                                         title={`${option.label} (${option.score})`}
@@ -1109,6 +1142,14 @@ export default function QFDMatrix({ projectId }: QFDMatrixProps) {
                                                             <option key={item.value} value={item.value}>{item.label}</option>
                                                         ))}
                                                     </select>
+                                                    {saveFailed && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => retryRelationship(requirement.id, tech.id)}
+                                                            aria-label={`${cellLabel} 관계 저장 재시도`}
+                                                            className="w-full bg-rose-500/20 px-1 text-[10px] text-rose-200 underline"
+                                                        >저장 실패 · 재시도</button>
+                                                    )}
                                                 </td>
                                             );
                                         })}
