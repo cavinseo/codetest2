@@ -26,6 +26,7 @@ const mentorShape = {
 };
 
 const menteeShape = {
+    organization: requiredText('담당기관명을 입력하세요.'),
     companyName: requiredText('기업명을 입력하세요.'),
     industry: requiredText('업종을 입력하세요.'),
     foundedYear: z.number().int().optional(),

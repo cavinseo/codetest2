@@ -28,7 +28,7 @@ export default function ProfileFields({
     return (
         <div className="space-y-3">
             <label className={labelClass}>
-                소속기관명 <span className="text-red-500">*</span>
+                {role === 'MENTEE' ? '담당기관명' : '소속기관명'} <span className="text-red-500">*</span>
                 <input className={inputClass} value={value.organization}
                     onChange={(e) => set('organization', e.target.value)} required />
             </label>
