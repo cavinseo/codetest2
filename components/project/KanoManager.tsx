@@ -133,6 +133,10 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
 
     // Kano 질문 직접 입력 관리
     const [kanoQuestions, setKanoQuestions] = useState<Record<string, { positive: string; negative: string }>>({});
+    // 사용자가 직접 고친 질문의 요구사항 id. loadData 가 질문 맵을 서버 기본값으로
+    // 다시 만들기 때문에, 이 표시가 없으면 초대 발송·업로드 같은 다른 조작 한 번에
+    // 저장 전 편집이 통째로 원래 문구로 돌아간다(화면에 경고도 없다).
+    const editedQuestionIds = useRef<Set<string>>(new Set());
     const [isSavingQuestions, setIsSavingQuestions] = useState(false);
 
     const { toast, showToast } = useToast(3500);
@@ -159,7 +163,15 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 for (const r of reqs) {
                     qMap[r.id] = resolveKanoQuestionPair(r);
                 }
-                setKanoQuestions(qMap);
+                // 손대지 않은 질문만 서버 기본값으로 새로 고치고, 사용자가 고친
+                // 것은 그대로 둔다.
+                setKanoQuestions((prev) => {
+                    const merged = { ...qMap };
+                    for (const id of editedQuestionIds.current) {
+                        if (prev[id]) merged[id] = prev[id];
+                    }
+                    return merged;
+                });
             }
 
             const invRes = await fetch(`/api/projects/${projectId}/kano/invitations`);
@@ -1115,10 +1127,13 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                                     </label>
                                                     <textarea
                                                         value={q.positive}
-                                                        onChange={(e) => setKanoQuestions(prev => ({
-                                                            ...prev,
-                                                            [req.id]: { ...prev[req.id], positive: e.target.value }
-                                                        }))}
+                                                        onChange={(e) => {
+                                                            editedQuestionIds.current.add(req.id);
+                                                            setKanoQuestions(prev => ({
+                                                                ...prev,
+                                                                [req.id]: { ...prev[req.id], positive: e.target.value }
+                                                            }));
+                                                        }}
                                                         rows={2}
                                                         placeholder={`${topic}(이)라면 어떻게 생각하십니까?`}
                                                         className="w-full px-3 py-2 bg-emerald-500/[0.05] border border-emerald-500/20 hover:border-emerald-500/40 focus:border-emerald-500/60 rounded-lg text-white text-sm resize-none transition-colors outline-none placeholder:text-gray-600"
@@ -1132,10 +1147,13 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                                     </label>
                                                     <textarea
                                                         value={q.negative}
-                                                        onChange={(e) => setKanoQuestions(prev => ({
-                                                            ...prev,
-                                                            [req.id]: { ...prev[req.id], negative: e.target.value }
-                                                        }))}
+                                                        onChange={(e) => {
+                                                            editedQuestionIds.current.add(req.id);
+                                                            setKanoQuestions(prev => ({
+                                                                ...prev,
+                                                                [req.id]: { ...prev[req.id], negative: e.target.value }
+                                                            }));
+                                                        }}
                                                         rows={2}
                                                         placeholder={`${topic}(이)가 아니라면 어떻게 생각하십니까?`}
                                                         className="w-full px-3 py-2 bg-red-500/[0.05] border border-red-500/20 hover:border-red-500/40 focus:border-red-500/60 rounded-lg text-white text-sm resize-none transition-colors outline-none placeholder:text-gray-600"
