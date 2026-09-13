@@ -18,7 +18,6 @@ interface Requirement {
 interface SurveyData {
     projectName: string;
     requirements: Requirement[];
-    respondentEmail: string;
 }
 
 type KanoAnswer = 'LIKE' | 'EXPECT' | 'NEUTRAL' | 'TOLERATE' | 'DISLIKE';

@@ -77,9 +77,11 @@ export async function POST(
         // 이메일 발송
         const emailSent = await sendSurveyInvitation(email, surveyLink, project.name);
 
+        // 응답자 이메일은 로그에 남기지 않는다(lib/logger.ts 규칙). 무엇이
+        // 일어났는지는 invitationId 로 충분히 추적되고, 형제 라우트인
+        // kano/invite/bulk 와 invites 도 식별자·건수만 남긴다.
         log.info('Kano 질문지 초대 생성 및 발송 완료', {
             projectId,
-            email,
             invitationId: invitation.id,
             emailSent
         });
