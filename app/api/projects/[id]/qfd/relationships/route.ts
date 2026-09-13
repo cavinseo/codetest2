@@ -47,6 +47,29 @@ export async function POST(
         const body = await request.json();
         const data = relationshipSchema.parse(body);
 
+        // 두 id 만 믿으면 다른 프로젝트의 행·열을 참조하는 관계가 만들어진다.
+        // 그 프로젝트가 요구사항을 지우면 Cascade 로 이쪽 QFD 행이 말없이
+        // 사라지고, 없는 id 는 FK 위반 500·있는 id 는 200 이라 특정 id 의 존재를
+        // 확인하는 오라클로도 쓰인다. 형제 라우트(qfd/benchmarks,
+        // qfd/technical-benchmarks)가 쓰는 것과 같은 방식으로 소속을 확인한다.
+        const [requirement, technical] = await Promise.all([
+            prisma.customerRequirement.findFirst({
+                where: { id: data.requirementId, projectId },
+                select: { id: true },
+            }),
+            prisma.technicalCharacteristic.findFirst({
+                where: { id: data.technicalCharId, projectId },
+                select: { id: true },
+            }),
+        ]);
+
+        if (!requirement || !technical) {
+            return NextResponse.json(
+                { error: '현재 프로젝트의 요구사항과 기술특성만 연결할 수 있습니다.' },
+                { status: 404 }
+            );
+        }
+
         await prisma.qFDMatrix.upsert({
             where: {
                 projectId_requirementId_technicalCharId: {
