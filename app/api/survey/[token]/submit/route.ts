@@ -88,7 +88,20 @@ export async function POST(
         const now = new Date();
 
         const result = await prisma.$transaction(async (tx: any) => {
-            // 1. 응답 데이터 생성
+            // 1. 초대를 선점한다. 위 respondedAt 검사는 트랜잭션 밖이라, 제출을
+            // 두 번 누르거나 느린 네트워크에서 재시도하면 두 요청이 모두 그 검사를
+            // 통과해 응답 세트가 두 벌 저장되고 Kano 분석의 응답 수·비율이 그대로
+            // 두 배가 된다. (invitationId, requirementId) 유니크 제약이 없어 DB 도
+            // 막아 주지 않으므로, respondedAt 이 아직 비어 있을 때만 찍는
+            // updateMany 의 count 로 승자를 가린다. 진 쪽은 아무것도 쓰지 않는다.
+            const claimed = await tx.kanoSurveyInvitation.updateMany({
+                where: { id: invitation.id, respondedAt: null },
+                data: { respondedAt: now },
+            });
+
+            if (claimed.count === 0) return null;
+
+            // 2. 응답 데이터 생성
             const newResponses = Object.entries(answers).map(([requirementId, answer]: [string, any]) => {
                 const functionalScore = KANO_ANSWER_SCORE[answer.functional as keyof typeof KANO_ANSWER_SCORE];
                 const dysfunctionalScore = KANO_ANSWER_SCORE[answer.dysfunctional as keyof typeof KANO_ANSWER_SCORE];
@@ -112,14 +125,14 @@ export async function POST(
                 });
             }
 
-            // 2. 초대 상태 업데이트
-            await tx.kanoSurveyInvitation.update({
-                where: { id: invitation.id },
-                data: { respondedAt: now },
-            });
-
             return newResponses.length;
         });
+
+        // 선점에 진 요청이다. 먼저 도착한 제출이 이미 저장됐으므로 응답자에게는
+        // 트랜잭션 밖 검사와 같은 안내를 준다.
+        if (result === null) {
+            return NextResponse.json({ error: '이미 응답을 완료하셨습니다.' }, { status: 400 });
+        }
 
         log.info('설문 응답 제출 성공', { invitationId: invitation.id, responseCount: result });
 
