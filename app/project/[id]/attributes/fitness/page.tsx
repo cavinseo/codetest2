@@ -28,6 +28,20 @@ interface AttributeFitness {
     note?: string;
 }
 
+// 슬라이더를 한 번도 건드리지 않은 속성이 화면에서 갖는 값이다. 저장 payload 도
+// 같은 것을 써야 한다 — 예전에는 화면만 이 기본값을 그리고 저장은 fitnessMap 에
+// 있는 것(=손댄 것)만 보내서, 20개 중 3개만 조정하면 나머지 17개는 화면에 5/3/7
+// 로 보이는데 DB 에는 행이 없었다. 내보내기·완성도·보고서에서 그만큼이 빈다.
+const createDefaultFitness = (projectId: string, attributeId: string): AttributeFitness => ({
+    id: '',
+    projectId,
+    attributeId,
+    importance: 5,
+    currentLevel: 3,
+    targetLevel: 7,
+    note: '',
+});
+
 function ScoreSlider({
     value,
     onChange,
@@ -179,7 +193,8 @@ export default function AttributeFitnessPage() {
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            const fitnesses = Object.values(fitnessMap);
+            // 화면에 보이는 모든 속성을 보낸다(건드리지 않은 것은 기본값으로).
+            const fitnesses = attributes.map((attr) => fitnessMap[attr.id] ?? createDefaultFitness(projectId, attr.id));
             const response = await fetch(`/api/projects/${projectId}/attributes/fitness`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -328,15 +343,7 @@ export default function AttributeFitnessPage() {
                     <div className="space-y-3">
                         {attributes.map((attr, idx) => {
                             const attributeName = attr.attribute ?? attr.name ?? '';
-                            const fitness = fitnessMap[attr.id] || {
-                                id: '',
-                                projectId,
-                                attributeId: attr.id,
-                                importance: 5,
-                                currentLevel: 3,
-                                targetLevel: 7,
-                                note: '',
-                            };
+                            const fitness = fitnessMap[attr.id] ?? createDefaultFitness(projectId, attr.id);
                             return (
                                 <div key={attr.id} className="card hover:border-white/[0.10] transition-all duration-200">
                                     <div className="flex items-start gap-4">

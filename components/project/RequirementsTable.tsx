@@ -153,13 +153,22 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     }, [loadRequirements]);
 
     const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
+        // 열려 있는 인라인 편집을 먼저 반영한다. 예전에는 editValues 를 둔 채
+        // requirements 만 보내고 성공하면 editValues 를 버려서, 항목을 고치는
+        // 중에 저장을 누르면 "저장되었습니다" 가 뜨는데도 방금 친 글자가 원래
+        // 값으로 되돌아갔다 — 저장된 줄 알고 화면을 떠나면 그대로 유실된다.
+        const requirementsToSave = editingId
+            ? requirements.map((item) => (item.id === editingId ? { ...item, ...editValues } : item))
+            : requirements;
+        if (editingId) setRequirements(requirementsToSave);
+
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/requirements`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    requirements,
+                    requirements: requirementsToSave,
                     ...(options.confirmCascade ? { confirmCascade: true } : {}),
                 }),
             });

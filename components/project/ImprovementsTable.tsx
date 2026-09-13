@@ -70,14 +70,31 @@ const normalizeFeatures = (items: SavedImprovementItem[]): ImprovementFeature[] 
             order: index,
         }));
 
-const syncFeaturesWithNeeds = (rows: ImprovementRow[], currentFeatures: ImprovementFeature[]): ImprovementFeature[] =>
-    Array.from({ length: Math.max(MIN_FEATURE_ROWS, rows.length, currentFeatures.length) }, (_, index) => ({
-        id: currentFeatures[index]?.id ?? `blank_feature_${index}`,
-        customerNeed: rows[index]?.customerNeed ?? currentFeatures[index]?.customerNeed ?? '',
-        addedFeature: currentFeatures[index]?.addedFeature ?? '',
-        performanceImprovement: currentFeatures[index]?.performanceImprovement ?? '',
-        order: index,
-    }));
+// 기능 행은 자기 고객니즈를 그대로 지킨다. 예전에는 rows[index] 로 덮어써서,
+// 니즈 행 하나를 지우면 아래 표의 기능이 한 칸씩 밀려 **다른 니즈에 붙은 채로**
+// 저장됐다(A·B·C 중 B 를 지우면 C 에 B 의 기능이 달렸다). 빈 기능 행에만 아직
+// 짝이 없는 니즈를 채우며, 이 규칙은 addFeature 가 쓰는 것과 같다.
+const syncFeaturesWithNeeds = (rows: ImprovementRow[], currentFeatures: ImprovementFeature[]): ImprovementFeature[] => {
+    const takenNeeds = new Set(currentFeatures.map((feature) => feature.customerNeed.trim()).filter(Boolean));
+    const unassignedNeeds = rows
+        .map((row) => row.customerNeed)
+        .filter((need) => need.trim() && !takenNeeds.has(need.trim()));
+    let nextUnassigned = 0;
+
+    return Array.from({ length: Math.max(MIN_FEATURE_ROWS, rows.length, currentFeatures.length) }, (_, index) => {
+        const feature = currentFeatures[index];
+        const ownNeed = feature?.customerNeed ?? '';
+
+        return {
+            id: feature?.id ?? `blank_feature_${index}`,
+            // 단축평가라 자기 니즈가 있으면 nextUnassigned 는 올라가지 않는다.
+            customerNeed: ownNeed || unassignedNeeds[nextUnassigned++] || '',
+            addedFeature: feature?.addedFeature ?? '',
+            performanceImprovement: feature?.performanceImprovement ?? '',
+            order: index,
+        };
+    });
+};
 
 export default function ImprovementsTable({ projectId }: Props) {
     const [rows, setRows] = useState<ImprovementRow[]>([]);
@@ -179,16 +196,29 @@ export default function ImprovementsTable({ projectId }: Props) {
         ];
     });
 
-    const updateRow = (id: string, field: keyof ImprovementRow, value: string) => setRows((prev) => prev.map((row) => {
-        if (row.id !== id) return row;
-        if (field !== 'customerNeed') return { ...row, [field]: value };
+    const updateRow = (id: string, field: keyof ImprovementRow, value: string) => {
+        if (field === 'customerNeed') {
+            // 짝을 텍스트로 짓기 때문에, 니즈 이름을 고치면 그 니즈에 붙어 있던
+            // 기능 행의 표시도 여기서 함께 옮겨 줘야 옛 이름에 남지 않는다.
+            const previousNeed = rows.find((row) => row.id === id)?.customerNeed ?? '';
+            if (previousNeed.trim() && previousNeed !== value) {
+                setFeatures((prev) => prev.map((feature) => (
+                    feature.customerNeed === previousNeed ? { ...feature, customerNeed: value } : feature
+                )));
+            }
+        }
 
-        return {
-            ...row,
-            customerNeed: value,
-            ...(getQfdValuesForNeed(value) || {}),
-        };
-    }));
+        setRows((prev) => prev.map((row) => {
+            if (row.id !== id) return row;
+            if (field !== 'customerNeed') return { ...row, [field]: value };
+
+            return {
+                ...row,
+                customerNeed: value,
+                ...(getQfdValuesForNeed(value) || {}),
+            };
+        }));
+    };
 
     const updateFeature = (id: string, field: keyof ImprovementFeature, value: string) =>
         setFeatures((prev) => prev.map((feature) => (feature.id === id ? { ...feature, [field]: value } : feature)));
