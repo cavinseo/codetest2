@@ -38,12 +38,19 @@ function tableRows(tableIndex: number) {
     return [...table.querySelectorAll('tbody tr')];
 }
 
-// 기능 표의 각 행을 "고객니즈|추가기능" 으로 읽는다.
+// 기능 표의 각 행을 "고객니즈|추가기능" 으로 읽는다. 고객니즈 칸은 입력칸이
+// 아니라 일반 텍스트이고(비어 있으면 '-'), 추가기능은 그 행의 첫 입력칸이다.
 function featurePairs() {
     return tableRows(1)
-        .map((row) => [...row.querySelectorAll('input')].map((input) => input.value))
-        .filter((values) => values.some(Boolean))
-        .map(([need, added]) => `${need}|${added}`);
+        .map((row) => {
+            const needText = [...row.querySelectorAll('td')][1]?.textContent?.trim() ?? '';
+            return {
+                need: needText === '-' ? '' : needText,
+                added: (row.querySelector('input') as HTMLInputElement | null)?.value ?? '',
+            };
+        })
+        .filter((pair) => pair.need || pair.added)
+        .map((pair) => `${pair.need}|${pair.added}`);
 }
 
 beforeEach(() => {
