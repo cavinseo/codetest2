@@ -52,6 +52,24 @@ export async function POST(
         // 대칭성을 위해 ID 정렬(항상 techId1 < techId2가 되도록)
         const [sortedId1, sortedId2] = [techId1, techId2].sort();
 
+        // 두 id 만 믿으면 다른 프로젝트의 기술특성을 참조하는 상관관계가
+        // 만들어진다. 그 프로젝트가 기술특성을 지우면 Cascade 로 이쪽 행이
+        // 말없이 사라지고, 없는 id 는 FK 위반 500·있는 id 는 200 이라 존재
+        // 확인 오라클로도 쓰인다. 형제 라우트와 같은 방식으로 소속을 확인한다.
+        // 삭제(NONE) 경로도 함께 막는다 — 남의 id 로 deleteMany 를 부르면
+        // 아무것도 지워지지 않지만, 200 이 돌아와 같은 오라클이 된다.
+        // 스키마가 두 id 가 서로 다름을 보장하므로 둘 다 있으면 count 는 2 다.
+        const ownedCount = await prisma.technicalCharacteristic.count({
+            where: { id: { in: [sortedId1, sortedId2] }, projectId },
+        });
+
+        if (ownedCount !== 2) {
+            return NextResponse.json(
+                { error: '현재 프로젝트의 기술특성만 연결할 수 있습니다.' },
+                { status: 404 }
+            );
+        }
+
         if (correlation === 'NONE') {
             await prisma.techCorrelation.deleteMany({
                 where: {
