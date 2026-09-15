@@ -80,6 +80,43 @@ describe('본인 비밀번호와 세션 갱신', () => {
         expect(updateMany).not.toHaveBeenCalled();
         expect(cookieSet).not.toHaveBeenCalled();
     });
+    it('현재 비밀번호 방식도 초대의 프로그램 종료일과 이용 기간을 갱신 조건에 묶는다', async () => {
+        const user = account();
+        findUser.mockResolvedValue(user);
+        const response = await POST(request(validBody));
+        expect(response.status).toBe(200);
+        expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+            accessExpiresAt: user.accessExpiresAt, programId: user.programId,
+            usedInviteCode: { is: expect.objectContaining({
+                id: user.usedInviteCode.id, usedAt: user.usedInviteCode.usedAt,
+                accessDurationDays: user.usedInviteCode.accessDurationDays,
+                program: { is: { endsAt: user.usedInviteCode.program.endsAt } },
+            }) },
+        }) }));
+        expect((await response.json()).message).toContain('초대 코드');
+    });
+    it('초대가 없는 회원도 이용 기한과 초대 연결 부재를 갱신 조건에 묶는다', async () => {
+        const user = { ...account(), usedInviteCode: null };
+        findUser.mockResolvedValue(user);
+        const response = await POST(request(validBody));
+        expect(response.status).toBe(200);
+        expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+            accessExpiresAt: user.accessExpiresAt, usedInviteCode: { is: null },
+        }) }));
+        expect((await response.json()).message).not.toContain('초대 코드');
+    });
+    it('초대 연결 후 역할이 바뀐 회원의 현재 비밀번호 변경을 허용하고 코드 사용 안내는 생략한다', async () => {
+        const user = { ...account(), role: 'MENTOR' };
+        findUser.mockResolvedValue(user);
+        const response = await POST(request(validBody));
+        expect(response.status).toBe(200);
+        expect(compare).toHaveBeenCalledWith(validBody.currentPassword, user.passwordHash);
+        expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+            role: 'MENTOR', isAdmin: user.isAdmin, email: user.email,
+            usedInviteCode: { is: expect.objectContaining({ role: user.usedInviteCode.role, usedById: user.usedInviteCode.usedById }) },
+        }) }));
+        expect((await response.json()).message).not.toContain('초대 코드');
+    });
     it('재조회에서 승인이 취소된 계정은 변경할 수 없다', async () => {
         findUser.mockResolvedValue({ ...account(), status: 'PENDING' });
         expect((await POST(request(validBody))).status).toBe(403);

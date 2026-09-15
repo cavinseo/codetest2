@@ -82,13 +82,14 @@ export async function POST(request: NextRequest) {
         if (user.status !== 'APPROVED' || isUserAccessExpired(user)) {
             return NextResponse.json({ error: '현재 이용할 수 없는 계정입니다.' }, { status: 403 });
         }
-        const invite = useInvite ? user.usedInviteCode : null;
+        const invite = user.usedInviteCode;
+        const canVerifyWithInviteCode = Boolean(invite && user.role === 'MENTEE' && !user.isAdmin
+            && invite.role === 'MENTEE' && invite.usedAt && invite.usedById === user.id
+            && invite.programId === user.programId
+            && invite.email.trim().toLowerCase() === user.email.trim().toLowerCase()
+            && inviteAccessExpiresAt({ ...invite, usedBy: user }).getTime() > Date.now());
         if (useInvite) {
-            if (!invite || user.role !== 'MENTEE' || user.isAdmin || invite.role !== 'MENTEE'
-                || !invite.usedAt || invite.usedById !== user.id || invite.programId !== user.programId
-                || invite.code !== normalizeInviteCode(input.inviteCode)
-                || invite.email.trim().toLowerCase() !== user.email.trim().toLowerCase()
-                || inviteAccessExpiresAt({ ...invite, usedBy: user }).getTime() <= Date.now()) {
+            if (!invite || !canVerifyWithInviteCode || invite.code !== normalizeInviteCode(input.inviteCode)) {
                 return NextResponse.json({ error: '초대 코드를 확인하세요. 이용 기한이 만료되었거나 사용할 수 없는 코드입니다.' }, { status: 403 });
             }
         } else if (!await bcrypt.compare(input.currentPassword, user.passwordHash)) {
@@ -99,20 +100,18 @@ export async function POST(request: NextRequest) {
         if (isUserAccessExpired(user)) {
             return NextResponse.json({ error: '이용 기간이 만료되었습니다.' }, { status: 403 });
         }
-        // 검증한 해시·세션·승인이 그대로인 한 요청만 성공한다. 코드의 철회·변경도 확인한다.
+        // 확인 방식과 무관하게 검증한 계정·초대 이용 기간이 그대로인 한 요청만 성공한다.
         const updated = await prisma.user.updateMany({
             where: {
                 id: user.id, passwordHash: user.passwordHash, sessionVersion: session.ver, status: 'APPROVED',
-                ...(invite ? {
-                    email: user.email, role: 'MENTEE', isAdmin: false,
-                    programId: user.programId, accessExpiresAt: user.accessExpiresAt,
-                    usedInviteCode: { is: {
-                        id: invite.id, code: invite.code, email: invite.email, role: 'MENTEE',
-                        usedById: user.id, usedAt: invite.usedAt, programId: invite.programId,
-                        expiresAt: invite.expiresAt, accessDurationDays: invite.accessDurationDays,
-                        program: { is: { endsAt: invite.program.endsAt } },
-                    } },
-                } : {}),
+                email: user.email, role: user.role, isAdmin: user.isAdmin,
+                programId: user.programId, accessExpiresAt: user.accessExpiresAt,
+                usedInviteCode: { is: invite ? {
+                    id: invite.id, code: invite.code, email: invite.email, role: invite.role,
+                    usedById: invite.usedById, usedAt: invite.usedAt, programId: invite.programId,
+                    expiresAt: invite.expiresAt, accessDurationDays: invite.accessDurationDays,
+                    program: { is: { endsAt: invite.program.endsAt } },
+                } : null },
             },
             data: {
                 passwordHash,
@@ -147,7 +146,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: true,
             message: '비밀번호를 변경했습니다. 다른 기기의 로그인은 해제됩니다.'
-                + (invite ? ' 초대 코드는 이용 기간 동안 로그인과 비밀번호 재설정에 계속 사용할 수 있습니다.' : ''),
+                + (canVerifyWithInviteCode ? ' 초대 코드는 이용 기간 동안 로그인과 비밀번호 재설정에 계속 사용할 수 있습니다.' : ''),
         });
     } catch (error: unknown) {
         if (error instanceof z.ZodError) {
