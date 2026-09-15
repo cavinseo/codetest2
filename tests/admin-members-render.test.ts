@@ -74,3 +74,15 @@ it('이름이 없는 회원이 섞여 있어도 ID와 이름으로 검색하고 
     await search('');
     expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
 });
+
+it('멘토의 프로젝트 개설 허용 상태를 표시하고 선택한 멘토만 활성화한다', async () => {
+    await renderMembers([{ ...member('mentor', null), role: 'MENTOR', mentorProjectCreationEnabled: false }, member('mentee', null)]);
+    const button = container.querySelector<HTMLButtonElement>('button[aria-pressed="false"][aria-label*="프로젝트 생성"]')!;
+    expect(button).not.toBeNull();
+    expect(button.textContent).toContain('사용중지');
+    await act(async () => button.click());
+    expect(fetch).toHaveBeenCalledWith('/api/admin/users', expect.objectContaining({
+        method: 'PATCH', body: JSON.stringify({ userId: 'mentor', action: 'setMentorProjectCreation', enabled: true }),
+    }));
+    expect(container.textContent).toContain('프로젝트 생성을 활성화했습니다.');
+});

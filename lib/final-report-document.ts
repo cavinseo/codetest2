@@ -4,6 +4,8 @@ import { buildTargetSpecsFromAsIs } from './worksheet-links';
 import { formatMoney } from './money';
 import { parseSourceYear } from './funding-ai-agent';
 import { A4_PORTRAIT_BODY, A4_LANDSCAPE_BODY, fitImageToBody, shouldUseLandscape } from './report-image-fit';
+import type { ProductOverview } from './product-overview';
+import type { WorksheetAnalysis } from './mentor-worksheet-analysis';
 
 export interface FinalReportFreeInput {
     productImageDataUrl: string | null;
@@ -16,7 +18,7 @@ export interface FinalReportFreeInput {
     improvedProductDescription: string;
 }
 
-export interface FinalReportOverviewInput {
+export interface FinalReportOverviewInput extends ProductOverview {
     projectName: string;
     description: string | null;
     coachName: string | null;
@@ -92,6 +94,13 @@ export function finalReportFileName(projectName: string): string {
     return `결과보고서_${kanoSurveyFileNameStem(projectName)}.docx`;
 }
 
+// 삭제한 입력은 보존하고 신규 개요 필드가 없는 이전 프로젝트만 자유 입력을 사용한다.
+export function hasProductOverviewSource(overview: ProductOverview): boolean {
+    return [overview.productName, overview.productImageDataUrl, overview.productImageWidthPx,
+        overview.productImageHeightPx, overview.marketDefinition, overview.targetCustomer]
+        .some(value => value !== null && value !== undefined);
+}
+
 type ReportBuilder = ReturnType<typeof createReportBuilder>;
 
 /**
@@ -159,21 +168,22 @@ function appendProductOverview(
     freeInput: FinalReportFreeInput,
     worksheets: FinalReportWorksheetData,
 ) {
+    const productOverview = hasProductOverviewSource(overview) ? overview : freeInput;
     report.heading('Ⅰ. 제품/서비스 개요', 1);
     report.push({ kind: 'keyValueTable', rows: [
-        { label: '제품명', value: overview.projectName },
+        { label: '제품명', value: overview.productName ?? overview.projectName },
         { label: '제품설명', value: overview.description ?? '' },
     ] });
-    if (freeInput.productImageDataUrl) {
+    if (productOverview.productImageDataUrl) {
         report.heading('제품/서비스 이미지');
         // 사진 치수를 얻지 못한 경우에도 기존 입력으로 보고서를 만들 수 있게 한다.
-        const size = freeInput.productImageWidthPx !== null && freeInput.productImageHeightPx !== null
-            ? fitImageToBody(freeInput.productImageWidthPx, freeInput.productImageHeightPx, A4_PORTRAIT_BODY)
+        const size = productOverview.productImageWidthPx != null && productOverview.productImageHeightPx != null
+            ? fitImageToBody(productOverview.productImageWidthPx, productOverview.productImageHeightPx, A4_PORTRAIT_BODY)
             : { widthMm: 120, heightMm: 80 };
-        report.push({ kind: 'image', title: '제품/서비스 이미지', pngDataUrl: freeInput.productImageDataUrl, ...size, landscape: false });
+        report.push({ kind: 'image', title: '제품/서비스 이미지', pngDataUrl: productOverview.productImageDataUrl, ...size, landscape: false });
     }
-    report.prose('시장정의', freeInput.marketDefinition);
-    report.prose('목표고객', freeInput.targetCustomer);
+    report.prose('시장정의', productOverview.marketDefinition ?? '');
+    report.prose('목표고객', productOverview.targetCustomer ?? '');
 
     // 두 표는 제목과 기간만 다르고 열 구성과 뜻이 같다.
     const salesTable = (title: string, period: string) => {
@@ -185,13 +195,16 @@ function appendProductOverview(
     salesTable('향후 1년 목표매출액', 'Y_PLUS_1');
 }
 
-function appendAttributeAnalysis(report: ReportBuilder, worksheets: FinalReportWorksheetData) {
+function appendAttributeAnalysis(report: ReportBuilder, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
     report.heading('Ⅱ. 제품/서비스 속성 분석', 1);
     report.table('(AS-IS) 스펙표', ['핵심스펙', '세부스펙', '기술적특성'],
         buildTargetSpecsFromAsIs(worksheets.specFunctions).map(row => [row.category, row.subCategory, row.specItem]));
+    report.prose('WS-2 멘토 분석', analysis.spec?.analysis ?? '');
     report.table('제품속성서', ['제품명', '고객명', '세분시장', '니즈', '혜택', '속성', '기술역량'],
         worksheets.productAttributes.map(row => [row.productName, row.customerName, row.marketSegment, row.customerNeed, row.benefit, row.attribute, row.techCapability]));
+    report.prose('WS-3 멘토 분석', analysis.attributes?.analysis ?? '');
     report.capture('fitness');
+    report.prose('WS-4 멘토 분석', analysis.fitness?.analysis ?? '');
 }
 
 function appendDemandAndTechAnalysis(report: ReportBuilder, worksheets: FinalReportWorksheetData) {
@@ -227,30 +240,39 @@ function appendFinalImprovementDirection(
     report: ReportBuilder,
     freeInput: FinalReportFreeInput,
     worksheets: FinalReportWorksheetData,
+    analysis: WorksheetAnalysis,
 ) {
     report.heading('Ⅳ. 최종 개선 방향', 1);
-    report.prose('최종 목표 스펙 항목별 설명', freeInput.finalSpecExplanation);
+    if (analysis['target-spec'] === undefined) report.prose('최종 목표 스펙 항목별 설명', freeInput.finalSpecExplanation);
     report.table('최종 제품/서비스 제공 스펙 List', ['스펙분류', '세부항목', '기술적특성', '개선여부'],
         worksheets.targetSpecs.map(row => [row.category, row.subCategory, row.specItem, row.note]));
+    if (analysis['target-spec']?.items.length) {
+        report.table('WS-12 멘토 분석 · 최종 목표 스펙 항목별 설명', ['항목', '설명'],
+            analysis['target-spec'].items.map(item => [item.label, item.explanation]));
+    }
     report.table('핵심자산 도출표', ['핵심자산'],
         worksheets.assets.filter(row => row.type === 'CORE').map(row => [row.content]));
+    report.prose('WS-15 멘토 분석 · 핵심자산', analysis.assets?.core ?? '');
     report.table('보완자산 도출표', ['필요항목', '해결방안'],
         worksheets.assets.filter(row => row.type === 'COMPLEMENTARY').map(row => [row.category, row.content]));
-    report.prose('개선 제품명', freeInput.improvedProductName);
-    report.prose('개선 제품설명', freeInput.improvedProductDescription);
+    report.prose('WS-15 멘토 분석 · 보완자산', analysis.assets?.complementary ?? '');
+    report.prose('개선 제품명', analysis['tech-roadmap']?.productName ?? freeInput.improvedProductName);
+    report.prose('개선 제품설명', analysis['tech-roadmap']?.description ?? freeInput.improvedProductDescription);
     report.table('KS-QFD 개선 방향성', ['순위', '개선 방향(차별화)', '개선기능 및 성능향상', '구현가능성', '목표 고객'],
         worksheets.improvementDirections.map((row, index) => [index + 1, row.category, row.techItem, row.currentLevel, row.targetLevel]));
 }
 
-function appendFundingPlan(report: ReportBuilder, worksheets: FinalReportWorksheetData) {
+function appendFundingPlan(report: ReportBuilder, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
     report.heading('Ⅴ. 자금 계획', 1);
     report.table('자금소요계획표', ['구분', '항목', '1차년도', '2차년도', '3차년도'],
         worksheets.fundingPlans.map(row => [row.category, row.item, formatMoney(row.year1), formatMoney(row.year2), formatMoney(row.year3)]));
+    report.prose('WS-16 멘토 분석', analysis['funding-plan']?.analysis ?? '');
     report.table('자금조달계획표', ['구분', '1차년도 출처', '1차년도 금액', '2차년도 출처', '2차년도 금액', '3차년도 출처', '3차년도 금액'],
         worksheets.fundingSources.map(row => [row.category, ...[row.year1, row.year2, row.year3].flatMap(value => {
             const parsed = parseSourceYear(value);
             return [parsed.source, formatMoney(parsed.amount)];
         })]));
+    report.prose('WS-17 멘토 분석', analysis['funding-source']?.analysis ?? '');
 }
 
 export function buildFinalReportModel(
@@ -258,15 +280,16 @@ export function buildFinalReportModel(
     worksheets: FinalReportWorksheetData,
     freeInput: FinalReportFreeInput,
     images: CapturedWorksheetImage[],
+    analysis: WorksheetAnalysis = {},
 ): FinalReportModel {
     const report = createReportBuilder(images);
 
     appendCover(report, overview);
     appendProductOverview(report, overview, freeInput, worksheets);
-    appendAttributeAnalysis(report, worksheets);
+    appendAttributeAnalysis(report, worksheets, analysis);
     appendDemandAndTechAnalysis(report, worksheets);
-    appendFinalImprovementDirection(report, freeInput, worksheets);
-    appendFundingPlan(report, worksheets);
+    appendFinalImprovementDirection(report, freeInput, worksheets, analysis);
+    appendFundingPlan(report, worksheets, analysis);
 
     return { title: REPORT_TITLE, fileName: finalReportFileName(overview.projectName), blocks: report.blocks };
 }

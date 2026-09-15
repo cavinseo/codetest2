@@ -7,7 +7,7 @@ const findUniqueProfile = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
-        user: { findUnique: findUniqueUser },
+        user: { findFirst: findUniqueUser },
         memberProfile: { findUnique: findUniqueProfile },
     },
 }));
@@ -66,6 +66,14 @@ afterEach(() => {
 });
 
 describe('로그인 이용 기간 확인', () => {
+    it('이메일 앞뒤 공백과 대소문자를 정규화하되 저장된 초대 기간도 조회한다', async () => {
+        const response = await POST(loginRequest({ email: ' U@X.COM ', password: 'password123' }));
+        expect(response.status).toBe(200);
+        expect(findUniqueUser).toHaveBeenCalledWith(expect.objectContaining({
+            where: { email: { equals: 'u@x.com', mode: 'insensitive' } },
+            include: { usedInviteCode: { select: { usedAt: true, expiresAt: true, accessDurationDays: true, programId: true, program: { select: { endsAt: true } } } } },
+        }));
+    });
     it('관리자가 연장한 초대 계정은 원래 초대 기간 후에도 비밀번호로 로그인한다', async () => {
         findUniqueUser.mockResolvedValue(approvedUser({
             programId: 'program', accessExpiresAt: new Date(Date.now() + 10 * 86_400_000),

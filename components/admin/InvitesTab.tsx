@@ -30,7 +30,7 @@ export default function InvitesTab() {
     const [email, setEmail] = useState('');
     const [programId, setProgramId] = useState('');
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-    const [operation, setOperation] = useState<'issue' | 'revoke' | null>(null);
+    const [operation, setOperation] = useState<'issue' | 'revoke' | 'resend' | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
     const [results, setResults] = useState<InviteBatchResult[]>([]);
@@ -139,6 +139,26 @@ export default function InvitesTab() {
         }
     };
 
+    const resend = async (invite: Invite) => {
+        if (busy.current) return;
+        busy.current = true;
+        setOperation('resend');
+        setMessage(null);
+        try {
+            const res = await fetch(`/api/invites/${invite.id}/send`, { method: 'POST' });
+            const data = await res.json().catch(() => null);
+            if (!mounted.current) return;
+            setMessage(res.ok && data?.emailSent
+                ? { type: 'success', text: `${invite.email} 주소로 기존 초대코드를 다시 발송했습니다.` }
+                : { type: 'error', text: data?.error || '메일 재발송에 실패했습니다.' });
+        } catch {
+            if (mounted.current) setMessage({ type: 'error', text: '메일 발송 결과를 확인하지 못했습니다. 연결을 확인하세요.' });
+        } finally {
+            busy.current = false;
+            if (mounted.current) setOperation(null);
+        }
+    };
+
     const isExpired = (invite: Invite) => new Date(invite.expiresAt).getTime() <= Date.now();
 
     return (
@@ -235,6 +255,8 @@ export default function InvitesTab() {
                                         )}
                                     </td>
                                     <td className="px-5 py-4 text-right">
+                                        {!isExpired(invite) && <button type="button" onClick={() => resend(invite)} disabled={isBusy}
+                                            className="btn-secondary text-xs mr-2" id={`invites-resend-${invite.id}`}>메일 재발송</button>}
                                         {!invite.usedAt && !isExpired(invite) && (
                                             <button type="button" onClick={() => revoke(invite.id)} disabled={isBusy}
                                                 className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"

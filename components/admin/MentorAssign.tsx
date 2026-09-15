@@ -1,5 +1,5 @@
 'use client';
-// 프로젝트별 멘토 배정·해제. 관리자와 프로그램 매니저가 함께 쓴다.
+// 멘티별 단일 멘토 배정·해제. 관리자와 담당 프로그램 매니저가 함께 쓴다.
 
 import { useCallback, useEffect, useState } from 'react';
 import { MEMBER_ROLE_LABELS, type MemberRole } from '@/lib/member-roles';
@@ -17,7 +17,9 @@ interface Candidate {
     role: MemberRole;
 }
 
-export default function MentorAssign({ projectId }: { projectId: string }) {
+export default function MentorAssign({ projectId, menteeId }: { projectId?: string; menteeId?: string }) {
+    const endpoint = menteeId ? `/api/mentees/${menteeId}/mentor` : `/api/projects/${projectId}/mentors`;
+    const [busy, setBusy] = useState(false);
     const [mentors, setMentors] = useState<Mentor[]>([]);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [selected, setSelected] = useState('');
@@ -30,65 +32,85 @@ export default function MentorAssign({ projectId }: { projectId: string }) {
         setLoadError(null);
         // /api/admin/users 는 requireAdmin 이라 매니저는 403 을 받는다. 같은 라우트의
         // ?candidates=1 분기(canAssignMentor 게이트)를 대신 쓴다.
-        const [mentorRes, candidateRes] = await Promise.all([
-            fetch(`/api/projects/${projectId}/mentors`),
-            fetch(`/api/projects/${projectId}/mentors?candidates=1`),
-        ]);
-        if (mentorRes.ok) {
-            setMentors((await mentorRes.json()).mentors);
-        } else {
-            setLoadError('배정된 멘토 목록을 불러오지 못했습니다.');
+        try {
+            const [mentorRes, candidateRes] = await Promise.all([
+                fetch(endpoint),
+                fetch(`${endpoint}?candidates=1`),
+            ]);
+            if (mentorRes.ok) {
+                setMentors((await mentorRes.json()).mentors);
+            } else {
+                setLoadError('배정된 멘토 목록을 불러오지 못했습니다.');
+            }
+            if (candidateRes.ok) {
+                setCandidates((await candidateRes.json()).candidates);
+            } else {
+                setLoadError('배정 가능한 인원을 불러오지 못했습니다.');
+            }
+        } catch {
+            setLoadError('멘토 정보를 불러오지 못했습니다. 연결을 확인하세요.');
         }
-        if (candidateRes.ok) {
-            setCandidates((await candidateRes.json()).candidates);
-        } else {
-            setLoadError('배정 가능한 인원을 불러오지 못했습니다.');
-        }
-    }, [projectId]);
+    }, [endpoint]);
 
     useEffect(() => { load(); }, [load]);
 
     const assign = async () => {
+        if (mentors.length > 0 && !window.confirm('기존 멘토를 교체하시겠습니까? 이 멘티에 대한 기존 멘토 배정이 해제됩니다.')) return;
+        setBusy(true);
         setMessage(null);
-        const res = await fetch(`/api/projects/${projectId}/mentors`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: selected }),
-        });
-        const data = await res.json().catch(() => null);
-        setMessage(res.ok
-            ? { type: 'success', text: '배정했습니다.' }
-            : { type: 'error', text: data?.error ?? '배정에 실패했습니다.' });
-        setSelected('');
-        await load();
+        try {
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: selected }),
+            });
+            const data = await res.json().catch(() => null);
+            setMessage(res.ok
+                ? { type: 'success', text: '배정했습니다.' }
+                : { type: 'error', text: data?.error ?? '배정에 실패했습니다.' });
+            setSelected('');
+            await load();
+        } catch {
+            setMessage({ type: 'error', text: '배정에 실패했습니다. 연결을 확인하세요.' });
+        } finally {
+            setBusy(false);
+        }
     };
 
     const unassign = async (userId: string) => {
         if (!window.confirm('배정을 해제하시겠습니까? 계정은 삭제되지 않습니다.')) return;
-        const res = await fetch(`/api/projects/${projectId}/mentors`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId }),
-        });
-        const data = await res.json().catch(() => null);
-        setMessage(res.ok
-            ? { type: 'success', text: '해제했습니다.' }
-            : { type: 'error', text: data?.error ?? '해제에 실패했습니다.' });
-        await load();
+        setBusy(true);
+        try {
+            const res = await fetch(endpoint, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId }),
+            });
+            const data = await res.json().catch(() => null);
+            setMessage(res.ok
+                ? { type: 'success', text: '해제했습니다.' }
+                : { type: 'error', text: data?.error ?? '해제에 실패했습니다.' });
+            await load();
+        } catch {
+            setMessage({ type: 'error', text: '해제에 실패했습니다. 연결을 확인하세요.' });
+        } finally {
+            setBusy(false);
+        }
     };
 
     return (
         <div className="card space-y-3">
+            <p className="text-sm text-gray-400">멘티당 멘토 1명을 배정합니다. 해당 멘티의 모든 프로젝트에 적용되며, 멘토는 열람과 워크시트 코멘트만 가능합니다.</p>
             <div className="flex flex-wrap items-center gap-2">
                 <select className="input w-auto py-2 px-3 text-sm" value={selected}
-                    onChange={(e) => setSelected(e.target.value)} id={`mentor-select-${projectId}`}>
+                    disabled={busy} aria-label="배정할 멘토" onChange={(e) => setSelected(e.target.value)} id={`mentor-select-${menteeId ?? projectId}`}>
                     <option value="">멘토 선택</option>
                     {candidates.map((c) => (
                         <option key={c.id} value={c.id}>{c.name ?? c.email} ({MEMBER_ROLE_LABELS[c.role]})</option>
                     ))}
                 </select>
-                <button type="button" onClick={assign} disabled={!selected}
-                    className="btn-primary text-sm disabled:opacity-50" id={`mentor-assign-submit-${projectId}`}>
+                <button type="button" onClick={assign} disabled={!selected || busy || !!loadError}
+                    className="btn-primary text-sm disabled:opacity-50" id={`mentor-assign-submit-${menteeId ?? projectId}`}>
                     배정
                 </button>
             </div>
@@ -107,7 +129,7 @@ export default function MentorAssign({ projectId }: { projectId: string }) {
                 {mentors.map((m) => (
                     <li key={m.id} className="flex items-center justify-between py-2 text-sm">
                         <span className="text-gray-300">{m.user.name ?? m.user.email}</span>
-                        <button type="button" onClick={() => unassign(m.userId)}
+                        <button type="button" disabled={busy} onClick={() => unassign(m.userId)}
                             className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors">
                             해제
                         </button>

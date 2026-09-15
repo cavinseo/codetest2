@@ -1,8 +1,10 @@
 'use client';
 // 프로그램(기관 단위로 개설하는 주제별 단위) 개설·목록 화면. 관리자와
-// 프로그램 매니저가 함께 쓴다. 매니저는 자신이 개설한 프로그램만 본다.
+// 프로그램 매니저가 함께 쓴다. 매니저는 자신이 담당하는 프로그램만 본다.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import ProgramMentors from './ProgramMentors';
+import ProjectRequestsPanel from '@/components/ProjectRequestsPanel';
 
 interface ProgramRow {
     id: string;
@@ -32,14 +34,56 @@ interface MenteeCandidate {
     programName: string | null;
 }
 
-const EMPTY_FORM = { name: '', organization: '', startsAt: '', endsAt: '' };
+const EMPTY_FORM = { name: '', organization: '', startsAt: '', endsAt: '', managerId: '' };
 
-export default function ProgramsTab() {
+interface DeletionPreview {
+    id: string;
+    name: string;
+    projectCount: number;
+    menteeCount: number;
+    inviteCount: number;
+    requestCount: number;
+    canDelete: boolean;
+    blockReason: string;
+}
+
+export default function ProgramsTab({ canCreate = false, canDelete = false, onDeleted }: {
+    canCreate?: boolean;
+    canDelete?: boolean;
+    onDeleted?: (id: string) => void;
+}) {
     const [programs, setPrograms] = useState<ProgramRow[]>([]);
     const [form, setForm] = useState(EMPTY_FORM);
     const [showCreate, setShowCreate] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const saveBusy = useRef(false);
+    const formPanel = useRef<HTMLFieldSetElement>(null);
+    useEffect(() => {
+        if (editingId) {
+            formPanel.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+            formPanel.current?.querySelector<HTMLInputElement>('#programs-name')?.focus({ preventScroll: true });
+        }
+    }, [editingId]);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [isBusy, setIsBusy] = useState(false);
+    const [managers, setManagers] = useState<{ id: string; name: string | null }[]>([]);
+    const [deleteTarget, setDeleteTarget] = useState<{
+        id: string; name: string; preview?: DeletionPreview; error?: string;
+    } | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [requestsVersion, setRequestsVersion] = useState(0);
+    const deleteDialog = useRef<HTMLDialogElement>(null);
+    useEffect(() => {
+        if (deleteTarget && deleteDialog.current && !deleteDialog.current.open) deleteDialog.current.showModal();
+    }, [deleteTarget]);
+    useEffect(() => {
+        if (!canCreate) return;
+        fetch('/api/programs?managers=1').then(async res => {
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '담당자 목록 조회에 실패했습니다.');
+            setManagers(data.managers);
+        }).catch(() => setMessage({ type: 'error', text: '담당자 목록을 불러오지 못했습니다.' }));
+    }, [canCreate]);
 
     // 프로젝트 불러오기: 프로그램마다 패널을 따로 열고 닫으므로 programId 로 키를 잡는다.
     const [openImport, setOpenImport] = useState<Record<string, boolean>>({});
@@ -71,25 +115,78 @@ export default function ProgramsTab() {
 
     useEffect(() => { load(); }, [load]);
 
+    const previewDelete = async (program: ProgramRow) => {
+        setDeleteTarget({ id: program.id, name: program.name });
+        try {
+            const res = await fetch(`/api/programs/${program.id}`);
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data?.program) throw new Error(data?.error || '삭제 정보를 불러오지 못했습니다.');
+            setDeleteTarget(prev => prev?.id === program.id ? { ...prev, preview: data.program } : prev);
+        } catch (error) {
+            setDeleteTarget(prev => prev?.id === program.id ? {
+                ...prev, error: error instanceof Error ? error.message : '삭제 정보를 불러오지 못했습니다.',
+            } : prev);
+        }
+    };
+
+    const deleteProgram = async () => {
+        if (!deleteTarget?.preview?.canDelete || isDeleting) return;
+        const id = deleteTarget.id;
+        setIsDeleting(true);
+        setDeleteTarget(prev => prev ? { ...prev, error: undefined } : prev);
+        try {
+            const res = await fetch(`/api/programs/${id}`, {
+                method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirm: true, inviteCount: deleteTarget.preview.inviteCount, requestCount: deleteTarget.preview.requestCount }),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data?.success) {
+                setDeleteTarget(prev => prev ? {
+                    ...prev, preview: data?.program ?? prev.preview,
+                    error: data?.error || '프로그램 삭제에 실패했습니다.',
+                } : prev);
+                return;
+            }
+            setDeleteTarget(null);
+            setPrograms(prev => prev.filter(p => p.id !== id));
+            setRequestsVersion(prev => prev + 1);
+            setMessage({ type: 'success', text: `"${data.deletedProgram}" 프로그램을 삭제했습니다.` });
+            onDeleted?.(id);
+            await load();
+        } catch {
+            setDeleteTarget(prev => prev ? {
+                ...prev, error: '삭제 결과를 확인하지 못했습니다. 연결 상태를 확인하고 목록을 새로고침하세요.',
+            } : prev);
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
     const create = async () => {
+        if (saveBusy.current) return;
+        saveBusy.current = true;
         setIsBusy(true);
         setMessage(null);
         try {
-            const res = await fetch('/api/programs', {
-                method: 'POST',
+            const { managerId, ...details } = form;
+            const res = await fetch(editingId ? `/api/programs/${editingId}` : '/api/programs', {
+                method: editingId ? 'PATCH' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(form),
+                body: JSON.stringify(editingId ? details : { ...form, managerId: managerId || undefined }),
             });
             const data = await res.json().catch(() => null);
-            if (!res.ok) throw new Error(data?.error || '개설에 실패했습니다.');
+            if (!res.ok || !data?.program) throw new Error(data?.error || '저장에 실패했습니다.');
 
-            setMessage({ type: 'success', text: `"${data.program.name}" 프로그램을 개설했습니다.` });
+            setMessage({ type: 'success', text: `"${data.program.name}" 프로그램을 ${editingId ? '수정' : '개설'}했습니다.` });
+            if (editingId) setPrograms(prev => prev.map(p => p.id === editingId ? { ...p, ...data.program } : p));
             setForm(EMPTY_FORM);
             setShowCreate(false);
-            await load();
+            setEditingId(null);
+            if (!editingId) await load();
         } catch (error) {
-            setMessage({ type: 'error', text: error instanceof Error ? error.message : '개설에 실패했습니다.' });
+            setMessage({ type: 'error', text: error instanceof Error ? error.message : '저장에 실패했습니다.' });
         } finally {
+            saveBusy.current = false;
             setIsBusy(false);
         }
     };
@@ -223,17 +320,26 @@ export default function ProgramsTab() {
 
     return (
         <div className="space-y-4">
+            <ProjectRequestsPanel key={requestsVersion} reviewer />
             <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-white">프로그램 ({programs.length})</h3>
-                <button type="button" onClick={() => setShowCreate((v) => !v)}
+                {canCreate && <button type="button" disabled={isBusy} onClick={() => { setForm(EMPTY_FORM); setEditingId(null); setShowCreate(v => editingId ? true : !v); }}
                     className="btn-secondary text-sm" id="programs-create-toggle">
-                    {showCreate ? '닫기' : '프로그램 개설'}
-                </button>
+                    {showCreate && !editingId ? '닫기' : '프로그램 개설'}
+                </button>}
             </div>
 
-            {showCreate && (
-                <div className="card space-y-4">
+            {showCreate && (canCreate || editingId) && (
+                <fieldset ref={formPanel} disabled={isBusy} className="card space-y-4">
+                    <h3 className="text-sm font-bold text-white">{editingId ? '프로그램 내용 수정' : '새 프로그램 개설'}</h3>
                     <div className="grid gap-3 sm:grid-cols-2">
+                        {!editingId && <label className="block text-sm font-medium text-gray-400">
+                            담당 프로그램 매니저
+                            <select className="input mt-2" value={form.managerId} onChange={e => setForm({ ...form, managerId: e.target.value })}>
+                                <option value="">관리자 본인이 담당</option>
+                                {managers.map(m => <option key={m.id} value={m.id}>{m.name || '프로그램 매니저'}</option>)}
+                            </select>
+                        </label>}
                         <label className="block text-sm font-medium text-gray-400">
                             프로그램명
                             <input className="input mt-2" value={form.name}
@@ -257,17 +363,19 @@ export default function ProgramsTab() {
                                 onChange={(e) => setForm({ ...form, endsAt: e.target.value })} id="programs-ends-at" />
                         </label>
                     </div>
-                    <div className="flex justify-end">
+                    {editingId && <p className="text-xs text-gray-500">운영 기간을 바꾸면 연결된 멘티와 초대코드의 이용 기한에도 적용됩니다.</p>}
+                    <div className="flex justify-end gap-2">
+                        <button type="button" className="btn-secondary text-sm" onClick={() => { setShowCreate(false); setEditingId(null); setForm(EMPTY_FORM); }}>취소</button>
                         <button type="button" onClick={create} disabled={isBusy || !canSubmit}
                             className="btn-primary text-sm disabled:opacity-50" id="programs-create-submit">
-                            {isBusy ? '만드는 중...' : '개설하기'}
+                            {isBusy ? '저장 중...' : editingId ? '변경사항 저장' : '개설하기'}
                         </button>
                     </div>
-                </div>
+                </fieldset>
             )}
 
             {message && (
-                <div className={`rounded-lg border px-4 py-3 text-sm ${message.type === 'success'
+                <div role="status" className={`rounded-lg border px-4 py-3 text-sm ${message.type === 'success'
                     ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
                     : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
                     }`}>
@@ -300,12 +408,16 @@ export default function ProgramsTab() {
                                     </div>
                                 </div>
                                 <div className="divider my-3" />
-                                <div className="flex items-center justify-between">
+                                <ProgramMentors programId={p.id} />
+                                <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div className="flex items-center gap-4 text-[11px] text-gray-500">
                                         <span>멘티 {p.menteeCount}명</span>
                                         <span>프로젝트 {p.projectCount}개</span>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <button type="button" className="btn-secondary text-xs" disabled={isBusy || isDeleting}
+                                            onClick={() => { setEditingId(p.id); setForm({ name: p.name, organization: p.organization, startsAt: p.startsAt.slice(0, 10), endsAt: p.endsAt.slice(0, 10), managerId: '' }); setShowCreate(true); setMessage(null); }}
+                                            id={`programs-edit-${p.id}`}>내용 수정</button>
                                         <button
                                             type="button"
                                             onClick={() => toggleAssign(p.id)}
@@ -322,6 +434,14 @@ export default function ProgramsTab() {
                                         >
                                             {openImport[p.id] ? '닫기' : '프로젝트 불러오기'}
                                         </button>
+                                        {canDelete && <button
+                                            type="button"
+                                            onClick={() => previewDelete(p)}
+                                            className="text-xs px-3 py-1.5 rounded-lg border border-rose-500/20 text-rose-400 hover:bg-rose-500/10"
+                                            disabled={isBusy || isDeleting} id={`programs-delete-${p.id}`}
+                                        >
+                                            프로그램 삭제
+                                        </button>}
                                     </div>
                                 </div>
 
@@ -405,6 +525,39 @@ export default function ProgramsTab() {
                         );
                     })}
                 </div>
+            )}
+            {canDelete && deleteTarget && (
+                <dialog ref={deleteDialog}
+                    className="card w-[calc(100%-2rem)] max-w-lg max-h-[85vh] overflow-y-auto p-6 text-gray-300 backdrop:bg-black/60"
+                    aria-labelledby="program-delete-title"
+                    aria-describedby="program-delete-description"
+                    aria-busy={isDeleting}
+                    onCancel={event => { if (isDeleting) event.preventDefault(); }}
+                    onClose={() => setDeleteTarget(null)}>
+                    <h3 id="program-delete-title" className="text-lg font-bold text-white">프로그램 삭제</h3>
+                    <p id="program-delete-description" className="mt-3 text-sm">
+                        &quot;{deleteTarget.name}&quot; 프로그램을 삭제하시겠습니까? 삭제한 프로그램은 복구할 수 없습니다.
+                    </p>
+                    {!deleteTarget.preview && !deleteTarget.error && <p className="mt-4 text-sm" role="status">연결 정보를 확인하는 중...</p>}
+                    {deleteTarget.preview && (
+                        <div className="mt-4 space-y-2 text-sm">
+                            <p>연결된 프로젝트 {deleteTarget.preview.projectCount}개 · 멘티 {deleteTarget.preview.menteeCount}명</p>
+                            {deleteTarget.preview.canDelete ? (
+                                <p>초대코드 {deleteTarget.preview.inviteCount}개와 추가 프로젝트 신청 이력 {deleteTarget.preview.requestCount}건도 함께 삭제됩니다.</p>
+                            ) : <p className="text-amber-400" role="status">{deleteTarget.preview.blockReason}</p>}
+                        </div>
+                    )}
+                    {deleteTarget.error && <p className="mt-4 text-sm text-rose-400" role="alert">{deleteTarget.error}</p>}
+                    <div className="mt-6 flex justify-end gap-3">
+                        <button type="button" className="btn-secondary text-sm disabled:opacity-50" autoFocus
+                            disabled={isDeleting} onClick={() => setDeleteTarget(null)}>취소</button>
+                        <button type="button" className="px-4 py-2 rounded-lg bg-rose-600 text-sm text-white disabled:opacity-50"
+                            disabled={isDeleting || !deleteTarget.preview?.canDelete}
+                            onClick={deleteProgram}>
+                            {isDeleting ? '삭제 중...' : '삭제 확인'}
+                        </button>
+                    </div>
+                </dialog>
             )}
         </div>
     );

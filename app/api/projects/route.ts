@@ -14,6 +14,7 @@ import {
     validateBusinessPlanFileStorageValue,
 } from '@/lib/business-plan-file';
 import { DEFAULT_PROJECT_AI_MODE, projectAiModeSchema } from '@/lib/ai/project-ai-mode';
+import { createProjectWithApproval, ProjectApprovalError, MentorProjectCreationError } from '@/lib/project-creation-approval';
 
 const log = createLogger('api/projects');
 
@@ -24,10 +25,11 @@ const createProjectSchema = z.object({
     businessPlanFile: z.string().nullable().optional(),
     aiMode: projectAiModeSchema.optional().default(DEFAULT_PROJECT_AI_MODE),
     // 멘티가 자기 것을 만들 때는 둘 다 보내지 않는다 — 자신이 속한 프로그램과
-    // 자기 자신으로 정해져 있어 고를 여지가 없다. 관리자·매니저가 남을
-    // 소유자로 지정해 열 때만 필요하다(아래 POST 참고).
+    // 자기 자신으로 정해져 있어 고를 여지가 없다. 관리자·매니저는 둘 다,
+    // 허용된 멘토는 ownerMenteeId만 보내며 프로그램은 멘티 소속으로 정한다.
     programId: z.string().min(1, '프로그램을 선택하세요.').optional(),
     ownerMenteeId: z.string().min(1, '소유할 멘티를 선택하세요.').optional(),
+    approvalRequestId: z.string().min(1).optional(),
 });
 
 // ─── GET: 프로젝트 목록 조회 ──────────────────────────────────────────
@@ -42,6 +44,8 @@ export async function GET(request: NextRequest) {
         // 관리자와 매니저는 배정 대상을 고르기 위해 전체 목록을 본다.
         const scope = canListAllProjects(authResult.role)
             ? {}
+            : authResult.role === 'MENTOR'
+                ? { owner: { mentorAssignment: { is: { mentorId: userId } } } }
             : { OR: [{ ownerId: userId }, { members: { some: { userId } } }] };
 
         const userProjects = await prisma.project.findMany({
@@ -52,6 +56,7 @@ export async function GET(request: NextRequest) {
                 description: true,
                 detailedDescription: true,
                 ownerId: true,
+                owner: { select: { mentorAssignment: { select: { mentorId: true } } } },
                 createdAt: true,
                 updatedAt: true,
                 programId: true,
@@ -86,6 +91,7 @@ export async function GET(request: NextRequest) {
                     systemRole: authResult.role,
                     isOwner: p.ownerId === userId,
                     memberRole: p.members[0]?.role,
+                    isAssignedMentor: p.owner?.mentorAssignment?.mentorId === userId,
                 }) ?? 'EDITOR',
             })),
         });
@@ -102,8 +108,8 @@ export async function POST(request: NextRequest) {
     if (authResult instanceof NextResponse) return authResult;
     const { userId } = authResult;
 
-    // 멘티는 자기 것을, 관리자·매니저는 남의 것도 만들 수 있다. 멘토는 못 만든다.
-    if (!canCreateProject(authResult.role)) {
+    // 멘토의 생성 권한은 아래에서 현재 DB 값과 배정 범위로 판정한다.
+    if (authResult.role !== 'MENTOR' && !canCreateProject(authResult.role)) {
         return NextResponse.json(
             { error: '프로젝트를 만들 권한이 없습니다.' },
             { status: 403 }
@@ -111,8 +117,14 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+        if (authResult.role === 'MENTOR') {
+            const mentor = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, mentorProjectCreationEnabled: true } });
+            if (mentor?.role !== 'MENTOR' || !mentor.mentorProjectCreationEnabled) {
+                throw new MentorProjectCreationError('멘토의 프로젝트 생성 기능이 사용중지 상태입니다. 관리자에게 문의하세요.');
+            }
+        }
         const body = await request.json();
-        const { name, description, detailedDescription, businessPlanFile, aiMode, programId, ownerMenteeId } =
+        const { name, description, detailedDescription, businessPlanFile, aiMode, programId, ownerMenteeId, approvalRequestId } =
             createProjectSchema.parse(body);
         const validatedBusinessPlanFile = validateBusinessPlanFileStorageValue(businessPlanFile);
 
@@ -121,7 +133,19 @@ export async function POST(request: NextRequest) {
         let ownerId: string;
         let programName: string;
 
-        if (!canCreateProjectForOthers(authResult.role)) {
+        if (authResult.role === 'MENTOR') {
+            if (!ownerMenteeId) return NextResponse.json({ error: '배정받은 멘티를 선택하세요.' }, { status: 400 });
+            const owner = await prisma.user.findUnique({
+                where: { id: ownerMenteeId },
+                select: { id: true, role: true, status: true, programId: true, program: { select: { name: true } }, mentorAssignment: { select: { mentorId: true } } },
+            });
+            if (!owner || owner.role !== 'MENTEE' || owner.status !== 'APPROVED' || owner.mentorAssignment?.mentorId !== userId || !owner.programId || !owner.program || (programId && programId !== owner.programId)) {
+                throw new MentorProjectCreationError('배정받은 멘티의 소속 프로그램에만 프로젝트를 만들 수 있습니다.');
+            }
+            targetProgramId = owner.programId;
+            ownerId = owner.id;
+            programName = owner.program.name;
+        } else if (!canCreateProjectForOthers(authResult.role)) {
             // 멘티. 본인이 속한 프로그램에 본인 것으로만 만든다. 본문에 실린
             // programId/ownerMenteeId 는 무시한다 — 그것을 믿으면 남의 프로그램에
             // 남의 이름으로 과제를 열 수 있다.
@@ -177,18 +201,16 @@ export async function POST(request: NextRequest) {
             programName = program.name;
         }
 
-        const newProject = await prisma.project.create({
-            data: {
-                id: generateId('proj'),
-                name,
-                description,
-                detailedDescription,
-                businessPlanFile: validatedBusinessPlanFile,
-                aiMode,
-                programId: targetProgramId,
-                ownerId,
-            },
-        });
+        const newProject = await createProjectWithApproval({
+            id: generateId('proj'),
+            name,
+            description,
+            detailedDescription,
+            businessPlanFile: validatedBusinessPlanFile,
+            aiMode,
+            programId: targetProgramId,
+            ownerId,
+        }, authResult.role === 'MENTEE' || authResult.role === 'MENTOR', approvalRequestId, authResult.role === 'MENTOR' ? userId : undefined);
 
         log.info('프로젝트 생성', { userId, projectId: newProject.id, programId: targetProgramId, ownerId });
 
@@ -206,10 +228,12 @@ export async function POST(request: NextRequest) {
                 // 갓 만든 프로젝트라 설문도 QFD 도 아직 없다.
                 surveyCount: 0,
                 qfdMatrixCount: 0,
-                role: 'OWNER',
+                role: authResult.role === 'MENTOR' ? 'EDITOR' : 'OWNER',
             },
         });
     } catch (error: unknown) {
+        if (error instanceof MentorProjectCreationError) return NextResponse.json({ error: error.message }, { status: 403 });
+        if (error instanceof ProjectApprovalError) return NextResponse.json({ error: error.message, approvalRequired: true }, { status: 403 });
         if (error instanceof z.ZodError || error instanceof BusinessPlanFileValidationError) {
             const message = error instanceof z.ZodError ? error.errors[0].message : error.message;
             return NextResponse.json({ error: message }, { status: 400 });

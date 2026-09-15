@@ -6,6 +6,7 @@ const findUniqueUser = vi.fn();
 const findFirstUser = vi.fn();
 const countUser = vi.fn();
 const updateUser = vi.fn();
+const updateManyUser = vi.fn();
 const transaction = vi.fn();
 const txCreateUser = vi.fn();
 const txCreateProfile = vi.fn();
@@ -15,7 +16,7 @@ vi.mock('../lib/prisma', () => ({
     prisma: {
         user: {
             findUnique: findUniqueUser, findFirst: findFirstUser, count: countUser,
-            update: updateUser, findMany: vi.fn(async () => []),
+            update: updateUser, updateMany: updateManyUser, findMany: vi.fn(async () => []),
         },
         project: { count: vi.fn(async () => 0) },
         program: { findUnique: findUniqueProgram },
@@ -46,6 +47,7 @@ function jsonRequest(method: string, body: unknown): NextRequest {
 }
 
 beforeEach(() => {
+    updateManyUser.mockResolvedValue({ count: 1 });
     requireAdmin.mockResolvedValue(ADMIN);
     findUniqueUser.mockResolvedValue({ id: 'user_2', email: 'u@x.com', role: 'MENTOR', isAdmin: false });
     findFirstUser.mockResolvedValue(null);
@@ -62,6 +64,36 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.clearAllMocks();
+});
+
+describe('멘토 프로젝트 생성 설정', () => {
+    it.each([true, false])('관리자가 멘토별 설정을 %s로 저장한다', async enabled => {
+        const res = await PATCH(jsonRequest('PATCH', { userId: 'user_2', action: 'setMentorProjectCreation', enabled }));
+        expect(res.status).toBe(200);
+        expect(updateManyUser).toHaveBeenCalledWith({ where: { id: 'user_2', role: 'MENTOR' }, data: { mentorProjectCreationEnabled: enabled } });
+    });
+    it.each(['true', 1, null, undefined])('잘못된 활성화 값 %s를 거절한다', async enabled => {
+        expect((await PATCH(jsonRequest('PATCH', { userId: 'user_2', action: 'setMentorProjectCreation', enabled }))).status).toBe(400);
+        expect(updateManyUser).not.toHaveBeenCalled();
+    });
+    it.each(['MENTEE', 'PROGRAM_MANAGER', 'ADMIN'])('%s는 설정 대상이 아니다', async role => {
+        findUniqueUser.mockResolvedValue({ role });
+        expect((await PATCH(jsonRequest('PATCH', { userId: 'user_2', action: 'setMentorProjectCreation', enabled: true }))).status).toBe(400);
+        expect(updateManyUser).not.toHaveBeenCalled();
+    });
+    it('관리자 인가에 실패하면 변경하지 않는다', async () => {
+        requireAdmin.mockResolvedValue(NextResponse.json({ error: '금지' }, { status: 403 }));
+        expect((await PATCH(jsonRequest('PATCH', { userId: 'user_2', action: 'setMentorProjectCreation', enabled: true }))).status).toBe(403);
+        expect(updateManyUser).not.toHaveBeenCalled();
+    });
+    it('설정 중 역할이 바뀌면 충돌을 알린다', async () => {
+        updateManyUser.mockResolvedValue({ count: 0 });
+        expect((await PATCH(jsonRequest('PATCH', { userId: 'user_2', action: 'setMentorProjectCreation', enabled: true }))).status).toBe(409);
+    });
+    it('역할 전환 후에는 기존 생성 허용을 복원하지 않는다', async () => {
+        await PATCH(jsonRequest('PATCH', { userId: 'user_2', action: 'setRole', role: 'PROGRAM_MANAGER' }));
+        expect(updateUser.mock.calls[0][0].data.mentorProjectCreationEnabled).toBe(false);
+    });
 });
 
 describe('역할 변경', () => {

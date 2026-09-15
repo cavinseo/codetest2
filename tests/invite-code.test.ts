@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     INVITE_CODE_VALID_DAYS,
+    INVITE_CODE_MESSAGES,
     buildInviteEmail,
     checkInviteCode,
     generateInviteCode,
@@ -60,6 +61,11 @@ describe('inviteCodeExpiryFrom', () => {
 });
 
 describe('checkInviteCode', () => {
+    it.each(['NOT_FOUND', 'ALREADY_USED', 'EXPIRED', 'EMAIL_MISMATCH'] as const)('%s 거절에는 비어 있지 않은 안내가 있다', (key) => {
+        expect(INVITE_CODE_MESSAGES[key]).toEqual(expect.any(String));
+        expect(INVITE_CODE_MESSAGES[key]).toMatch(/\S/);
+    });
+
     const now = new Date('2026-06-01T00:00:00Z');
     const valid: InviteCodeRecord = {
         email: 'mentee@example.com',
@@ -142,7 +148,7 @@ describe('buildInviteEmail', () => {
 
         expect(subject).toContain('멘티');
         expect(html).toContain('KSQF-ABCD-EFGH-JKMN');
-        expect(html).toContain('2026-06-15');
+        expect(html).toContain('<strong>2026-06-15</strong>');
         expect(html).toContain('90일');
     });
 

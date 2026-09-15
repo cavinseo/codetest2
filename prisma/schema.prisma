@@ -20,6 +20,8 @@ model User {
   // 프로젝트 단위 역할(ProjectMember.role)과는 별개다. 이쪽은 "이 사람이 무엇을
   // 할 수 있는가", 저쪽은 "이 프로젝트에서 무엇을 할 수 있는가"를 정한다.
   role                String                 @default("MENTEE")
+  // 관리자가 멘토별로 허용하는 배정 멘티 프로젝트 대리 개설 권한.
+  mentorProjectCreationEnabled Boolean        @default(false)
   // 초대 코드로 가입한 계정의 접근 만료 시각. null 이면 만료 없음(관리자 생성 계정).
   accessExpiresAt     DateTime?
   // 발급된 세션을 한꺼번에 무효화하기 위한 값. 비밀번호 변경이나 승인 취소 때
@@ -44,6 +46,11 @@ model User {
   usedInviteCode      InviteCode?            @relation("InviteRedeemer")
   profile             MemberProfile?
   aiConnection        UserAiConnection?
+  mentorAssignment    MentorAssignment?      @relation("AssignedMentee")
+  assignedMentees      MentorAssignment[]     @relation("AssignedMentor")
+  projectRequests     ProjectCreationRequest[] @relation("ProjectRequester")
+  reviewedRequests    ProjectCreationRequest[] @relation("ProjectReviewer")
+  worksheetComments   WorksheetComment[]
 
   @@map("users")
 }
@@ -70,6 +77,7 @@ model Program {
   projects    Project[]
   inviteCodes InviteCode[]
   mentees     User[]       @relation("ProgramMentees")
+  projectRequests ProjectCreationRequest[]
 
   @@index([managerId])
   @@map("programs")
@@ -88,6 +96,12 @@ model Project {
   updatedAt                DateTime                  @updatedAt
   businessPlanFile         String?
   detailedDescription      String?
+  productName              String?
+  productImageDataUrl       String?
+  productImageWidthPx       Int?
+  productImageHeightPx      Int?
+  marketDefinition         String?
+  targetCustomer           String?
   // AI 에이전트 연결 방식: "rule" | "local" | "personal"
   aiMode                   String                    @default("rule")
   attributeFitnesses       AttributeFitness[]
@@ -114,10 +128,77 @@ model Project {
   assetItems               AssetItem[]
   fundingPlans             FundingPlan[]
   fundingSources           FundingSource[]
+  worksheetComments        WorksheetComment[]
+  finalReport              FinalReport?
 
   @@index([ownerId])
   @@index([programId])
   @@map("projects")
+}
+
+// 멘티를 기본 키로 삼아 동시에 두 멘토가 배정되는 것을 막는다.
+model MentorAssignment {
+  menteeId String @id
+  mentorId String
+  assignedAt DateTime @default(now())
+  mentee User @relation("AssignedMentee", fields: [menteeId], references: [id], onDelete: Cascade)
+  mentor User @relation("AssignedMentor", fields: [mentorId], references: [id], onDelete: Cascade)
+
+  @@index([mentorId])
+  @@map("mentor_assignments")
+}
+
+// 수정 중인 초안과 멘티에게 공개한 완료본을 분리해 재작성 중에도 완료본을 보존한다.
+model FinalReport {
+  projectId        String   @id
+  draft            Json
+  published        Json?
+  version          Int      @default(0)
+  publishedVersion Int?
+  updatedById      String
+  publishedById    String?
+  publishedAt      DateTime?
+  updatedAt        DateTime @updatedAt
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("final_reports")
+}
+
+// 승인 한 건을 추가 개설 한 번에만 쓰도록 소비 시각을 기록한다.
+model ProjectCreationRequest {
+  id String @id @default(cuid())
+  menteeId String
+  programId String
+  reason String
+  status String @default("PENDING")
+  reviewNote String?
+  reviewedById String?
+  reviewedAt DateTime?
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  mentee User @relation("ProjectRequester", fields: [menteeId], references: [id], onDelete: Cascade)
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  reviewer User? @relation("ProjectReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([menteeId, status])
+  @@index([programId, status])
+  @@map("project_creation_requests")
+}
+
+// 멘토 의견을 워크시트 원본과 분리해 조회 전용 권한을 유지한다.
+model WorksheetComment {
+  id String @id @default(cuid())
+  projectId String
+  worksheetId String
+  authorId String?
+  content String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, worksheetId, createdAt])
+  @@map("worksheet_comments")
 }
 
 // ... (기존 모델들 보존) ...

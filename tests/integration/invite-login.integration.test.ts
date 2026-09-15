@@ -8,8 +8,8 @@ vi.mock('next/headers', () => ({ cookies: async () => ({ set: (key: string, valu
 vi.mock('../../lib/email', () => ({ sendMail: async () => true }));
 const dbUrl = process.env.INTEGRATION_DATABASE_URL;
 if (!dbUrl || !['127.0.0.1', 'localhost'].includes(new URL(dbUrl).hostname)
-    || new URL(dbUrl).pathname !== '/login_restore_qa' || dbUrl === process.env.POSTGRES_PRISMA_URL) {
-    throw new Error('별도 로컬 login_restore_qa DB만 사용할 수 있습니다.');
+    || !['/login_restore_qa', '/program_restore_qa'].includes(new URL(dbUrl).pathname) || dbUrl === process.env.POSTGRES_PRISMA_URL) {
+    throw new Error('별도 로컬 login_restore_qa 또는 program_restore_qa DB만 사용할 수 있습니다.');
 }
 const db = new PrismaClient({ datasources: { db: { url: dbUrl } } });
 vi.mock('../../lib/prisma', () => ({ get prisma() { return db; } }));

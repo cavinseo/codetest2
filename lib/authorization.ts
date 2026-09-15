@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
-import { requireAuth, SessionUser } from './auth';
+import { requireAuth, SessionUser, type AuthenticatedUser } from './auth';
 import { canReadAnyProject, canWriteAnyProject, type MemberRole } from './member-roles';
 
 export type ProjectAccessRole = 'OWNER' | 'EDITOR' | 'COACH' | 'ADMIN' | 'VIEWER';
@@ -28,7 +28,11 @@ export function resolveProjectRole(params: {
     systemRole: MemberRole;
     isOwner: boolean;
     memberRole: string | null | undefined;
+    isAssignedMentor?: boolean;
 }): ProjectAccessRole | undefined {
+    // 멘토 편집은 현재 소유 멘티의 배정으로만 허용한다. 과거 멤버 역할은 우회로가 아니다.
+    if (params.systemRole === 'MENTOR') return params.isAssignedMentor ? 'EDITOR' : undefined;
+    if (params.systemRole === 'PROGRAM_MANAGER' && params.isAssignedMentor) return 'EDITOR';
     const explicitRole = params.isOwner
         ? 'OWNER'
         : (params.memberRole as ProjectAccessRole | undefined) ?? undefined;
@@ -40,7 +44,7 @@ export function resolveProjectRole(params: {
         return explicitRole;
     }
     if (canReadAnyProject(params.systemRole)) {
-        // 매니저는 전체를 읽되 고치지 못한다("매니저는 내용을 수정할 수 없다").
+        // 실제 멘토로 배정되지 않은 매니저는 전체를 읽되 고치지 못한다.
         // 명시 역할이 없으면 배정되지 않은 프로젝트도 VIEWER 로 읽는다. 팀 초대로
         // EDITOR 행이 생겨도 그 역할로 쓰기가 열리면 안 되므로 VIEWER 로 낮춘다.
         // 단, 승격 전에 직접 만든 프로젝트의 OWNER 는 실제 소유 관계라 유지한다.
@@ -51,7 +55,7 @@ export function resolveProjectRole(params: {
 }
 
 export interface ProjectAccess {
-    user: SessionUser;
+    user: AuthenticatedUser;
     role: ProjectAccessRole;
 }
 
@@ -110,6 +114,7 @@ export async function requireProjectAccess(
         where: { id: projectId },
         select: {
             ownerId: true,
+            owner: { select: { mentorAssignment: { select: { mentorId: true } } } },
             members: {
                 where: { userId: authResult.userId },
                 select: { role: true },
@@ -126,6 +131,7 @@ export async function requireProjectAccess(
         systemRole: authResult.role,
         isOwner: project.ownerId === authResult.userId,
         memberRole: project.members[0]?.role,
+        isAssignedMentor: project.owner?.mentorAssignment?.mentorId === authResult.userId,
     });
 
     if (!role) {

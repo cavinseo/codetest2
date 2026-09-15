@@ -8,6 +8,7 @@ import {
 } from '@/lib/business-plan-file';
 import { canCreateProject, canCreateProjectForOthers, type MemberRole } from '@/lib/member-roles';
 import ThemeToggle from '@/components/ThemeToggle';
+import ProjectRequestsPanel from '@/components/ProjectRequestsPanel';
 
 interface Project {
     id: string;
@@ -33,13 +34,23 @@ interface MenteeOption {
     email: string;
 }
 
+interface MentorMenteeOption extends MenteeOption {
+    program: { id: string; name: string };
+    ownedProjectCount: number;
+    approvals: { id: string; reason: string }[];
+}
+
 export default function DashboardPage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [role, setRole] = useState<MemberRole | null>(null);
+    const [mentorProjectCreationEnabled, setMentorProjectCreationEnabled] = useState(false);
+    const [mentorMentees, setMentorMentees] = useState<MentorMenteeOption[]>([]);
+    const [loadingCreationOptions, setLoadingCreationOptions] = useState(false);
     const [userName, setUserName] = useState<string | null>(null);
     const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+    const [approvalRequestId, setApprovalRequestId] = useState('');
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectDesc, setNewProjectDesc] = useState('');
     const [newProjectDetailDesc, setNewProjectDetailDesc] = useState('');
@@ -84,6 +95,25 @@ export default function DashboardPage() {
             .catch(() => setMentees([]));
     }, [newProjectProgramId]);
 
+    useEffect(() => {
+        if (role !== 'MENTOR' || !showNewProjectModal) return;
+        let cancelled = false;
+        setLoadingCreationOptions(true);
+        setMentorMentees([]);
+        setNewProjectOwnerMenteeId('');
+        setApprovalRequestId('');
+        setNewProjectError('');
+        fetch('/api/projects/creation-options')
+            .then(async res => {
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '배정 멘티를 불러오지 못했습니다.');
+                if (!cancelled) setMentorMentees(data.mentees);
+            })
+            .catch(error => { if (!cancelled) setNewProjectError(error.message); })
+            .finally(() => { if (!cancelled) setLoadingCreationOptions(false); });
+        return () => { cancelled = true; };
+    }, [role, showNewProjectModal]);
+
     // 관리자/매니저 전용 링크를 가리기 위해 역할만 조회한다. 새 엔드포인트 대신
     // 이미 있는 본인 프로필 API(app/api/me/profile)를 쓴다.
     const fetchRole = async () => {
@@ -92,6 +122,7 @@ export default function DashboardPage() {
             if (response.ok) {
                 const data = await response.json();
                 setRole(data.role ?? null);
+                setMentorProjectCreationEnabled(data.mentorProjectCreationEnabled === true);
                 setUserName(data.name ?? null);
                 setCanAccessAdmin(data.canAccessAdmin ?? false);
             }
@@ -139,10 +170,11 @@ export default function DashboardPage() {
                     description: newProjectDesc,
                     detailedDescription: newProjectDetailDesc || undefined,
                     businessPlanFile,
+                    approvalRequestId: approvalRequestId || undefined,
                     // 멘티는 보내지 않는다. 서버가 본인 프로그램·본인 소유로 정한다.
                     ...(createsForOthers
                         ? { programId: newProjectProgramId, ownerMenteeId: newProjectOwnerMenteeId }
-                        : {}),
+                        : role === 'MENTOR' ? { ownerMenteeId: newProjectOwnerMenteeId } : {}),
                 }),
             });
             // 작성 중 세션이 만료된 경우에도 오류 문구 대신 로그인으로 보낸다.
@@ -154,6 +186,7 @@ export default function DashboardPage() {
             if (!response.ok) throw new Error(data?.error || '프로젝트 생성에 실패했습니다.');
             setProjects([...projects, data.project]);
             setShowNewProjectModal(false);
+            setApprovalRequestId('');
             setNewProjectName('');
             setNewProjectDesc('');
             setNewProjectDetailDesc('');
@@ -193,6 +226,8 @@ export default function DashboardPage() {
     // 멘티는 자기 것만, 관리자·매니저는 남의 것도 만든다. 모달이 프로그램·소유자
     // 선택을 보여줄지 정한다.
     const createsForOthers = role !== null && canCreateProjectForOthers(role);
+    const creationAllowed = role !== null && canCreateProject(role, mentorProjectCreationEnabled);
+    const selectedMentorMentee = mentorMentees.find(mentee => mentee.id === newProjectOwnerMenteeId);
 
     const displayProjects = projects;
 
@@ -272,6 +307,11 @@ export default function DashboardPage() {
             {/* Main Content */}
             <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 page-enter">
                 {/* Stats */}
+                {role === 'MENTEE' && <div className="mb-8"><ProjectRequestsPanel key={projects.length} onCreate={id => {
+                    setApprovalRequestId(id);
+                    setNewProjectError('');
+                    setShowNewProjectModal(true);
+                }} /></div>}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                     {[
                         { label: '전체 프로젝트', value: displayProjects.length, icon: '📁', accent: 'from-blue-500/20 to-cyan-500/20' },
@@ -297,10 +337,12 @@ export default function DashboardPage() {
                             {displayProjects.length}개의 활성 프로젝트
                         </p>
                     </div>
-                    {/* 프로젝트 생성 권한이 없는 역할(멘토·멘티)에게는 버튼을 감춘다. API 가 403 으로 막기 때문이다. */}
-                    {role !== null && canCreateProject(role) && (
+                    {role === 'MENTOR' && !creationAllowed && (
+                        <button disabled className="btn-secondary opacity-60" title="관리자가 멘토별로 프로젝트 생성을 활성화할 수 있습니다.">새 프로젝트 (사용중지)</button>
+                    )}
+                    {creationAllowed && (
                         <button
-                            onClick={() => setShowNewProjectModal(true)}
+                            onClick={() => { setApprovalRequestId(''); setShowNewProjectModal(true); }}
                             className="btn-primary flex items-center gap-2"
                         >
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -368,13 +410,13 @@ export default function DashboardPage() {
                                 프로젝트가 없습니다
                             </h3>
                             <p className="text-gray-500 mb-6 text-sm">
-                                {role !== null && canCreateProject(role)
+                                {creationAllowed
                                     ? '새 프로젝트를 만들어 품질 개선을 시작하세요'
                                     : '프로젝트에 참가자로 추가되면 이곳에 표시됩니다'}
                             </p>
-                            {role !== null && canCreateProject(role) && (
+                            {creationAllowed && (
                                 <button
-                                    onClick={() => setShowNewProjectModal(true)}
+                                    onClick={() => { setApprovalRequestId(''); setShowNewProjectModal(true); }}
                                     className="btn-primary"
                                 >
                                     첫 프로젝트 만들기
@@ -421,6 +463,28 @@ export default function DashboardPage() {
 
                             {/* 멘티는 자기 프로그램에 자기 것으로만 만든다. 고를 여지가
                                 없으므로 이 두 칸을 아예 보여주지 않는다. */}
+                            {role === 'MENTOR' && (
+                                <div className="space-y-3">
+                                    <label className="block text-sm font-medium text-gray-400" htmlFor="mentor-owner">소유할 배정 멘티</label>
+                                    <select id="mentor-owner" className="input" required disabled={loadingCreationOptions} value={newProjectOwnerMenteeId}
+                                        onChange={e => { setNewProjectOwnerMenteeId(e.target.value); setApprovalRequestId(''); }}>
+                                        <option value="">{loadingCreationOptions ? '불러오는 중...' : '배정 멘티를 선택하세요'}</option>
+                                        {mentorMentees.map(mentee => <option key={mentee.id} value={mentee.id}>{mentee.name} ({mentee.email}) · {mentee.program.name}</option>)}
+                                    </select>
+                                    <p className="text-xs text-gray-400">프로젝트는 선택한 멘티 소유로 개설됩니다. 두 번째부터는 프로그램 매니저의 개별 승인이 필요합니다.</p>
+                                    {!loadingCreationOptions && mentorMentees.length === 0 && <p className="text-xs text-amber-400">개설 가능한 배정 멘티가 없습니다. 관리자 또는 프로그램 매니저에게 배정을 요청하세요.</p>}
+                                    {selectedMentorMentee && selectedMentorMentee.ownedProjectCount > 0 && (
+                                        <>
+                                            <label className="block text-sm font-medium text-gray-400" htmlFor="mentor-approval">추가 프로젝트 개설 승인</label>
+                                            <select id="mentor-approval" className="input" required value={approvalRequestId} onChange={e => setApprovalRequestId(e.target.value)}>
+                                                <option value="">사용할 승인을 선택하세요</option>
+                                                {selectedMentorMentee.approvals.map((approval, index) => <option key={approval.id} value={approval.id}>승인 {index + 1} · {approval.reason}</option>)}
+                                            </select>
+                                            {selectedMentorMentee.approvals.length === 0 && <p className="text-xs text-amber-400">사용 가능한 승인이 없습니다. 멘티가 추가 개설을 신청하고 프로그램 매니저의 승인을 받은 뒤 다시 열어 주세요.</p>}
+                                        </>
+                                    )}
+                                </div>
+                            )}
                             {createsForOthers && (
                                 <>
                                     <div className="grid grid-cols-2 gap-3">
@@ -561,7 +625,7 @@ export default function DashboardPage() {
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={isLoading}
+                                    disabled={isLoading || !creationAllowed || (role === 'MENTOR' && (loadingCreationOptions || !selectedMentorMentee || (selectedMentorMentee.ownedProjectCount > 0 && !approvalRequestId)))}
                                     className="flex-1 btn-primary py-3 disabled:opacity-50"
                                 >
                                     {isLoading ? (
