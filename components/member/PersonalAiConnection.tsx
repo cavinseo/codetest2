@@ -53,6 +53,13 @@ const INITIAL_AI_FORM: AiConnectionForm = {
     localModel: '',
 };
 
+// 벤더별 키 모양만 안내하며 사용자가 입력한 값은 저장 후 화면에서 지운다.
+const API_KEY_PLACEHOLDERS: Record<PersonalAiVendor, string> = {
+    openai: 'sk-...',
+    anthropic: 'sk-ant-...',
+    gemini: 'AIza...',
+};
+
 function parseConnectionSummary(value: unknown): ConnectionSummary | null {
     if (!value || typeof value !== 'object') return null;
     const source = value as Record<string, unknown>;
@@ -316,7 +323,7 @@ export default function PersonalAiConnection() {
                             className="input mt-2"
                             value={aiForm.apiKey}
                             autoComplete="off"
-                            placeholder="sk-..."
+                            placeholder={API_KEY_PLACEHOLDERS[aiForm.vendor]}
                             onChange={(e) => setAiForm({ ...aiForm, apiKey: e.target.value })}
                             id="personal-ai-key"
                         />

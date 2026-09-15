@@ -71,6 +71,38 @@ export function createPersonalProvider(conn: PersonalAiConnection): AiProvider {
 
 const VERIFY_TIMEOUT_MS = 10_000;
 
+const GEMINI_BAD_REQUEST_MESSAGE = 'Gemini가 요청을 거부했습니다. API 키와 모델을 확인하세요.';
+const GEMINI_PRECONDITION_MESSAGE = 'Gemini API 이용 조건을 확인하세요. 지원 지역 또는 결제 설정이 필요할 수 있습니다.';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+/** Gemini의 허용된 기계 식별자만 고정 안내 선택에 쓴다. */
+async function getGeminiBadRequestMessage(response: Response): Promise<string> {
+    const body = await response.json().catch(() => null);
+    if (!isRecord(body) || !isRecord(body.error)) {
+        return GEMINI_BAD_REQUEST_MESSAGE;
+    }
+
+    if (body.error.status === 'FAILED_PRECONDITION') return GEMINI_PRECONDITION_MESSAGE;
+    if (!Array.isArray(body.error.details)) return GEMINI_BAD_REQUEST_MESSAGE;
+
+    for (const detail of body.error.details) {
+        if (!isRecord(detail) || typeof detail.reason !== 'string') continue;
+        switch (detail.reason) {
+            case 'API_KEY_INVALID':
+                return 'Gemini API 키가 유효하지 않습니다. Google AI Studio에서 새 키를 저장하세요.';
+            case 'API_KEY_SERVICE_BLOCKED':
+                return 'Gemini API 사용이 제한되어 있습니다. Google AI Studio에서 키 제한을 확인하거나 새 키를 저장하세요.';
+            case 'FAILED_PRECONDITION':
+                return GEMINI_PRECONDITION_MESSAGE;
+        }
+    }
+
+    return GEMINI_BAD_REQUEST_MESSAGE;
+}
+
 /**
  * 키가 실제로 통하는지 최소 비용으로 확인한다(짧은 chat 요청 1회).
  * 응답 본문은 버린다 — 필요한 것은 인증이 통과했는가 뿐이다.
@@ -140,6 +172,9 @@ export async function verifyPersonalConnection(
         const response = await (conn.mode === 'mcp' ? publicHttpsFetch : fetch)(url, init);
 
         if (response.ok) return { ok: true, message: '연결에 성공했습니다.' };
+        if (conn.mode === 'api' && conn.vendor === 'gemini' && response.status === 400) {
+            return { ok: false, message: await getGeminiBadRequestMessage(response) };
+        }
         if (response.status === 401 || response.status === 403) {
             return { ok: false, message: 'API 키가 유효하지 않습니다. 키를 다시 확인하세요.' };
         }

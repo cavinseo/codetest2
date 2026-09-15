@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
         const result = await verifyPersonalConnection(connection);
         log.info('개인 AI 연결 확인', { userId: authResult.userId, ok: result.ok });
-        return NextResponse.json(result);
+        return NextResponse.json({ ok: result.ok, message: result.message });
     } catch (error: unknown) {
         return toErrorResponse(error, { log, message: '연결 확인에 실패했습니다.' });
     }

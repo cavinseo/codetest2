@@ -385,8 +385,12 @@ describe('연결 확인', () => {
         });
     });
 
-    it('verifyPersonalConnection 결과를 그대로 전달한다', async () => {
-        const result = { ok: false, message: 'API 키가 유효하지 않습니다.' };
+    it('verifyPersonalConnection의 안전한 필드만 전달한다', async () => {
+        const result = {
+            ok: false,
+            message: 'API 키가 유효하지 않습니다.',
+            vendorDetail: 'vendor-detail-must-not-leak',
+        };
         findUniqueConn.mockResolvedValue({
             userId: 'user_1',
             mode: 'api',
@@ -405,7 +409,10 @@ describe('연결 확인', () => {
         const res = await POST(jsonRequest('POST'));
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual(result);
+        expect(await res.json()).toEqual({
+            ok: false,
+            message: 'API 키가 유효하지 않습니다.',
+        });
         expect(verifyPersonalConnection).toHaveBeenCalledWith({
             mode: 'api',
             vendor: 'anthropic',
