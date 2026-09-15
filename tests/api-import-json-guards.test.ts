@@ -56,6 +56,12 @@ function jsonRequest(body: unknown): NextRequest {
     });
 }
 
+it.each(['', ' \t\n '])('공백 세부기능 %j가 있으면 기존 관계를 건드리기 전에 복원을 거절한다', async name => {
+    const response = await POST(jsonRequest({ technicalCharacteristics: [{ name }], confirmCascade: true }), params);
+    expect(response.status).toBe(400);
+    expect(transaction).not.toHaveBeenCalled();
+});
+
 beforeEach(() => {
     counts.kano = 0;
     counts.benchmark = 0;

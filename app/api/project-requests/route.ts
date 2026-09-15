@@ -14,7 +14,14 @@ export async function GET(request: NextRequest) {
     if (!['ADMIN', 'PROGRAM_MANAGER', 'MENTEE'].includes(actor.role)) return NextResponse.json({ error: '조회 권한이 없습니다.' }, { status: 403 });
     try {
         const where = actor.role === 'ADMIN' ? {} : actor.role === 'MENTEE' ? { menteeId: actor.userId } : { program: { managerId: actor.userId } };
-        const requests = await prisma.projectCreationRequest.findMany({ where, include: { mentee: { select: { name: true } }, program: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, take: 100 });
+        const openRequests = { OR: [{ status: 'PENDING' }, { status: 'APPROVED', usedAt: null }] };
+        const include = { mentee: { select: { name: true } }, program: { select: { name: true } } } as const;
+        const [open, history] = await Promise.all([
+            prisma.projectCreationRequest.findMany({ where: { ...where, ...openRequests }, include, orderBy: { createdAt: 'desc' } }),
+            prisma.projectCreationRequest.findMany({ where: { ...where, NOT: openRequests }, include, orderBy: { createdAt: 'desc' }, take: 100 }),
+        ]);
+        const requests = [...new Map([...open, ...history].map(request => [request.id, request])).values()]
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
         const ownedProjectCount = actor.role === 'MENTEE' ? await prisma.project.count({ where: { ownerId: actor.userId } }) : null;
         return NextResponse.json({ requests, ownedProjectCount });
     } catch (error) { return toErrorResponse(error, { log, message: '개설 신청을 불러오지 못했습니다.' }); }

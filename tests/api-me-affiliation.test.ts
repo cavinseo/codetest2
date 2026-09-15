@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server';
 const findUniqueUser = vi.fn();
 const findManyProject = vi.fn();
 const findManyProjectMember = vi.fn();
+const findManyAssignment = vi.fn();
 const findManyProgram = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
@@ -12,6 +13,7 @@ vi.mock('../lib/prisma', () => ({
         user: { findUnique: findUniqueUser },
         project: { findMany: findManyProject },
         projectMember: { findMany: findManyProjectMember },
+        mentorAssignment: { findMany: findManyAssignment },
         program: { findMany: findManyProgram },
     },
 }));
@@ -42,6 +44,7 @@ beforeEach(() => {
     findUniqueUser.mockResolvedValue({ program: null });
     findManyProject.mockResolvedValue([]);
     findManyProjectMember.mockResolvedValue([]);
+    findManyAssignment.mockResolvedValue([]);
     findManyProgram.mockResolvedValue([]);
 });
 
@@ -70,9 +73,10 @@ describe('멘티의 소속', () => {
         expect(body.program).toBeNull();
     });
 
-    it('내 프로젝트를 맡은 멘토를 담당 멘토로 준다', async () => {
+    it('과거 COACH 대신 현재 배정된 멘토를 담당 멘토로 준다', async () => {
+        findUniqueUser.mockResolvedValue({ program: PROGRAM_ROW, mentorAssignment: { mentor: { id: 'u1', name: '김멘토', email: 'kim@x.com' } } });
         findManyProject.mockResolvedValue([
-            { name: '내 프로젝트', members: [{ user: { id: 'u1', name: '김멘토', email: 'kim@x.com' } }] },
+            { name: '내 프로젝트', members: [{ user: { id: 'old', name: '과거멘토', email: 'old@x.com' } }] },
         ]);
 
         const body = await (await call()).json();
@@ -82,13 +86,13 @@ describe('멘티의 소속', () => {
         expect(body.mentors[0].projectNames).toEqual(['내 프로젝트']);
     });
 
-    it('내가 소유한 프로젝트의 COACH 만 본다', async () => {
-        // 편집자(EDITOR)나 남의 프로젝트가 담당 멘토로 새어 들어오면 안 된다.
+    it('내가 소유한 프로젝트 이름과 현재 멘토 배정만 조회한다', async () => {
         await call();
 
         const args = findManyProject.mock.calls[0][0];
         expect(args.where).toEqual({ ownerId: 'mentee_1' });
-        expect(args.select.members.where).toEqual({ role: 'COACH' });
+        expect(args.select).toEqual({ name: true });
+        expect(findUniqueUser.mock.calls[0][0].select.mentorAssignment).toEqual({ select: { mentor: { select: { id: true, name: true, email: true } } } });
     });
 
     it('배정된 멘토가 없으면 빈 배열이다', async () => {
@@ -96,16 +100,22 @@ describe('멘티의 소속', () => {
 
         expect(body.mentors).toEqual([]);
     });
+
+    it('프로젝트 개설 전에도 현재 배정된 멘토는 표시한다', async () => {
+        findUniqueUser.mockResolvedValue({ program: PROGRAM_ROW, mentorAssignment: { mentor: { id: 'u1', name: '김멘토', email: 'kim@x.com' } } });
+        const body = await (await call()).json();
+        expect(body.mentors).toEqual([{ id: 'u1', name: '김멘토', email: 'kim@x.com', projectNames: [] }]);
+    });
 });
 
 describe('멘토의 소속', () => {
     beforeEach(() => authAs('MENTOR', 'mentor_1'));
 
     it('배정된 프로젝트를 프로그램별로 묶어 준다', async () => {
-        findManyProjectMember.mockResolvedValue([
-            { project: { id: 'p1', name: '프로젝트1', program: PROGRAM_ROW } },
-            { project: { id: 'p2', name: '프로젝트2', program: PROGRAM_ROW } },
-        ]);
+        findManyAssignment.mockResolvedValue([{ mentee: { ownedProjects: [
+            { id: 'p1', name: '프로젝트1', program: PROGRAM_ROW },
+            { id: 'p2', name: '프로젝트2', program: PROGRAM_ROW },
+        ] } }]);
 
         const body = await (await call()).json();
 
@@ -114,10 +124,11 @@ describe('멘토의 소속', () => {
         expect(body.programs[0].projects.map((p: { name: string }) => p.name)).toEqual(['프로젝트1', '프로젝트2']);
     });
 
-    it('COACH 로 배정된 것만 본다', async () => {
+    it('현재 배정 멘티의 프로젝트만 보고 과거 COACH는 조회하지 않는다', async () => {
         await call();
 
-        expect(findManyProjectMember.mock.calls[0][0].where).toEqual({ userId: 'mentor_1', role: 'COACH' });
+        expect(findManyAssignment.mock.calls[0][0].where).toEqual({ mentorId: 'mentor_1' });
+        expect(findManyProjectMember).not.toHaveBeenCalled();
     });
 
     it('배정이 없으면 빈 배열이다', async () => {

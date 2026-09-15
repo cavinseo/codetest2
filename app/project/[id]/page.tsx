@@ -315,12 +315,12 @@ export default function ProjectDetailPage() {
         try {
             const payload = {
                 name: overviewForm.name,
-                productName: overviewForm.productName ?? '',
+                productName: overviewForm.productName,
                 productImageDataUrl: overviewForm.productImageDataUrl,
                 productImageWidthPx: overviewForm.productImageWidthPx,
                 productImageHeightPx: overviewForm.productImageHeightPx,
-                marketDefinition: overviewForm.marketDefinition ?? '',
-                targetCustomer: overviewForm.targetCustomer ?? '',
+                marketDefinition: overviewForm.marketDefinition,
+                targetCustomer: overviewForm.targetCustomer,
                 description: overviewForm.description,
                 detailedDescription: overviewForm.detailedDescription,
                 ...(isOverviewFileDirty ? { businessPlanFile: overviewForm.businessPlanFile } : {}),

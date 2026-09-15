@@ -48,6 +48,15 @@ interface ReportResponse extends ReportMetadata {
     draft?: ReportDraft | null;
     document?: FinalReportModel | null;
 }
+interface ReportNavigation extends EventTarget {
+    currentEntry: { key: string } | null;
+    traverseTo(key: string): { finished: Promise<unknown> };
+}
+interface ReportNavigateEvent extends Event {
+    navigationType: string;
+    destination: { key: string; sameDocument: boolean; url: string };
+}
+type PendingNavigation = { historyKey: string } | { href: string; replace?: boolean };
 
 async function requestReport(url: string, method = 'GET', body?: string): Promise<ReportResponse> {
     const controller = new AbortController();
@@ -108,7 +117,8 @@ export default function FinalReportPage() {
     const [progress, setProgress] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
     const [confirmation, setConfirmation] = useState<'publish' | 'rebuild' | 'leave' | null>(null);
-    const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+    const [pendingNavigation, setPendingNavigation] = useState<PendingNavigation | null>(null);
+    const allowNavigation = useRef(false);
     const dialog = useRef<HTMLDialogElement>(null);
     const busy = useRef(false);
     const worksheetLoad = useRef(0);
@@ -172,7 +182,44 @@ export default function FinalReportPage() {
 
     useEffect(() => {
         if (!hasLocalChanges) return;
-        const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+        allowNavigation.current = false;
+        const navigation = (window as Window & { navigation?: ReportNavigation }).navigation;
+        const currentUrl = window.location.href;
+        const currentHistory = window.history.state;
+        const currentKey = navigation?.currentEntry?.key;
+        let restoringHistory = false;
+        const warn = (event: BeforeUnloadEvent) => { if (!allowNavigation.current) event.preventDefault(); };
+        const guardNavigation = (event: Event) => {
+            const navigationEvent = event as ReportNavigateEvent;
+            if (allowNavigation.current || restoringHistory || event.defaultPrevented || !event.cancelable
+                || navigationEvent.navigationType !== 'traverse' || !navigationEvent.destination.sameDocument) return;
+            event.preventDefault();
+            setPendingNavigation({ historyKey: navigationEvent.destination.key });
+            setConfirmation('leave');
+        };
+        const guardHistory = (event: PopStateEvent) => {
+            if (allowNavigation.current) return;
+            event.stopImmediatePropagation();
+            if (restoringHistory) {
+                if (navigation?.currentEntry?.key === currentKey) restoringHistory = false;
+                return;
+            }
+            const destination = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+            const destinationKey = navigation?.currentEntry?.key;
+            if (navigation && currentKey && destinationKey) {
+                // 취소 불가능한 traverse도 기존 이력 항목으로 복귀해 앞으로가기 이력을 보존한다.
+                restoringHistory = true;
+                void navigation.traverseTo(currentKey).finished.then(() => {
+                    setPendingNavigation({ historyKey: destinationKey });
+                    setConfirmation('leave');
+                }).catch(() => { restoringHistory = false; });
+                return;
+            }
+            // Navigation API가 없는 브라우저에서는 우선 현재 교정을 보존한다.
+            window.history.pushState(currentHistory, '', currentUrl);
+            setPendingNavigation({ href: destination, replace: true });
+            setConfirmation('leave');
+        };
         // 공통 메뉴의 Next Link도 보고서 페이지에서 막아 미저장 교정이 사라지지 않게 한다.
         const guardInternalLink = (event: MouseEvent) => {
             if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -184,13 +231,17 @@ export default function FinalReportPage() {
             if (destination.pathname === window.location.pathname && destination.search === window.location.search) return;
             event.preventDefault();
             event.stopImmediatePropagation();
-            setPendingNavigation(`${destination.pathname}${destination.search}${destination.hash}`);
+            setPendingNavigation({ href: `${destination.pathname}${destination.search}${destination.hash}` });
             setConfirmation('leave');
         };
         window.addEventListener('beforeunload', warn);
+        navigation?.addEventListener('navigate', guardNavigation);
+        window.addEventListener('popstate', guardHistory, true);
         document.addEventListener('click', guardInternalLink, true);
         return () => {
             window.removeEventListener('beforeunload', warn);
+            navigation?.removeEventListener('navigate', guardNavigation);
+            window.removeEventListener('popstate', guardHistory, true);
             document.removeEventListener('click', guardInternalLink, true);
         };
     }, [hasLocalChanges]);
@@ -464,9 +515,18 @@ export default function FinalReportPage() {
                     const action = confirmation;
                     setConfirmation(null);
                     if (action === 'leave' && pendingNavigation) {
+                        allowNavigation.current = true;
                         setHasLocalChanges(false);
                         setPendingNavigation(null);
-                        router.push(pendingNavigation);
+                        if ('historyKey' in pendingNavigation) {
+                            const navigation = (window as Window & { navigation?: ReportNavigation }).navigation;
+                            void navigation?.traverseTo(pendingNavigation.historyKey).finished.catch(() => {
+                                allowNavigation.current = false;
+                                setHasLocalChanges(true);
+                                setActionError('이동하지 못했습니다. 현재 입력은 유지됩니다. 다시 이동해 주세요.');
+                            });
+                        } else if (pendingNavigation.replace) router.replace(pendingNavigation.href);
+                        else router.push(pendingNavigation.href);
                     } else if (action === 'publish') void handlePublish();
                     else if (action === 'rebuild') void handleBuildPreview();
                 }} className="btn-primary text-sm">{confirmation === 'leave' ? '저장하지 않고 이동' : confirmation === 'publish' ? '완료하고 공개' : '다시 만들기'}</button>
