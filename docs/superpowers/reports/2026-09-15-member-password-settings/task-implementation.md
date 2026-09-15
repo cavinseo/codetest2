@@ -8,6 +8,8 @@
 
 `GET /api/me/profile`에는 `canVerifyPasswordWithInviteCode` 불리언만 추가한다. 초대 코드 원문과 비밀번호 해시를 조회 응답에 포함하지 않으며, 비밀번호 변경 DB 예외 원문도 로그에 남기지 않는다. 초대 코드 로그인과 이용 기간 내 재설정 기능을 유지한다.
 
+독립 리뷰에서 현재 비밀번호 확인 중 프로그램 종료일이 바뀌는 경합을 추가 확인하여 보완했다. 현재 비밀번호 방식에도 검증한 사용자 이용 기한, 초대 연결의 이용 기간 및 프로그램 종료일을 조건부 갱신에 포함한다. 초대가 없으면 연결 부재도 조건에 포함한다. 일반 회원에게 초대 확인의 멘티 역할 요건을 강제하지 않고 조회한 역할·관리자 여부 스냅샷을 유지한다. 초대 코드 사용 자격이 있는 멘티에게는 현재 비밀번호 방식에서도 코드 로그인·재설정 유지 안내를 표시한다.
+
 ## FILES CHANGED
 
 - `app/api/admin/password/route.ts`. 본인 확인 방식, 계정/IP 시도 제한, 세션 재확인, 조건부 갱신 및 안전한 오류 기록을 구현했다.
@@ -23,6 +25,8 @@
 ## COMMIT
 
 구현 및 소유 테스트 커밋은 `3f75112878994d3930c3ebfd8804dc03d4ff5b60`이며 제목은 `feat: add self-service member password settings`이다. 이 보고서는 별도 문서 커밋으로 기록한다. 다른 담당자의 통합 테스트 커밋 `d0575b2` 이후 소유 파일 12개만 스테이징했다.
+
+독립 리뷰의 이용 기간 경합 보완 커밋은 `55ce0a7197ae344a69058a1891a65197ccc51832`이며 제목은 `fix: preserve access snapshot during password changes`이다. API와 해당 평면 단위 테스트 두 파일만 변경했다. 보완 검증 기록도 별도 문서 커밋으로 남긴다.
 
 ## VERIFIED BY
 
@@ -52,7 +56,7 @@ Test Files  5 passed (5)
 Tests       82 passed (82)
 ```
 
-전체 테스트 첫 실행에서 기존 온보딩 픽스처에 `updateMany` 모의 객체가 없어 1건이 500으로 실패했다. API의 인증 게이트나 테스트 기대 결과를 바꾸지 않고 해당 모의 객체와 성공 반환값만 보정했다. 프로필 화면의 독립 저장 DOM 2건을 포함한 최종 결과는 다음과 같다.
+전체 테스트 첫 실행에서 기존 온보딩 픽스처에 `updateMany` 모의 객체가 없어 1건이 500으로 실패했다. API의 인증 게이트나 테스트 기대 결과를 바꾸지 않고 해당 모의 객체와 성공 반환값만 보정했다. 프로필 화면의 독립 저장 DOM 2건을 포함한 최초 구현의 전체 검증 결과는 다음과 같다.
 
 ```text
 npx vitest run --pool=threads
@@ -69,6 +73,30 @@ exit 0
 ```
 
 Vite 설정의 차기 기본 로더 관련 기존 경고만 출력되었다. 구현 담당의 타입·lint 검사에는 생성 임시 파일에 의한 실패가 없었다.
+
+추가 보완은 주 작업자의 독립 실DB RED 통보 이후에 진행했다. 실제 프로그램 PATCH가 프로그램을 만료시켰지만 세션 버전은 유지되고, 기존 현재 비밀번호 요청이 200·해시 변경·버전 증가·쿠키 발급까지 성공한다는 4개 실패 단언을 전달받았다. 구현 담당이 실DB를 직접 조작한 것은 아니다.
+
+구현 담당은 현재 비밀번호 방식의 이용 기간 CAS 조건, 초대 연결 부재 조건, 역할 전환 회원의 정상 변경과 정확한 성공 안내를 단위 테스트로 추가했다. 제품 코드 보완 전에 3개 모두 실패함을 확인했다.
+
+```text
+npx vitest run --pool=threads tests/api-password-settings.test.ts
+Test Files  1 failed (1)
+Tests       3 failed | 31 passed (34)
+```
+
+보완 후 관련 단위·DOM·온보딩 회귀와 정적 검사 결과는 다음과 같다. 전체 검증과 실DB 경합 GREEN 재실행은 주 작업자 및 통합 테스트 담당자가 맡는다.
+
+```text
+npx vitest run --pool=threads tests/api-password-settings.test.ts tests/api-admin-password.test.ts tests/api-onboarding-gate.test.ts tests/api-me-profile.test.ts tests/password-policy.test.ts tests/password-change-form.test.ts tests/profile-password-settings.test.ts
+Test Files  7 passed (7)
+Tests       98 passed (98)
+npx tsc --noEmit
+exit 0
+npm run lint
+exit 0
+git diff --check
+exit 0
+```
 
 ## DEVIATIONS
 
