@@ -133,7 +133,7 @@ describe('buildInviteEmail', () => {
         roleLabel: '멘티',
         expiresAt: new Date('2026-06-15T00:00:00Z'),
         accessDurationDays: 90,
-        signupUrl: 'https://example.com/signup',
+        signupUrl: 'https://example.com/login?mode=invite',
         escapeHtml,
     };
 
@@ -146,8 +146,24 @@ describe('buildInviteEmail', () => {
         expect(html).toContain('90일');
     });
 
-    it('발급 대상 주소로만 가입 가능함을 알린다', () => {
+    it('발급 대상 주소로만 로그인 가능함을 알린다', () => {
         expect(buildInviteEmail(params).html).toContain('받은 주소로만');
+    });
+
+    it('첫 로그인 기한과 같은 코드 재로그인, 프로그램 종료에 따른 이용 제한을 안내한다', () => {
+        const { html } = buildInviteEmail({ ...params, accessDurationDays: 30 });
+
+        expect(html).toContain('이메일과 초대 코드');
+        expect(html).toContain('처음 로그인하면 계정이 생성');
+        expect(html).toContain('같은 코드로 로그인');
+        expect(html).toContain('첫 로그인 기한');
+        expect(html).toContain('2026-06-15');
+        expect(html).toContain('30일');
+        expect(html).toContain('프로그램 종료일');
+        expect(html).toContain('먼저 도래하는 시점');
+        expect(html).toContain('href="https://example.com/login?mode=invite"');
+        expect(html).toContain('초대 코드로 로그인하기');
+        expect(html).not.toContain('회원가입 하러 가기');
     });
 
     it('역할 이름을 이스케이프한다', () => {

@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
             roleLabel: MEMBER_ROLE_LABELS[role],
             expiresAt: invite.expiresAt,
             accessDurationDays,
-            signupUrl: `${origin}/signup`,
+            signupUrl: `${origin}/login?mode=invite`,
             escapeHtml,
         });
         const emailSent = await sendMail({ to: email, subject: mail.subject, html: mail.html });
@@ -183,10 +183,13 @@ export async function DELETE(request: NextRequest) {
         }
 
         // 삭제가 아니라 만료 처리다. 누가 누구에게 발급했는지가 이력으로 남아야 한다.
-        await prisma.inviteCode.update({
-            where: { id: invite.id },
+        const revoked = await prisma.inviteCode.updateMany({
+            where: { id: invite.id, usedAt: null, usedById: null },
             data: { expiresAt: new Date() },
         });
+        if (revoked.count !== 1) {
+            return NextResponse.json({ error: '이미 사용된 코드는 회수할 수 없습니다.' }, { status: 400 });
+        }
 
         log.info('초대 코드 회수', { inviteId: invite.id });
         return NextResponse.json({ success: true });

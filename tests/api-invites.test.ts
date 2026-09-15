@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const createInvite = vi.fn();
 const findManyInvite = vi.fn();
 const findUniqueInvite = vi.fn();
-const updateInvite = vi.fn();
+const updateManyInvite = vi.fn();
 const findUniqueUser = vi.fn();
 const findUniqueProgram = vi.fn();
 
@@ -13,7 +13,7 @@ vi.mock('../lib/prisma', () => ({
     prisma: {
         inviteCode: {
             create: createInvite, findMany: findManyInvite,
-            findUnique: findUniqueInvite, update: updateInvite,
+            findUnique: findUniqueInvite, updateMany: updateManyInvite,
         },
         user: { findUnique: findUniqueUser },
         program: { findUnique: findUniqueProgram },
@@ -62,7 +62,7 @@ beforeEach(() => {
         id: 'inv_1', usedAt: null, issuedById: ISSUER_ID,
         program: { managerId: ISSUER_ID },
     });
-    updateInvite.mockResolvedValue({ id: 'inv_1' });
+    updateManyInvite.mockResolvedValue({ count: 1 });
     sendMail.mockResolvedValue(true);
 });
 
@@ -181,6 +181,19 @@ describe('초대 코드 발행 규칙', () => {
         expect(createInvite.mock.calls[0][0].data.programId).toBe('prog_1');
     });
 
+    it('발급 메일은 멘티 초대코드 로그인으로 연결하고 선택한 이용 기간을 안내한다', async () => {
+        const res = await POST(jsonRequest('POST', {
+            email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', accessDurationDays: 30,
+        }));
+
+        expect(res.status).toBe(200);
+        expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({
+            to: 'm@x.com', html: expect.stringContaining('href="http://localhost/login?mode=invite"'),
+        }));
+        expect(sendMail.mock.calls[0][0].html).toContain('30일');
+        expect(sendMail.mock.calls[0][0].html).toContain('같은 코드로 로그인');
+    });
+
     it('기본 접근 기간 90일을 담는다', async () => {
         await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1' }));
 
@@ -203,13 +216,29 @@ describe('초대 코드 발행 규칙', () => {
 describe('초대 코드 회수', () => {
     beforeEach(() => authAs('ADMIN'));
 
+    it('조회 직후 최초 로그인에 사용된 코드는 회수 성공으로 응답하지 않는다', async () => {
+        updateManyInvite.mockResolvedValue({ count: 0 });
+
+        const res = await DELETE(jsonRequest('DELETE', { id: 'inv_1' }));
+
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: '이미 사용된 코드는 회수할 수 없습니다.' });
+        expect(updateManyInvite).toHaveBeenCalledWith({
+            where: { id: 'inv_1', usedAt: null, usedById: null },
+            data: { expiresAt: expect.any(Date) },
+        });
+    });
+
     it('삭제가 아니라 만료 처리한다', async () => {
         // 누가 누구에게 무엇을 발급했는지가 이력으로 남아야 한다.
         const res = await DELETE(jsonRequest('DELETE', { id: 'inv_1' }));
 
         expect(res.status).toBe(200);
-        expect(updateInvite).toHaveBeenCalled();
-        const data = updateInvite.mock.calls[0][0].data;
+        expect(updateManyInvite).toHaveBeenCalledWith({
+            where: { id: 'inv_1', usedAt: null, usedById: null },
+            data: { expiresAt: expect.any(Date) },
+        });
+        const data = updateManyInvite.mock.calls[0][0].data;
         expect(data.expiresAt).toBeInstanceOf(Date);
     });
 
@@ -222,7 +251,7 @@ describe('초대 코드 회수', () => {
         const res = await DELETE(jsonRequest('DELETE', { id: 'inv_1' }));
 
         expect(res.status).toBe(400);
-        expect(updateInvite).not.toHaveBeenCalled();
+        expect(updateManyInvite).not.toHaveBeenCalled();
     });
 
     it('매니저도 회수할 수 있다', async () => {
@@ -233,7 +262,7 @@ describe('초대 코드 회수', () => {
         const res = await DELETE(jsonRequest('DELETE', { id: 'inv_1' }));
 
         expect(res.status).toBe(200);
-        expect(updateInvite).toHaveBeenCalled();
+        expect(updateManyInvite).toHaveBeenCalled();
     });
 
     it('멘토는 회수할 수 없다', async () => {
@@ -242,7 +271,7 @@ describe('초대 코드 회수', () => {
         const res = await DELETE(jsonRequest('DELETE', { id: 'inv_1' }));
 
         expect(res.status).toBe(403);
-        expect(updateInvite).not.toHaveBeenCalled();
+        expect(updateManyInvite).not.toHaveBeenCalled();
     });
 
     it('다른 매니저가 개설한 프로그램의 코드는 회수할 수 없다', async () => {
@@ -255,7 +284,7 @@ describe('초대 코드 회수', () => {
         const res = await DELETE(jsonRequest('DELETE', { id: 'inv_1' }));
 
         expect(res.status).toBe(403);
-        expect(updateInvite).not.toHaveBeenCalled();
+        expect(updateManyInvite).not.toHaveBeenCalled();
     });
 });
 
