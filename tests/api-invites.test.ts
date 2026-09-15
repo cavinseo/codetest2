@@ -1,6 +1,6 @@
 // 초대 코드 발행·목록·회수가 역할 게이트와 프로그램 경계를 지키는지 확인한다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 const createInvite = vi.fn();
 const findManyInvite = vi.fn();
@@ -260,6 +260,43 @@ describe('초대 코드 회수', () => {
 });
 
 describe('초대 코드 목록', () => {
+    it('관리자 응답은 메일로 전달된 기존 코드도 그대로 포함한다', async () => {
+        authAs('ADMIN');
+        findManyInvite.mockResolvedValue([{
+            id: 'inv_visible', code: 'ADMIN-VISIBLE-CODE', email: 'mentee@example.test',
+            programId: 'prog_1', program: { name: '초대 프로그램' },
+            expiresAt: new Date('2099-01-01'), usedAt: null, accessDurationDays: 90,
+        }]);
+
+        const res = await GET(new NextRequest('http://localhost/api/invites'));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(findManyInvite.mock.calls[0][0].where).toEqual({});
+        expect(findManyInvite.mock.calls[0][0].select.code).toBe(true);
+        expect(body.invites).toEqual([expect.objectContaining({
+            id: 'inv_visible', code: 'ADMIN-VISIBLE-CODE', programName: '초대 프로그램',
+        })]);
+    });
+
+    it('멘티는 발급 코드 조회를 시도해도 DB 조회 전에 차단된다', async () => {
+        authAs('MENTEE');
+
+        const res = await GET(new NextRequest('http://localhost/api/invites'));
+
+        expect(res.status).toBe(403);
+        expect(findManyInvite).not.toHaveBeenCalled();
+    });
+
+    it('미로그인 요청은 인증 실패를 그대로 반환하고 코드 목록을 조회하지 않는다', async () => {
+        requireAuth.mockResolvedValue(NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 }));
+
+        const res = await GET(new NextRequest('http://localhost/api/invites'));
+
+        expect(res.status).toBe(401);
+        expect(findManyInvite).not.toHaveBeenCalled();
+    });
+
     it('멘토는 목록을 볼 수 없다', async () => {
         authAs('MENTOR');
 
