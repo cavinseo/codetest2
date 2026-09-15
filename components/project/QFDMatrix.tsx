@@ -74,13 +74,13 @@ const DEFAULT_COMPETITOR_LABEL = '경쟁사';
 const RELATIONSHIP_OPTIONS: Array<{
     value: Relationship['strength'];
     label: string;
-    score: string;
+    description: string;
     className: string;
 }> = [
-    { value: 'NONE', label: '-', score: '0', className: 'text-slate-500' },
-    { value: 'WEAK', label: '△', score: '1', className: 'text-amber-300' },
-    { value: 'MEDIUM', label: '○', score: '3', className: 'text-sky-300' },
-    { value: 'STRONG', label: '◎', score: '9', className: 'text-emerald-300' },
+    { value: 'NONE', label: '-', description: '관계 없음', className: 'text-slate-500' },
+    { value: 'WEAK', label: '1', description: '약함', className: 'text-amber-300' },
+    { value: 'MEDIUM', label: '3', description: '보통', className: 'text-sky-300' },
+    { value: 'STRONG', label: '9', description: '강함', className: 'text-emerald-300' },
 ];
 
 function formatNumber(value: number | undefined | null, digits = 1) {
@@ -955,7 +955,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                         </button>
                         <div className="hidden items-center gap-3 md:flex">
                         {RELATIONSHIP_OPTIONS.slice(1).map((option) => (
-                            <span key={option.value} className={option.className}>{option.label}={option.score}</span>
+                            <span key={option.value} className={option.className}>{option.label} = {option.description}</span>
                         ))}
                         </div>
                     </div>
@@ -1121,7 +1121,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                                                         aria-invalid={saveFailed}
                                                         onChange={(event) => setRelationshipVal(requirement.id, tech.id, event.target.value as Relationship['strength'])}
                                                         className={`h-[31px] w-full cursor-pointer border-none bg-transparent p-1 text-center text-base font-bold outline-none hover:bg-cyan-500/10 ${option.className}`}
-                                                        title={`${option.label} (${option.score})`}
+                                                        title={`${option.description} (${option.label})`}
                                                     >
                                                         {RELATIONSHIP_OPTIONS.map((item) => (
                                                             <option key={item.value} value={item.value}>{item.label}</option>
