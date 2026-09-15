@@ -1159,7 +1159,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                                         <td className="border border-white/[0.08] bg-sky-500/[0.07] p-1 text-center font-semibold">{formatNumber(analysis?.improvementRate, 2)}</td>
                                         <td className="border border-white/[0.08] bg-sky-500/[0.07] p-1 text-center font-semibold">{formatNumber(analysis?.absoluteImportance, 2)}</td>
                                         <td className="border border-white/[0.08] bg-sky-500/[0.07] p-1 text-center">{analysis?.qualityImportancePercent ? `${analysis.qualityImportancePercent.toFixed(1)}%` : '-'}</td>
-                                        <td className="border border-white/[0.08] bg-sky-500/[0.07] p-1 text-center font-bold text-yellow-200">{analysis?.rank || '-'}</td>
+                                        <td className={`border border-white/[0.08] bg-sky-500/[0.07] p-1 text-center ${analysis?.rank && analysis.rank >= 1 && analysis.rank <= 5 ? 'font-bold text-red-600' : 'font-normal text-black'}`}>{analysis?.rank || '-'}</td>
                                     </tr>
                                 );
                             })}
@@ -1182,7 +1182,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                                 <td colSpan={3} className="border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-right font-bold text-gray-200">RANK</td>
                                 {visibleTechnicalColumns.map(({ tech }) => {
                                     const analysis = getTechAnalysis(tech.id);
-                                    return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.04] p-1 text-center font-bold text-yellow-200">{analysis?.rank || '-'}</td>;
+                                    return <td key={tech.id} className={`border border-white/[0.08] bg-white/[0.04] p-1 text-center ${analysis?.rank && analysis.rank >= 1 && analysis.rank <= 5 ? 'font-bold text-red-600' : 'font-normal text-black'}`}>{analysis?.rank || '-'}</td>;
                                 })}
                                 <td colSpan={rightSideColumnSpan} className="border border-white/[0.08] bg-white/[0.015]" />
                             </tr>
@@ -1309,7 +1309,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                             <div key={tech.technicalCharId} className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-3">
                                 <div className="mb-2 flex items-center justify-between">
                                     <span className="text-sm font-semibold text-white">{tech.name}</span>
-                                    <span className="text-xs font-bold text-yellow-300">#{tech.rank ?? '-'}</span>
+                                    <span className={`text-xs ${tech.rank && tech.rank >= 1 && tech.rank <= 5 ? 'font-bold text-red-600' : 'font-normal text-black'}`}>#{tech.rank ?? '-'}</span>
                                 </div>
                                 <div className="h-1.5 w-full rounded-full bg-white/[0.06]">
                                     <div className="h-1.5 rounded-full bg-cyan-400" style={{ width: `${width}%` }} />
