@@ -49,7 +49,9 @@ export async function runInviteBatch(
             } else if (data.emailSent) {
                 result = { email: action.email, status: 'sent', code: data.code, message: '코드 발급 및 메일 발송 완료.' };
             } else {
-                result = { email: action.email, status: 'issued', code: data.code, message: '코드 발급 완료 · 메일 발송 실패. 코드를 직접 전달하세요.' };
+                result = { email: action.email, status: 'issued', code: data.code, message: data.code
+                    ? '코드 발급 완료 · 메일 발송 실패. 코드를 직접 전달하세요.'
+                    : '코드 발급 완료 · 메일 발송 실패. 목록에서 메일을 재발송하거나 관리자에게 문의하세요.' };
             }
         } catch {
             // 응답을 받지 못해도 서버가 이미 발급했을 수 있으므로 자동 재시도하지 않는다.

@@ -78,6 +78,23 @@ it('기존 발급 코드가 관리자 목록에 표시된다', async () => {
     expect(container.querySelector('table')!.textContent).toContain('EXISTING-CODE');
 });
 
+it('매니저의 코드 없는 응답도 발급 성공으로 표시하고 재발송을 안내한다', async () => {
+    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
+        if (options?.method === 'POST') return response({ success: true, emailSent: false });
+        return response(url === '/api/programs' ? { programs } : { invites: [{ ...invite, code: undefined }] });
+    });
+    await renderInvites();
+    expect(container.querySelector('table')!.textContent).toContain('관리자만 열람 가능');
+    expect(container.textContent).not.toContain('EXISTING-CODE');
+    await enterEmails('mentee@example.com');
+    await issue();
+    expect(container.textContent).toContain('코드 발급 완료');
+    expect(container.textContent).toContain('목록에서 메일을 재발송하거나 관리자에게 문의하세요.');
+    expect(container.textContent).not.toContain('직접 전달하세요');
+    expect(container.querySelector<HTMLTextAreaElement>('#invites-email')!.value).toBe('');
+    expect(container.querySelector('#invites-resend-existing')).not.toBeNull();
+});
+
 it('유효 이메일 여러 개를 중복 없이 발급하고 잘못된 입력은 남긴다', async () => {
     await renderInvites();
     await enterEmails('ONE@example.com\ntwo@example.com;one@EXAMPLE.com, not-email');

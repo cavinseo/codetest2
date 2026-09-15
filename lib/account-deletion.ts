@@ -26,6 +26,8 @@ export interface MenteeDeletionPreview {
     migrations: number;
     /** 함께 삭제될 초대 코드 수. 그 사람의 이메일이 남는 유일한 자리다. */
     inviteCodes: number;
+    /** 실행 관리자에게 발급 관리 책임을 넘겨 보존할 초대 코드 수. */
+    transferredIssuedInviteCodes?: number;
 }
 
 /**
@@ -51,6 +53,9 @@ export function describeMenteeDeletion(preview: MenteeDeletionPreview): string[]
     }
     if (preview.inviteCodes > 0) {
         lines.push(`이 사람에게 발급된 초대 코드 ${preview.inviteCodes}건은 함께 삭제됩니다.`);
+    }
+    if ((preview.transferredIssuedInviteCodes ?? 0) > 0) {
+        lines.push(`이 사람이 발급한 초대 코드 ${preview.transferredIssuedInviteCodes}건의 관리 책임은 실행 관리자에게 이전됩니다.`);
     }
 
     return lines;

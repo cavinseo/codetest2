@@ -9,7 +9,7 @@ import { INVITE_BATCH_LIMIT, parseInviteEmails, runInviteBatch, type InviteBatch
 
 interface Invite {
     id: string;
-    code: string;
+    code?: string;
     email: string;
     programId: string;
     programName: string;
@@ -242,7 +242,7 @@ export default function InvitesTab() {
                             {invites.map((invite) => (
                                 <tr key={invite.id} className="hover:bg-white/[0.02] transition-colors">
                                     <td className="px-5 py-4 text-sm text-white">{invite.email}</td>
-                                    <td className="px-5 py-4 text-xs text-gray-300 font-mono whitespace-nowrap">{invite.code}</td>
+                                    <td className="px-5 py-4 text-xs text-gray-300 font-mono whitespace-nowrap">{invite.code ?? '관리자만 열람 가능'}</td>
                                     <td className="px-5 py-4 text-sm text-gray-400">{invite.programName}</td>
                                     <td className="px-5 py-4 text-sm text-gray-400">{invite.expiresAt.slice(0, 10)}</td>
                                     <td className="px-5 py-4">

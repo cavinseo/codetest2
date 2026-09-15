@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
         const invites = await prisma.inviteCode.findMany({
             where: scope,
             select: {
-                id: true, code: true, email: true, role: true, expiresAt: true,
+                id: true, code: authResult.role === 'ADMIN', email: true, role: true, expiresAt: true,
                 accessDurationDays: true, usedAt: true, createdAt: true,
                 programId: true, program: { select: { name: true, endsAt: true } },
                 usedBy: { select: { accessExpiresAt: true } },
@@ -60,8 +60,8 @@ export async function GET(request: NextRequest) {
         });
 
         return NextResponse.json({
-            invites: invites.map(({ program, usedBy, ...rest }) => ({
-                ...rest, programName: program.name,
+            invites: invites.map(({ program, usedBy, code, ...rest }) => ({
+                ...rest, ...(authResult.role === 'ADMIN' ? { code } : {}), programName: program.name,
                 expiresAt: inviteAccessExpiresAt({ ...rest, program, usedBy }),
             })),
         });
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: true,
             emailSent,
-            code,
+            ...(authResult.role === 'ADMIN' ? { code } : {}),
             invite: {
                 id: invite.id, email: invite.email, role: invite.role,
                 programId: invite.programId, expiresAt: invite.expiresAt, accessDurationDays,

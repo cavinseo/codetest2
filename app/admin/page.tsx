@@ -165,7 +165,8 @@ export default function AdminModePage() {
 
             if (res.ok) {
                 setUsers((prev) => prev.filter((u) => u.id !== userId));
-                showMsg('success', '사용자가 삭제되었습니다.');
+                showMsg('success', '사용자가 삭제되었습니다.' + (data.transferredIssuedInviteCodes > 0
+                    ? ` 발급한 초대 코드 ${data.transferredIssuedInviteCodes}건은 보존하고 관리 책임을 이전했습니다.` : ''));
                 setConfirmDelete(null);
             } else {
                 setConfirmDelete((prev) => prev ? { ...prev, error: data?.error || '사용자 삭제에 실패했습니다.' } : prev);

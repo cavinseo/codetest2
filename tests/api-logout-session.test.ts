@@ -7,12 +7,13 @@ import { NextRequest } from 'next/server';
 
 const updateUser = vi.fn();
 vi.mock('../lib/prisma', () => ({
-    prisma: { user: { update: updateUser } },
+    prisma: { user: { update: updateUser, updateMany: updateUser } },
 }));
 
 const getSessionUser = vi.fn();
 vi.mock('../lib/auth', () => ({
     getSessionUser: (...args: unknown[]) => getSessionUser(...(args as [])),
+    verifySessionCookie: (...args: unknown[]) => getSessionUser(...(args as [])),
 }));
 
 const { POST } = await import('../app/api/auth/logout/route');
@@ -22,7 +23,7 @@ function logoutRequest(): NextRequest {
 }
 
 beforeEach(() => {
-    getSessionUser.mockReturnValue({ userId: 'user_7', email: 'u@x.com', name: '사용자' });
+    getSessionUser.mockReturnValue({ userId: 'user_7', email: 'u@x.com', name: '사용자', ver: 4 });
     updateUser.mockResolvedValue({ id: 'user_7' });
 });
 
@@ -36,7 +37,7 @@ describe('logout', () => {
 
         expect(res.status).toBe(200);
         expect(updateUser).toHaveBeenCalledWith({
-            where: { id: 'user_7' },
+            where: { id: 'user_7', sessionVersion: 4 },
             data: { sessionVersion: { increment: 1 } },
         });
     });
@@ -45,6 +46,20 @@ describe('logout', () => {
         const res = await POST(logoutRequest());
 
         expect(res.headers.get('set-cookie')).toContain('Max-Age=0');
+    });
+
+    it('오래된 쿠키로 반복 로그아웃해도 현재 세션 버전을 올리지 않는다', async () => {
+        let currentVersion = 5;
+        updateUser.mockImplementation(async ({ where }) => {
+            const matches = where.sessionVersion === undefined || where.sessionVersion === currentVersion;
+            if (matches) currentVersion++;
+            return { count: matches ? 1 : 0 };
+        });
+        for (let i = 0; i < 2; i++) {
+            const response = await POST(logoutRequest());
+            expect(response.status).toBe(200); expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
+        }
+        expect(currentVersion).toBe(5);
     });
 
     it('세션이 없어도 200 으로 끝낸다', async () => {

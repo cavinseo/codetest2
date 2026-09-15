@@ -321,6 +321,22 @@ describe('초대 코드 회수', () => {
 });
 
 describe('초대 코드 목록', () => {
+    it('프로그램 매니저 응답에는 이메일 인증용 원문 코드가 없다', async () => {
+        authAs('PROGRAM_MANAGER');
+        findManyInvite.mockResolvedValue([{ id: 'inv', code: 'SECRET-LOGIN-CODE', email: 'mentee@example.test',
+            program: { name: '프로그램', endsAt: new Date('2099-01-01') }, expiresAt: new Date('2099-01-01'), usedAt: null }]);
+        const response = await GET(new NextRequest('http://localhost/api/invites'));
+        expect(response.status).toBe(200);
+        expect(await response.text()).not.toContain('SECRET-LOGIN-CODE');
+        expect(findManyInvite.mock.calls[0][0].select.code).toBe(false);
+    });
+    it.each([true, false])('매니저 발급 응답은 메일 성공 %s 여부와 무관하게 코드를 제외한다', async emailSent => {
+        authAs('PROGRAM_MANAGER'); sendMail.mockResolvedValue(emailSent);
+        const response = await POST(jsonRequest('POST', { email: 'new@example.test', role: 'MENTEE', programId: 'prog_1' }));
+        const body = await response.json();
+        expect(response.status).toBe(200); expect(body.emailSent).toBe(emailSent);
+        expect(body).not.toHaveProperty('code'); expect(body.invite).not.toHaveProperty('code');
+    });
     it('관리자 응답은 메일로 전달된 기존 코드도 그대로 포함한다', async () => {
         authAs('ADMIN');
         findManyInvite.mockResolvedValue([{

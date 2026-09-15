@@ -18,6 +18,8 @@ const countMigration = vi.fn();
 const countInviteCode = vi.fn();
 const deleteManyInviteCode = vi.fn();
 const lockUsers = vi.fn();
+const findActor = vi.fn();
+const transferIssuedCodes = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
@@ -33,6 +35,7 @@ vi.mock('../lib/prisma', () => ({
 const requireAdmin = vi.fn();
 vi.mock('../lib/authorization', () => ({
     requireAdmin: (...args: unknown[]) => requireAdmin(...(args as [])),
+    hasAdminAccess: (user: { role: string; isAdmin: boolean }) => user.role === 'ADMIN' && user.isAdmin,
 }));
 
 const { DELETE } = await import('../app/api/admin/users/route');
@@ -48,6 +51,7 @@ function deleteRequest(body: unknown): NextRequest {
 }
 
 beforeEach(() => {
+    vi.resetAllMocks();
     requireAdmin.mockResolvedValue(ADMIN);
     findUser.mockResolvedValue({ id: 'user_2', email: 'member@x.com', isAdmin: false });
     countUser.mockResolvedValue(2);
@@ -60,12 +64,14 @@ beforeEach(() => {
     countInviteCode.mockResolvedValue(0);
     deleteManyInviteCode.mockResolvedValue({ count: 0 });
     lockUsers.mockResolvedValue([]);
+    findActor.mockResolvedValue({ id: 'admin_1', email: 'admin@ks-qfd.com', role: 'ADMIN', status: 'APPROVED', isAdmin: true, accessExpiresAt: null });
+    transferIssuedCodes.mockImplementation(async () => ({ count: await countInviteCode({ where: { issuedById: 'user_2' } }) }));
     transaction.mockImplementation(async fn => fn({
         $queryRaw: lockUsers,
-        user: { findUnique: findUser, count: countUser, delete: deleteUser },
+        user: { findUnique: (args: { where: { id: string } }) => args.where.id === 'admin_1' ? findActor(args) : findUser(args), count: countUser, delete: deleteUser },
         project: { count: countProject, findMany: findManyProject, updateMany: updateProject },
         kanoSurveyInvitation: { count: countInvitation }, migrationHistory: { count: countMigration },
-        inviteCode: { count: countInviteCode, deleteMany: deleteManyInviteCode },
+        inviteCode: { count: countInviteCode, deleteMany: deleteManyInviteCode, updateMany: transferIssuedCodes },
     }));
 });
 
@@ -74,6 +80,43 @@ afterEach(() => {
 });
 
 describe('admin users DELETE', () => {
+    it('이름이 없는 발급자도 ID로 확인하고 초대 책임을 이전한 뒤 삭제한다', async () => {
+        findUser.mockResolvedValue({ id: 'user_2', name: null, email: 'member@x.com', role: 'MENTOR', isAdmin: false });
+        countInviteCode.mockResolvedValue(1);
+        const response = await DELETE(deleteRequest({ userId: 'user_2', confirmCascade: true }));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ success: true, transferredIssuedInviteCodes: 1 });
+        expect(deleteUser).toHaveBeenCalledWith({ where: { id: 'user_2' } });
+    });
+    it('발급자가 삭제돼도 기존 초대 코드를 실행 관리자에게 이전한다', async () => {
+        countInviteCode.mockImplementation(async ({ where }) => where.issuedById ? 2 : 0);
+        const preview = await DELETE(deleteRequest({ userId: 'user_2' }));
+        expect(preview.status).toBe(409);
+        expect((await preview.json()).transferredIssuedInviteCodes).toBe(2);
+        expect(deleteUser).not.toHaveBeenCalled();
+        const response = await DELETE(deleteRequest({ userId: 'user_2', confirmCascade: true }));
+        expect(response.status).toBe(200); expect((await response.json()).transferredIssuedInviteCodes).toBe(2);
+        expect(transferIssuedCodes).toHaveBeenCalledWith({ where: { issuedById: 'user_2' }, data: { issuedById: 'admin_1' } });
+        expect(transferIssuedCodes.mock.invocationCallOrder[0]).toBeLessThan(deleteUser.mock.invocationCallOrder[0]);
+    });
+    it('교차 삭제로 실행 관리자 계정이 사라졌으면 다른 관리자를 삭제하지 않는다', async () => {
+        findUser.mockResolvedValue({ id: 'admin_2', email: 'other@x.com', role: 'ADMIN', status: 'APPROVED', isAdmin: true });
+        findActor.mockResolvedValue(null);
+        expect((await DELETE(deleteRequest({ userId: 'admin_2', confirmCascade: true }))).status).toBe(409);
+        expect(deleteUser).not.toHaveBeenCalled();
+    });
+    it('공통 관리자 삭제 잠금 뒤 현재 관리자 수를 다시 검사한다', async () => {
+        findUser.mockResolvedValue({ id: 'admin_2', email: 'other@x.com', role: 'ADMIN', status: 'APPROVED', isAdmin: true });
+        await DELETE(deleteRequest({ userId: 'admin_2', confirmCascade: true }));
+        expect(lockUsers.mock.calls.some(call => String(call[0]).includes('pg_advisory_xact_lock') || String(call[0]?.text).includes('pg_advisory_xact_lock'))).toBe(true);
+        expect(lockUsers.mock.invocationCallOrder[0]).toBeLessThan(countUser.mock.invocationCallOrder[0]);
+    });
+    it('잠금 이후 마지막 관리자이면 삭제를 거절한다', async () => {
+        findUser.mockResolvedValue({ id: 'admin_2', email: 'other@x.com', role: 'ADMIN', status: 'APPROVED', isAdmin: true });
+        countUser.mockImplementation(async () => lockUsers.mock.calls.length ? 1 : 2);
+        expect((await DELETE(deleteRequest({ userId: 'admin_2', confirmCascade: true }))).status).toBe(400);
+        expect(deleteUser).not.toHaveBeenCalled();
+    });
     it('소유 프로젝트가 있으면 409 로 막고 건수를 알려준다', async () => {
         countProject.mockResolvedValue(3);
 
@@ -231,7 +274,7 @@ describe('멘티 삭제: 지우기 전에 무엇이 벌어지는지 보여 준�
         expect(body.transferredProjects).toBe(1);
         expect(updateProject).toHaveBeenCalledWith({ where: { id: 'proj_a', ownerId: 'user_2', programId: 'program_a' }, data: { ownerId: 'pm_a' } });
         expect(deleteManyInviteCode).toHaveBeenCalledWith({
-            where: { email: { equals: 'Mentee@x.com', mode: 'insensitive' } },
+            where: { email: { equals: 'Mentee@x.com', mode: 'insensitive' }, issuedById: { not: 'user_2' } },
         });
         expect(deleteUser).toHaveBeenCalledWith({ where: { id: 'user_2' } });
     });
@@ -321,7 +364,7 @@ describe('멘티 삭제: 지우기 전에 무엇이 벌어지는지 보여 준�
         expect((await DELETE(confirmed)).status).toBe(409);
         expect(updateProject).not.toHaveBeenCalled();
         expect(deleteUser).not.toHaveBeenCalled();
-        expect(lockUsers.mock.calls[0][0].values).toEqual(['pm_a', 'user_2']);
+        expect(lockUsers.mock.calls.some(call => JSON.stringify(call[0]?.values) === JSON.stringify(['admin_1', 'pm_a', 'user_2']))).toBe(true);
     });
 
     it('조건부 소유권 변경 실패 시 계정 삭제를 진행하지 않는다', async () => {
