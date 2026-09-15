@@ -38,3 +38,6 @@ F10의 DOM 테스트는 실제 React 페이지의 교정 입력과 대화상자�
 Navigation API의 traverse 취소 조건과 destination key 재개 동작은 [WICG Navigation API 설명](https://github.com/WICG/navigation-api)에서 확인했다. 취소 가능한 traverse는 최상위 창의 동일 문서 이동이어야 하며 사용자 활성 조건이 추가된다. 그 조건을 충족하지 않는 native 이동은 popstate에서 현재 key로 복귀한다.
 
 커밋·푸시·배포는 수행하지 않았다.
+# 최종 통합 검수 추가 기록.
+
+독립 리뷰에서 F10의 비동기 이벤트 순서 공백을 발견했다. `traverseTo().finished` 다음에 복원 `popstate`가 발생하면 원래 목적지가 현재 보고서로 덮어써지는 경우를 back/forward 회귀 2건으로 재현했다. 복원 대상의 popstate를 수신할 때만 복원 상태를 해제하도록 수정했다. 보고서 이력 테스트는 10건, 담당 묶음은 177건이다. 주 작업자가 새 운영 빌드의 실제 브라우저에서 양방향 취소 시 교정 보존 및 재시도 승인 후 원래 목적지 도착을 확인했다.
