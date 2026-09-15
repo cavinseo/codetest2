@@ -71,7 +71,7 @@ export async function GET(
 
         const mentees = await prisma.user.findMany({
             where: { programId, role: 'MENTEE', status: 'APPROVED' },
-            select: { id: true, name: true, email: true },
+            select: { id: true, name: true, email: true, mentorAssignment: { select: { mentorId: true, mentor: { select: { name: true, email: true } } } } },
             orderBy: { name: 'asc' },
         });
 

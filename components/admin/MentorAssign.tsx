@@ -100,7 +100,7 @@ export default function MentorAssign({ projectId, menteeId }: { projectId?: stri
 
     return (
         <div className="card space-y-3">
-            <p className="text-sm text-gray-400">멘티당 멘토 1명을 배정합니다. 해당 멘티의 모든 프로젝트에 적용되며, 멘토는 열람과 워크시트 코멘트만 가능합니다.</p>
+            <p className="text-sm text-gray-400">한 멘토에게 여러 멘티를 배정할 수 있으며, 멘티당 담당 멘토는 1명입니다. 배정은 해당 멘티의 모든 프로젝트에 적용됩니다.</p>
             <div className="flex flex-wrap items-center gap-2">
                 <select className="input w-auto py-2 px-3 text-sm" value={selected}
                     disabled={busy} aria-label="배정할 멘토" onChange={(e) => setSelected(e.target.value)} id={`mentor-select-${menteeId ?? projectId}`}>
