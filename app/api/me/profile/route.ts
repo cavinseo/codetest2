@@ -10,6 +10,7 @@ import { hasAdminAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { isProfileCompleteForRole, memberProfileSchemaFor } from '@/lib/member-profile';
+import { inviteAccessExpiresAt } from '@/lib/invite-access';
 
 const log = createLogger('api/me/profile');
 
@@ -34,12 +35,29 @@ export async function GET(request: NextRequest) {
             // 온보딩 화면이 비밀번호 변경 섹션을 띄울지 판단하려면 이 값이 필요하다.
             prisma.user.findUnique({
                 where: { id: authResult.userId },
-                select: { mustChangePassword: true, mentorProjectCreationEnabled: true },
+                select: {
+                    mustChangePassword: true, mentorProjectCreationEnabled: true,
+                    id: true, email: true, role: true, isAdmin: true, status: true,
+                    programId: true, accessExpiresAt: true,
+                    usedInviteCode: { select: {
+                        email: true, role: true, usedById: true, usedAt: true, expiresAt: true,
+                        accessDurationDays: true, programId: true, program: { select: { endsAt: true } },
+                    } },
+                },
             }),
         ]);
 
+        const invite = account?.usedInviteCode;
+        const canVerifyPasswordWithInviteCode = Boolean(account && invite
+            && account.role === 'MENTEE' && !account.isAdmin && account.status === 'APPROVED'
+            && invite.role === 'MENTEE' && invite.usedAt && invite.usedById === account.id
+            && invite.programId === account.programId
+            && invite.email.trim().toLowerCase() === account.email.trim().toLowerCase()
+            && inviteAccessExpiresAt({ ...invite, usedBy: account }).getTime() > Date.now());
+
         return NextResponse.json({
             profile,
+            canVerifyPasswordWithInviteCode,
             needsProfile: !isProfileCompleteForRole(authResult.role, profile),
             // 관리자가 만든 계정은 임시 비밀번호를 강제 변경해야 온보딩을 마칠 수 있다.
             mustChangePassword: account?.mustChangePassword ?? false,

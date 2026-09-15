@@ -12,12 +12,14 @@ import { fromProfileRecord } from '@/lib/member-profile-payload';
 import { MEMBER_ROLE_LABELS, type MemberRole } from '@/lib/member-roles';
 import type { MentorRef, ProgramRef, ProgramWithProjects } from '@/lib/affiliation';
 import PersonalAiConnection from '@/components/member/PersonalAiConnection';
+import PasswordChangeForm from '@/components/member/PasswordChangeForm';
 import ThemeToggle from '@/components/ThemeToggle';
 
 interface Account {
     name: string | null;
     email: string;
     role: MemberRole;
+    canVerifyPasswordWithInviteCode: boolean;
 }
 
 interface Affiliation {
@@ -57,7 +59,8 @@ export default function ProfilePage() {
                 setMessage({ type: 'error', text: profileData?.error || '회원 정보를 불러오지 못했습니다.' });
                 return;
             }
-            setAccount({ name: profileData.name ?? null, email: profileData.email, role: profileData.role });
+            setAccount({ name: profileData.name ?? null, email: profileData.email, role: profileData.role,
+                canVerifyPasswordWithInviteCode: profileData.canVerifyPasswordWithInviteCode === true });
             setName(profileData.name ?? '');
             setProfile(fromProfileRecord(profileData.profile));
 
@@ -267,6 +270,7 @@ export default function ProfilePage() {
                                 </button>
                             </div>
                         </section>
+                        <PasswordChangeForm canVerifyPasswordWithInviteCode={account.canVerifyPasswordWithInviteCode} />
                     </>
                 )}
             </main>
