@@ -16,6 +16,8 @@ export function parseDeletionReason(value: unknown): DeletionReason | null {
 }
 
 export interface MenteeDeletionPreview {
+    /** 확인한 소유 목록과 삭제 영향을 다시 검증하는 토큰. */
+    previewToken?: string;
     /** 소유권이 프로그램 매니저에게 넘어갈 프로젝트. */
     transferProjects: { id: string; name: string; managerName: string | null }[];
     /** 발신자가 비워질 설문 초대 건수. 초대와 응답 자체는 남는다. */

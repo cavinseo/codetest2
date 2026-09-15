@@ -3,13 +3,14 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 const mocks = vi.hoisted(() => ({
     auth: vi.fn(), user: vi.fn(), users: vi.fn(), project: vi.fn(),
-    assignment: vi.fn(), upsert: vi.fn(), remove: vi.fn(),
+    assignment: vi.fn(), upsert: vi.fn(), remove: vi.fn(), transaction: vi.fn(), lock: vi.fn(),
 }));
 vi.mock('../lib/auth', () => ({ requireAuth: mocks.auth }));
 vi.mock('../lib/prisma', () => ({ prisma: {
     user: { findUnique: mocks.user, findMany: mocks.users },
     project: { findUnique: mocks.project },
     mentorAssignment: { findUnique: mocks.assignment, upsert: mocks.upsert, deleteMany: mocks.remove },
+    $transaction: mocks.transaction,
 } }));
 import { GET, POST, DELETE } from '../app/api/projects/[id]/mentors/route';
 import { POST as assignMentee } from '../app/api/mentees/[id]/mentor/route';
@@ -26,6 +27,10 @@ beforeEach(() => {
         : { id: where.id, role: 'MENTOR', status: 'APPROVED', accessExpiresAt: null });
     mocks.users.mockResolvedValue([]);
     mocks.assignment.mockResolvedValue(null);
+    mocks.transaction.mockImplementation(async fn => fn({
+        user: { findUnique: mocks.user }, project: { findUnique: mocks.project },
+        mentorAssignment: { upsert: mocks.upsert, deleteMany: mocks.remove }, $queryRaw: mocks.lock,
+    }));
 });
 it.each(['ADMIN', 'PROGRAM_MANAGER'])('%s는 멘티에게 단일 멘토를 배정한다', async role => {
     mocks.auth.mockResolvedValue({ userId: 'manager', role });
@@ -63,6 +68,7 @@ it('삭제는 요청한 멘티와 현재 멘토 조합으로 한정한다', asyn
 });
 it.each(['MENTEE', 'ADMIN'])('%s는 멘토로 지정할 수 없다', async role => {
     mocks.user.mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } })
+        .mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } })
         .mockResolvedValueOnce({ id: 'target', role, status: 'APPROVED' });
     expect((await POST(request(), params)).status).toBe(400);
     expect(mocks.upsert).not.toHaveBeenCalled();
@@ -72,12 +78,14 @@ it.each([
     { role: 'MENTOR', status: 'APPROVED', accessExpiresAt: new Date('2000-01-01') },
     null,
 ])('미승인·만료·없는 멘토를 차단한다', async target => {
-    mocks.user.mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } }).mockResolvedValueOnce(target);
+    mocks.user.mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } })
+        .mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } }).mockResolvedValueOnce(target);
     expect((await POST(request(), params)).status).toBe(400);
     expect(mocks.upsert).not.toHaveBeenCalled();
 });
 it('프로그램 매니저를 멘토로 지정할 수 있다', async () => {
     mocks.user.mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } })
+        .mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } })
         .mockResolvedValueOnce({ id: 'mentor', role: 'PROGRAM_MANAGER', status: 'APPROVED' });
     expect((await POST(request(), params)).status).toBe(200);
 });
@@ -103,4 +111,23 @@ it('빈 대상은 400으로 처리한다', async () => {
 it('인증 실패를 그대로 반환한다', async () => {
     mocks.auth.mockResolvedValue(NextResponse.json({}, { status: 401 }));
     expect((await POST(request(), params)).status).toBe(401);
+});
+
+it('사용자 잠금 뒤 프로젝트 소유자가 바뀌었으면 배정하지 않는다', async () => {
+    mocks.project.mockResolvedValueOnce({ ownerId: 'mentee' }).mockResolvedValueOnce({ ownerId: 'new-owner' });
+    expect((await POST(request(), params)).status).toBe(409);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+    expect(mocks.lock.mock.calls[0][0].values).toEqual(['mentee', 'mentor']);
+});
+
+it('잠금 대기 중 멘티의 담당 프로그램이 바뀌면 매니저 배정을 거부한다', async () => {
+    mocks.user.mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } })
+        .mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'other' } });
+    expect((await POST(request(), params)).status).toBe(403);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+});
+
+it('배정의 직렬화 충돌을 다시 확인할 수 있는 409로 응답한다', async () => {
+    mocks.transaction.mockRejectedValue(Object.assign(new Error('conflict'), { code: 'P2034' }));
+    expect((await POST(request(), params)).status).toBe(409);
 });

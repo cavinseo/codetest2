@@ -9,6 +9,7 @@ import InvitesTab from '@/components/admin/InvitesTab';
 import ProgramsTab from '@/components/admin/ProgramsTab';
 import ThemeToggle from '@/components/ThemeToggle';
 import MentorAssign from '@/components/admin/MentorAssign';
+import ProjectTransfer from '@/components/admin/ProjectTransfer';
 import { MEMBER_ROLE_LABELS, canAssignMentor, canIssueInviteCode, canManagePrograms, type MemberRole } from '@/lib/member-roles';
 import { deleteActionFor, cancelGoesBack, type DeleteStage } from '@/lib/delete-confirmation';
 import {
@@ -134,7 +135,7 @@ export default function AdminModePage() {
 
     const handleDeleteUser = async (
         userId: string,
-        options: { confirmCascade?: boolean; reason?: DeletionReason } = {}
+        options: { confirmCascade?: boolean; reason?: DeletionReason; previewToken?: string } = {}
     ) => {
         if (isDeletingUser) return;
         setIsDeletingUser(true);
@@ -147,6 +148,7 @@ export default function AdminModePage() {
                     userId,
                     ...(options.confirmCascade ? { confirmCascade: true } : {}),
                     ...(options.reason ? { reason: options.reason } : {}),
+                    ...(options.previewToken ? { previewToken: options.previewToken } : {}),
                 }),
             });
             const data = await res.json().catch(() => null);
@@ -156,6 +158,7 @@ export default function AdminModePage() {
                 setConfirmDelete((prev) => prev ? {
                     ...prev, stage: 2, preview: data.preview,
                     cascadeWarning: data.error || '연결된 프로젝트와 모든 워크시트가 함께 삭제됩니다.',
+                    error: prev.stage === 2 ? data.error || '삭제 대상 정보가 변경되었습니다. 변경 내용을 다시 확인하세요.' : undefined,
                 } : prev);
                 return;
             }
@@ -317,6 +320,22 @@ export default function AdminModePage() {
 
     const toggleMentorAssign = (projectId: string) => {
         setOpenMentorAssign((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
+    };
+
+    const handleProjectTransferred = async () => {
+        // 대상 멘티의 다른 프로젝트도 멘토가 바뀔 수 있어 모든 배정 패널을 닫는다.
+        setOpenMentorAssign({});
+        const [statsRes, projectsRes] = await Promise.all([
+            fetch('/api/admin/stats', { cache: 'no-store' }),
+            fetch('/api/admin/projects', { cache: 'no-store' }),
+        ]);
+        if (!statsRes.ok || !projectsRes.ok) throw new Error('이관 후 목록 갱신에 실패했습니다.');
+        const [nextStats, nextProjects] = await Promise.all([statsRes.json(), projectsRes.json()]);
+        setStats(nextStats);
+        setProjects(nextProjects.projects);
+        setProjectPrograms(nextProjects.programs);
+        setLoadedAt(new Date().toLocaleString('ko-KR'));
+        showMsg('success', '프로젝트를 새 멘티에게 이관했습니다.');
     };
 
     const filteredProjects = projects.filter((p) => {
@@ -590,7 +609,7 @@ export default function AdminModePage() {
                                         // 보고 판단하면, "뒤로"로 stage 1 에 돌아온 뒤 다시 누를 때
                                         // 마지막 확인을 건너뛰고 지워진다 — preview 는 남아 있으므로.
                                         handleDeleteUser(confirmDelete.id, confirmDelete.stage === 2 && (confirmDelete.preview || confirmDelete.cascadeWarning)
-                                            ? { confirmCascade: true, reason: confirmDelete.reason }
+                                            ? { confirmCascade: true, reason: confirmDelete.reason, previewToken: confirmDelete.preview?.previewToken }
                                             : {});
                                         return;
                                     }
@@ -840,7 +859,7 @@ export default function AdminModePage() {
                                     <div className="space-y-3">
                                         {filteredProjects.map((project) => (
                                             <div key={project.id} className="card hover:border-white/[0.1] transition-all duration-200">
-                                                <div className="flex items-start justify-between gap-4">
+                                                <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
                                                     <div className="flex items-start gap-4 flex-1 min-w-0">
                                                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center flex-shrink-0">
                                                             <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
@@ -881,7 +900,8 @@ export default function AdminModePage() {
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                                    <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                                                        {role === 'ADMIN' && <ProjectTransfer projectId={project.id} onTransferred={handleProjectTransferred} />}
                                                         <Link
                                                             href={`/project/${project.id}`}
                                                             className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] transition-colors"

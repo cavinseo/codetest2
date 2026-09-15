@@ -13,6 +13,8 @@ import { escapeHtml } from '@/lib/html-escape';
 import { buildTempPasswordEmail } from '@/lib/temp-password-email';
 import { memberProfileSchemaFor } from '@/lib/member-profile';
 import { describeMenteeDeletion, parseDeletionReason } from '@/lib/account-deletion';
+import { isTransferConflictError, lockTransferUsers, ProjectTransferError, transferSnapshotToken } from '@/lib/project-transfer';
+import { Prisma } from '@prisma/client';
 import {
     accessExpiryFrom, canTransitionRole, parseDirectCreateRole,
     parseMemberRole, MEMBER_ROLE_LABELS, type MemberRole,
@@ -416,8 +418,9 @@ export async function DELETE(request: NextRequest) {
                 select: {
                     id: true,
                     name: true,
-                    program: { select: { managerId: true, manager: { select: { name: true } } } },
+                    program: { select: { id: true, managerId: true, manager: { select: { name: true } } } },
                 },
+                orderBy: { id: 'asc' },
             });
 
             // 이력은 남기되 주인만 비운다(스키마의 SetNull). 몇 건이 그렇게 되는지는
@@ -438,6 +441,7 @@ export async function DELETE(request: NextRequest) {
                 invitations,
                 migrations,
                 inviteCodes,
+                previewToken: transferSnapshotToken({ userId, email: target.email, role: target.role, ownedProjects, invitations, migrations, inviteCodes }),
             };
 
             // 지우기 전에 무엇이 벌어지는지 보여 주고 사유를 받는다. 예전에는 멘티만
@@ -460,20 +464,48 @@ export async function DELETE(request: NextRequest) {
                 return NextResponse.json({ error: '삭제 사유를 고르세요.' }, { status: 400 });
             }
 
-            await prisma.$transaction([
-                ...ownedProjects.map((p) => prisma.project.update({
-                    where: { id: p.id },
-                    data: { ownerId: p.program.managerId },
-                })),
+            if (body.previewToken !== preview.previewToken) {
+                return NextResponse.json({ error: '소유 프로젝트 또는 삭제 영향이 변경되었습니다. 다시 확인하세요.', needsCascadeConfirm: true, preview }, { status: 409 });
+            }
+
+            await prisma.$transaction(async tx => {
+                await lockTransferUsers(tx, [userId, ...ownedProjects.map(p => p.program.managerId)]);
+                const programIds = [...new Set(ownedProjects.map(p => p.program.id))].sort();
+                if (programIds.length > 0) {
+                    await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "programs" WHERE "id" IN (${Prisma.join(programIds)}) ORDER BY "id" FOR SHARE`);
+                }
+                const currentUser = await tx.user.findUnique({ where: { id: userId } });
+                const currentProjects = await tx.project.findMany({
+                    where: { ownerId: userId },
+                    select: { id: true, name: true, program: { select: { id: true, managerId: true, manager: { select: { name: true } } } } },
+                    orderBy: { id: 'asc' },
+                });
+                const currentInvitations = await tx.kanoSurveyInvitation.count({ where: { invitedBy: userId } });
+                const currentMigrations = await tx.migrationHistory.count({ where: { userId } });
+                const currentCodes = await tx.inviteCode.count({ where: { email: { equals: target.email, mode: 'insensitive' } } });
+                const currentToken = transferSnapshotToken({ userId, email: currentUser?.email, role: currentUser?.role, ownedProjects: currentProjects, invitations: currentInvitations, migrations: currentMigrations, inviteCodes: currentCodes });
+                if (currentToken !== preview.previewToken) {
+                    throw new ProjectTransferError('소유 프로젝트 또는 삭제 영향이 변경되었습니다. 삭제를 다시 요청해 확인하세요.', 409);
+                }
+                for (const project of ownedProjects) {
+                    const moved = await tx.project.updateMany({
+                        where: { id: project.id, ownerId: userId, programId: project.program.id },
+                        data: { ownerId: project.program.managerId },
+                    });
+                    if (moved.count !== 1) throw new ProjectTransferError('프로젝트 소유자가 변경되었습니다. 삭제를 다시 확인하세요.', 409);
+                }
+                if (await tx.project.count({ where: { ownerId: userId } }) > 0) {
+                    throw new ProjectTransferError('소유 프로젝트가 변경되었습니다. 삭제를 다시 확인하세요.', 409);
+                }
                 // 이 사람에게 발급된 초대 코드는 목적을 다했다. 계정을 지워도
                 // email 이 남는 유일한 자리라, 사용 여부와 무관하게 함께 지운다.
                 // 사용자보다 먼저 지워야 한다 — 순서가 뒤집히면 usedById 가 먼저
                 // SetNull 이 돼 어느 코드가 그 사람의 것이었는지 알 수 없게 된다.
-                prisma.inviteCode.deleteMany({
+                await tx.inviteCode.deleteMany({
                     where: { email: { equals: target.email, mode: 'insensitive' } },
-                }),
-                prisma.user.delete({ where: { id: userId } }),
-            ]);
+                });
+                await tx.user.delete({ where: { id: userId } });
+            }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 
             // 이메일은 남기지 않는다. 파기의 증빙은 지워진 정보가 아니라 이 기록이다.
             log.info('멘티 삭제', {
@@ -509,13 +541,23 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
-        await prisma.user.delete({
-            where: { id: userId },
-        });
+        await prisma.$transaction(async tx => {
+            await lockTransferUsers(tx, [userId]);
+            const current = await tx.user.findUnique({ where: { id: userId } });
+            const currentProjectCount = await tx.project.count({ where: { ownerId: userId } });
+            if (!current || current.role !== target.role || currentProjectCount !== ownedProjects) {
+                throw new ProjectTransferError('회원 또는 소유 프로젝트가 변경되었습니다. 삭제를 다시 확인하세요.', 409);
+            }
+            await tx.user.delete({ where: { id: userId } });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 
         log.info('사용자 삭제', { userId, ownedProjects });
         return NextResponse.json({ success: true, ownedProjects });
     } catch (error: unknown) {
+        if (error instanceof ProjectTransferError) return NextResponse.json({ error: error.message }, { status: error.status });
+        if (isTransferConflictError(error) && (error as { code?: string }).code !== 'P2003') {
+            return NextResponse.json({ error: '회원 또는 프로젝트가 변경되었습니다. 삭제를 다시 확인하세요.' }, { status: 409 });
+        }
         // 삭제를 막는 FK 가 아직 남아 있는 경우다. 설문·가져오기 이력은 SetNull 이
         // 됐으니 여기 걸리지 않는다. 남은 것은 담당 중인 프로그램이고, 그건 사람을
         // 지우는 게 아니라 담당자를 옮겨야 풀린다. 예전에는 원인과 무관하게 설문

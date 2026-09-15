@@ -7,6 +7,8 @@ import { canAssignMentor, isAccessExpired } from './member-roles';
 import { canManageThisProgram } from './program';
 import { createLogger } from './logger';
 import { toErrorResponse } from './api-error';
+import { Prisma } from '@prisma/client';
+import { isTransferConflictError, lockTransferUsers, ProjectTransferError } from './project-transfer';
 
 const log = createLogger('mentor-assignment');
 const bodySchema = z.object({ userId: z.string().min(1) });
@@ -32,17 +34,33 @@ export async function handleMentorAssignment(request: NextRequest, id: string, b
         }
         const parsed = bodySchema.safeParse(await request.json());
         if (!parsed.success) return NextResponse.json({ error: '멘토를 선택하세요.' }, { status: 400 });
-        if (request.method === 'DELETE') {
-            await prisma.mentorAssignment.deleteMany({ where: { menteeId: mentee.id, mentorId: parsed.data.userId } });
-            return NextResponse.json({ success: true });
-        }
-        const target = await prisma.user.findUnique({ where: { id: parsed.data.userId }, select: { id: true, role: true, status: true, accessExpiresAt: true } });
-        if (!target || !['MENTOR', 'PROGRAM_MANAGER'].includes(target.role) || target.status !== 'APPROVED' || isAccessExpired(target.accessExpiresAt)) {
-            return NextResponse.json({ error: '이용 가능한 멘토 또는 프로그램 매니저만 배정할 수 있습니다.' }, { status: 400 });
-        }
-        await prisma.mentorAssignment.upsert({ where: { menteeId: mentee.id }, create: { menteeId: mentee.id, mentorId: target.id }, update: { mentorId: target.id, assignedAt: new Date() } });
+        await prisma.$transaction(async tx => {
+            await lockTransferUsers(tx, [mentee.id, parsed.data.userId]);
+            if (byProject) {
+                const currentProject = await tx.project.findUnique({ where: { id }, select: { ownerId: true } });
+                if (currentProject?.ownerId !== mentee.id) throw new ProjectTransferError('프로젝트 소유자가 변경되었습니다. 다시 배정하세요.', 409);
+            }
+            const currentMentee = await tx.user.findUnique({ where: { id: mentee.id }, select: { id: true, role: true, program: { select: { managerId: true } } } });
+            if (!currentMentee || currentMentee.role !== 'MENTEE') throw new ProjectTransferError('멘티 정보가 변경되었습니다. 다시 확인하세요.', 409);
+            if (actor.role !== 'ADMIN' && (!currentMentee.program || !canManageThisProgram(actor, currentMentee.program))) {
+                throw new ProjectTransferError('담당 프로그램의 멘티만 배정할 수 있습니다.', 403);
+            }
+            if (request.method === 'DELETE') {
+                await tx.mentorAssignment.deleteMany({ where: { menteeId: mentee.id, mentorId: parsed.data.userId } });
+                return;
+            }
+            const target = await tx.user.findUnique({ where: { id: parsed.data.userId }, select: { id: true, role: true, status: true, accessExpiresAt: true } });
+            if (!target || !['MENTOR', 'PROGRAM_MANAGER'].includes(target.role) || target.status !== 'APPROVED' || isAccessExpired(target.accessExpiresAt)) {
+                throw new ProjectTransferError('이용 가능한 멘토 또는 프로그램 매니저만 배정할 수 있습니다.', 400);
+            }
+            await tx.mentorAssignment.upsert({ where: { menteeId: mentee.id }, create: { menteeId: mentee.id, mentorId: target.id }, update: { mentorId: target.id, assignedAt: new Date() } });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
         return NextResponse.json({ success: true });
     } catch (error) {
+        if (error instanceof ProjectTransferError) return NextResponse.json({ error: error.message }, { status: error.status });
+        if (isTransferConflictError(error)) {
+            return NextResponse.json({ error: '회원 또는 배정 정보가 변경되었습니다. 다시 확인하세요.' }, { status: 409 });
+        }
         return toErrorResponse(error, { log, message: '멘토 배정 처리에 실패했습니다.' });
     }
 }
