@@ -6,13 +6,13 @@ import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import { buildQfdSpecFooterRows } from '@/lib/qfd-footer-rows';
 import {
-    chunkTechnicalIndexes,
     parseCollapsedGroups,
     qfdCollapsedGroupsStorageKey,
     serializeCollapsedGroups,
     toggleGroupVisibility,
 } from '@/lib/qfd-technical-header';
 import { dedupeNonBlank } from '@/lib/qfd-technical-sync';
+import { buildTechnicalGroups } from '@/lib/qfd-technical-groups';
 import { useQfdRelationshipAutosave, type Relationship } from './useQfdRelationshipAutosave';
 
 interface Requirement {
@@ -27,11 +27,14 @@ interface TechnicalChar {
     name: string;
     unit?: string | null;
     targetValue?: string | null;
+    groupIndex?: number;
+    columnOrder?: number;
 }
 
-/** WS-10 기능기술체계도 한 행. 세부기능 자동 채움에는 subSpec 만 쓴다. */
+/** WS-10 세부기능과 소속 핵심기능을 연결한다. */
 interface TechTreeEntry {
     subSpec?: string | null;
+    coreSpec?: string | null;
 }
 
 interface Benchmark {
@@ -52,10 +55,11 @@ interface QFDMatrixProps {
     onDirtyChange?: (dirty: boolean) => void;
 }
 
-type DisplayTechnical = TechnicalChar & { isPlaceholder?: boolean };
+type DisplayTechnical = TechnicalChar;
+type TechnicalGroup = ReturnType<typeof buildTechnicalGroups<TechnicalChar>>[number];
 /** 표 아래쪽에서 직접 고쳐 쓰는 기술특성 칸. 둘 다 TechnicalCharacteristic 의 열이다. */
 type TechnicalTextField = 'unit' | 'targetValue';
-type VisibleTechnicalColumn = { tech: DisplayTechnical; index: number };
+type VisibleTechnicalColumn = { tech: DisplayTechnical };
 type PendingBenchmarkScores = Record<string, number>;
 
 const SCORE_OPTIONS = [0, 1, 2, 3, 4, 5];
@@ -63,7 +67,6 @@ const TECHNICAL_FIELD_LABELS: Record<TechnicalTextField, string> = {
     unit: '측정단위',
     targetValue: '설계 목표치',
 };
-const MIN_WORKSHEET_TECH_COLUMNS = 15;
 const SELF_COMPANY = 'self';
 const DEFAULT_COMPETITOR_COMPANY = 'competitor';
 const DEFAULT_COMPETITOR_LABEL = '경쟁사';
@@ -137,6 +140,9 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
     const loadRequest = useRef(0);
     const relationshipSaveBlocked = pendingCount > 0 || failedRelationships.length > 0;
     const [showAddTechModal, setShowAddTechModal] = useState(false);
+    const [addingToGroup, setAddingToGroup] = useState<number | null>(null);
+    const [isAddingTechnical, setIsAddingTechnical] = useState(false);
+    const [canWriteTechnicals, setCanWriteTechnicals] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [isResetting, setIsResetting] = useState(false);
     const [newTech, setNewTech] = useState({ name: '', unit: '', targetValue: '' });
@@ -145,11 +151,9 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
     const [isAddingCompetitor, setIsAddingCompetitor] = useState(false);
     const [collapsedTechnicalGroups, setCollapsedTechnicalGroups] = useState<Record<number, boolean>>({});
     const [removingCompetitor, setRemovingCompetitor] = useState<string | null>(null);
-    // 빈 세부기능 열은 기본 15칸이다. 그 칸을 다 쓴 뒤에도 열을 더 만들 수 있어야 해서
-    // 사용자가 "+ 세부기능"으로 늘린 만큼을 따로 센다.
-    const [extraTechColumnCount, setExtraTechColumnCount] = useState(0);
     const [techFieldDrafts, setTechFieldDrafts] = useState<Record<string, string>>({});
     const [deletingTech, setDeletingTech] = useState<DisplayTechnical | null>(null);
+    const [deletingGroup, setDeletingGroup] = useState<TechnicalGroup | null>(null);
     const [isDeletingTech, setIsDeletingTech] = useState(false);
     const { toast, showToast } = useToast();
     const [dataError, setDataError] = useState<string | null>(null);
@@ -169,8 +173,8 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
         [competitorColumns]
     );
     const technicalNameOptions = useMemo(
-        () => Array.from(new Set(technicalChars.map((tech) => tech.name.trim()).filter(Boolean))),
-        [technicalChars]
+        () => dedupeNonBlank(techTreeEntries.map((entry) => entry.subSpec)).filter(name => !technicalChars.some(tech => tech.name.trim() === name)),
+        [technicalChars, techTreeEntries]
     );
     const technicalUnitOptions = useMemo(
         () => Array.from(new Set(technicalChars.map((tech) => (tech.unit || '').trim()).filter(Boolean))),
@@ -198,7 +202,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                 fetch(`/api/projects/${projectId}/qfd/relationships`),
                 fetch(`/api/projects/${projectId}/qfd/analysis`),
                 fetch(`/api/projects/${projectId}/qfd/benchmarks`),
-                // WS-10 세부스펙 목록 — 세부기능 자동 채움과, 남는 빈 칸을 직접 고를 때 쓴다.
+                // WS-10 세부기능 선택지와 그룹의 핵심기능 제목에 사용한다.
                 fetch(`/api/projects/${projectId}/tech-tree`),
                 // 아래 실패 판정에서 일부러 뺀다 — 이 줄 하나 때문에 QFD 표 전체가
                 // 열리지 않으면 손해가 더 크다. 값이 없으면 그 줄만 비어 보인다.
@@ -218,6 +222,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
             if (!isCurrent()) return;
             setRequirements(requirementData.requirements || []);
             setTechnicalChars(technicalData.technicalCharacteristics || []);
+            setCanWriteTechnicals(technicalData.canWrite === true);
             applyServerData(snapshot, relationshipData.relationships || [], analysisData);
             setBenchmarksData(benchmarkData.benchmarks || []);
             setTechTreeEntries(treeData.entries || []);
@@ -245,6 +250,11 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
         setTechFieldDrafts({});
         setExtraCompetitors([]);
         setDeletingTech(null);
+        setDeletingGroup(null);
+        setAddingToGroup(null);
+        setIsAddingTechnical(false);
+        setIsDeletingTech(false);
+        setCanWriteTechnicals(false);
         setShowResetConfirm(false);
         setShowAddTechModal(false);
     }, [projectId]);
@@ -284,58 +294,58 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
         };
     }, [hasUnsavedRelationships]);
 
+    const openAddTechnical = (groupIndex: number | null) => {
+        setAddingToGroup(groupIndex);
+        setNewTech({ name: '', unit: '', targetValue: '' });
+        setShowAddTechModal(true);
+    };
+
     const handleAddTechnical = async () => {
-        if (!newTech.name.trim()) return;
-
-        const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newTech),
-        });
-
-        if (res.ok) {
-            await loadData();
+        if (!newTech.name.trim() || isAddingTechnical) return;
+        const snapshot = captureSnapshot();
+        setIsAddingTechnical(true);
+        loadRequest.current += 1;
+        try {
+            const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...newTech, ...(addingToGroup === null ? {} : { groupIndex: addingToGroup }) }),
+            });
+            const data = await res.json();
+            if (!isCurrentSnapshot(snapshot)) return;
+            if (!res.ok) throw new Error(data.error || '세부기능을 추가하지 못했습니다.');
+            setTechnicalChars(items => [...items, data.technicalCharacteristic]);
+            updateCollapsedTechnicalGroups({ ...collapsedTechnicalGroups, [data.technicalCharacteristic.groupIndex]: false });
             setShowAddTechModal(false);
             setNewTech({ name: '', unit: '', targetValue: '' });
-            showToast('기술특성을 추가했습니다.');
-        } else {
-            showToast('기술특성 추가에 실패했습니다.', 'error');
+            void refreshAnalysis();
+            showToast(addingToGroup === null ? '그룹과 첫 세부기능을 추가했습니다.' : '그룹에 세부기능을 추가했습니다.');
+        } catch (error) {
+            if (isCurrentSnapshot(snapshot)) showToast(error instanceof Error ? error.message : '세부기능을 추가하지 못했습니다.', 'error');
+        } finally {
+            if (isCurrentSnapshot(snapshot)) setIsAddingTechnical(false);
         }
     };
 
     const setTechnicalSubFunction = async (tech: DisplayTechnical, subName: string) => {
         const name = subName.trim();
-        if (!name) return;
-
-        const method = tech.isPlaceholder ? 'POST' : 'PATCH';
-        const body = tech.isPlaceholder
-            ? { name, unit: '', targetValue: '' }
-            : { id: tech.id, name, unit: tech.unit || '', targetValue: tech.targetValue || '' };
-
-        const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-
-        if (!res.ok) {
-            const errorData = await res.json().catch(() => null);
-            showToast(errorData?.error || '세부기능을 저장하지 못했습니다.', 'error');
-            return;
+        if (!name || name === tech.name) return;
+        const snapshot = captureSnapshot();
+        try {
+            const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: tech.id, name, unit: tech.unit || '', targetValue: tech.targetValue || '' }),
+            });
+            const data = await res.json();
+            if (!isCurrentSnapshot(snapshot)) return;
+            if (!res.ok) throw new Error(data.error || '세부기능을 저장하지 못했습니다.');
+            setTechnicalChars(items => items.map(item => item.id === tech.id ? data.technicalCharacteristic : item));
+            void refreshAnalysis();
+            showToast('세부기능을 저장했습니다.');
+        } catch (error) {
+            if (isCurrentSnapshot(snapshot)) showToast(error instanceof Error ? error.message : '세부기능을 저장하지 못했습니다.', 'error');
         }
-
-        // 늘려 둔 빈 칸에 세부기능을 채우면 그 칸은 실제 열이 된다. 카운트를 줄이지 않으면
-        // 채울 때마다 빈 칸이 하나씩 남아 표가 계속 길어진다.
-        if (tech.isPlaceholder) setExtraTechColumnCount((count) => Math.max(0, count - 1));
-
-        await loadData();
-        showToast('QFD 기술특성을 저장했습니다.');
-    };
-
-    const addTechnicalColumn = () => {
-        setExtraTechColumnCount((count) => count + 1);
-        // 접어 둔 그룹 뒤에 새 칸이 생기면 보이지 않아 추가한 줄 모른다.
-        expandAllTechnicalGroups();
     };
 
     // 측정단위·설계 목표치는 입력 중에는 초안으로 들고 있다가 포커스를 뗄 때 한 번만
@@ -436,28 +446,37 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
         relationships.filter((item) => item.technicalCharId === technicalCharId && item.strength !== 'NONE').length;
 
     const handleDeleteTechnical = async () => {
-        if (!deletingTech || hasUnsavedRelationships()) return;
-
+        if ((!deletingTech && !deletingGroup) || hasUnsavedRelationships() || isDeletingTech) return;
+        const snapshot = captureSnapshot();
+        const deletedIds = deletingGroup ? deletingGroup.technicals.map(tech => tech.id) : [deletingTech!.id];
         setIsDeletingTech(true);
+        loadRequest.current += 1;
         try {
             const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: deletingTech.id }),
+                body: JSON.stringify(deletingGroup
+                    ? { groupIndex: deletingGroup.groupIndex, ids: deletedIds }
+                    : { id: deletingTech!.id }),
             });
-
+            if (!isCurrentSnapshot(snapshot)) return;
             if (!res.ok) {
-                const errorData = await res.json().catch(() => null);
-                showToast(errorData?.error || '세부기능을 삭제하지 못했습니다.', 'error');
-                return;
+                const data = await res.json().catch(() => null);
+                throw new Error(data?.error || '세부기능을 삭제하지 못했습니다.');
             }
-
-            clearSavedRelationships(deletingTech.id);
+            deletedIds.forEach(id => clearSavedRelationships(id));
+            setTechnicalChars(items => items.filter(tech => !deletedIds.includes(tech.id)));
+            setTechnicalBenchmarks(items => items.filter(item => !deletedIds.includes(item.technicalCharId)));
+            setTechFieldDrafts(drafts => Object.fromEntries(Object.entries(drafts).filter(([key]) =>
+                !deletedIds.some(id => key.startsWith(id + ':') || key.startsWith('bench:' + id + ':')))));
             setDeletingTech(null);
-            await loadData();
-            showToast('세부기능을 삭제했습니다.');
+            setDeletingGroup(null);
+            void refreshAnalysis();
+            showToast(deletingGroup ? '그룹과 세부기능을 삭제했습니다.' : '세부기능을 삭제했습니다.');
+        } catch (error) {
+            if (isCurrentSnapshot(snapshot)) showToast(error instanceof Error ? error.message : '세부기능을 삭제하지 못했습니다.', 'error');
         } finally {
-            setIsDeletingTech(false);
+            if (isCurrentSnapshot(snapshot)) setIsDeletingTech(false);
         }
     };
 
@@ -687,22 +706,6 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
     const getReqAnalysis = (requirementId: string) => reqAnalysis.find((item) => item.requirementId === requirementId);
     const getTechAnalysis = (technicalCharId: string) => techAnalysis.find((item) => item.technicalCharId === technicalCharId);
 
-    const displayTechnicalCols = useMemo<DisplayTechnical[]>(() => [
-        ...technicalChars.map((tech) => ({ ...tech, isPlaceholder: false })),
-        // 워크시트 모양을 유지하는 기본 빈 칸에, 사용자가 늘린 칸을 더한다.
-        // 늘린 칸에 세부기능을 고르면 실제 열이 되므로 그만큼 빈 칸을 도로 줄인다.
-        ...Array.from(
-            { length: Math.max(0, MIN_WORKSHEET_TECH_COLUMNS - technicalChars.length) + extraTechColumnCount },
-            (_, index) => ({
-                id: `placeholder-${index}`,
-                name: '',
-                unit: '',
-                targetValue: '',
-                isPlaceholder: true,
-            })
-        ),
-    ], [technicalChars, extraTechColumnCount]);
-
     const totalWeight = reqAnalysis.reduce((sum, row) => sum + (row.weight || 0), 0);
     const totalAbsoluteImportance = reqAnalysis.reduce((sum, row) => sum + (row.absoluteImportance || 0), 0);
     const pendingBenchmarkCount = Object.keys(pendingBenchmarks).length;
@@ -710,27 +713,16 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
     const hasRequirements = requirements.length > 0;
     const specFooterRows = buildQfdSpecFooterRows(competitorColumns, getCompetitorLabel);
     const specBlockRowSpan = specFooterRows.filter((row) => row.kind !== 'target').length;
-    // WS-9 세부기능은 WS-10 세부스펙에서 자동으로 채워지므로(서버 GET), 남는 빈 칸을
-    // 직접 고를 때도 핵심기능별로 나누지 않고 이 목록을 그대로 쓴다.
     const subFunctionOptions = useMemo(
         () => dedupeNonBlank(techTreeEntries.map((entry) => entry.subSpec)).map((name) => ({ id: name, name })),
         [techTreeEntries]
     );
-    const technicalGroups = useMemo(() => chunkTechnicalIndexes(displayTechnicalCols.length, 3), [displayTechnicalCols.length]);
-    const visibleTechnicalColumns = useMemo<VisibleTechnicalColumn[]>(() => {
-        const columns: VisibleTechnicalColumn[] = [];
-
-        technicalGroups.forEach((group) => {
-            if (collapsedTechnicalGroups[group.groupIndex]) return;
-
-            Array.from({ length: group.size }, (_, offset) => {
-                const index = group.start + offset;
-                columns.push({ tech: displayTechnicalCols[index], index });
-            });
-        });
-
-        return columns;
-    }, [collapsedTechnicalGroups, displayTechnicalCols, technicalGroups]);
+    const technicalGroups = useMemo(() => buildTechnicalGroups(technicalChars, techTreeEntries), [technicalChars, techTreeEntries]);
+    const visibleTechnicalColumns = useMemo<VisibleTechnicalColumn[]>(
+        () => technicalGroups.filter(group => !collapsedTechnicalGroups[group.groupIndex])
+            .flatMap(group => group.technicals.map(tech => ({ tech }))),
+        [collapsedTechnicalGroups, technicalGroups]
+    );
     const visibleTechnicalGroups = useMemo(
         () => technicalGroups.filter((group) => !collapsedTechnicalGroups[group.groupIndex]),
         [collapsedTechnicalGroups, technicalGroups]
@@ -775,7 +767,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
     }
 
     return (
-        <fieldset disabled={isSavingBenchmarks || isDeletingTech || isResetting} className="relative min-w-0 space-y-6">
+        <fieldset disabled={isSavingBenchmarks || isDeletingTech || isResetting || isAddingTechnical} className="relative min-w-0 space-y-6">
             <datalist id={`qfd-competitor-options-${projectId}`}>
                 {competitorNameOptions.map((option) => (
                     <option key={option} value={option} />
@@ -853,12 +845,9 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                         >
                             {isSavingBenchmarks ? '저장 중...' : `비교 점수 저장${pendingBenchmarkCount > 0 ? ` (${pendingBenchmarkCount})` : ''}`}
                         </button>
-                        <button onClick={addTechnicalColumn} className="btn-secondary text-sm" title="빈 세부기능 열을 하나 더 만든다">
-                            + 세부기능
-                        </button>
-                        <button onClick={() => setShowAddTechModal(true)} className="btn-secondary text-sm">
-                            + 기술특성
-                        </button>
+                        {canWriteTechnicals && <button onClick={() => openAddTechnical(null)} className="btn-secondary text-sm">
+                            + 그룹
+                        </button>}
                         <button onClick={() => setShowResetConfirm(true)} disabled={relationshipSaveBlocked} className="rounded-lg px-3 py-2 text-sm font-medium text-rose-300 transition-colors hover:bg-rose-500/10 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-50">
                             초기화
                         </button>
@@ -908,26 +897,25 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                 </section>
             )}
 
-            {deletingTech && (
-                <section className="rounded-xl border border-rose-500/25 bg-rose-500/[0.04] p-4 animate-fade-in">
+            {(deletingTech || deletingGroup) && (
+                <section role="alertdialog" aria-label="세부기능 삭제 확인" className="rounded-xl border border-rose-500/25 bg-rose-500/[0.04] p-4 animate-fade-in">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <p className="text-sm font-semibold text-white">
-                                세부기능 &apos;{deletingTech.name || '(이름 없음)'}&apos; 열을 삭제할까요?
+                                {deletingGroup
+                                    ? `그룹 ${deletingGroup.groupIndex + 1}의 세부기능 ${deletingGroup.technicals.length}개를 모두 삭제할까요?`
+                                    : `세부기능 '${deletingTech!.name}' 열을 삭제할까요?`}
                             </p>
-                            <p className="mt-0.5 text-xs text-rose-200/70">
-                                {countEnteredRelationships(deletingTech.id) > 0
-                                    ? `입력해 둔 관계 강도 ${countEnteredRelationships(deletingTech.id)}개와 이 열의 상관관계가 함께 지워집니다. 되돌릴 수 없습니다.`
-                                    : '이 열에는 입력된 관계 강도가 없습니다. 열과 상관관계만 지워지며 되돌릴 수 없습니다.'}
+                            {deletingGroup && <p className="mt-1 text-sm text-gray-300">{deletingGroup.technicals.map(tech => tech.name).join(', ')}</p>}
+                            <p className="mt-1 text-xs text-rose-200/70">
+                                관계 강도 {(deletingGroup?.technicals || [deletingTech!]).reduce((sum, tech) => sum + countEnteredRelationships(tech.id), 0)}개와 해당 세부기능의 상관관계·기술 벤치마크가 함께 삭제됩니다. 되돌릴 수 없습니다.
+                                {!deletingGroup && ' 마지막 세부기능을 삭제하면 그룹도 제거됩니다.'}
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button onClick={() => setDeletingTech(null)} className="btn-secondary text-sm">취소</button>
-                            <button
-                                onClick={handleDeleteTechnical}
-                                disabled={isDeletingTech || relationshipSaveBlocked}
-                                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
+                            <button onClick={() => { setDeletingTech(null); setDeletingGroup(null); }} className="btn-secondary text-sm">취소</button>
+                            <button onClick={handleDeleteTechnical} disabled={isDeletingTech || relationshipSaveBlocked}
+                                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60">
                                 {isDeletingTech ? '삭제 중...' : '삭제'}
                             </button>
                         </div>
@@ -973,6 +961,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                     </div>
                 </div>
 
+                {technicalGroups.length === 0 && <p className="px-4 py-5 text-sm text-gray-400">등록된 세부기능이 없습니다. 그룹을 추가하고 첫 세부기능을 입력해 주세요.</p>}
                 <div className="overflow-x-auto">
                     <table className="min-w-max w-full border-collapse text-[11px] text-gray-200">
                         <colgroup>
@@ -994,22 +983,21 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                             <tr>
                                 <th className="border border-white/[0.08] bg-cyan-500/15 px-2 py-2 text-center font-bold text-cyan-100" colSpan={3}>고객요구사항</th>
                                 {visibleTechnicalGroups.map((group) => (
-                                    <th key={`core-group-${group.groupIndex}`} className="border border-white/[0.08] bg-indigo-500/15 px-1 py-2 text-center font-bold text-indigo-100" colSpan={group.size}>
-                                        {/* 핵심기능별 그룹 선택은 당분간 쓰지 않는다 — 세부기능이 WS-10 세부스펙에서
-                                            자동으로 채워지므로 이 그룹은 접기 단위로만 남는다. */}
-                                        <div className="flex items-center justify-center gap-1">
-                                            <span className="flex-1 truncate text-[11px] font-bold text-indigo-50">그룹 {group.groupIndex + 1}</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => toggleTechnicalGroup(group.groupIndex)}
-                                                className="inline-flex h-8 w-6 flex-none items-center justify-center rounded-md border border-indigo-200/20 bg-slate-950/80 text-indigo-100 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
-                                                title={`그룹 ${group.groupIndex + 1} 영역 숨기기`}
+                                    <th key={group.groupIndex} className="border border-white/[0.08] bg-indigo-500/15 px-2 py-2 text-center font-bold text-indigo-100" colSpan={group.technicals.length}>
+                                        <div className="mb-1 text-[10px] text-indigo-200/70">그룹 {group.groupIndex + 1}</div>
+                                        <div className="whitespace-normal break-words text-xs text-indigo-50">{group.coreNames.join(' · ') || '핵심기능 미연결'}</div>
+                                        <div className="mt-2 flex flex-wrap items-center justify-center gap-1">
+                                            {canWriteTechnicals && <>
+                                                <button type="button" onClick={() => openAddTechnical(group.groupIndex)}
+                                                    aria-label={`그룹 ${group.groupIndex + 1} 세부기능 추가`}
+                                                    className="rounded border border-indigo-200/20 px-2 py-1 text-[10px] hover:bg-indigo-500/20">+ 세부기능</button>
+                                                <button type="button" onClick={() => { setDeletingTech(null); setDeletingGroup(group); }}
+                                                    disabled={relationshipSaveBlocked} aria-label={`그룹 ${group.groupIndex + 1} 삭제`}
+                                                    className="rounded border border-rose-200/20 px-2 py-1 text-[10px] text-rose-200 disabled:opacity-50">그룹 삭제</button>
+                                            </>}
+                                            <button type="button" onClick={() => toggleTechnicalGroup(group.groupIndex)}
                                                 aria-label={`그룹 ${group.groupIndex + 1} 영역 숨기기`}
-                                            >
-                                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.774 3.162 10.066 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-                                                </svg>
-                                            </button>
+                                                className="rounded border border-indigo-200/20 px-2 py-1 text-[10px] hover:bg-indigo-500/20">접기</button>
                                         </div>
                                     </th>
                                 ))}
@@ -1020,15 +1008,15 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                                 <th className="border border-white/[0.08] bg-cyan-500/10 px-2 py-2 text-center font-semibold text-blue-200">2차 그룹</th>
                                 <th className="border border-white/[0.08] bg-cyan-500/10 px-2 py-2 text-center font-semibold text-red-200">1차 그룹</th>
                                 <th className="border border-white/[0.08] bg-cyan-500/10 px-2 py-2 text-center font-semibold text-white">항목</th>
-                                {visibleTechnicalColumns.map(({ tech, index }) => (
+                                {visibleTechnicalColumns.map(({ tech }) => (
                                     <th key={tech.id} className="h-[104px] border border-white/[0.08] bg-indigo-500/10 p-1 text-center align-bottom font-semibold">
                                         <div className="flex h-full flex-col justify-end gap-1">
                                             <div className="flex items-center justify-center gap-1">
                                                 <span className="text-[10px] font-semibold text-indigo-200/70">세부기능</span>
-                                                {!tech.isPlaceholder && (
+                                                {canWriteTechnicals && (
                                                     <button
                                                         type="button"
-                                                        onClick={() => setDeletingTech(tech)}
+                                                        onClick={() => { setDeletingGroup(null); setDeletingTech(tech); }}
                                                         disabled={relationshipSaveBlocked}
                                                         className="inline-flex h-4 w-4 items-center justify-center rounded border border-rose-200/20 bg-white/[0.08] text-[11px] font-bold leading-none text-rose-100 transition-colors hover:bg-rose-500/30"
                                                         title={`${tech.name || '세부기능'} 열 삭제`}
@@ -1039,16 +1027,17 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                                                 )}
                                             </div>
                                             <select
-                                                value={tech.isPlaceholder ? '' : tech.name}
+                                                value={tech.name}
+                                                disabled={!canWriteTechnicals}
+                                                aria-label={`${tech.name} 세부기능`}
                                                 onChange={(event) => setTechnicalSubFunction(tech, event.target.value)}
                                                 className="min-h-9 w-full rounded-md border border-indigo-200/15 bg-slate-950/80 px-1 text-center text-[11px] font-semibold leading-tight text-cyan-50 outline-none focus:border-cyan-300"
                                                 title="세부기능 선택"
                                             >
-                                                <option value="">{index + 1}</option>
                                                 {subFunctionOptions.map((sub) => (
                                                     <option key={sub.id} value={sub.name}>{sub.name}</option>
                                                 ))}
-                                                {!tech.isPlaceholder && tech.name && !subFunctionOptions.some((sub) => sub.name === tech.name) && (
+                                                {!subFunctionOptions.some((sub) => sub.name === tech.name) && (
                                                     <option value={tech.name}>{tech.name}</option>
                                                 )}
                                             </select>
@@ -1119,10 +1108,6 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                                         )}
                                         <td className={`border border-white/[0.08] bg-white/[0.03] px-2 py-1 font-medium text-white ${rowDividerClass}`}>{requirement.requirement}</td>
                                         {visibleTechnicalColumns.map(({ tech }) => {
-                                            if (tech.isPlaceholder) {
-                                                return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.015]" />;
-                                            }
-
                                             const strength = getRelationship(requirement.id, tech.id);
                                             const option = RELATIONSHIP_OPTIONS.find((item) => item.value === strength) || RELATIONSHIP_OPTIONS[0];
                                             const saveFailed = failedRelationships.some((item) => item.requirementId === requirement.id && item.technicalCharId === tech.id);
@@ -1183,7 +1168,6 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                             <tr className="h-[32px]">
                                 <td colSpan={3} className="border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-center font-bold text-gray-200">품질중요도</td>
                                 {visibleTechnicalColumns.map(({ tech }) => {
-                                    if (tech.isPlaceholder) return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.015]" />;
                                     const analysis = getTechAnalysis(tech.id);
                                     return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.04] p-1 text-center font-bold text-cyan-200">{analysis?.totalScore?.toFixed(2) || '0'}</td>;
                                 })}
@@ -1197,7 +1181,6 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                             <tr className="h-[32px]">
                                 <td colSpan={3} className="border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-right font-bold text-gray-200">RANK</td>
                                 {visibleTechnicalColumns.map(({ tech }) => {
-                                    if (tech.isPlaceholder) return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.015]" />;
                                     const analysis = getTechAnalysis(tech.id);
                                     return <td key={tech.id} className="border border-white/[0.08] bg-white/[0.04] p-1 text-center font-bold text-yellow-200">{analysis?.rank || '-'}</td>;
                                 })}
@@ -1229,7 +1212,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                                                 ? 'targetValue'
                                                 : null;
 
-                                        if (!tech.isPlaceholder && (row.kind === 'self' || row.kind === 'competitor')) {
+                                        if (row.kind === 'self' || row.kind === 'competitor') {
                                             const company = row.kind === 'self' ? SELF_COMPANY : row.company;
                                             const label = row.kind === 'self' ? '자사' : row.rowLabel;
 
@@ -1259,7 +1242,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                                             );
                                         }
 
-                                        if (editableField && !tech.isPlaceholder) {
+                                        if (editableField) {
                                             return (
                                                 <td key={`${row.key}-${tech.id}`} className="border border-white/[0.08] bg-white/[0.025] p-0">
                                                     <input
@@ -1286,7 +1269,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                                             );
                                         }
 
-                                        const value = tech.isPlaceholder ? '' : '-';
+                                        const value = '-';
 
                                         return (
                                             <td key={`${row.key}-${tech.id}`} className="border border-white/[0.08] bg-white/[0.025] p-1 text-center text-gray-300">
@@ -1338,10 +1321,10 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
             )}
 
             {showAddTechModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in">
+                <div role="dialog" aria-modal="true" aria-label={addingToGroup === null ? '그룹 추가' : '세부기능 추가'} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in">
                     <div className="glass-strong w-full max-w-md p-6">
                         <div className="mb-6 flex items-center justify-between">
-                            <h3 className="text-xl font-display font-bold text-white">기술특성 추가</h3>
+                            <h3 className="text-xl font-display font-bold text-white">{addingToGroup === null ? '그룹 추가' : `그룹 ${addingToGroup + 1} 세부기능 추가`}</h3>
                             <button
                                 onClick={() => {
                                     setShowAddTechModal(false);
@@ -1356,9 +1339,11 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                         </div>
                         <div className="space-y-4">
                             <div>
-                                <label className="mb-1.5 block text-sm font-medium text-gray-300">기술특성 이름 *</label>
+                                <label htmlFor="qfd-new-technical-name" className="mb-1.5 block text-sm font-medium text-gray-300">{addingToGroup === null ? '첫 세부기능' : '세부기능'} *</label>
+                                <p className="mb-2 text-xs text-gray-400">WS-10 세부스펙을 선택하거나 직접 입력하세요. 그룹 제목은 연결된 핵심기능으로 표시됩니다.</p>
                                 <input
                                     type="text"
+                                    id="qfd-new-technical-name"
                                     list={`qfd-technical-name-options-${projectId}`}
                                     value={newTech.name}
                                     onChange={(event) => setNewTech({ ...newTech, name: event.target.value })}
@@ -1402,7 +1387,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                                 >
                                     취소
                                 </button>
-                                <button onClick={handleAddTechnical} className="btn-primary flex-1 py-3">추가</button>
+                                <button onClick={handleAddTechnical} disabled={!newTech.name.trim() || isAddingTechnical} className="btn-primary flex-1 py-3 disabled:opacity-50">{isAddingTechnical ? '추가 중...' : '추가'}</button>
                             </div>
                         </div>
                     </div>

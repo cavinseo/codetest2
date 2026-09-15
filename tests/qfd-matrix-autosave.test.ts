@@ -35,6 +35,9 @@ function json(payload: unknown, status = 200) {
 }
 
 function fixture() {
+    let technicalRows = technicals.map((tech, index) => ({ ...tech, groupIndex: 0, columnOrder: index }));
+    let canWrite = true;
+    const entries = [{ subSpec: '처리 속도', coreSpec: '성능' }, { subSpec: '백업 주기', coreSpec: '성능' }, { subSpec: '가용성', coreSpec: '안정성' }];
     const saved = new Map<string, Relationship>();
     const requests: PendingRequest[] = [];
     const heldReads = new Map<string, number>();
@@ -45,7 +48,7 @@ function fixture() {
             competitorScore: 0, planQuality: 0, improvementRate: 0, absoluteImportance: 2,
             qualityImportancePercent: 50, rank: 1,
         })),
-        technicals: technicals.map((tech) => ({
+        technicals: technicalRows.map((tech) => ({
             technicalCharId: tech.id, name: tech.name, totalScore: score ?? [...saved.values()]
                 .filter((item) => item.technicalCharId === tech.id)
                 .reduce((total, item) => total + ({ NONE: 0, WEAK: 1, MEDIUM: 3, STRONG: 9 }[item.strength] * 2), 0),
@@ -55,11 +58,11 @@ function fixture() {
     const payloadFor = (path: string) => {
         switch (path) {
             case 'requirements': return { requirements };
-            case 'qfd/technical': return { technicalCharacteristics: technicals };
+            case 'qfd/technical': return { technicalCharacteristics: technicalRows, canWrite };
             case 'qfd/relationships': return { relationships: [...saved.values()].map((item) => ({ ...item })) };
             case 'qfd/analysis': return analysis();
             case 'qfd/benchmarks': return { benchmarks: [] };
-            case 'tech-tree': return { entries: [] };
+            case 'tech-tree': return { entries };
             case 'qfd/technical-benchmarks': return { technicalBenchmarks: [] };
             default: throw new Error(`허용하지 않은 fixture 조회: ${path}`);
         }
@@ -80,6 +83,16 @@ function fixture() {
                     if (path === 'qfd/relationships' && method === 'POST') {
                         const relationship = body as Relationship;
                         saved.set(`${relationship.requirementId}:${relationship.technicalCharId}`, { ...relationship });
+                    }
+                    if (path === 'qfd/technical') {
+                        if (method === 'DELETE') {
+                            const ids = body.ids as string[] || [body.id];
+                            technicalRows = technicalRows.filter(tech => !ids.includes(tech.id));
+                        }
+                        if (method === 'POST' || method === 'PATCH') {
+                            const tech = (payload as { technicalCharacteristic: typeof technicalRows[number] }).technicalCharacteristic;
+                            if (tech) technicalRows = [...technicalRows.filter(item => item.id !== tech.id), tech];
+                        }
                     }
                     resolve(json(payload));
                 },
@@ -102,6 +115,8 @@ function fixture() {
     });
     return {
         saved, requests, analysis, fetchMock,
+        empty() { technicalRows = []; },
+        readOnly() { canWrite = false; },
         hold(path: string, count = 1) { heldReads.set(path, (heldReads.get(path) || 0) + count); },
         pending(path?: string, method?: string) {
             return requests.filter((request) => !request.settled && (!path || request.path === path) && (!method || request.method === method));
@@ -447,7 +462,7 @@ describe('QFD 관계 강도 자동 저장', () => {
         expect(cell().matches(':disabled')).toBe(false);
         await selectValue(cell(), 'WEAK');
         await drainSaves();
-        expect(server.saved.get('r1:t1')?.strength).toBe('WEAK');
+        expect(server.saved.get(operation === 'delete' ? 'r1:t2' : 'r1:t1')?.strength).toBe('WEAK');
     });
 
     it('초기화 요청 하나가 실패해도 다른 요청이 끝날 때까지 입력 잠금을 유지한다', async () => {
@@ -531,5 +546,109 @@ describe('QFD 관계 강도 자동 저장', () => {
         await click(anchor);
         expect(confirm).toHaveBeenCalledTimes(1);
         expect(navigate).toHaveBeenCalledTimes(1);
+    });
+});
+
+async function enterTechnicalName(value: string) {
+    const input = container.querySelector<HTMLInputElement>('#qfd-new-technical-name')!;
+    await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+}
+
+describe('WS-9 그룹 구성', () => {
+    it('실제 세부기능만 표시하고 그룹의 핵심기능을 중복 없이 표시한다', async () => {
+        await mount();
+        const headers = [...container.querySelectorAll('thead select')];
+        expect(headers).toHaveLength(2);
+        expect(headers.every(select => (select as HTMLSelectElement).value.trim())).toBe(true);
+        const group = button('그룹 1 세부기능 추가').closest('th')!;
+        expect(group.colSpan).toBe(2);
+        expect(group.textContent?.match(/성능/g)).toHaveLength(1);
+        expect(container.querySelector('[aria-label="그룹 2 세부기능 추가"]')).toBeNull();
+    });
+
+    it('빈 그룹을 만들지 않고 첫 세부기능을 입력했을 때 함께 추가한다', async () => {
+        server.empty();
+        await mount();
+        expect(container.querySelectorAll('thead select')).toHaveLength(0);
+        await click(button('+ 그룹'));
+        expect(button('추가').disabled).toBe(true);
+        await enterTechnicalName('  ');
+        expect(button('추가').disabled).toBe(true);
+        await enterTechnicalName('가용성');
+        await click(button('추가'));
+        const request = server.pending('qfd/technical', 'POST')[0];
+        expect(request.body).toEqual({ name: '가용성', unit: '', targetValue: '' });
+        await finish(request, 'success', { technicalCharacteristic: { id: 't3', name: '가용성', groupIndex: 0, columnOrder: 0 } });
+        expect(container.querySelectorAll('thead select')).toHaveLength(1);
+        expect(button('그룹 1 세부기능 추가').closest('th')?.textContent).toContain('안정성');
+        const getCount = server.requests.filter(r => r.method === 'GET' && r.path === 'qfd/technical').length;
+        expect(getCount).toBe(1);
+    });
+
+    it('선택한 그룹에 세부기능을 추가하고 핵심기능 제목을 갱신한다', async () => {
+        await mount();
+        await click(button('그룹 1 세부기능 추가'));
+        await enterTechnicalName('가용성');
+        await click(button('추가'));
+        const request = server.pending('qfd/technical', 'POST')[0];
+        expect(request.body.groupIndex).toBe(0);
+        await finish(request, 'success', { technicalCharacteristic: { id: 't3', name: '가용성', groupIndex: 0, columnOrder: 2 } });
+        const header = button('그룹 1 세부기능 추가').closest('th')!;
+        expect(header.colSpan).toBe(3);
+        expect(header.textContent).toContain('성능 · 안정성');
+    });
+
+    it('그룹 추가를 취소하면 빈 열과 그룹이 생기지 않는다', async () => {
+        await mount();
+        await click(button('+ 그룹'));
+        await click(button('취소'));
+        expect(container.querySelectorAll('thead select')).toHaveLength(2);
+        expect(server.pending('qfd/technical', 'POST')).toHaveLength(0);
+    });
+
+    it('그룹 삭제는 화면에 표시한 세부기능 ID를 확인한 뒤 모두 삭제한다', async () => {
+        await mount();
+        await click(button('그룹 1 삭제'));
+        expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain('처리 속도, 백업 주기');
+        await click(button('삭제'));
+        const request = server.pending('qfd/technical', 'DELETE')[0];
+        expect(request.body).toEqual({ groupIndex: 0, ids: ['t1', 't2'] });
+        await finish(request);
+        expect(container.querySelectorAll('thead select')).toHaveLength(0);
+        expect(container.querySelector('[aria-label="그룹 1 삭제"]')).toBeNull();
+        await click(button('새로고침'));
+        expect(container.querySelectorAll('thead select')).toHaveLength(0);
+    });
+
+    it('마지막 세부기능을 삭제하면 빈 그룹도 사라진다', async () => {
+        await mount();
+        for (const name of ['처리 속도', '백업 주기']) {
+            await click(button(name + ' 열 삭제'));
+            await click(button('삭제'));
+            await finish(server.pending('qfd/technical', 'DELETE')[0]);
+        }
+        expect(container.querySelectorAll('thead select')).toHaveLength(0);
+        expect(container.querySelector('[aria-label="그룹 1 세부기능 추가"]')).toBeNull();
+    });
+
+    it('그룹 삭제 실패 시 내용과 삭제 확인 화면을 유지한다', async () => {
+        await mount();
+        await click(button('그룹 1 삭제'));
+        await click(button('삭제'));
+        await finish(server.pending('qfd/technical', 'DELETE')[0], 'http');
+        expect(container.querySelectorAll('thead select')).toHaveLength(2);
+        expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
+        expect(container.textContent).toContain('fixture 저장 또는 조회 실패');
+    });
+
+    it('읽기 전용 권한에는 그룹 편집 버튼이 표시되지 않는다', async () => {
+        server.readOnly();
+        await mount();
+        expect(container.querySelector('[aria-label="그룹 1 세부기능 추가"]')).toBeNull();
+        expect(container.querySelector('[aria-label="그룹 1 삭제"]')).toBeNull();
+        expect(container.querySelector<HTMLSelectElement>('thead select')?.disabled).toBe(true);
     });
 });

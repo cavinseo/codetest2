@@ -151,6 +151,8 @@ export async function POST(
                         name: t.name,
                         unit: t.unit ?? null,
                         targetValue: t.targetValue ?? null,
+                        groupIndex: t.groupIndex ?? Math.floor(index / 3),
+                        columnOrder: t.columnOrder ?? index,
                     })),
                 });
             }
@@ -231,12 +233,13 @@ export async function POST(
             }
 
             // 프로젝트 기본 정보 업데이트
-            if (importData.project) {
+            if (importData.project || importData.technicalCharacteristics) {
                 await tx.project.update({
                     where: { id: projectId },
                     data: {
-                        description: importData.project.description,
-                        detailedDescription: importData.project.detailedDescription,
+                        description: importData.project?.description,
+                        detailedDescription: importData.project?.detailedDescription,
+                        ...(importData.technicalCharacteristics ? { qfdTechnicalInitialized: true } : {}),
                     },
                 });
             }

@@ -6,6 +6,10 @@ const findFirstTech = vi.fn();
 const deleteTech = vi.fn();
 vi.mock('../lib/prisma', () => ({
     prisma: {
+        $transaction: async (fn: (tx: unknown) => unknown) => fn({
+            $queryRaw: vi.fn(), project: { update: vi.fn() },
+            technicalCharacteristic: { findFirst: findFirstTech, delete: deleteTech },
+        }),
         technicalCharacteristic: {
             findFirst: findFirstTech,
             delete: deleteTech,
@@ -46,7 +50,7 @@ describe('DELETE /api/projects/[id]/qfd/technical', () => {
         const res = await call({ id: 'tech_1' });
 
         expect(res.status).toBe(200);
-        await expect(res.json()).resolves.toEqual({ success: true });
+        await expect(res.json()).resolves.toEqual({ success: true, deletedIds: ['tech_1'] });
         expect(deleteTech).toHaveBeenCalledWith({ where: { id: 'tech_1' } });
     });
 
@@ -96,6 +100,6 @@ describe('DELETE /api/projects/[id]/qfd/technical', () => {
         const res = await call({ id: 'tech_1' });
 
         expect(res.status).toBe(500);
-        await expect(res.json()).resolves.toEqual({ error: '기술특성 삭제 실패' });
+        await expect(res.json()).resolves.toEqual({ error: '세부기능 처리에 실패했습니다.' });
     });
 });

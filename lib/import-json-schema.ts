@@ -46,6 +46,8 @@ const technicalRow = z.object({
     name: z.string(),
     unit: z.string().nullable().optional(),
     targetValue: z.string().nullable().optional(),
+    groupIndex: z.number().int().nonnegative().optional(),
+    columnOrder: z.number().int().nonnegative().optional(),
 }).strict();
 
 const specRow = z.object({
