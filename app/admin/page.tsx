@@ -9,6 +9,7 @@ import InvitesTab from '@/components/admin/InvitesTab';
 import ProgramsTab from '@/components/admin/ProgramsTab';
 import ThemeToggle from '@/components/ThemeToggle';
 import MentorAssign from '@/components/admin/MentorAssign';
+import ProjectTransfer from '@/components/admin/ProjectTransfer';
 import { MEMBER_ROLE_LABELS, canAssignMentor, canIssueInviteCode, canManagePrograms, type MemberRole } from '@/lib/member-roles';
 import { deleteActionFor, cancelGoesBack, type DeleteStage } from '@/lib/delete-confirmation';
 import {
@@ -23,6 +24,7 @@ interface Project {
     name: string;
     description?: string;
     ownerId: string;
+    programId: string;
     createdAt: string;
     updatedAt: string;
     ownerEmail: string | null;
@@ -52,6 +54,8 @@ export default function AdminModePage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchProject, setSearchProject] = useState('');
+    const [projectProgramId, setProjectProgramId] = useState('');
+    const [projectPrograms, setProjectPrograms] = useState<{ id: string; name: string; organization: string }[]>([]);
     // 프로젝트 삭제는 되돌릴 수 없고 하위 22개 모델을 함께 지운다. 그래서 확인을
     // 두 번 받는다. stage 1 은 "무엇을 지우는지", stage 2 는 "정말 지울 것인지"다.
     // 사용자 삭제는 서버가 409 로 되물어보는 자체 2단계가 있어 stage 1 에서 요청을
@@ -64,7 +68,10 @@ export default function AdminModePage() {
         stage: DeleteStage;
         preview?: MenteeDeletionPreview;
         reason?: DeletionReason;
+        cascadeWarning?: string;
+        error?: string;
     } | null>(null);
+    const [isDeletingUser, setIsDeletingUser] = useState(false);
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [accessDenied, setAccessDenied] = useState(false);
     const [needsLogin, setNeedsLogin] = useState(false);
@@ -102,7 +109,11 @@ export default function AdminModePage() {
 
             if (statsRes.ok) setStats(await statsRes.json());
             if (usersRes.ok) { const d = await usersRes.json(); setUsers(d.users); }
-            if (projectsRes.ok) { const d = await projectsRes.json(); setProjects(d.projects); }
+            if (projectsRes.ok) {
+                const d = await projectsRes.json();
+                setProjects(d.projects);
+                setProjectPrograms(d.programs);
+            }
             if (meRes.ok) {
                 const d = await meRes.json();
                 setRole(d.role ?? null);
@@ -124,41 +135,47 @@ export default function AdminModePage() {
 
     const handleDeleteUser = async (
         userId: string,
-        options: { confirmCascade?: boolean; reason?: DeletionReason } = {}
+        options: { confirmCascade?: boolean; reason?: DeletionReason; previewToken?: string } = {}
     ) => {
-        const res = await fetch('/api/admin/users', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId,
-                ...(options.confirmCascade ? { confirmCascade: true } : {}),
-                ...(options.reason ? { reason: options.reason } : {}),
-            }),
-        });
-        const data = await res.json().catch(() => null);
+        if (isDeletingUser) return;
+        setIsDeletingUser(true);
+        setConfirmDelete((prev) => prev ? { ...prev, error: undefined } : prev);
+        try {
+            const res = await fetch('/api/admin/users', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId,
+                    ...(options.confirmCascade ? { confirmCascade: true } : {}),
+                    ...(options.reason ? { reason: options.reason } : {}),
+                    ...(options.previewToken ? { previewToken: options.previewToken } : {}),
+                }),
+            });
+            const data = await res.json().catch(() => null);
 
-        // 서버가 409 로 되묻는다. 멘티는 사전 점검 결과가 실려 오므로 확인창 안에서
-        // 보여 주고 사유까지 받는다. 다른 역할은 예전대로 브라우저 확인창을 쓴다 —
-        // 그쪽은 보여 줄 것이 프로젝트 건수뿐이라 창을 새로 만들 값어치가 없다.
-        if (res.status === 409 && data?.needsCascadeConfirm) {
-            if (data.preview) {
-                setConfirmDelete((prev) => (prev ? { ...prev, stage: 2, preview: data.preview } : prev));
+            // 브라우저 기본 확인창이 차단돼도 삭제 영향과 마지막 확인이 보이게 한다.
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                setConfirmDelete((prev) => prev ? {
+                    ...prev, stage: 2, preview: data.preview,
+                    cascadeWarning: data.error || '연결된 프로젝트와 모든 워크시트가 함께 삭제됩니다.',
+                    error: prev.stage === 2 ? data.error || '삭제 대상 정보가 변경되었습니다. 변경 내용을 다시 확인하세요.' : undefined,
+                } : prev);
                 return;
             }
-            setConfirmDelete(null);
-            if (window.confirm(`${data.error}\n\n그래도 삭제하시겠습니까?`)) {
-                await handleDeleteUser(userId, { confirmCascade: true });
-            }
-            return;
-        }
 
-        if (res.ok) {
-            setUsers((prev) => prev.filter((u) => u.id !== userId));
-            showMsg('success', '사용자가 삭제되었습니다.');
-        } else {
-            showMsg('error', data?.error || '삭제 실패');
+            if (res.ok) {
+                setUsers((prev) => prev.filter((u) => u.id !== userId));
+                showMsg('success', '사용자가 삭제되었습니다.' + (data.transferredIssuedInviteCodes > 0
+                    ? ` 발급한 초대 코드 ${data.transferredIssuedInviteCodes}건은 보존하고 관리 책임을 이전했습니다.` : ''));
+                setConfirmDelete(null);
+            } else {
+                setConfirmDelete((prev) => prev ? { ...prev, error: data?.error || '사용자 삭제에 실패했습니다.' } : prev);
+            }
+        } catch {
+            setConfirmDelete((prev) => prev ? { ...prev, error: '삭제 결과를 확인하지 못했습니다. 연결 상태를 확인하고 목록을 새로고침하세요.' } : prev);
+        } finally {
+            setIsDeletingUser(false);
         }
-        setConfirmDelete(null);
     };
 
     const handleApproval = async (userId: string, action: 'approve' | 'revoke') => {
@@ -187,7 +204,7 @@ export default function AdminModePage() {
         const data = await res.json().catch(() => null);
         if (res.ok) {
             setUsers((prev) => prev.map((u) => (
-                u.id === userId ? { ...u, role: data.user.role, isAdmin: data.user.isAdmin } : u
+                u.id === userId ? { ...u, role: data.user.role, isAdmin: data.user.isAdmin, mentorProjectCreationEnabled: data.user.mentorProjectCreationEnabled === true } : u
             )));
             showMsg('success', `역할을 ${MEMBER_ROLE_LABELS[role]}(으)로 변경했습니다.`);
         } else {
@@ -306,7 +323,24 @@ export default function AdminModePage() {
         setOpenMentorAssign((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
     };
 
+    const handleProjectTransferred = async () => {
+        // 대상 멘티의 다른 프로젝트도 멘토가 바뀔 수 있어 모든 배정 패널을 닫는다.
+        setOpenMentorAssign({});
+        const [statsRes, projectsRes] = await Promise.all([
+            fetch('/api/admin/stats', { cache: 'no-store' }),
+            fetch('/api/admin/projects', { cache: 'no-store' }),
+        ]);
+        if (!statsRes.ok || !projectsRes.ok) throw new Error('이관 후 목록 갱신에 실패했습니다.');
+        const [nextStats, nextProjects] = await Promise.all([statsRes.json(), projectsRes.json()]);
+        setStats(nextStats);
+        setProjects(nextProjects.projects);
+        setProjectPrograms(nextProjects.programs);
+        setLoadedAt(new Date().toLocaleString('ko-KR'));
+        showMsg('success', '프로젝트를 새 멘티에게 이관했습니다.');
+    };
+
     const filteredProjects = projects.filter((p) => {
+        if (projectProgramId && p.programId !== projectProgramId) return false;
         const q = searchProject.toLowerCase();
         return (
             p.name.toLowerCase().includes(q) ||
@@ -460,11 +494,11 @@ export default function AdminModePage() {
             {/* Delete Confirm Modal */}
             {confirmDelete && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                    <div className="card max-w-sm w-full mx-4 border-rose-500/20">
+                    <div role="dialog" aria-modal="true" aria-labelledby="admin-delete-title" className="card max-w-sm w-full mx-4 max-h-[90vh] overflow-y-auto border-rose-500/20">
                         <div className="w-12 h-12 rounded-xl bg-rose-500/20 flex items-center justify-center mb-4">
                             <svg className="w-6 h-6 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                         </div>
-                        <h3 className="text-lg font-bold text-white mb-2">
+                        <h3 id="admin-delete-title" className="text-lg font-bold text-white mb-2">
                             {confirmDelete.stage === 2
                                 ? '마지막 확인'
                                 : confirmDelete.type === 'user' ? '사용자 삭제' : '프로젝트 삭제'}
@@ -486,6 +520,12 @@ export default function AdminModePage() {
                                             <li>QFD 행렬·기술특성·설문 초대 전체</li>
                                         </ul>
                                     </div>
+                                )}
+
+                                {confirmDelete.cascadeWarning && !confirmDelete.preview && (
+                                    <p className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 mb-4 text-sm text-amber-300">
+                                        {confirmDelete.cascadeWarning}
+                                    </p>
                                 )}
 
                                 {confirmDelete.preview && (
@@ -538,16 +578,23 @@ export default function AdminModePage() {
                             </>
                         )}
 
+                        {confirmDelete.error && (
+                            <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                                {confirmDelete.error}
+                            </p>
+                        )}
+
                         <div className="flex gap-3 mt-4">
                             <button
                                 onClick={() => cancelGoesBack(confirmDelete)
                                     // 되돌아갈 자리를 준다. 마지막 확인에서 취소만 가능하면
                                     // 실수로 다음 단계에 온 사람이 처음부터 다시 해야 한다.
-                                    ? setConfirmDelete({ ...confirmDelete, stage: 1 })
+                                    ? setConfirmDelete({ ...confirmDelete, stage: 1, error: undefined })
                                     : setConfirmDelete(null)
                                 }
                                 className="btn-ghost flex-1"
                                 id="admin-cancel-delete-btn"
+                                disabled={isDeletingUser}
                             >
                                 {confirmDelete.stage === 2 ? '뒤로' : '취소'}
                             </button>
@@ -562,8 +609,8 @@ export default function AdminModePage() {
                                         // 확정은 점검 결과를 보고 있는 stage 2 에서만 한다. preview 만
                                         // 보고 판단하면, "뒤로"로 stage 1 에 돌아온 뒤 다시 누를 때
                                         // 마지막 확인을 건너뛰고 지워진다 — preview 는 남아 있으므로.
-                                        handleDeleteUser(confirmDelete.id, confirmDelete.stage === 2 && confirmDelete.preview
-                                            ? { confirmCascade: true, reason: confirmDelete.reason }
+                                        handleDeleteUser(confirmDelete.id, confirmDelete.stage === 2 && (confirmDelete.preview || confirmDelete.cascadeWarning)
+                                            ? { confirmCascade: true, reason: confirmDelete.reason, previewToken: confirmDelete.preview?.previewToken }
                                             : {});
                                         return;
                                     }
@@ -571,11 +618,11 @@ export default function AdminModePage() {
                                 }}
                                 // 사유를 고르기 전에는 확정할 수 없다. 서버도 400 으로 막지만,
                                 // 되돌릴 수 없는 조작이라 누르기 전에 알려 주는 편이 낫다.
-                                disabled={confirmDelete.stage === 2 && Boolean(confirmDelete.preview) && !confirmDelete.reason}
+                                disabled={isDeletingUser || (confirmDelete.stage === 2 && Boolean(confirmDelete.preview) && !confirmDelete.reason)}
                                 className="flex-1 px-4 py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-sm font-medium hover:bg-rose-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 id="admin-confirm-delete-btn"
                             >
-                                {deleteActionFor(confirmDelete) === 'advance' ? '계속' : '삭제'}
+                                {isDeletingUser ? '처리 중...' : deleteActionFor(confirmDelete) === 'advance' ? '계속' : '삭제'}
                             </button>
                         </div>
                     </div>
@@ -766,13 +813,17 @@ export default function AdminModePage() {
                         {tab === 'invites' && canInvite && <InvitesTab />}
 
                         {/* ── Programs Tab ─────────────────────────────── */}
-                        {tab === 'programs' && canManageProgramsUI && <ProgramsTab />}
+                        {tab === 'programs' && canManageProgramsUI && <ProgramsTab canCreate={role === 'ADMIN'} canDelete={role === 'ADMIN'}
+                            onDeleted={id => {
+                                setProjectPrograms(prev => prev.filter(p => p.id !== id));
+                                setProjectProgramId(prev => prev === id ? '' : prev);
+                            }} />}
 
                         {/* ── Projects Tab ─────────────────────────────── */}
                         {tab === 'projects' && (
                             <div className="space-y-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="relative flex-1 max-w-sm">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <div className="relative w-full sm:flex-1 sm:max-w-sm">
                                         <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                         <input
                                             type="text"
@@ -783,7 +834,19 @@ export default function AdminModePage() {
                                             id="admin-project-search"
                                         />
                                     </div>
-                                    <span className="text-sm text-gray-500">{filteredProjects.length}개</span>
+                                    <select
+                                        id="admin-project-program-filter"
+                                        aria-label="프로그램별 프로젝트 보기"
+                                        className="input w-full sm:w-72"
+                                        value={projectProgramId}
+                                        onChange={(e) => setProjectProgramId(e.target.value)}
+                                    >
+                                        <option value="">전체 프로그램</option>
+                                        {projectPrograms.map(program => (
+                                            <option key={program.id} value={program.id}>{program.name} ({program.organization})</option>
+                                        ))}
+                                    </select>
+                                    <span className="text-sm text-gray-500" aria-live="polite">{filteredProjects.length}개</span>
                                 </div>
 
                                 {filteredProjects.length === 0 ? (
@@ -791,13 +854,13 @@ export default function AdminModePage() {
                                         <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-4">
                                             <svg className="w-8 h-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                                         </div>
-                                        <p className="text-gray-500 text-sm">{searchProject ? '검색 결과가 없습니다' : '등록된 프로젝트가 없습니다'}</p>
+                                        <p className="text-gray-500 text-sm">{searchProject || projectProgramId ? '선택한 조건에 맞는 프로젝트가 없습니다.' : '등록된 프로젝트가 없습니다.'}</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
                                         {filteredProjects.map((project) => (
                                             <div key={project.id} className="card hover:border-white/[0.1] transition-all duration-200">
-                                                <div className="flex items-start justify-between gap-4">
+                                                <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
                                                     <div className="flex items-start gap-4 flex-1 min-w-0">
                                                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center flex-shrink-0">
                                                             <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
@@ -838,7 +901,8 @@ export default function AdminModePage() {
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                                    <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                                                        {role === 'ADMIN' && <ProjectTransfer projectId={project.id} onTransferred={handleProjectTransferred} />}
                                                         <Link
                                                             href={`/project/${project.id}`}
                                                             className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] transition-colors"

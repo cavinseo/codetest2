@@ -13,6 +13,7 @@ import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { canManagePrograms, parseMemberRole } from '@/lib/member-roles';
 import { canManageThisProgram, programMoveOutcome } from '@/lib/program';
+import { isTransferConflictError, lockTransferUsers, ProjectTransferError } from '@/lib/project-transfer';
 
 const log = createLogger('api/programs/mentees');
 
@@ -71,7 +72,7 @@ export async function GET(
 
         const mentees = await prisma.user.findMany({
             where: { programId, role: 'MENTEE', status: 'APPROVED' },
-            select: { id: true, name: true, email: true },
+            select: { id: true, name: true, email: true, mentorAssignment: { select: { mentorId: true, mentor: { select: { name: true, email: true } } } } },
             orderBy: { name: 'asc' },
         });
 
@@ -140,9 +141,20 @@ export async function POST(
             );
         }
 
-        await prisma.user.update({
-            where: { id: target.id },
-            data: { programId },
+        await prisma.$transaction(async tx => {
+            await lockTransferUsers(tx, [target.id]);
+            await tx.$queryRaw`SELECT "id" FROM "programs" WHERE "id" = ${programId} FOR SHARE`;
+            const current = await tx.user.findUnique({ where: { id: target.id }, select: { role: true, programId: true } });
+            const currentProgram = await tx.program.findUnique({ where: { id: programId }, select: { managerId: true } });
+            if (!current || current.role !== 'MENTEE' || current.programId !== target.programId || !currentProgram) {
+                throw new ProjectTransferError('멘티 또는 프로그램 정보가 변경되었습니다. 다시 확인하세요.', 409);
+            }
+            if (!canManageThisProgram({ role: authResult.role, userId: authResult.userId }, currentProgram)) {
+                throw new ProjectTransferError('이 프로그램에 멘티를 배정할 권한이 없습니다.', 403);
+            }
+            await tx.user.update({ where: { id: target.id }, data: { programId } });
+            // 반복 로그인에 사용하는 초대와 소속을 함께 옮기며 기존 계정 기한은 보존한다.
+            await tx.inviteCode.updateMany({ where: { usedById: target.id }, data: { programId } });
         });
 
         log.info('멘티를 프로그램에 배정', {
@@ -154,6 +166,8 @@ export async function POST(
             mentee: { id: target.id, name: target.name, programName: program.name },
         });
     } catch (error: unknown) {
+        if (error instanceof ProjectTransferError) return NextResponse.json({ error: error.message }, { status: error.status });
+        if (isTransferConflictError(error)) return NextResponse.json({ error: '멘티 또는 프로그램 정보가 변경되었습니다. 다시 확인하세요.' }, { status: 409 });
         return toErrorResponse(error, { log, message: '멘티를 배정하지 못했습니다.', context: { programId } });
     }
 }

@@ -16,11 +16,12 @@ interface ProgramOption {
 
 export interface User {
     id: string;
-    name: string;
+    name: string | null;
     email: string;
     status: 'PENDING' | 'APPROVED';
     isAdmin: boolean;
     role: MemberRole;
+    mentorProjectCreationEnabled?: boolean;
     accessExpiresAt: string | null;
     mustChangePassword: boolean;
     createdAt: string;
@@ -77,6 +78,28 @@ export default function MembersTab({
     const [programs, setPrograms] = useState<ProgramOption[]>([]);
     const [assignBusy, setAssignBusy] = useState<Record<string, boolean>>({});
     const [assignError, setAssignError] = useState('');
+    const [creationBusy, setCreationBusy] = useState<Record<string, boolean>>({});
+    const [creationMessage, setCreationMessage] = useState('');
+
+    const setMentorProjectCreation = async (member: User) => {
+        setCreationBusy(prev => ({ ...prev, [member.id]: true }));
+        setCreationMessage('');
+        try {
+            const enabled = !member.mentorProjectCreationEnabled;
+            const response = await fetch('/api/admin/users', {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: member.id, action: 'setMentorProjectCreation', enabled }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || '프로젝트 생성 권한 변경에 실패했습니다.');
+            setCreationMessage(`${member.name || member.email} 멘토의 프로젝트 생성을 ${enabled ? '활성화' : '비활성화'}했습니다.`);
+            onReload();
+        } catch (error) {
+            setCreationMessage(error instanceof Error ? error.message : '프로젝트 생성 권한 변경에 실패했습니다.');
+        } finally {
+            setCreationBusy(prev => ({ ...prev, [member.id]: false }));
+        }
+    };
 
     // 멘티 계정을 만들 때 프로그램을 고를 수 있게, 목록을 미리 받아 둔다.
     // 멘토 계정 생성에는 쓰지 않지만 한 번만 불러오면 되므로 마운트 시 가져온다.
@@ -95,7 +118,7 @@ export default function MembersTab({
     const filteredMembers = members
         .filter((m) => roleFilter === 'ALL' || m.role === roleFilter)
         .filter(
-            (m) => m.name.toLowerCase().includes(searchMember.toLowerCase()) || m.email.toLowerCase().includes(searchMember.toLowerCase())
+            (m) => (m.name ?? '').toLowerCase().includes(searchMember.toLowerCase()) || m.email.toLowerCase().includes(searchMember.toLowerCase())
         );
 
     /**
@@ -194,6 +217,7 @@ export default function MembersTab({
                 ))}
             </div>
 
+            {creationMessage && <p role="status" className="text-sm text-primary-400">{creationMessage}</p>}
             {assignError && (
                 <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                     {assignError}
@@ -283,11 +307,11 @@ export default function MembersTab({
                                     <td className="px-5 py-4">
                                         <div className="flex items-center gap-3">
                                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500/30 to-accent-500/30 flex items-center justify-center text-sm font-bold text-white">
-                                                {m.name.charAt(0)}
+                                                {(m.name || '이름 미등록').charAt(0)}
                                             </div>
                                             <div>
                                                 <p className="text-sm font-medium text-white">
-                                                    {m.name}
+                                                    {m.name || '이름 미등록'}
                                                     {m.isAdmin && <span className="ml-2 badge-amber text-[10px]">관리자</span>}
                                                     {m.mustChangePassword && <span className="ml-2 badge-purple text-[10px]">비밀번호 변경 필요</span>}
                                                 </p>
@@ -296,6 +320,9 @@ export default function MembersTab({
                                         </div>
                                     </td>
                                     <td className="px-5 py-4">
+                                        {m.role === 'MENTEE' || m.role === 'ADMIN' ? (
+                                            <span className="text-xs text-gray-400">{MEMBER_ROLE_LABELS[m.role]} · 변경 불가</span>
+                                        ) : (
                                         <select
                                             value={m.role}
                                             onChange={(e) => onSetRole(m.id, e.target.value as MemberRole)}
@@ -306,6 +333,7 @@ export default function MembersTab({
                                                 <option key={r} value={r}>{MEMBER_ROLE_LABELS[r]}</option>
                                             ))}
                                         </select>
+                                        )}
                                     </td>
                                     <td className="px-5 py-4">
                                         {/* 프로그램에 속하는 것은 멘티뿐이다. 이미 등록된 멘티도
@@ -345,7 +373,19 @@ export default function MembersTab({
                                         <span className="text-xs text-gray-500">{new Date(m.createdAt).toLocaleDateString('ko-KR')}</span>
                                     </td>
                                     <td className="px-5 py-4 text-right">
-                                        <div className="inline-flex items-center gap-2">
+                                        <div className="inline-flex items-center gap-2 flex-wrap justify-end">
+                                            {m.role === 'MENTOR' && (
+                                                <button
+                                                    type="button"
+                                                    disabled={creationBusy[m.id]}
+                                                    aria-pressed={m.mentorProjectCreationEnabled === true}
+                                                    aria-label={`${m.name || m.email} 프로젝트 생성 ${m.mentorProjectCreationEnabled ? '비활성화' : '활성화'}`}
+                                                    onClick={() => setMentorProjectCreation(m)}
+                                                    className="text-xs px-3 py-1.5 rounded-lg border border-primary-500/30 text-primary-400 disabled:opacity-50"
+                                                >
+                                                    {creationBusy[m.id] ? '변경 중...' : `프로젝트 생성 ${m.mentorProjectCreationEnabled ? '허용 중 · 비활성화' : '사용중지 · 활성화'}`}
+                                                </button>
+                                            )}
                                             {m.status === 'PENDING' ? (
                                                 <button
                                                     onClick={() => onApprove(m.id, 'approve')}
@@ -373,7 +413,7 @@ export default function MembersTab({
                                                 </button>
                                             )}
                                             <button
-                                                onClick={() => onRequestDelete({ id: m.id, name: m.name })}
+                                                onClick={() => onRequestDelete({ id: m.id, name: m.name || m.email })}
                                                 className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"
                                                 id={`admin-delete-user-${m.id}`}
                                             >

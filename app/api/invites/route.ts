@@ -12,7 +12,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
-import { toErrorResponse } from '@/lib/api-error';
+import { errorCodeOf, toErrorResponse } from '@/lib/api-error';
 import { sendMail } from '@/lib/email';
 import { escapeHtml } from '@/lib/html-escape';
 import {
@@ -23,6 +23,7 @@ import {
 } from '@/lib/member-roles';
 import { canManageThisProgram } from '@/lib/program';
 import { buildInviteEmail, generateInviteCode, inviteCodeExpiryFrom } from '@/lib/invite-code';
+import { inviteAccessExpiresAt } from '@/lib/invite-access';
 
 const log = createLogger('api/invites');
 
@@ -50,15 +51,19 @@ export async function GET(request: NextRequest) {
         const invites = await prisma.inviteCode.findMany({
             where: scope,
             select: {
-                id: true, code: true, email: true, role: true, expiresAt: true,
+                id: true, code: authResult.role === 'ADMIN', email: true, role: true, expiresAt: true,
                 accessDurationDays: true, usedAt: true, createdAt: true,
-                programId: true, program: { select: { name: true } },
+                programId: true, program: { select: { name: true, endsAt: true } },
+                usedBy: { select: { accessExpiresAt: true } },
             },
             orderBy: { createdAt: 'desc' },
         });
 
         return NextResponse.json({
-            invites: invites.map(({ program, ...rest }) => ({ ...rest, programName: program.name })),
+            invites: invites.map(({ program, usedBy, code, ...rest }) => ({
+                ...rest, ...(authResult.role === 'ADMIN' ? { code } : {}), programName: program.name,
+                expiresAt: inviteAccessExpiresAt({ ...rest, program, usedBy }),
+            })),
         });
     } catch (error: unknown) {
         return toErrorResponse(error, { log, message: '초대 코드 목록을 불러오지 못했습니다.' });
@@ -87,42 +92,44 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const program = await prisma.program.findUnique({
-            where: { id: parsed.data.programId },
-            select: { id: true, managerId: true },
-        });
-        if (!program) {
-            return NextResponse.json({ error: '프로그램을 찾을 수 없습니다.' }, { status: 404 });
-        }
-        if (!canManageThisProgram({ role: authResult.role, userId: authResult.userId }, program)) {
-            return NextResponse.json(
-                { error: '이 프로그램에 초대 코드를 발행할 권한이 없습니다.' },
-                { status: 403 }
-            );
-        }
-
         const email = parsed.data.email.trim().toLowerCase();
-        const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-        if (existing) {
-            return NextResponse.json({ error: '이미 가입된 이메일입니다.' }, { status: 409 });
-        }
-
-        const now = new Date();
         const code = generateInviteCode();
         const accessDurationDays = parsed.data.accessDurationDays ?? DEFAULT_ACCESS_DURATION_DAYS;
-
-        const invite = await prisma.inviteCode.create({
-            data: {
+        const issued = await prisma.$transaction(async (tx) => {
+            // 프로그램이 달라도 같은 이메일에 유효 코드가 둘 발급되지 않도록 직렬화한다.
+            await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`invite-email:${email}`}))::text`;
+            const program = await tx.program.findUnique({
+                where: { id: parsed.data.programId }, select: { id: true, managerId: true, endsAt: true },
+            });
+            if (!program) return { error: '프로그램을 찾을 수 없습니다.', status: 404 };
+            if (!canManageThisProgram({ role: authResult.role, userId: authResult.userId }, program)) {
+                return { error: '이 프로그램에 초대 코드를 발행할 권한이 없습니다.', status: 403 };
+            }
+            const now = new Date();
+            if (program.endsAt.getTime() <= now.getTime()) return { error: '종료된 프로그램에는 초대 코드를 발행할 수 없습니다.', status: 400 };
+            const existing = await tx.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select: { id: true } });
+            if (existing) return { error: '이미 가입된 이메일입니다.', status: 409 };
+            const previous = await tx.inviteCode.findMany({
+                where: { email: { equals: email, mode: 'insensitive' } },
+                include: { program: { select: { endsAt: true } }, usedBy: { select: { accessExpiresAt: true } } },
+            });
+            if (previous.some((record) => inviteAccessExpiresAt(record).getTime() > now.getTime())) {
+                return { error: '이미 발행된 유효한 초대 코드가 있습니다.', status: 409 };
+            }
+            const invite = await tx.inviteCode.create({ data: {
                 id: generateId('invite'),
                 code,
                 email,
                 role,
                 programId: program.id,
-                expiresAt: inviteCodeExpiryFrom(now),
+                expiresAt: new Date(Math.min(inviteCodeExpiryFrom(now).getTime(), program.endsAt.getTime())),
                 accessDurationDays,
                 issuedById: authResult.userId,
-            },
+            } });
+            return { invite };
         });
+        if ('error' in issued) return NextResponse.json({ error: issued.error }, { status: issued.status });
+        const { invite } = issued;
 
         const origin = new URL(request.url).origin;
         const mail = buildInviteEmail({
@@ -130,7 +137,7 @@ export async function POST(request: NextRequest) {
             roleLabel: MEMBER_ROLE_LABELS[role],
             expiresAt: invite.expiresAt,
             accessDurationDays,
-            signupUrl: `${origin}/signup`,
+            signupUrl: `${origin}/login?mode=invite`,
             escapeHtml,
         });
         const emailSent = await sendMail({ to: email, subject: mail.subject, html: mail.html });
@@ -142,14 +149,15 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: true,
             emailSent,
-            code,
+            ...(authResult.role === 'ADMIN' ? { code } : {}),
             invite: {
                 id: invite.id, email: invite.email, role: invite.role,
                 programId: invite.programId, expiresAt: invite.expiresAt, accessDurationDays,
             },
         });
     } catch (error: unknown) {
-        return toErrorResponse(error, { log, message: '초대 코드 발행에 실패했습니다.' });
+        log.error('초대 코드 발행 실패', undefined, { code: errorCodeOf(error) ?? undefined });
+        return NextResponse.json({ error: '초대 코드 발행에 실패했습니다.' }, { status: 500 });
     }
 }
 
@@ -183,10 +191,13 @@ export async function DELETE(request: NextRequest) {
         }
 
         // 삭제가 아니라 만료 처리다. 누가 누구에게 발급했는지가 이력으로 남아야 한다.
-        await prisma.inviteCode.update({
-            where: { id: invite.id },
+        const revoked = await prisma.inviteCode.updateMany({
+            where: { id: invite.id, usedAt: null, usedById: null },
             data: { expiresAt: new Date() },
         });
+        if (revoked.count !== 1) {
+            return NextResponse.json({ error: '이미 사용된 코드는 회수할 수 없습니다.' }, { status: 400 });
+        }
 
         log.info('초대 코드 회수', { inviteId: invite.id });
         return NextResponse.json({ success: true });

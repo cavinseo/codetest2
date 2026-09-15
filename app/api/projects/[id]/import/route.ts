@@ -174,7 +174,12 @@ async function applyImportedRecords(
             await tx.customerRequirement.createMany({ data: records.customerRequirements.map((row) => ({ ...row, projectId })) });
         }
         if (records.technicalCharacteristics.length > 0) {
-            await tx.technicalCharacteristic.createMany({ data: records.technicalCharacteristics.map((row) => ({ ...row, projectId })) });
+            const existing = await tx.technicalCharacteristic.findMany({ where: { projectId }, select: { groupIndex: true } });
+            const firstGroup = existing.length ? Math.max(...existing.map(row => row.groupIndex)) + 1 : 0;
+            await tx.technicalCharacteristic.createMany({ data: records.technicalCharacteristics.map((row, index) => ({
+                ...row, projectId, groupIndex: firstGroup + Math.floor(index / 3), columnOrder: index,
+            })) });
+            await tx.project.update({ where: { id: projectId }, data: { qfdTechnicalInitialized: true } });
         }
         if (records.improvementItems.length > 0) {
             await tx.improvementItem.createMany({ data: records.improvementItems.map((row) => ({ ...row, projectId })) });

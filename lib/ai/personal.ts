@@ -11,6 +11,7 @@ import {
 import { ruleProvider } from './provider-rule';
 import type { AiProvider } from './types';
 import { assertPublicHttpsUrl } from './url-guard';
+import { publicHttpsFetch } from './public-https-fetch';
 
 export interface PersonalAiConnection {
     mode: MemberAiMode;
@@ -49,6 +50,7 @@ export function createPersonalProvider(conn: PersonalAiConnection): AiProvider {
                 model: conn.mcpModel ?? undefined,
                 apiKey: conn.apiKey ?? undefined,
                 allowRemoteHost: true,
+                fetch: publicHttpsFetch,
                 // 모델을 지정했으면 탐색 생략, 아니면 /models 탐색에 맡긴다.
                 directEndpoint: Boolean(conn.mcpModel),
             });
@@ -135,7 +137,7 @@ export async function verifyPersonalConnection(
                 : { method: 'GET', headers, signal: controller.signal };
         }
 
-        const response = await fetch(url, init);
+        const response = await (conn.mode === 'mcp' ? publicHttpsFetch : fetch)(url, init);
 
         if (response.ok) return { ok: true, message: '연결에 성공했습니다.' };
         if (response.status === 401 || response.status === 403) {

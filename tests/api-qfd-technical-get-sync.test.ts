@@ -3,10 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const findManyTech = vi.fn();
+const readProject = vi.fn();
+const updateProject = vi.fn();
+const lockProject = vi.fn();
 const createManyTech = vi.fn();
 const findManyTechTree = vi.fn();
 vi.mock('../lib/prisma', () => ({
     prisma: {
+        $transaction: async (fn: (tx: unknown) => unknown) => fn({
+            $queryRaw: lockProject, project: { findUniqueOrThrow: readProject, update: updateProject },
+            technicalCharacteristic: { findMany: findManyTech, createMany: createManyTech },
+            techTreeEntry: { findMany: findManyTechTree },
+        }),
         technicalCharacteristic: {
             findMany: findManyTech,
             createMany: createManyTech,
@@ -36,6 +44,9 @@ function call() {
 beforeEach(() => {
     requireProjectAccess.mockResolvedValue({ user: USER, role: 'OWNER' });
     createManyTech.mockResolvedValue({ count: 0 });
+    readProject.mockResolvedValue({ qfdTechnicalInitialized: false });
+    updateProject.mockResolvedValue({});
+    lockProject.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -45,9 +56,9 @@ afterEach(() => {
 describe('GET /api/projects/[id]/qfd/technical', () => {
     it('WS-10 에만 있는 세부스펙을 새 기술특성으로 만든다', async () => {
         findManyTech
-            .mockResolvedValueOnce([{ id: 'tech_1', name: '센서' }])
+            .mockResolvedValueOnce([{ id: 'tech_1', name: '센서', groupIndex: 0, columnOrder: 0 }])
             .mockResolvedValueOnce([
-                { id: 'tech_1', name: '센서' },
+                { id: 'tech_1', name: '센서', groupIndex: 0, columnOrder: 0 },
                 { id: 'tech_2', name: '배터리' },
             ]);
         findManyTechTree.mockResolvedValue([
@@ -62,16 +73,16 @@ describe('GET /api/projects/[id]/qfd/technical', () => {
 
         expect(res.status).toBe(200);
         expect(createManyTech).toHaveBeenCalledWith({
-            data: [{ id: expect.any(String), projectId: PROJECT, name: '배터리' }],
+            data: [{ id: expect.any(String), projectId: PROJECT, name: '배터리', groupIndex: 1, columnOrder: 0 }],
         });
         expect(body.technicalCharacteristics).toEqual([
-            { id: 'tech_1', name: '센서' },
+            { id: 'tech_1', name: '센서', groupIndex: 0, columnOrder: 0 },
             { id: 'tech_2', name: '배터리' },
         ]);
     });
 
     it('빠진 세부스펙이 없으면 새로 만들지 않는다', async () => {
-        findManyTech.mockResolvedValue([{ id: 'tech_1', name: '센서' }]);
+        findManyTech.mockResolvedValue([{ id: 'tech_1', name: '센서', groupIndex: 0, columnOrder: 0 }]);
         findManyTechTree.mockResolvedValue([{ subSpec: '센서' }]);
 
         const res = await call();
@@ -80,7 +91,7 @@ describe('GET /api/projects/[id]/qfd/technical', () => {
         expect(res.status).toBe(200);
         expect(createManyTech).not.toHaveBeenCalled();
         expect(findManyTech).toHaveBeenCalledTimes(1);
-        expect(body.technicalCharacteristics).toEqual([{ id: 'tech_1', name: '센서' }]);
+        expect(body.technicalCharacteristics).toEqual([{ id: 'tech_1', name: '센서', groupIndex: 0, columnOrder: 0 }]);
     });
 
     it('WS-10 항목이 하나도 없으면 새로 만들지 않는다', async () => {
@@ -94,7 +105,7 @@ describe('GET /api/projects/[id]/qfd/technical', () => {
     });
 
     it('같은 이름이 중복으로 채워지지 않는다', async () => {
-        findManyTech.mockResolvedValue([{ id: 'tech_1', name: '센서' }]);
+        findManyTech.mockResolvedValue([{ id: 'tech_1', name: '센서', groupIndex: 0, columnOrder: 0 }]);
         findManyTechTree.mockResolvedValue([{ subSpec: '센서' }, { subSpec: ' 센서 ' }]);
 
         const res = await call();
@@ -105,7 +116,7 @@ describe('GET /api/projects/[id]/qfd/technical', () => {
 
     it('VIEWER 는 조회만 해도 자동 채움 쓰기가 일어나지 않는다', async () => {
         requireProjectAccess.mockResolvedValue({ user: USER, role: 'VIEWER' });
-        findManyTech.mockResolvedValue([{ id: 'tech_1', name: '센서' }]);
+        findManyTech.mockResolvedValue([{ id: 'tech_1', name: '센서', groupIndex: 0, columnOrder: 0 }]);
 
         const res = await call();
         const body = await res.json();
@@ -113,16 +124,26 @@ describe('GET /api/projects/[id]/qfd/technical', () => {
         expect(res.status).toBe(200);
         expect(findManyTechTree).not.toHaveBeenCalled();
         expect(createManyTech).not.toHaveBeenCalled();
-        expect(body.technicalCharacteristics).toEqual([{ id: 'tech_1', name: '센서' }]);
+        expect(body.technicalCharacteristics).toEqual([{ id: 'tech_1', name: '센서', groupIndex: 0, columnOrder: 0 }]);
     });
 
     it('COACH 도 조회만 해도 자동 채움 쓰기가 일어나지 않는다', async () => {
         requireProjectAccess.mockResolvedValue({ user: USER, role: 'COACH' });
-        findManyTech.mockResolvedValue([{ id: 'tech_1', name: '센서' }]);
+        findManyTech.mockResolvedValue([{ id: 'tech_1', name: '센서', groupIndex: 0, columnOrder: 0 }]);
 
         const res = await call();
 
         expect(res.status).toBe(200);
         expect(createManyTech).not.toHaveBeenCalled();
     });
+});
+
+ it('초기화한 뒤 전체 삭제해도 WS-10 세부기능을 다시 만들지 않는다', async () => {
+    readProject.mockResolvedValue({ qfdTechnicalInitialized: true });
+    findManyTech.mockResolvedValue([]);
+    const res = await call();
+    expect((await res.json()).technicalCharacteristics).toEqual([]);
+    expect(findManyTechTree).not.toHaveBeenCalled();
+    expect(createManyTech).not.toHaveBeenCalled();
+    expect(updateProject).not.toHaveBeenCalled();
 });

@@ -119,6 +119,35 @@ describe('세션 만료', () => {
 });
 
 describe('requireAuth', () => {
+    it('관리자가 연장한 초대 계정은 원래 초대 기간 후에도 기존 세션을 허용한다', async () => {
+        findUser.mockResolvedValue(approvedUser({
+            programId: 'program', accessExpiresAt: new Date(Date.now() + 10 * 86_400_000),
+            usedInviteCode: {
+                programId: 'program', usedAt: new Date(Date.now() - 100 * 86_400_000), accessDurationDays: 90,
+                expiresAt: new Date(0), program: { endsAt: new Date(Date.now() + 30 * 86_400_000) },
+            },
+        }) as never);
+        const result = await requireAuth(requestWithSessionCookie(encodeSessionCookie(SESSION)));
+        expect(result).not.toBeInstanceOf(NextResponse);
+        expect(result).toMatchObject({ userId: SESSION.userId });
+    });
+
+    it('초대 프로그램 종료 후 기존 세션과 온보딩 허용 요청도 거부한다', async () => {
+        findUser.mockResolvedValue(approvedUser({
+            programId: 'program', accessExpiresAt: new Date(Date.now() + 86_400_000),
+            usedInviteCode: {
+                programId: 'program', usedAt: new Date(), accessDurationDays: 90,
+                expiresAt: new Date(Date.now() + 86_400_000), program: { endsAt: new Date(0) },
+            },
+        }) as never);
+        const request = requestWithSessionCookie(encodeSessionCookie(SESSION));
+        for (const options of [{}, { allowIncompleteOnboarding: true }]) {
+            const result = await requireAuth(request, options);
+            expect((result as NextResponse).status).toBe(403);
+            expect(await (result as NextResponse).json()).toMatchObject({ error: '이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.' });
+        }
+    });
+
     it('쿠키가 없으면 401', async () => {
         const result = await requireAuth(requestWithSessionCookie());
 

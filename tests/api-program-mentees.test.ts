@@ -6,11 +6,15 @@ const findUniqueProgram = vi.fn();
 const findManyUser = vi.fn();
 const findUniqueUser = vi.fn();
 const updateUser = vi.fn();
+const updateInvites = vi.fn();
+const transaction = vi.fn();
+const lockUsers = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
         program: { findUnique: findUniqueProgram },
         user: { findMany: findManyUser, findUnique: findUniqueUser, update: updateUser },
+        $transaction: (fn: unknown) => transaction(fn),
     },
 }));
 
@@ -45,12 +49,18 @@ function callPost(body: unknown) {
 }
 
 beforeEach(() => {
+    vi.resetAllMocks();
     findUniqueProgram.mockResolvedValue({ id: 'prog_1', name: '새 프로그램', managerId: 'user_1' });
     findManyUser.mockResolvedValue([{ id: 'mentee_1', name: '멘티1', email: 'm1@x.com' }]);
     findUniqueUser.mockResolvedValue({
         id: 'mentee_1', name: '멘티1', role: 'MENTEE', programId: null, program: null,
     });
     updateUser.mockResolvedValue({});
+    updateInvites.mockResolvedValue({ count: 1 });
+    transaction.mockImplementation(async fn => fn({
+        $queryRaw: lockUsers, user: { findUnique: findUniqueUser, update: updateUser },
+        program: { findUnique: findUniqueProgram }, inviteCode: { updateMany: updateInvites },
+    }));
 });
 
 afterEach(() => {
@@ -145,6 +155,26 @@ describe('배정 후보 조회 (?candidates=1)', () => {
 });
 
 describe('멘티 배정', () => {
+    it('프로그램 이동은 사용 중 초대도 함께 옮기고 접근 기한은 변경하지 않는다', async () => {
+        authAs('ADMIN');
+        const response = await callPost({ userId: 'mentee_1' });
+        expect(response.status).toBe(200);
+        expect(transaction).toHaveBeenCalled();
+        expect(updateInvites).toHaveBeenCalledWith({ where: { usedById: 'mentee_1' }, data: { programId: 'prog_1' } });
+        expect(updateUser.mock.calls[0][0].data).toEqual({ programId: 'prog_1' });
+    });
+    it('초대 프로그램 변경에 실패하면 성공으로 응답하지 않는다', async () => {
+        authAs('ADMIN'); updateInvites.mockRejectedValueOnce(new Error('db detail'));
+        const response = await callPost({ userId: 'mentee_1' });
+        expect(response.status).toBe(500); expect(await response.text()).not.toContain('db detail');
+    });
+    it('사용자 잠금 전후 프로그램이 바뀌면 확인 없이 다시 옮기지 않는다', async () => {
+        authAs('ADMIN');
+        findUniqueUser.mockResolvedValueOnce({ id: 'mentee_1', name: '멘티', role: 'MENTEE', programId: null })
+            .mockResolvedValueOnce({ id: 'mentee_1', name: '멘티', role: 'MENTEE', programId: 'concurrent-program' });
+        expect((await callPost({ userId: 'mentee_1' })).status).toBe(409);
+        expect(updateUser).not.toHaveBeenCalled(); expect(updateInvites).not.toHaveBeenCalled();
+    });
     it('관리자는 배정할 수 있다', async () => {
         authAs('ADMIN');
 

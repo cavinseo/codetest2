@@ -1,22 +1,35 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ThemeToggle from '@/components/ThemeToggle';
 
 export default function LoginPage() {
     const router = useRouter();
+    const [role, setRole] = useState<'PROGRAM_MANAGER' | 'MENTOR' | 'MENTEE'>('MENTOR');
+    const [mode, setMode] = useState<'password' | 'invite'>('password');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [inviteCode, setInviteCode] = useState('');
+    const [inviteName, setInviteName] = useState('');
+    const [needsInviteName, setNeedsInviteName] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [focusedField, setFocusedField] = useState<string | null>(null);
+    const submittingRef = useRef(false);
+    const mountedRef = useRef(false);
+    const isInviteLogin = role === 'MENTEE' && mode === 'invite';
 
     // 가입 직후 리다이렉트로 들어온 경우 승인 대기 안내를 보여준다.
     useEffect(() => {
+        mountedRef.current = true;
         const params = new URLSearchParams(window.location.search);
+        if (params.get('mode') === 'invite') {
+            setRole('MENTEE');
+            setMode('invite');
+        }
         if (params.get('signup') === 'pending') {
             setNotice('가입이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.');
         }
@@ -35,37 +48,47 @@ export default function LoginPage() {
         if (googleLoginError && googleLoginErrors[googleLoginError]) {
             setError(googleLoginErrors[googleLoginError]);
         }
+        return () => { mountedRef.current = false; };
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (submittingRef.current) return;
+        if (isInviteLogin && needsInviteName && !inviteName.trim()) {
+            setError('등록을 완료하려면 이름을 입력하세요.');
+            return;
+        }
+        submittingRef.current = true;
         setError('');
         setIsLoading(true);
 
         try {
-            const response = await fetch('/api/auth/login', {
+            const response = await fetch(isInviteLogin ? '/api/auth/invite-login' : '/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify(isInviteLogin ? { email, inviteCode, ...(needsInviteName ? { name: inviteName.trim() } : {}) } : { email, password }),
             });
 
             const data = await response.json();
+            if (!mountedRef.current) return;
 
             if (!response.ok) {
+                if (isInviteLogin && data.code === 'INVITE_NAME_REQUIRED') setNeedsInviteName(true);
                 throw new Error(data.error || '로그인에 실패했습니다.');
             }
 
             // 임시 비밀번호를 바꿔야 하거나 프로필이 미완성이면 온보딩에서 마무리한다.
             router.push(data.mustChangePassword || data.needsProfile ? '/onboarding' : '/dashboard');
         } catch (err: any) {
-            setError(err.message);
+            if (mountedRef.current) setError(err.message);
         } finally {
-            setIsLoading(false);
+            submittingRef.current = false;
+            if (mountedRef.current) setIsLoading(false);
         }
     };
 
     return (
-        <div className="min-h-screen bg-surface-900 bg-grid relative overflow-hidden flex items-center justify-center px-4">
+        <div className="min-h-screen bg-surface-900 bg-grid relative overflow-hidden flex items-center justify-center px-4 py-12">
             {/* 헤더가 없는 화면이라 가릴 내용이 없다 — 오른쪽 위 모서리에 그대로 띄운다. */}
             <ThemeToggle className="fixed right-4 top-4 z-50" />
             {/* Background Orbs */}
@@ -88,7 +111,68 @@ export default function LoginPage() {
                 </div>
 
                 {/* Login Form */}
-                <div className="glass-strong p-8 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+                <div className="glass-strong p-6 sm:p-8 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+                    <div role="group" aria-label="로그인 역할 선택" className="grid grid-cols-3 gap-2 mb-5">
+                        {([
+                            ['PROGRAM_MANAGER', '프로그램 매니저'],
+                            ['MENTOR', '멘토'],
+                            ['MENTEE', '멘티'],
+                        ] as const).map(([value, label]) => (
+                            <button
+                                key={value}
+                                type="button"
+                                aria-pressed={role === value}
+                                disabled={isLoading}
+                                onClick={() => {
+                                    if (submittingRef.current) return;
+                                    setRole(value);
+                                    setMode(value === 'MENTEE' ? 'invite' : 'password');
+                                    setNeedsInviteName(false);
+                                    setInviteName('');
+                                    setError('');
+                                    setFocusedField(null);
+                                }}
+                                className={`min-w-0 rounded-xl px-2 py-3 text-sm font-semibold break-keep transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${role === value ? 'bg-primary-600 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {role === 'MENTEE' && (
+                        <div role="group" aria-label="멘티 로그인 방식" className="flex gap-2 mb-4">
+                            {([
+                                ['invite', '초대 코드 로그인'],
+                                ['password', '비밀번호 로그인'],
+                            ] as const).map(([value, label]) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    aria-pressed={mode === value}
+                                    disabled={isLoading}
+                                    onClick={() => {
+                                        if (submittingRef.current) return;
+                                        setMode(value);
+                                        setNeedsInviteName(false);
+                                        setInviteName('');
+                                        setError('');
+                                        setFocusedField(null);
+                                    }}
+                                    className={`flex-1 min-w-0 rounded-lg px-2 py-2 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${mode === value ? 'bg-primary-500/15 text-primary-400 font-semibold' : 'text-gray-400 hover:bg-white/5'}`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    <p className="text-sm text-gray-400 mb-6">
+                        {isInviteLogin
+                            ? '초대받은 이메일과 코드를 입력해 주세요. 최초 등록에는 이름 입력이 필수이며, 이후에는 같은 코드로 로그인할 수 있습니다.'
+                            : role === 'MENTEE'
+                                ? '기존 계정의 ID와 비밀번호 또는 Google 계정으로 로그인해 주세요.'
+                                : `${role === 'PROGRAM_MANAGER' ? '프로그램 매니저' : '멘토'} 계정의 ID와 비밀번호 또는 Google 계정으로 로그인해 주세요.`}
+                    </p>
                     {notice && (
                         <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 px-4 py-3 rounded-xl mb-6 animate-slide-down text-sm">
                             <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -96,16 +180,35 @@ export default function LoginPage() {
                         </div>
                     )}
                     {error && (
-                        <div className="flex items-center gap-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 px-4 py-3 rounded-xl mb-6 animate-slide-down text-sm">
+                        <div role="alert" className="flex items-center gap-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 px-4 py-3 rounded-xl mb-6 animate-slide-down text-sm">
                             <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
                             <span>{error}</span>
                         </div>
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-5">
+                        {isInviteLogin && needsInviteName && (
+                            <div>
+                                <label htmlFor="inviteName" className="block text-sm font-medium mb-2 text-gray-400">
+                                    이름 <span className="text-rose-400">*</span>
+                                </label>
+                                <input
+                                    id="inviteName"
+                                    type="text"
+                                    required
+                                    autoFocus
+                                    disabled={isLoading}
+                                    autoComplete="name"
+                                    value={inviteName}
+                                    onChange={(event) => setInviteName(event.target.value)}
+                                    className="input"
+                                    placeholder="이름을 입력하세요"
+                                />
+                            </div>
+                        )}
                         <div>
                             <label htmlFor="email" className={`block text-sm font-medium mb-2 transition-colors duration-200 ${focusedField === 'email' ? 'text-primary-400' : 'text-gray-400'}`}>
-                                ID
+                                {isInviteLogin ? '이메일' : 'ID'}
                             </label>
                             <div className="relative">
                                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
@@ -115,8 +218,10 @@ export default function LoginPage() {
                                     id="email"
                                     type="email"
                                     required
+                                    disabled={isLoading}
+                                    autoComplete="username"
                                     value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
+                                    onChange={(e) => { setEmail(e.target.value); setNeedsInviteName(false); setInviteName(''); }}
                                     onFocus={() => setFocusedField('email')}
                                     onBlur={() => setFocusedField(null)}
                                     className="input pl-12"
@@ -125,6 +230,29 @@ export default function LoginPage() {
                             </div>
                         </div>
 
+                        {isInviteLogin ? (
+                            <div>
+                                <label htmlFor="inviteCode" className={`block text-sm font-medium mb-2 transition-colors duration-200 ${focusedField === 'inviteCode' ? 'text-primary-400' : 'text-gray-400'}`}>
+                                    초대 코드
+                                </label>
+                                <input
+                                    id="inviteCode"
+                                    type="text"
+                                    required
+                                    disabled={isLoading}
+                                    autoComplete="off"
+                                    autoCapitalize="characters"
+                                    spellCheck={false}
+                                    maxLength={100}
+                                    value={inviteCode}
+                                    onChange={(e) => { setInviteCode(e.target.value); setNeedsInviteName(false); setInviteName(''); }}
+                                    onFocus={() => setFocusedField('inviteCode')}
+                                    onBlur={() => setFocusedField(null)}
+                                    className="input font-mono"
+                                    placeholder="메일로 받은 초대 코드"
+                                />
+                            </div>
+                        ) : (
                         <div>
                             <label htmlFor="password" className={`block text-sm font-medium mb-2 transition-colors duration-200 ${focusedField === 'password' ? 'text-primary-400' : 'text-gray-400'}`}>
                                 비밀번호
@@ -137,6 +265,8 @@ export default function LoginPage() {
                                     id="password"
                                     type="password"
                                     required
+                                    disabled={isLoading}
+                                    autoComplete="current-password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     onFocus={() => setFocusedField('password')}
@@ -146,6 +276,7 @@ export default function LoginPage() {
                                 />
                             </div>
                         </div>
+                        )}
 
                         <button
                             type="submit"
@@ -157,10 +288,11 @@ export default function LoginPage() {
                                     <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
                                     로그인 중...
                                 </span>
-                            ) : '로그인'}
+                            ) : isInviteLogin ? (needsInviteName ? '이름 등록하고 시작하기' : '초대 코드로 로그인') : '로그인'}
                         </button>
                     </form>
 
+                    {!isInviteLogin && <>
                     <div className="flex items-center gap-4 my-6">
                         <div className="h-px flex-1 bg-white/10" />
                         <span className="text-xs text-gray-500">또는</span>
@@ -169,6 +301,8 @@ export default function LoginPage() {
 
                     <a
                         href="/api/auth/google/login"
+                        aria-disabled={isLoading}
+                        onClick={(event) => { if (submittingRef.current) event.preventDefault(); }}
                         className="w-full btn-secondary py-3.5 text-base font-semibold flex items-center justify-center"
                     >
                         Google 계정으로 로그인
@@ -177,11 +311,12 @@ export default function LoginPage() {
                     <div className="mt-6 text-center">
                         <p className="text-gray-500 text-sm">
                             계정이 없으신가요?{' '}
-                            <Link href="/signup" className="text-primary-400 hover:text-primary-300 font-semibold transition-colors">
+                            <Link href="/signup" onClick={(event) => { if (submittingRef.current) event.preventDefault(); }} className="text-primary-400 hover:text-primary-300 font-semibold transition-colors">
                                 회원가입
                             </Link>
                         </p>
                     </div>
+                    </>}
                 </div>
 
                 {/* Footer */}

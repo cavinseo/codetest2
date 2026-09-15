@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '../lib/password-policy';
+import { PASSWORD_MIN_LENGTH, getPasswordChangeError, getNewPasswordError } from '../lib/password-policy';
 
 const valid = {
     currentPassword: 'wlsdnjs#2484',
@@ -8,6 +8,10 @@ const valid = {
 };
 
 describe('getPasswordChangeError', () => {
+    it('현재 비밀번호와 같으면 확인값 불일치보다 먼저 알린다', () => {
+        expect(getPasswordChangeError({ currentPassword: 'samepass', newPassword: 'samepass', confirmPassword: 'different' }))
+            .toBe('새 비밀번호가 현재 비밀번호와 같습니다.');
+    });
     it('규칙을 모두 만족하면 오류가 없다', () => {
         expect(getPasswordChangeError(valid)).toBeNull();
     });
@@ -51,5 +55,17 @@ describe('getPasswordChangeError', () => {
         // 둘 다 틀렸을 때 더 구체적인 길이 오류를 먼저 보여준다.
         expect(getPasswordChangeError({ ...valid, newPassword: 'short', confirmPassword: 'other' }))
             .toContain('최소');
+    });
+});
+
+describe('getNewPasswordError', () => {
+    it.each([
+        ['', '', '새 비밀번호를 입력하세요.'],
+        ['short', 'other', '새 비밀번호는 최소 8자 이상이어야 합니다.'],
+        ['validpass', '', '새 비밀번호와 확인 값이 다릅니다.'],
+        ['validpass', 'different', '새 비밀번호와 확인 값이 다릅니다.'],
+        ['validpass', 'validpass', null],
+    ])('현재 비밀번호 없이 새 비밀번호 규칙을 확인한다', (newPassword, confirmPassword, error) => {
+        expect(getNewPasswordError({ newPassword: newPassword!, confirmPassword: confirmPassword! })).toBe(error);
     });
 });

@@ -54,6 +54,28 @@ afterEach(() => {
 });
 
 describe('프로필 조회', () => {
+    it('코드와 해시 원문 없이 본인 초대코드 확인 가능 여부만 알린다', async () => {
+        authAs('MENTEE');
+        findUniqueUser.mockResolvedValue({
+            id: 'user_1', email: 'u@x.com', role: 'MENTEE', isAdmin: false, status: 'APPROVED',
+            programId: 'program_1', accessExpiresAt: new Date(Date.now() + 86_400_000),
+            usedInviteCode: {
+                code: 'SECRET-CODE', passwordHash: 'SECRET-HASH', email: ' U@X.COM ', role: 'MENTEE',
+                usedById: 'user_1', usedAt: new Date(Date.now() - 86_400_000), accessDurationDays: 90,
+                expiresAt: new Date(0), programId: 'program_1', program: { endsAt: new Date(Date.now() + 86_400_000) },
+            },
+        });
+        const body = await (await GET(new NextRequest('http://localhost/api/me/profile'))).json();
+        expect(body.canVerifyPasswordWithInviteCode).toBe(true);
+        expect(JSON.stringify(body)).not.toMatch(/SECRET-CODE|SECRET-HASH|usedInviteCode|passwordHash/);
+    });
+
+    it('유효한 초대 연결이 없으면 초대코드 확인을 안내하지 않는다', async () => {
+        authAs('MENTEE');
+        const body = await (await GET(new NextRequest('http://localhost/api/me/profile'))).json();
+        expect(body.canVerifyPasswordWithInviteCode).toBe(false);
+    });
+
     it('없으면 needsProfile 을 알린다', async () => {
         authAs('MENTEE');
 

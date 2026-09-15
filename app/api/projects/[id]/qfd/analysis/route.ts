@@ -100,7 +100,7 @@ export async function GET(
             totals: worksheet.totals,
             totalResponses: responses.length,
             totalRequirements: reqs.length,
-            totalTechnicals: techs.length,
+            totalTechnicals: worksheet.technicals.length,
         });
     } catch (error: unknown) {
         log.error('QFD 분석 오류', error);

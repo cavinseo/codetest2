@@ -37,6 +37,7 @@ export interface OpenAiCompatibleConfig {
     // 레이어는 /models 조회를 지원하지 않을 수 있어 탐색이 오히려 방해다.
     directEndpoint?: boolean;
     timeoutMs?: number;
+    fetch?: (url: string, init: RequestInit) => Promise<Response>;
 }
 
 interface ResolvedEndpoint {
@@ -72,11 +73,11 @@ function joinUrl(baseUrl: string, path: string): string {
     return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, transport: (url: string, init: RequestInit) => Promise<Response> = fetch): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        return await fetch(url, { ...init, signal: controller.signal });
+        return await transport(url, { ...init, signal: controller.signal });
     } finally {
         clearTimeout(timer);
     }
@@ -131,7 +132,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
             const response = await fetchWithTimeout(
                 joinUrl(baseUrl, 'models'),
                 { method: 'GET', headers: headers() },
-                probeTimeout
+                probeTimeout, config.fetch
             );
             if (response.ok) {
                 return extractModelIds(await response.json().catch(() => null));
@@ -144,7 +145,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
             const response = await fetchWithTimeout(
                 nativeTagsUrl(baseUrl),
                 { method: 'GET', headers: headers() },
-                probeTimeout
+                probeTimeout, config.fetch
             );
             if (response.ok) {
                 return extractModelIds(await response.json().catch(() => null));
@@ -194,7 +195,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
                             ],
                     }),
                 },
-                timeoutMs
+                timeoutMs, config.fetch
             );
 
             if (!response.ok) {

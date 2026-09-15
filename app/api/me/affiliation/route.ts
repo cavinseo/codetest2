@@ -13,7 +13,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
-import { collectMentors, groupProjectsByProgram, type ProgramRef } from '@/lib/affiliation';
+import { groupProjectsByProgram, type ProgramRef } from '@/lib/affiliation';
 
 const log = createLogger('api/me/affiliation');
 
@@ -43,19 +43,14 @@ export async function GET(request: NextRequest) {
             const [me, owned] = await Promise.all([
                 prisma.user.findUnique({
                     where: { id: userId },
-                    select: { program: { select: PROGRAM_FIELDS } },
+                    select: {
+                        program: { select: PROGRAM_FIELDS },
+                        mentorAssignment: { select: { mentor: { select: { id: true, name: true, email: true } } } },
+                    },
                 }),
-                // 담당 멘토는 내 프로젝트에 COACH 로 배정된 사람이다. 멘토 배정이
-                // ProjectMember.role='COACH' 로 기록되므로 거기서 거슬러 올라간다.
                 prisma.project.findMany({
                     where: { ownerId: userId },
-                    select: {
-                        name: true,
-                        members: {
-                            where: { role: 'COACH' },
-                            select: { user: { select: { id: true, name: true, email: true } } },
-                        },
-                    },
+                    select: { name: true },
                     orderBy: { updatedAt: 'desc' },
                 }),
             ]);
@@ -63,20 +58,23 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({
                 role,
                 program: me?.program ? toProgramRef(me.program) : null,
-                mentors: collectMentors(owned),
+                mentors: me?.mentorAssignment ? [{ ...me.mentorAssignment.mentor, projectNames: owned.map(project => project.name) }] : [],
                 programs: [],
             });
         }
 
         if (role === 'MENTOR') {
-            const memberships = await prisma.projectMember.findMany({
-                where: { userId, role: 'COACH' },
+            const assignments = await prisma.mentorAssignment.findMany({
+                where: { mentorId: userId },
                 select: {
-                    project: {
-                        select: { id: true, name: true, program: { select: PROGRAM_FIELDS } },
+                    mentee: {
+                        select: { ownedProjects: {
+                            select: { id: true, name: true, program: { select: PROGRAM_FIELDS } },
+                            orderBy: { updatedAt: 'desc' },
+                        } },
                     },
                 },
-                orderBy: { joinedAt: 'desc' },
+                orderBy: { assignedAt: 'desc' },
             });
 
             return NextResponse.json({
@@ -84,9 +82,9 @@ export async function GET(request: NextRequest) {
                 program: null,
                 mentors: [],
                 programs: groupProjectsByProgram(
-                    memberships.map(({ project }) => ({
+                    assignments.flatMap(({ mentee }) => mentee.ownedProjects.map(project => ({
                         project: { id: project.id, name: project.name, program: toProgramRef(project.program) },
-                    }))
+                    })))
                 ),
             });
         }

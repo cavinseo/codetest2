@@ -227,6 +227,32 @@ describe('Google 회원 로그인 콜백 state', () => {
 });
 
 describe('Google 회원 로그인 콜백 회원 게이트', () => {
+    it('관리자가 연장한 초대 계정은 원래 초대 기간 후에도 Google로 로그인한다', async () => {
+        findFirstUser.mockResolvedValue(approvedUser({
+            programId: 'program', accessExpiresAt: new Date(Date.now() + 10 * 86_400_000),
+            usedInviteCode: {
+                programId: 'program', usedAt: new Date(Date.now() - 100 * 86_400_000), accessDurationDays: 90,
+                expiresAt: new Date(0), program: { endsAt: new Date(Date.now() + 30 * 86_400_000) },
+            },
+        }));
+        const response = await finishGoogleLogin(validCallbackRequest());
+        expect(response.headers.get('location')).toBe(`${ORIGIN}/dashboard`);
+        expect(responseCookie(response, 'session')).toBeDefined();
+    });
+
+    it('초대 계정은 개인 기한이 남아도 프로그램 종료 후 Google 로그인을 막는다', async () => {
+        findFirstUser.mockResolvedValue(approvedUser({
+            programId: 'program', accessExpiresAt: new Date(Date.now() + 86_400_000),
+            usedInviteCode: {
+                programId: 'program', usedAt: new Date(), accessDurationDays: 90,
+                expiresAt: new Date(Date.now() + 86_400_000), program: { endsAt: new Date(0) },
+            },
+        }));
+        const response = await finishGoogleLogin(validCallbackRequest());
+        expect(redirectError(response)).toBe('expired');
+        expect(responseCookie(response, 'session')).toBeUndefined();
+    });
+
     it('검증되지 않은 Google 이메일은 차단한다', async () => {
         exchangeLoginCodeForEmail.mockResolvedValue({
             email: 'member@example.com',
@@ -258,6 +284,14 @@ describe('Google 회원 로그인 콜백 회원 게이트', () => {
                 email: {
                     equals: 'Member@Example.com',
                     mode: 'insensitive',
+                },
+            },
+            include: {
+                usedInviteCode: {
+                    select: {
+                        usedAt: true, expiresAt: true, accessDurationDays: true, programId: true,
+                        program: { select: { endsAt: true } },
+                    },
                 },
             },
         });

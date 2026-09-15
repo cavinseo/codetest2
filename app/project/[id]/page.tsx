@@ -8,6 +8,10 @@ import SpecTable from '@/components/project/SpecTable';
 import RequirementsTable from '@/components/project/RequirementsTable';
 import QFDMatrix from '@/components/project/QFDMatrix';
 import ThemeToggle from '@/components/ThemeToggle';
+import WorksheetComments from '@/components/project/WorksheetComments';
+import MentorWorksheetAnalysis from '@/components/project/MentorWorksheetAnalysis';
+import ProductOverviewFields from '@/components/project/ProductOverviewFields';
+import type { ProductOverview } from '@/lib/product-overview';
 import { HEADER_TOAST_SLOT_ID } from '@/components/HeaderToast';
 import KanoManager from '@/components/project/KanoManager';
 import SalesTable from '@/components/project/SalesTable';
@@ -32,7 +36,7 @@ function isExcelFileName(fileName: string) {
     return /\.(xlsx|xls)$/i.test(fileName.trim());
 }
 
-interface ProjectData {
+interface ProjectData extends ProductOverview {
     id: string;
     name: string;
     description?: string;
@@ -68,10 +72,13 @@ export default function ProjectDetailPage() {
     const params = useParams();
     const projectId = params.id as string;
     const [activeTab, setActiveTab] = useState('overview');
+    const mentorAnalysisDirty = useRef(false);
+    const setMentorAnalysisDirty = useCallback((dirty: boolean) => { mentorAnalysisDirty.current = dirty; }, []);
     const qfdDirty = useRef(false);
     const setQfdDirty = useCallback((dirty: boolean) => { qfdDirty.current = dirty; }, []);
     const changeTab = (next: string) => {
         if (next === activeTab) return;
+        if (mentorAnalysisDirty.current && !window.confirm('저장하지 않은 멘토 분석이 있습니다. 저장하지 않고 이동할까요?')) return;
         if (qfdDirty.current && !window.confirm('저장 중이거나 저장하지 못한 관계 강도가 있습니다. 저장하지 않고 이동할까요?')) return;
         setActiveTab(next);
     };
@@ -83,15 +90,17 @@ export default function ProjectDetailPage() {
     const [kanoRequirements, setKanoRequirements] = useState<any[]>([]);
     const [worksheetCompleteness, setWorksheetCompleteness] = useState<WorksheetCompleteness | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
     const [isOverviewEditing, setIsOverviewEditing] = useState(false);
     const [isOverviewSaving, setIsOverviewSaving] = useState(false);
+    const [isProductImageReading, setIsProductImageReading] = useState(false);
     const [isOverviewFileReading, setIsOverviewFileReading] = useState(false);
     const [isOverviewFileDirty, setIsOverviewFileDirty] = useState(false);
     const [overviewError, setOverviewError] = useState('');
     // 사업계획 양식에서 어떤 항목이 자동으로 채워졌는지 알려주는 안내 문구
     const [overviewAutoFillNotice, setOverviewAutoFillNotice] = useState('');
     const overviewFileSelectionRef = useRef(0);
-    const [overviewForm, setOverviewForm] = useState({
+    const [overviewForm, setOverviewForm] = useState<ProductOverview & { name: string; description: string; detailedDescription: string; businessPlanFile: string }>({
         name: '',
         description: '',
         detailedDescription: '',
@@ -100,6 +109,7 @@ export default function ProjectDetailPage() {
 
     useEffect(() => {
         async function loadData() {
+            setIsLoading(true); setLoadError(''); setProject(null);
             try {
                 // 프로젝트 목록에서 현재 프로젝트 찾기
                 const projRes = await fetch('/api/projects');
@@ -107,10 +117,13 @@ export default function ProjectDetailPage() {
                     const projData = await projRes.json();
                     const found = projData.projects?.find((p: any) => p.id === projectId);
                     if (found) setProject(found);
-                    else setProject({ id: projectId, name: '프로젝트', description: '', createdAt: new Date().toISOString(), memberCount: 1, role: 'OWNER' });
                 }
 
                 const overviewRes = await fetch(`/api/projects/${projectId}/overview`);
+                if (!overviewRes.ok) {
+                    throw new Error(overviewRes.status === 403 ? '이 프로젝트에 접근할 권한이 없습니다. 멘토는 현재 배정된 멘티의 프로젝트만 열람·수정할 수 있습니다.'
+                        : overviewRes.status === 401 ? '로그인이 필요합니다.' : '프로젝트를 불러오지 못했습니다. 다시 시도해 주세요.');
+                }
                 if (overviewRes.ok) {
                     const overviewData = await overviewRes.json();
                     setWorksheetCompleteness(overviewData.worksheetCompleteness || null);
@@ -121,6 +134,12 @@ export default function ProjectDetailPage() {
                             description: overviewData.project.description || '',
                             detailedDescription: overviewData.project.detailedDescription || '',
                             businessPlanFile: overviewData.project.businessPlanFile || '',
+                            productName: overviewData.project.productName,
+                            productImageDataUrl: overviewData.project.productImageDataUrl,
+                            productImageWidthPx: overviewData.project.productImageWidthPx,
+                            productImageHeightPx: overviewData.project.productImageHeightPx,
+                            marketDefinition: overviewData.project.marketDefinition,
+                            targetCustomer: overviewData.project.targetCustomer,
                             createdAt: overviewData.project.createdAt,
                             memberCount: current?.memberCount ?? 1,
                             role: overviewData.project.role || current?.role || 'COACH',
@@ -153,8 +172,8 @@ export default function ProjectDetailPage() {
                     setSpecCount(specData.specFunctions?.length || 0);
                 }
             } catch (error) {
-                console.error('데이터 로딩 실패:', error);
-                setProject({ id: projectId, name: '프로젝트', description: '', createdAt: new Date().toISOString(), memberCount: 1, role: 'OWNER' });
+                setProject(null);
+                setLoadError(error instanceof Error ? error.message : '프로젝트를 불러오지 못했습니다.');
             } finally {
                 setIsLoading(false);
             }
@@ -165,6 +184,7 @@ export default function ProjectDetailPage() {
     useEffect(() => {
         if (!project) return;
         setOverviewForm({
+            ...project,
             name: project.name || '',
             description: project.description || '',
             detailedDescription: project.detailedDescription || '',
@@ -188,6 +208,7 @@ export default function ProjectDetailPage() {
         setIsOverviewFileReading(false);
         setIsOverviewFileDirty(false);
         setOverviewForm({
+            ...project,
             name: project.name || '',
             description: project.description || '',
             detailedDescription: project.detailedDescription || '',
@@ -294,6 +315,12 @@ export default function ProjectDetailPage() {
         try {
             const payload = {
                 name: overviewForm.name,
+                productName: overviewForm.productName,
+                productImageDataUrl: overviewForm.productImageDataUrl,
+                productImageWidthPx: overviewForm.productImageWidthPx,
+                productImageHeightPx: overviewForm.productImageHeightPx,
+                marketDefinition: overviewForm.marketDefinition,
+                targetCustomer: overviewForm.targetCustomer,
                 description: overviewForm.description,
                 detailedDescription: overviewForm.detailedDescription,
                 ...(isOverviewFileDirty ? { businessPlanFile: overviewForm.businessPlanFile } : {}),
@@ -310,6 +337,12 @@ export default function ProjectDetailPage() {
 
             setProject({
                 ...project,
+                productName: data.project.productName,
+                productImageDataUrl: data.project.productImageDataUrl,
+                productImageWidthPx: data.project.productImageWidthPx,
+                productImageHeightPx: data.project.productImageHeightPx,
+                marketDefinition: data.project.marketDefinition,
+                targetCustomer: data.project.targetCustomer,
                 name: data.project.name,
                 description: data.project.description || '',
                 detailedDescription: data.project.detailedDescription || '',
@@ -402,11 +435,11 @@ export default function ProjectDetailPage() {
 
     const tabComponents: Record<string, React.ReactNode> = {
         attributes: <ProductAttributesTable projectId={projectId} />,
-        spec: <SpecTable projectId={projectId} onSaved={() => setActiveTab('attributes')} />,
+        spec: <SpecTable projectId={projectId} onSaved={() => changeTab('attributes')} />,
         requirements: <RequirementsTable projectId={projectId} />,
         qfd: <QFDMatrix projectId={projectId} onDirtyChange={setQfdDirty} />,
         kano: <KanoManager projectId={projectId} />,
-        sales: <SalesTable projectId={projectId} onSaved={() => setActiveTab('spec')} />,
+        sales: <SalesTable projectId={projectId} onSaved={() => changeTab('spec')} />,
         fitness: <FitnessWrapper projectId={projectId} />,
         improvements: <ImprovementsTable projectId={projectId} />,
         'target-spec': <TargetSpecTable projectId={projectId} />,
@@ -491,6 +524,11 @@ export default function ProjectDetailPage() {
         );
     };
 
+    if (loadError) return <div className="min-h-screen space-y-4 bg-surface-900 p-12">
+        <p role="alert" className="text-rose-300">{loadError}</p>
+        <Link href="/dashboard" className="btn-secondary inline-block">대시보드로</Link>
+    </div>;
+
     if (isLoading || !project) {
         return (
             <div className="min-h-screen bg-surface-900 flex items-center justify-center">
@@ -533,12 +571,12 @@ export default function ProjectDetailPage() {
                             <Link href={`/project/${projectId}/report`} className="btn-secondary text-sm">
                                 결과보고서
                             </Link>
-                            <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
+                            {['OWNER', 'ADMIN'].includes(project.role) && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 팀원 초대
-                            </Link>
-                            <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
+                            </Link>}
+                            {canEditOverview && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 설정
-                            </Link>
+                            </Link>}
                             <ThemeToggle />
                         </div>
                     </div>
@@ -549,7 +587,7 @@ export default function ProjectDetailPage() {
             <div className="relative z-10 border-b border-white/[0.06] bg-surface-900/80 backdrop-blur-sm">
                 <div className="mx-auto w-full max-w-[1800px] px-3 sm:px-4 lg:px-6 2xl:px-8">
                     <nav className="flex gap-1 py-2 overflow-x-auto">
-                        {tabs.map((tab) => (
+                        {tabs.filter(tab => canEditOverview || tab.id !== 'import').map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => changeTab(tab.id)}
@@ -578,8 +616,8 @@ export default function ProjectDetailPage() {
                                 <div className="flex items-center gap-2">
                                     {isOverviewEditing ? (
                                         <>
-                                            <button type="button" onClick={handleOverviewCancel} disabled={isOverviewSaving} className="btn-secondary text-xs">취소</button>
-                                            <button type="button" onClick={handleOverviewSave} disabled={isOverviewSaving || isOverviewFileReading} className="btn-primary text-xs">
+                                            <button type="button" onClick={handleOverviewCancel} disabled={isOverviewSaving || isProductImageReading} className="btn-secondary text-xs">취소</button>
+                                            <button type="button" onClick={handleOverviewSave} disabled={isOverviewSaving || isOverviewFileReading || isProductImageReading} className="btn-primary text-xs">
                                                 {isOverviewSaving ? '저장 중...' : isOverviewFileReading ? '파일 읽는 중...' : '저장'}
                                             </button>
                                         </>
@@ -619,6 +657,7 @@ export default function ProjectDetailPage() {
                                 </div>
                             )}
 
+                            <div className="mb-4"><ProductOverviewFields value={isOverviewEditing ? overviewForm : project} editing={isOverviewEditing} disabled={isOverviewSaving || isProductImageReading} onChange={patch => setOverviewForm(current => ({ ...current, ...patch }))} onBusy={setIsProductImageReading} onError={setOverviewError} /></div>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
                                     <p className="text-xs text-gray-500 mb-2">프로젝트명</p>
@@ -891,7 +930,12 @@ export default function ProjectDetailPage() {
                     </div>
                 )}
 
-                {activeTab !== 'overview' && renderTabContent(activeTab)}
+                {!canEditOverview && <p className="mb-4 text-sm text-amber-300">읽기 전용입니다. 워크시트 내용은 수정할 수 없습니다.</p>}
+                {activeTab !== 'overview' && (canEditOverview || activeTab !== 'import') && (
+                    <fieldset disabled={!canEditOverview} className="min-w-0">{renderTabContent(activeTab)}</fieldset>
+                )}
+                <MentorWorksheetAnalysis projectId={projectId} worksheetId={activeTab} onDirtyChange={setMentorAnalysisDirty} />
+                {activeTab !== 'import' && <WorksheetComments key={`${projectId}-${activeTab}`} projectId={projectId} worksheetId={activeTab} />}
             </main>
         </div>
     );

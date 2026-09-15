@@ -6,9 +6,12 @@ const findManyProject = vi.fn();
 const createProject = vi.fn();
 const findUniqueProgram = vi.fn();
 const findUniqueUser = vi.fn();
+const countOwnedProjects = vi.fn();
+const consumeApproval = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
+        $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({ $queryRaw: vi.fn(), project: { count: countOwnedProjects, create: createProject }, projectCreationRequest: { updateMany: consumeApproval } }),
         project: { findMany: findManyProject, create: createProject },
         program: { findUnique: findUniqueProgram },
         user: { findUnique: findUniqueUser },
@@ -38,10 +41,11 @@ function postRequest(body: unknown): NextRequest {
 
 const validCreateBody = { name: '새 과제', programId: 'prog_1', ownerMenteeId: 'mentee_1' };
 
-// GET 라우트의 select 모양을 그대로 흉내낸 목록 행. role 계산은 ownerId/members 만
-// 보므로 나머지 필드는 고정값으로 채운다. _count 는 통계 테스트가 덮어쓸 수 있다.
+// GET 라우트의 select 모양을 그대로 흉내낸 목록 행. role 계산에 필요한 소유자·배정·
+// 멤버 역할 외에는 고정값으로 채운다. _count 는 통계 테스트가 덮어쓸 수 있다.
 function projectRow(overrides: {
     ownerId: string;
+    owner?: { mentorAssignment: { mentorId: string } | null };
     members: Array<{ role: string }>;
     _count?: { members: number; kanoInvitations: number; qfdMatrices: number };
 }) {
@@ -53,12 +57,15 @@ function projectRow(overrides: {
         createdAt: new Date('2026-01-01T00:00:00Z'),
         updatedAt: new Date('2026-01-02T00:00:00Z'),
         program: { name: '프로그램 1' },
+        owner: { mentorAssignment: null },
         _count: { members: 0, kanoInvitations: 0, qfdMatrices: 0 },
         ...overrides,
     };
 }
 
 beforeEach(() => {
+    countOwnedProjects.mockResolvedValue(0);
+    consumeApproval.mockResolvedValue({ count: 1 });
     findManyProject.mockResolvedValue([]);
     createProject.mockResolvedValue({
         id: 'proj_new', name: '새 과제', description: null, detailedDescription: null,
@@ -116,6 +123,28 @@ describe('멘티가 자기 과제를 만들 때', () => {
     beforeEach(() => {
         authAs('MENTEE', 'mentee_1');
         findUniqueUser.mockResolvedValue({ programId: 'prog_1', program: { name: '프로그램 1' } });
+    });
+
+    it('두 번째 프로젝트는 조작한 권한을 보내도 승인 없으면 403이다', async () => {
+        countOwnedProjects.mockResolvedValue(1);
+        const response = await POST(postRequest({ name: '추가 과제', role: 'ADMIN', requiresApproval: false }));
+        expect(response.status).toBe(403);
+        expect((await response.json()).approvalRequired).toBe(true);
+        expect(createProject).not.toHaveBeenCalled();
+    });
+
+    it('승인된 신청 ID를 보내면 본인의 미사용 승인으로 생성한다', async () => {
+        countOwnedProjects.mockResolvedValue(1);
+        expect((await POST(postRequest({ name: '추가 과제', approvalRequestId: 'approved' }))).status).toBe(200);
+        expect(consumeApproval.mock.calls[0][0].where).toEqual({ id: 'approved', menteeId: 'mentee_1', programId: 'prog_1', status: 'APPROVED', usedAt: null });
+        expect(createProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('이미 사용된 승인은 API에서 403으로 반환하고 생성하지 않는다', async () => {
+        countOwnedProjects.mockResolvedValue(1);
+        consumeApproval.mockResolvedValue({ count: 0 });
+        expect((await POST(postRequest({ name: '추가 과제', approvalRequestId: 'used' }))).status).toBe(403);
+        expect(createProject).not.toHaveBeenCalled();
     });
 
     it('자기 프로그램에 자기 소유로 만든다', async () => {
@@ -253,14 +282,14 @@ describe('프로젝트 목록 범위', () => {
         expect(where).toEqual({});
     });
 
-    it('멘토는 소유·참여한 것만 본다', async () => {
+    it('멘토는 배정된 멘티의 프로젝트만 본다', async () => {
         authAs('MENTOR', 'mentor_1');
 
         await GET(new NextRequest('http://localhost/api/projects'));
 
         const where = findManyProject.mock.calls[0][0].where;
         expect(where).toEqual({
-            OR: [{ ownerId: 'mentor_1' }, { members: { some: { userId: 'mentor_1' } } }],
+            owner: { mentorAssignment: { is: { mentorId: 'mentor_1' } } },
         });
     });
 });
@@ -268,6 +297,16 @@ describe('프로젝트 목록 범위', () => {
 describe('프로젝트 목록의 role 필드', () => {
     // requireProjectAccess 가 실제로 주는 접근 권한과 목록의 role 이 어긋나면 안 된다.
     // (docs/superpowers/specs/2026-08-20-member-management-design.md:194-200)
+    it.each(['MENTOR', 'PROGRAM_MANAGER'] as const)('배정된 %s는 목록에서도 EDITOR로 나온다', async systemRole => {
+        authAs(systemRole, 'mentor_1');
+        findManyProject.mockResolvedValue([
+            projectRow({ ownerId: 'mentee_1', members: [], owner: { mentorAssignment: { mentorId: 'mentor_1' } } }),
+        ]);
+
+        const res = await GET(new NextRequest('http://localhost/api/projects'));
+        expect((await res.json()).projects[0].role).toBe('EDITOR');
+    });
+
     it('관리자는 배정되지 않은 프로젝트도 ADMIN 으로 나온다', async () => {
         authAs('ADMIN', 'admin_1');
         findManyProject.mockResolvedValue([
@@ -304,7 +343,7 @@ describe('프로젝트 목록의 role 필드', () => {
         expect(body.projects[0].role).toBe('VIEWER');
     });
 
-    it('매니저는 COACH 로 배정돼 있으면 COACH 로 나온다', async () => {
+    it('매니저는 실제 멘토 배정 없이 COACH 멤버 역할만 있으면 COACH로 나온다', async () => {
         authAs('PROGRAM_MANAGER', 'pm_1');
         findManyProject.mockResolvedValue([
             projectRow({ ownerId: 'someone_else', members: [{ role: 'COACH' }] }),

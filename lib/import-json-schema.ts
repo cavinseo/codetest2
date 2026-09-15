@@ -43,9 +43,11 @@ const requirementRow = z.object({
 
 const technicalRow = z.object({
     ...identity,
-    name: z.string(),
+    name: z.string().trim().min(1, '세부기능을 입력해 주세요.'),
     unit: z.string().nullable().optional(),
     targetValue: z.string().nullable().optional(),
+    groupIndex: z.number().int().nonnegative().optional(),
+    columnOrder: z.number().int().nonnegative().optional(),
 }).strict();
 
 const specRow = z.object({

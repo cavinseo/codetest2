@@ -9,42 +9,49 @@ import type { BlockEdit } from '@/lib/final-report-edit';
 
 interface Props {
     blocks: FinalReportBlock[];
-    onEdit: (edit: BlockEdit) => void;
+    onEdit?: (edit: BlockEdit) => void;
+    readOnly?: boolean;
+    disabled?: boolean;
 }
 
 /** 블록 한 종류를 그리는 데 필요한 것: 그 블록과, 편집을 어느 블록으로 돌려보낼지. */
-interface BlockViewProps<Kind extends FinalReportBlock['kind']> {
+interface BlockViewProps<Kind extends FinalReportBlock['kind']> extends Omit<Props, 'blocks'> {
     block: Extract<FinalReportBlock, { kind: Kind }>;
     blockIndex: number;
-    onEdit: (edit: BlockEdit) => void;
 }
 
 const cellClass = 'w-full bg-transparent px-2 py-1 text-sm outline-none focus:bg-black/5';
 
-function HeadingBlockView({ block, blockIndex, onEdit }: BlockViewProps<'heading'>) {
+function HeadingBlockView({ block, blockIndex, onEdit, readOnly, disabled }: BlockViewProps<'heading'>) {
+    if (readOnly) return block.level === 1
+        ? <h2 className="mt-8 text-xl font-bold whitespace-pre-wrap break-words">{block.text}</h2>
+        : <h3 className="mt-6 text-base font-semibold whitespace-pre-wrap break-words">{block.text}</h3>;
     return (
         <input
             value={block.text}
-            onChange={(event) => onEdit({ kind: 'text', blockIndex, text: event.target.value })}
+            disabled={disabled}
+            onChange={(event) => onEdit?.({ kind: 'text', blockIndex, text: event.target.value })}
             aria-label={`제목 ${blockIndex + 1}`}
             className={`${block.level === 1 ? 'mt-8 text-xl font-bold' : 'mt-6 text-base font-semibold'} w-full bg-transparent outline-none focus:bg-black/5`}
         />
     );
 }
 
-function ParagraphBlockView({ block, blockIndex, onEdit }: BlockViewProps<'paragraph'>) {
+function ParagraphBlockView({ block, blockIndex, onEdit, readOnly, disabled }: BlockViewProps<'paragraph'>) {
+    if (readOnly) return <p className="mt-2 text-sm whitespace-pre-wrap break-words">{block.text}</p>;
     return (
         <textarea
             value={block.text}
             rows={2}
-            onChange={(event) => onEdit({ kind: 'text', blockIndex, text: event.target.value })}
+            disabled={disabled}
+            onChange={(event) => onEdit?.({ kind: 'text', blockIndex, text: event.target.value })}
             aria-label={`문단 ${blockIndex + 1}`}
             className="mt-2 w-full resize-y bg-transparent text-sm outline-none focus:bg-black/5"
         />
     );
 }
 
-function KeyValueTableBlockView({ block, blockIndex, onEdit }: BlockViewProps<'keyValueTable'>) {
+function KeyValueTableBlockView({ block, blockIndex, onEdit, readOnly, disabled }: BlockViewProps<'keyValueTable'>) {
     return (
         <table className="mt-2 w-full border-collapse text-sm">
             <tbody>
@@ -52,12 +59,13 @@ function KeyValueTableBlockView({ block, blockIndex, onEdit }: BlockViewProps<'k
                     <tr key={rowIndex}>
                         <th className="w-1/3 border border-slate-300 bg-slate-100 p-2 text-left font-semibold">{row.label}</th>
                         <td className="border border-slate-300 p-0">
-                            <input
+                            {readOnly ? <div className="px-2 py-1 whitespace-pre-wrap break-words">{row.value}</div> : <input
                                 value={row.value}
-                                onChange={(event) => onEdit({ kind: 'keyValue', blockIndex, row: rowIndex, value: event.target.value })}
+                                disabled={disabled}
+                                onChange={(event) => onEdit?.({ kind: 'keyValue', blockIndex, row: rowIndex, value: event.target.value })}
                                 aria-label={row.label}
                                 className={cellClass}
-                            />
+                            />}
                         </td>
                     </tr>
                 ))}
@@ -66,7 +74,7 @@ function KeyValueTableBlockView({ block, blockIndex, onEdit }: BlockViewProps<'k
     );
 }
 
-function DataTableBlockView({ block, blockIndex, onEdit }: BlockViewProps<'dataTable'>) {
+function DataTableBlockView({ block, blockIndex, onEdit, readOnly, disabled }: BlockViewProps<'dataTable'>) {
     return (
         <div className="mt-2 overflow-x-auto">
             <table className="w-full border-collapse text-sm">
@@ -74,12 +82,13 @@ function DataTableBlockView({ block, blockIndex, onEdit }: BlockViewProps<'dataT
                     <tr>
                         {block.headers.map((text, col) => (
                             <th key={col} className="border border-slate-300 bg-slate-100 p-0">
-                                <input
+                                {readOnly ? <div className="px-2 py-1 whitespace-pre-wrap break-words">{text}</div> : <input
                                     value={text}
-                                    onChange={(event) => onEdit({ kind: 'tableHeader', blockIndex, col, value: event.target.value })}
+                                    disabled={disabled}
+                                    onChange={(event) => onEdit?.({ kind: 'tableHeader', blockIndex, col, value: event.target.value })}
                                     aria-label={`머리글 ${col + 1}`}
                                     className={`${cellClass} text-center font-semibold`}
-                                />
+                                />}
                             </th>
                         ))}
                     </tr>
@@ -89,12 +98,13 @@ function DataTableBlockView({ block, blockIndex, onEdit }: BlockViewProps<'dataT
                         <tr key={rowIndex}>
                             {cells.map((cell, col) => (
                                 <td key={col} className="border border-slate-300 p-0">
-                                    <input
+                                    {readOnly ? <div className="px-2 py-1 whitespace-pre-wrap break-words">{cell}</div> : <input
                                         value={cell}
-                                        onChange={(event) => onEdit({ kind: 'tableCell', blockIndex, row: rowIndex, col, value: event.target.value })}
+                                        disabled={disabled}
+                                        onChange={(event) => onEdit?.({ kind: 'tableCell', blockIndex, row: rowIndex, col, value: event.target.value })}
                                         aria-label={`${rowIndex + 1}행 ${col + 1}열`}
                                         className={cellClass}
-                                    />
+                                    />}
                                 </td>
                             ))}
                         </tr>
@@ -119,27 +129,27 @@ function ImageBlockView({ block }: { block: Extract<FinalReportBlock, { kind: 'i
     );
 }
 
-function BlockView({ block, blockIndex, onEdit }: { block: FinalReportBlock; blockIndex: number; onEdit: (edit: BlockEdit) => void }) {
+function BlockView({ block, ...props }: { block: FinalReportBlock; blockIndex: number } & Omit<Props, 'blocks'>) {
     switch (block.kind) {
         case 'heading':
-            return <HeadingBlockView block={block} blockIndex={blockIndex} onEdit={onEdit} />;
+            return <HeadingBlockView block={block} {...props} />;
         case 'paragraph':
-            return <ParagraphBlockView block={block} blockIndex={blockIndex} onEdit={onEdit} />;
+            return <ParagraphBlockView block={block} {...props} />;
         case 'keyValueTable':
-            return <KeyValueTableBlockView block={block} blockIndex={blockIndex} onEdit={onEdit} />;
+            return <KeyValueTableBlockView block={block} {...props} />;
         case 'dataTable':
-            return <DataTableBlockView block={block} blockIndex={blockIndex} onEdit={onEdit} />;
+            return <DataTableBlockView block={block} {...props} />;
         case 'image':
             return <ImageBlockView block={block} />;
     }
 }
 
-export default function FinalReportPreview({ blocks, onEdit }: Props) {
+export default function FinalReportPreview({ blocks, onEdit, readOnly = false, disabled = false }: Props) {
     return (
         // 인쇄면을 흉내 낸 흰 바탕이다. 문서가 흰 종이에 찍히므로 여기서도 같은 대비로 본다.
         <div className="rounded-lg bg-white p-8 text-slate-900 shadow-inner">
             {blocks.map((block, blockIndex) => (
-                <BlockView key={blockIndex} block={block} blockIndex={blockIndex} onEdit={onEdit} />
+                <BlockView key={blockIndex} block={block} blockIndex={blockIndex} onEdit={onEdit} readOnly={readOnly || !onEdit} disabled={disabled} />
             ))}
         </div>
     );

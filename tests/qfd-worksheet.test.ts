@@ -13,6 +13,23 @@ import {
 } from '../lib/qfd-worksheet';
 
 describe('qfd worksheet calculations', () => {
+    it('공백 세부기능과 그 관계는 순위와 총점에서 제외하고 입력은 보존한다', () => {
+        const input = {
+            requirements: [{ id: 'r1', category: '품질', requirement: '안정성', importance: 2 }],
+            technicals: [{ id: 'blank', name: ' \t ' }, { id: 'valid', name: '백업' }],
+            relationships: [
+                { requirementId: 'r1', technicalCharId: 'blank', strength: 'STRONG' },
+                { requirementId: 'r1', technicalCharId: 'valid', strength: 'WEAK' },
+            ],
+            benchmarks: [],
+        };
+        const original = structuredClone(input);
+        const result = calculateQfdWorksheet(input);
+        expect(result.technicals).toEqual([expect.objectContaining({ id: 'valid', rank: 1, totalScore: 2 })]);
+        expect(result.totals.technicalScore).toBe(2);
+        expect(input).toEqual(original);
+    });
+
     it('uses the worksheet relationship weights', () => {
         expect(relationshipWeight('STRONG')).toBe(9);
         expect(relationshipWeight('MEDIUM')).toBe(3);

@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// 프로바이더 폴백 검증이 실제 설정 DB의 연결 상태에 의존하지 않도록 고정한다.
+vi.mock('../lib/service-settings', () => ({
+    getAiSettings: vi.fn(async () => ({ provider: 'rule' })),
+}));
+
 import { runAiTask } from '../lib/ai/registry';
 import { ruleProvider } from '../lib/ai/provider-rule';
 import { assertAllowedBaseUrl, AiProviderError } from '../lib/ai/openai-compatible';

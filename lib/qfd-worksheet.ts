@@ -140,7 +140,7 @@ export function calculateQfdWorksheet(input: QfdWorksheetInput): QfdWorksheetRes
         rank: requirementRanks[index],
     }));
 
-    const technicalBaseRows = input.technicals.map((tech) => {
+    const technicalBaseRows = input.technicals.filter(tech => tech.name.trim()).map((tech) => {
         const totalScore = input.requirements.reduce((sum, req) => {
             const relationship = input.relationships.find(
                 (rel) => rel.requirementId === req.id && rel.technicalCharId === tech.id

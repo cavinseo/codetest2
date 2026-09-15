@@ -2,7 +2,7 @@
 import { expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { renderFinalReportDocx } from '../lib/final-report-docx';
-import type { FinalReportBlock, FinalReportModel } from '../lib/final-report-document';
+import { buildFinalReportModel, type FinalReportBlock, type FinalReportModel, type FinalReportWorksheetData } from '../lib/final-report-document';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
 const picture: FinalReportBlock = { kind: 'image', title: '검증 그림', pngDataUrl: `data:image/png;base64,${png}`, widthMm: 25.4, heightMm: 50.8, landscape: false };
@@ -86,4 +86,56 @@ it('does not add empty portrait sections around consecutive landscape images', a
     expect(xml.match(/w:orient="landscape"/g)).toHaveLength(2);
     expect(xml).not.toContain('w:orient="portrait"');
     expect(xml.match(/<w:drawing>/g)).toHaveLength(2);
+});
+
+it('embeds JPEG report images as JPEG media without mislabeling them as PNG', async () => {
+    // 1×1 흰색 JPEG의 실제 바이트로 이미지 최적화 후 Word 저장을 검증한다.
+    const jpeg = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9U6KKKAP/2Q==';
+    const { zip, xml } = await unpack(model([{ ...picture, pngDataUrl: `data:image/jpeg;base64,${jpeg}` }]));
+    const images = zip.file(/^word\/media\/.*\.(?:jpg|jpeg)$/);
+    expect(images).toHaveLength(1);
+    expect(await images[0].async('base64')).toBe(jpeg);
+    expect(zip.file(/^word\/media\/.*\.png$/)).toHaveLength(0);
+    expect(xml).toContain('<w:drawing>');
+    const contentTypes = await zip.file('[Content_Types].xml')!.async('string');
+    expect(contentTypes).toMatch(/<Default(?=[^>]*\bExtension="jpe?g")(?=[^>]*\bContentType="image\/jpeg")[^>]*\/>/);
+});
+
+it('serializes overview fields and all eight worksheet analyses into the corresponding Word sections', async () => {
+    const worksheets: FinalReportWorksheetData = {
+        salesEstimates: [], specFunctions: [], productAttributes: [], requirements: [], kanoAggregation: [],
+        competitiveAssessment: [], improvementNeeds: [], improvementFeatures: [], techTree: [], targetSpecs: [],
+        improvementDirections: [], assets: [], fundingPlans: [], fundingSources: [],
+    };
+    const document = buildFinalReportModel({
+        projectName: '검수 기업', productName: '검수 제품', description: null, coachName: '담당 멘토', generatedAt: '2026-09-11',
+        marketDefinition: '교육 서비스 시장', targetCustomer: '현장 교사',
+    }, worksheets, {
+        productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null,
+        marketDefinition: '이전 시장', targetCustomer: '이전 고객', finalSpecExplanation: '이전 통합 설명',
+        improvedProductName: '이전 개선 제품명', improvedProductDescription: '이전 개선 설명',
+    }, [], {
+        spec: { analysis: '기능분석 본문 & <근거>' }, attributes: { analysis: '제품속성 분석 본문' }, fitness: { analysis: '적합도 분석 본문' },
+        'target-spec': { items: [{ label: '정확도 항목', explanation: '목표 정확도 근거' }] },
+        'tech-roadmap': { productName: '개선 학습지원 서비스', description: '개선 서비스의 구현 방향' },
+        assets: { core: '핵심자산 분석 본문', complementary: '보완자산 분석 본문' },
+        'funding-plan': { analysis: '소요자금 분석 본문' }, 'funding-source': { analysis: '조달자금 분석 본문' },
+    });
+    const { xml } = await unpack(document);
+    for (const text of ['검수 기업', '검수 제품', '교육 서비스 시장', '현장 교사']) expect(xml).toContain(text);
+    const orderedTexts = [
+        '(AS-IS) 스펙표', '기능분석 본문 &amp; &lt;근거&gt;',
+        '제품속성서', '제품속성 분석 본문', '제품/서비스 속성 적합도', '적합도 분석 본문',
+        '최종 제품/서비스 제공 스펙 List', '정확도 항목', '목표 정확도 근거',
+        '핵심자산 도출표', '핵심자산 분석 본문', '보완자산 도출표', '보완자산 분석 본문',
+        '개선 학습지원 서비스', '개선 서비스의 구현 방향', 'KS-QFD 개선 방향성',
+        '자금소요계획표', '소요자금 분석 본문', '자금조달계획표', '조달자금 분석 본문',
+    ];
+    let previous = -1;
+    for (const text of orderedTexts) {
+        const index = xml.indexOf(text);
+        expect(index, text).toBeGreaterThan(previous);
+        previous = index;
+    }
+    for (const text of ['이전 시장', '이전 고객', '이전 통합 설명', '이전 개선 제품명', '이전 개선 설명']) expect(xml).not.toContain(text);
 });

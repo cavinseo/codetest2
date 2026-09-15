@@ -6,7 +6,7 @@
 //
 //   ADMIN            모든 권한
 //   PROGRAM_MANAGER  멘토 배정, 초대 코드 발행, 프로젝트 생성. 멘토를 겸할 수 있다
-//   MENTOR           배정된 프로젝트만 열람(읽기 전용)
+//   MENTOR           현재 배정된 멘티의 프로젝트만 열람·편집
 //   MENTEE           배정된 프로젝트만. 프로젝트는 만들지 못한다
 
 export const MEMBER_ROLES = ['ADMIN', 'PROGRAM_MANAGER', 'MENTOR', 'MENTEE'] as const;
@@ -82,9 +82,10 @@ export function canAssignMentor(role: MemberRole): boolean {
  * "누가 만드는가"와 "누가 갖는가"가 갈리는 곳이라, 소유자 쪽 판정은
  * lib/program.ts 의 canOwnProjectIn 이 따로 맡는다.
  *
- * 멘토는 만들지 못한다. 멘토는 남의 과제에 배정돼 보는 자리다.
+ * 멘토는 관리자에게 개별 허용을 받은 경우 배정 멘티의 과제를 대신 개설한다.
  */
-export function canCreateProject(role: MemberRole): boolean {
+export function canCreateProject(role: MemberRole, mentorProjectCreationEnabled = false): boolean {
+    if (role === 'MENTOR') return mentorProjectCreationEnabled === true;
     return role === 'ADMIN' || role === 'PROGRAM_MANAGER' || role === 'MENTEE';
 }
 
@@ -99,9 +100,14 @@ export function canCreateProjectForOthers(role: MemberRole): boolean {
     return role === 'ADMIN' || role === 'PROGRAM_MANAGER';
 }
 
-/** 프로그램을 새로 개설할 수 있는가. */
+/** 프로그램 운영 화면에 접근할 수 있는가. 개설 권한과 분리한다. */
 export function canManagePrograms(role: MemberRole): boolean {
     return role === 'ADMIN' || role === 'PROGRAM_MANAGER';
+}
+
+/** 프로그램 개설은 운영 담당자의 권한보다 좁게 제한한다. */
+export function canCreateProgram(role: MemberRole): boolean {
+    return role === 'ADMIN';
 }
 
 /**
@@ -114,7 +120,7 @@ export function canListAllProjects(role: MemberRole): boolean {
 
 /**
  * 소속과 무관하게 모든 프로젝트의 내용을 열 수 있는가.
- * 매니저는 전체를 읽되 고치지는 못한다(canWriteAnyProject 참고).
+ * 매니저는 전체를 읽되, 실제 멘토로 배정된 프로젝트만 편집한다.
  */
 export function canReadAnyProject(role: MemberRole): boolean {
     return role === 'ADMIN' || role === 'PROGRAM_MANAGER';

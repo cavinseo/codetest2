@@ -36,6 +36,9 @@ describe('parseDeletionReason', () => {
 });
 
 describe('describeMenteeDeletion', () => {
+    it('본인이 발급한 초대는 삭제 대신 관리 책임을 이전한다고 알린다', () => {
+        expect(describeMenteeDeletion({ ...EMPTY, transferredIssuedInviteCodes: 3 })).toContain('이 사람이 발급한 초대 코드 3건의 관리 책임은 실행 관리자에게 이전됩니다.');
+    });
     it('아무 일도 없으면 빈 목록이다', () => {
         expect(describeMenteeDeletion(EMPTY)).toEqual([]);
     });

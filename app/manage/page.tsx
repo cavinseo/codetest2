@@ -8,10 +8,10 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import InvitesTab from '@/components/admin/InvitesTab';
 import ProgramsTab from '@/components/admin/ProgramsTab';
-import MentorAssign from '@/components/admin/MentorAssign';
+import ProgramMentors from '@/components/admin/ProgramMentors';
 import ThemeToggle from '@/components/ThemeToggle';
 
-interface ProjectRow {
+interface ProgramRow {
     id: string;
     name: string;
 }
@@ -20,8 +20,8 @@ type Tab = 'programs' | 'invites' | 'assign';
 
 export default function ManagePage() {
     const [tab, setTab] = useState<Tab>('programs');
-    const [projects, setProjects] = useState<ProjectRow[]>([]);
-    const [selectedProject, setSelectedProject] = useState('');
+    const [programs, setPrograms] = useState<ProgramRow[]>([]);
+    const [selectedProgram, setSelectedProgram] = useState('');
     const [denied, setDenied] = useState(false);
     const [loading, setLoading] = useState(true);
 
@@ -39,8 +39,8 @@ export default function ManagePage() {
                 return;
             }
 
-            const projectRes = await fetch('/api/projects');
-            if (projectRes.ok) setProjects((await projectRes.json()).projects);
+            const programRes = await fetch('/api/programs');
+            if (programRes.ok) setPrograms((await programRes.json()).programs);
         } finally {
             setLoading(false);
         }
@@ -86,7 +86,7 @@ export default function ManagePage() {
                                 <span className="w-6 h-6 rounded-md bg-gradient-to-br from-primary-500/30 to-accent-500/30 flex items-center justify-center text-xs">🧭</span>
                                 프로그램 관리
                             </h1>
-                            <p className="text-xs text-gray-500 mt-0.5">프로그램 개설, 초대 코드 발행, 멘토 배정</p>
+                            <p className="text-xs text-gray-500 mt-0.5">담당 프로그램 관리, 초대 코드 발행, 멘토 배정</p>
                         </div>
                     </div>
                     <ThemeToggle />
@@ -142,19 +142,20 @@ export default function ManagePage() {
                             <div className="space-y-4">
                                 <select
                                     className="input w-auto"
-                                    value={selectedProject}
-                                    onChange={(e) => setSelectedProject(e.target.value)}
-                                    id="manage-project-select"
+                                    aria-label="멘토를 배정할 프로그램"
+                                    value={selectedProgram}
+                                    onChange={(e) => setSelectedProgram(e.target.value)}
+                                    id="manage-program-select"
                                 >
-                                    <option value="">프로젝트 선택</option>
-                                    {projects.map((p) => (
+                                    <option value="">프로그램 선택</option>
+                                    {programs.map((p) => (
                                         <option key={p.id} value={p.id}>{p.name}</option>
                                     ))}
                                 </select>
-                                {selectedProject ? (
-                                    <MentorAssign projectId={selectedProject} />
+                                {selectedProgram ? (
+                                    <ProgramMentors key={selectedProgram} programId={selectedProgram} />
                                 ) : (
-                                    <p className="text-sm text-gray-500">배정할 프로젝트를 먼저 선택하세요.</p>
+                                    <p className="text-sm text-gray-500">멘토를 배정할 프로그램을 먼저 선택하세요.</p>
                                 )}
                             </div>
                         )}

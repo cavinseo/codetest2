@@ -56,6 +56,12 @@ function jsonRequest(body: unknown): NextRequest {
     });
 }
 
+it.each(['', ' \t\n '])('공백 세부기능 %j가 있으면 기존 관계를 건드리기 전에 복원을 거절한다', async name => {
+    const response = await POST(jsonRequest({ technicalCharacteristics: [{ name }], confirmCascade: true }), params);
+    expect(response.status).toBe(400);
+    expect(transaction).not.toHaveBeenCalled();
+});
+
 beforeEach(() => {
     counts.kano = 0;
     counts.benchmark = 0;
@@ -415,6 +421,34 @@ describe('import-json 가드', () => {
         );
 
         expect(res.status).toBe(400);
+        expect(transaction).not.toHaveBeenCalled();
+    });
+});
+
+describe('WS-9 그룹 백업 복원', () => {
+    it('그룹 번호와 열 순서를 그대로 복원하고 자동 채움을 완료 처리한다', async () => {
+        const response = await POST(jsonRequest({ technicalCharacteristics: [
+            { id: 'old1', name: '첫 기능', groupIndex: 7, columnOrder: 2 },
+            { id: 'old2', name: '둘째 기능', groupIndex: 1, columnOrder: 8 },
+        ] }), params);
+        expect(response.status).toBe(200);
+        expect(tx.technicalCharacteristic.createMany).toHaveBeenCalledWith({ data: [
+            expect.objectContaining({ name: '첫 기능', groupIndex: 7, columnOrder: 2 }),
+            expect.objectContaining({ name: '둘째 기능', groupIndex: 1, columnOrder: 8 }),
+        ] });
+        expect(tx.project.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ qfdTechnicalInitialized: true }) }));
+    });
+    it('그룹 정보가 없는 기존 백업은 3개씩 순서대로 복원한다', async () => {
+        const response = await POST(jsonRequest({ technicalCharacteristics: [0, 1, 2, 3].map(i => ({ name: '기능' + i })) }), params);
+        expect(response.status).toBe(200);
+        expect(tx.technicalCharacteristic.createMany.mock.calls[0][0].data.map((t: { groupIndex: number; columnOrder: number }) => [t.groupIndex, t.columnOrder]))
+            .toEqual([[0, 0], [0, 1], [0, 2], [1, 3]]);
+    });
+    it.each(['groupIndex', 'columnOrder'])('%s는 0 이상의 정수만 허용한다', async field => {
+        for (const value of [-1, 1.5, '2', null]) {
+            const response = await POST(jsonRequest({ technicalCharacteristics: [{ name: '기능', [field]: value }] }), params);
+            expect(response.status).toBe(400);
+        }
         expect(transaction).not.toHaveBeenCalled();
     });
 });

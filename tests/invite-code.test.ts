@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     INVITE_CODE_VALID_DAYS,
+    INVITE_CODE_MESSAGES,
     buildInviteEmail,
     checkInviteCode,
     generateInviteCode,
@@ -60,6 +61,11 @@ describe('inviteCodeExpiryFrom', () => {
 });
 
 describe('checkInviteCode', () => {
+    it.each(['NOT_FOUND', 'ALREADY_USED', 'EXPIRED', 'EMAIL_MISMATCH'] as const)('%s 거절에는 비어 있지 않은 안내가 있다', (key) => {
+        expect(INVITE_CODE_MESSAGES[key]).toEqual(expect.any(String));
+        expect(INVITE_CODE_MESSAGES[key]).toMatch(/\S/);
+    });
+
     const now = new Date('2026-06-01T00:00:00Z');
     const valid: InviteCodeRecord = {
         email: 'mentee@example.com',
@@ -133,7 +139,7 @@ describe('buildInviteEmail', () => {
         roleLabel: '멘티',
         expiresAt: new Date('2026-06-15T00:00:00Z'),
         accessDurationDays: 90,
-        signupUrl: 'https://example.com/signup',
+        signupUrl: 'https://example.com/login?mode=invite',
         escapeHtml,
     };
 
@@ -142,12 +148,28 @@ describe('buildInviteEmail', () => {
 
         expect(subject).toContain('멘티');
         expect(html).toContain('KSQF-ABCD-EFGH-JKMN');
-        expect(html).toContain('2026-06-15');
+        expect(html).toContain('<strong>2026-06-15</strong>');
         expect(html).toContain('90일');
     });
 
-    it('발급 대상 주소로만 가입 가능함을 알린다', () => {
+    it('발급 대상 주소로만 로그인 가능함을 알린다', () => {
         expect(buildInviteEmail(params).html).toContain('받은 주소로만');
+    });
+
+    it('첫 로그인 기한과 같은 코드 재로그인, 프로그램 종료에 따른 이용 제한을 안내한다', () => {
+        const { html } = buildInviteEmail({ ...params, accessDurationDays: 30 });
+
+        expect(html).toContain('이메일과 초대 코드');
+        expect(html).toContain('처음 로그인하면 계정이 생성');
+        expect(html).toContain('같은 코드로 로그인');
+        expect(html).toContain('첫 로그인 기한');
+        expect(html).toContain('2026-06-15');
+        expect(html).toContain('30일');
+        expect(html).toContain('프로그램 종료일');
+        expect(html).toContain('먼저 도래하는 시점');
+        expect(html).toContain('href="https://example.com/login?mode=invite"');
+        expect(html).toContain('초대 코드로 로그인하기');
+        expect(html).not.toContain('회원가입 하러 가기');
     });
 
     it('역할 이름을 이스케이프한다', () => {

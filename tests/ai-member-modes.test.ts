@@ -1,5 +1,7 @@
 // 회원 AI 연결의 4모드 분기와 원격 URL SSRF 경계를 검증한다.
 import { afterEach, describe, expect, it, vi } from 'vitest';
+const transport = vi.hoisted(() => ({ publicFetch: vi.fn((url: string, init: RequestInit) => fetch(url, init)) }));
+vi.mock('../lib/ai/public-https-fetch', () => ({ publicHttpsFetch: transport.publicFetch }));
 
 import { ruleProvider } from '../lib/ai/provider-rule';
 import {
@@ -37,7 +39,7 @@ function mentorResponse(): Response {
     }), { status: 200 });
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); transport.publicFetch.mockClear(); });
 
 describe('assertPublicHttpsUrl', () => {
     it.each([
@@ -162,6 +164,7 @@ describe('createPersonalProvider', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(fetchMock.mock.calls[0][0]).toBe('https://api.openai.com/v1/chat/completions');
         expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({ Authorization: 'Bearer api-key' });
+        expect(transport.publicFetch).not.toHaveBeenCalled();
     });
 
     it('mcp 모드는 실행 직전 검사한 원격 주소를 쓴다', async () => {
@@ -177,6 +180,7 @@ describe('createPersonalProvider', () => {
 
         expect(fetchMock.mock.calls[0][0]).toBe('https://mcp.example.com/v1/chat/completions');
         expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({ Authorization: 'Bearer mcp-key' });
+        expect(transport.publicFetch).toHaveBeenCalledOnce();
     });
 
     it('local 모드는 첫 localhost 기본 후보부터 탐색한다', async () => {
@@ -224,6 +228,7 @@ describe('verifyPersonalConnection', () => {
         }))).resolves.toEqual({ ok: true, message: '연결에 성공했습니다.' });
 
         expect(fetchMock.mock.calls[0][0]).toBe('https://mcp.example.com/v1/models');
+        expect(transport.publicFetch).toHaveBeenCalledOnce();
         expect(fetchMock.mock.calls[0][1]).toMatchObject({
             method: 'GET',
             headers: { Authorization: 'Bearer mcp-key' },

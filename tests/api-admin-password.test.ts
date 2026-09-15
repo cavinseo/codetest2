@@ -1,18 +1,20 @@
 // 비밀번호 변경이 로그인한 본인(관리자 아님)에게 열리고 mustChangePassword 를 내리는지 확인한다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
+import { clearAllRateLimits } from '../lib/rate-limit';
 
 const findUniqueUser = vi.fn();
 const updateUser = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
-    prisma: { user: { findUnique: findUniqueUser, update: updateUser } },
+    prisma: { user: { findUnique: findUniqueUser, updateMany: updateUser } },
 }));
 
 const requireAuth = vi.fn();
 vi.mock('../lib/auth', () => ({
     requireAuth: (...args: unknown[]) => requireAuth(...(args as [])),
     encodeSessionCookie: () => 'encoded-cookie',
+    verifySessionCookie: () => ({ userId: 'user_1', ver: 0 }),
 }));
 
 const cookieSet = vi.fn();
@@ -53,8 +55,10 @@ const validBody = {
 };
 
 beforeEach(() => {
-    findUniqueUser.mockResolvedValue({ id: 'user_1', passwordHash: 'old-hash' });
-    updateUser.mockResolvedValue({ id: 'user_1', email: 'u@x.com', name: '사용자', sessionVersion: 1 });
+    clearAllRateLimits();
+    findUniqueUser.mockResolvedValue({ id: 'user_1', passwordHash: 'old-hash', sessionVersion: 0,
+        email: 'u@x.com', name: '사용자', status: 'APPROVED', accessExpiresAt: null });
+    updateUser.mockResolvedValue({ count: 1 });
     compare.mockResolvedValue(true);
     hash.mockResolvedValue('new-hash');
 });

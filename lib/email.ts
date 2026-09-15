@@ -40,13 +40,12 @@ async function createTransporter() {
  * 조용히 성공으로 처리하면 관리자가 코드를 전달할 기회를 놓친다.
  */
 export async function sendMail(options: EmailOptions): Promise<boolean> {
-    const mailer = await createTransporter();
-    if (!mailer) {
-        log.warn('SMTP 미설정으로 메일을 보내지 못했습니다.');
-        return false;
-    }
-
     try {
+        const mailer = await createTransporter();
+        if (!mailer) {
+            log.warn('SMTP 미설정으로 메일을 보내지 못했습니다.');
+            return false;
+        }
         await mailer.transport.sendMail({
             from: mailer.from,
             to: options.to,

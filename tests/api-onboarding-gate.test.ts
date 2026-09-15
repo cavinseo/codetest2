@@ -7,13 +7,14 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const findUniqueUser = vi.fn();
 const updateUser = vi.fn();
+const updateManyUser = vi.fn();
 const findUniqueMemberProfile = vi.fn();
 const upsertMemberProfile = vi.fn();
 const transaction = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
-        user: { findUnique: findUniqueUser, update: updateUser },
+        user: { findUnique: findUniqueUser, update: updateUser, updateMany: updateManyUser },
         memberProfile: { findUnique: findUniqueMemberProfile, upsert: upsertMemberProfile },
         $transaction: (...args: unknown[]) => transaction(...args),
     },
@@ -211,9 +212,7 @@ describe('온보딩 관문', () => {
         findUniqueUser.mockResolvedValue(userRow({ mustChangePassword: true, profile: null }));
         compare.mockResolvedValue(true);
         hash.mockResolvedValue('new-hash');
-        updateUser.mockResolvedValue({
-            id: 'user_1', email: 'user@example.com', name: '사용자', sessionVersion: 1,
-        });
+        updateManyUser.mockResolvedValue({ count: 1 });
 
         const response = await changePassword(new NextRequest('http://localhost/api/admin/password', {
             method: 'POST',
@@ -226,6 +225,6 @@ describe('온보딩 관문', () => {
         }));
 
         expect(response.status).toBe(200);
-        expect(updateUser).toHaveBeenCalled();
+        expect(updateManyUser).toHaveBeenCalled();
     });
 });
