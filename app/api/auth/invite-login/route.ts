@@ -19,13 +19,15 @@ const log = createLogger('api/auth/invite-login');
 const schema = z.object({
     email: z.string().trim().email('유효한 이메일을 입력하세요.').transform((value) => value.toLowerCase()),
     inviteCode: z.string().trim().min(1, '초대 코드를 입력하세요.').max(100),
+    name: z.string().trim().optional(),
 });
 class InviteLoginDenied extends Error {}
+class InviteNameRequired extends Error {}
 const denied = () => NextResponse.json({ error: '이메일과 초대 코드를 확인하세요. 이용 기한이 만료되었거나 사용할 수 없는 코드입니다.' }, { status: 403 });
 
 export async function POST(request: NextRequest) {
     try {
-        const { email, inviteCode } = schema.parse(await request.json());
+        const { email, inviteCode, name } = schema.parse(await request.json());
         const rateKey = `invite-login:${clientIpFrom(request.headers)}:${email}`;
         const limit = consumeRateLimit(rateKey, LOGIN_RATE_LIMIT);
         if (!limit.allowed) {
@@ -48,14 +50,19 @@ export async function POST(request: NextRequest) {
                 if (!linked || linked.id !== invite.usedById || linked.email.trim().toLowerCase() !== email
                     || linked.role !== 'MENTEE' || linked.isAdmin || linked.status !== 'APPROVED'
                     || linked.programId !== invite.programId) throw new InviteLoginDenied();
+                if (!linked.name?.trim()) {
+                    if (!name) throw new InviteNameRequired();
+                    return tx.user.update({ where: { id: linked.id }, data: { name } });
+                }
                 return linked;
             }
             if (invite.usedById) throw new InviteLoginDenied();
             const existing = await tx.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
             if (existing) throw new InviteLoginDenied();
+            if (!name) throw new InviteNameRequired();
 
             const created = await tx.user.create({ data: {
-                id: generateId('user'), email, name: null,
+                id: generateId('user'), email, name,
                 // 사용자가 알 수 없는 임의 비밀번호로 비밀번호 인증을 사용할 수 없게 한다.
                 passwordHash: await bcrypt.hash(randomBytes(32).toString('hex'), BCRYPT_ROUNDS),
                 role: 'MENTEE', status: 'APPROVED', mustChangePassword: false,
@@ -82,6 +89,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, user: { id: user.id, email: user.email, name: user.name },
             mustChangePassword: user.mustChangePassword, needsProfile: !isProfileCompleteForRole('MENTEE', profile) });
     } catch (error) {
+        if (error instanceof InviteNameRequired) {
+            return NextResponse.json({ code: 'INVITE_NAME_REQUIRED', error: '등록을 완료하려면 이름을 입력하세요.' }, { status: 400 });
+        }
         if (error instanceof z.ZodError) return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         if (error instanceof InviteLoginDenied || errorCodeOf(error) === 'P2002') return denied();
         // DB 예외 본문에 코드나 이메일이 포함될 수 있으므로 원문을 남기지 않는다.

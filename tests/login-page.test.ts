@@ -209,3 +209,45 @@ it('로그인 화면을 떠난 뒤 도착한 성공 응답이 현재 화면을 �
     await act(async () => { resolve(response({ success: true, needsProfile: true })); });
     expect(pushMock).not.toHaveBeenCalled();
 });
+it('최초 등록 응답을 받으면 이름 필수 입력을 표시하고 빈 이름으로 등록하지 않는다', async () => {
+    fetchMock.mockResolvedValueOnce(response({ code: 'INVITE_NAME_REQUIRED', error: '등록을 완료하려면 이름을 입력하세요.' }, 400));
+    await renderLogin('?mode=invite');
+    await enter('email', 'mentee@example.test');
+    await enter('inviteCode', 'KSQF-TEST-CODE');
+    await submit();
+    const name = container.querySelector<HTMLInputElement>('#inviteName')!;
+    expect(name.required).toBe(true);
+    expect(document.activeElement).toBe(name);
+    expect(pushMock).not.toHaveBeenCalled();
+    await enter('inviteName', '  ');
+    await submit();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('이름을 입력하세요.');
+    await enter('inviteName', ' 홍길동 ');
+    fetchMock.mockResolvedValueOnce(response({ success: true, needsProfile: true }));
+    await submit();
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ email: 'mentee@example.test', inviteCode: 'KSQF-TEST-CODE', name: '홍길동' });
+    expect(pushMock).toHaveBeenCalledWith('/onboarding');
+});
+
+it('이름이 있는 기존 멘티는 이름 입력 단계 없이 로그인한다', async () => {
+    await renderLogin('?mode=invite');
+    await enter('email', 'complete@example.test');
+    await enter('inviteCode', 'KSQF-TEST-CODE');
+    await submit();
+    expect(container.querySelector('#inviteName')).toBeNull();
+    expect(pushMock).toHaveBeenCalledWith('/dashboard');
+});
+
+it.each(['email', 'inviteCode'])('%s가 바뀌면 이전 코드의 이름 등록 단계를 초기화한다', async field => {
+    fetchMock.mockResolvedValueOnce(response({ code: 'INVITE_NAME_REQUIRED', error: '이름을 입력하세요.' }, 400));
+    await renderLogin('?mode=invite');
+    await enter('email', 'first@example.test');
+    await enter('inviteCode', 'FIRST-CODE');
+    await submit();
+    await enter('inviteName', '첫 이름');
+    await enter(field, field === 'email' ? 'other@example.test' : 'OTHER-CODE');
+    expect(container.querySelector('#inviteName')).toBeNull();
+    await submit();
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('name');
+});

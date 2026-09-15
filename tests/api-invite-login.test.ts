@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
     findInvite: vi.fn(), findUser: vi.fn(), create: vi.fn(), update: vi.fn(), lock: vi.fn(),
     profile: vi.fn(), cookie: vi.fn(), rate: vi.fn(), reset: vi.fn(), encode: vi.fn(), hash: vi.fn(),
-    rollback: vi.fn(), commit: vi.fn(), log: vi.fn(),
+    rollback: vi.fn(), commit: vi.fn(), log: vi.fn(), updateName: vi.fn(),
 }));
 vi.mock('../lib/prisma', () => ({ prisma: {
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -13,7 +13,7 @@ vi.mock('../lib/prisma', () => ({ prisma: {
             const value = await fn({
                 $queryRaw: mocks.lock,
                 inviteCode: { findUnique: mocks.findInvite, updateMany: mocks.update },
-                user: { findFirst: mocks.findUser, create: mocks.create },
+                user: { findFirst: mocks.findUser, create: mocks.create, update: mocks.updateName },
             });
             mocks.commit();
             return value;
@@ -36,9 +36,9 @@ const invite = {
     usedAt: null, usedById: null, usedBy: null, programId: 'program',
     program: { endsAt: after(500) }, expiresAt: after(14), accessDurationDays: 90,
 };
-const user = { id: 'user', email: invite.email, name: null, role: 'MENTEE', isAdmin: false, status: 'APPROVED', programId: 'program', accessExpiresAt: null, sessionVersion: 3, mustChangePassword: false };
+const user = { id: 'user', email: invite.email, name: '홍길동', role: 'MENTEE', isAdmin: false, status: 'APPROVED', programId: 'program', accessExpiresAt: null, sessionVersion: 3, mustChangePassword: false };
 const used = { ...invite, usedAt: now, usedById: 'user', usedBy: user };
-const request = (body: unknown = { email: invite.email, inviteCode: invite.code }) => new NextRequest('http://localhost/api/auth/invite-login', { method: 'POST', body: JSON.stringify(body) });
+const request = (body: unknown = { email: invite.email, inviteCode: invite.code, name: '홍길동' }) => new NextRequest('http://localhost/api/auth/invite-login', { method: 'POST', body: JSON.stringify(body) });
 beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
@@ -49,6 +49,7 @@ beforeEach(() => {
     mocks.findInvite.mockResolvedValue(invite);
     mocks.findUser.mockResolvedValue(null);
     mocks.create.mockResolvedValue(user);
+    mocks.updateName.mockResolvedValue(user);
     mocks.update.mockResolvedValue({ count: 1 });
     mocks.profile.mockResolvedValue(null);
 });
@@ -59,18 +60,18 @@ describe('초대 코드 로그인', () => {
         const res = await POST(request());
         expect(res.status).toBe(200);
         expect(await res.json()).toMatchObject({ success: true, needsProfile: true, mustChangePassword: false, user: { id: 'user' } });
-        expect(mocks.create.mock.calls[0][0].data).toMatchObject({ role: 'MENTEE', status: 'APPROVED', programId: 'program', mustChangePassword: false, accessExpiresAt: after(90), passwordHash: 'hashed-random-password' });
+        expect(mocks.create.mock.calls[0][0].data).toMatchObject({ name: '홍길동', role: 'MENTEE', status: 'APPROVED', programId: 'program', mustChangePassword: false, accessExpiresAt: after(90), passwordHash: 'hashed-random-password' });
         expect(mocks.hash.mock.calls[0][0]).toMatch(/^[a-f0-9]{64}$/);
         expect(mocks.lock.mock.calls[0][0].join('?')).toContain('SELECT id FROM invite_codes WHERE code = ? FOR UPDATE');
         expect(mocks.lock.mock.calls[0][1]).toBe(invite.code);
         expect(mocks.update).toHaveBeenCalledWith({ where: { id: 'invite', usedAt: null, usedById: null }, data: { usedAt: now, usedById: 'user' } });
-        expect(mocks.encode).toHaveBeenCalledWith({ userId: 'user', email: invite.email, name: null }, { sessionVersion: 3 });
+        expect(mocks.encode).toHaveBeenCalledWith({ userId: 'user', email: invite.email, name: '홍길동' }, { sessionVersion: 3 });
         expect(mocks.cookie).toHaveBeenCalledWith('session', 'signed-session', expect.objectContaining({ httpOnly: true, sameSite: 'strict', path: '/' }));
         expect(mocks.commit).toHaveBeenCalledOnce();
         expect(mocks.reset).toHaveBeenCalledWith(`invite-login:local:${invite.email}`);
     });
     it('이메일 대소문자와 코드 구분 문자를 정규화한다', async () => {
-        expect((await POST(request({ email: ' MENTEE@EXAMPLE.COM ', inviteCode: 'ksqf abcd efgh jkmn' }))).status).toBe(200);
+        expect((await POST(request({ email: ' MENTEE@EXAMPLE.COM ', inviteCode: 'ksqf abcd efgh jkmn', name: ' 홍길동 ' }))).status).toBe(200);
         expect(mocks.findInvite).toHaveBeenCalledWith(expect.objectContaining({ where: { code: invite.code } }));
         expect(mocks.findUser).toHaveBeenCalledWith({ where: { email: { equals: invite.email, mode: 'insensitive' } } });
     });
@@ -183,5 +184,41 @@ describe('초대 코드 로그인', () => {
         expect(res.headers.get('Retry-After')).toBe('60');
         expect(mocks.lock).not.toHaveBeenCalled();
         expect(mocks.cookie).not.toHaveBeenCalled();
+    });
+});
+
+describe('멘티 이름 필수 등록', () => {
+    it.each([undefined, '', '   ', '\t\n'])('이름 %j로는 계정 생성·코드 사용·세션 발급을 하지 않는다', async name => {
+        const res = await POST(request({ email: invite.email, inviteCode: invite.code, name }));
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ code: 'INVITE_NAME_REQUIRED', error: '등록을 완료하려면 이름을 입력하세요.' });
+        expect(mocks.create).not.toHaveBeenCalled();
+        expect(mocks.update).not.toHaveBeenCalled();
+        expect(mocks.cookie).not.toHaveBeenCalled();
+    });
+    it('이름의 앞뒤 공백을 제거하여 저장한다', async () => {
+        expect((await POST(request({ email: invite.email, inviteCode: invite.code, name: ' 홍길동 ' }))).status).toBe(200);
+        expect(mocks.create.mock.calls[0][0].data.name).toBe('홍길동');
+    });
+    it('이름이 있는 기존 멘티의 재로그인은 이름 입력과 변경 없이 허용한다', async () => {
+        mocks.findInvite.mockResolvedValue(used);
+        expect((await POST(request({ email: invite.email, inviteCode: invite.code }))).status).toBe(200);
+        expect((await POST(request({ email: invite.email, inviteCode: invite.code, name: '다른 이름' }))).status).toBe(200);
+        expect(mocks.updateName).not.toHaveBeenCalled();
+        expect(mocks.create).not.toHaveBeenCalled();
+        expect(mocks.encode).toHaveBeenCalledWith({ userId: 'user', email: invite.email, name: '홍길동' }, { sessionVersion: 3 });
+    });
+    it('예전에 이름 없이 등록된 멘티는 다음 코드 로그인에서 이름을 보완한다', async () => {
+        mocks.findInvite.mockResolvedValue({ ...used, usedBy: { ...user, name: null } });
+        expect((await POST(request({ email: invite.email, inviteCode: invite.code }))).status).toBe(400);
+        expect(mocks.cookie).not.toHaveBeenCalled();
+        expect((await POST(request({ email: invite.email, inviteCode: invite.code, name: ' 홍길동 ' }))).status).toBe(200);
+        expect(mocks.updateName).toHaveBeenCalledWith({ where: { id: 'user' }, data: { name: '홍길동' } });
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+    it('잘못된 코드는 이름 입력 요청보다 먼저 거절한다', async () => {
+        mocks.findInvite.mockResolvedValue(null);
+        expect((await POST(request({ email: invite.email, inviteCode: invite.code }))).status).toBe(403);
+        expect(mocks.updateName).not.toHaveBeenCalled();
     });
 });

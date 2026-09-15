@@ -12,6 +12,8 @@ export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [inviteCode, setInviteCode] = useState('');
+    const [inviteName, setInviteName] = useState('');
+    const [needsInviteName, setNeedsInviteName] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -52,6 +54,10 @@ export default function LoginPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (submittingRef.current) return;
+        if (isInviteLogin && needsInviteName && !inviteName.trim()) {
+            setError('등록을 완료하려면 이름을 입력하세요.');
+            return;
+        }
         submittingRef.current = true;
         setError('');
         setIsLoading(true);
@@ -60,13 +66,14 @@ export default function LoginPage() {
             const response = await fetch(isInviteLogin ? '/api/auth/invite-login' : '/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(isInviteLogin ? { email, inviteCode } : { email, password }),
+                body: JSON.stringify(isInviteLogin ? { email, inviteCode, ...(needsInviteName ? { name: inviteName.trim() } : {}) } : { email, password }),
             });
 
             const data = await response.json();
             if (!mountedRef.current) return;
 
             if (!response.ok) {
+                if (isInviteLogin && data.code === 'INVITE_NAME_REQUIRED') setNeedsInviteName(true);
                 throw new Error(data.error || '로그인에 실패했습니다.');
             }
 
@@ -120,6 +127,8 @@ export default function LoginPage() {
                                     if (submittingRef.current) return;
                                     setRole(value);
                                     setMode(value === 'MENTEE' ? 'invite' : 'password');
+                                    setNeedsInviteName(false);
+                                    setInviteName('');
                                     setError('');
                                     setFocusedField(null);
                                 }}
@@ -144,6 +153,8 @@ export default function LoginPage() {
                                     onClick={() => {
                                         if (submittingRef.current) return;
                                         setMode(value);
+                                        setNeedsInviteName(false);
+                                        setInviteName('');
                                         setError('');
                                         setFocusedField(null);
                                     }}
@@ -157,7 +168,7 @@ export default function LoginPage() {
 
                     <p className="text-sm text-gray-400 mb-6">
                         {isInviteLogin
-                            ? '초대받은 이메일과 코드를 입력해 주세요. 처음 로그인하면 계정이 생성되며, 이후에도 같은 코드로 로그인할 수 있습니다.'
+                            ? '초대받은 이메일과 코드를 입력해 주세요. 최초 등록에는 이름 입력이 필수이며, 이후에는 같은 코드로 로그인할 수 있습니다.'
                             : role === 'MENTEE'
                                 ? '기존 계정의 ID와 비밀번호 또는 Google 계정으로 로그인해 주세요.'
                                 : `${role === 'PROGRAM_MANAGER' ? '프로그램 매니저' : '멘토'} 계정의 ID와 비밀번호 또는 Google 계정으로 로그인해 주세요.`}
@@ -176,6 +187,25 @@ export default function LoginPage() {
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-5">
+                        {isInviteLogin && needsInviteName && (
+                            <div>
+                                <label htmlFor="inviteName" className="block text-sm font-medium mb-2 text-gray-400">
+                                    이름 <span className="text-rose-400">*</span>
+                                </label>
+                                <input
+                                    id="inviteName"
+                                    type="text"
+                                    required
+                                    autoFocus
+                                    disabled={isLoading}
+                                    autoComplete="name"
+                                    value={inviteName}
+                                    onChange={(event) => setInviteName(event.target.value)}
+                                    className="input"
+                                    placeholder="이름을 입력하세요"
+                                />
+                            </div>
+                        )}
                         <div>
                             <label htmlFor="email" className={`block text-sm font-medium mb-2 transition-colors duration-200 ${focusedField === 'email' ? 'text-primary-400' : 'text-gray-400'}`}>
                                 {isInviteLogin ? '이메일' : 'ID'}
@@ -191,7 +221,7 @@ export default function LoginPage() {
                                     disabled={isLoading}
                                     autoComplete="username"
                                     value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
+                                    onChange={(e) => { setEmail(e.target.value); setNeedsInviteName(false); setInviteName(''); }}
                                     onFocus={() => setFocusedField('email')}
                                     onBlur={() => setFocusedField(null)}
                                     className="input pl-12"
@@ -215,7 +245,7 @@ export default function LoginPage() {
                                     spellCheck={false}
                                     maxLength={100}
                                     value={inviteCode}
-                                    onChange={(e) => setInviteCode(e.target.value)}
+                                    onChange={(e) => { setInviteCode(e.target.value); setNeedsInviteName(false); setInviteName(''); }}
                                     onFocus={() => setFocusedField('inviteCode')}
                                     onBlur={() => setFocusedField(null)}
                                     className="input font-mono"
@@ -258,7 +288,7 @@ export default function LoginPage() {
                                     <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
                                     로그인 중...
                                 </span>
-                            ) : isInviteLogin ? '초대 코드로 로그인' : '로그인'}
+                            ) : isInviteLogin ? (needsInviteName ? '이름 등록하고 시작하기' : '초대 코드로 로그인') : '로그인'}
                         </button>
                     </form>
 

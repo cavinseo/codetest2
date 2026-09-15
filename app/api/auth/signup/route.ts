@@ -17,7 +17,7 @@ import { errorCodeOf } from '@/lib/api-error';
 const log = createLogger('api/auth/signup');
 
 const signupSchema = z.object({
-    name: z.string().min(1, '이름을 입력하세요'),
+    name: z.string().trim().min(1, '이름을 입력하세요'),
     email: z.string().trim().email('유효한 이메일을 입력하세요').transform((value) => value.toLowerCase()),
     password: z.string().min(8, '비밀번호는 최소 8자 이상이어야 합니다'),
     inviteCode: z.string().optional(),

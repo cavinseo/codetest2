@@ -33,7 +33,7 @@ async function invite(suffix: string, accessDurationDays = 30) {
         email: `${prefix}_${suffix}@example.test`, role: 'MENTEE', programId, issuedById: adminId,
         accessDurationDays, expiresAt: new Date(Date.now() + 14 * day) } });
 }
-const signIn = (code: { email: string; code: string }) => login(request('/api/auth/invite-login', { email: code.email, inviteCode: code.code }));
+const signIn = (code: { email: string; code: string }, name = '격리 멘티') => login(request('/api/auth/invite-login', { email: code.email, inviteCode: code.code, name }));
 beforeAll(async () => {
     process.env.SESSION_SECRET = 'isolated-login-integration-secret';
     await db.user.create({ data: { id: adminId, email: `${adminId}@example.test`, passwordHash: 'fixture',
@@ -139,4 +139,37 @@ it('관리자의 기존 기간 연장이 코드 로그인과 이전 세션에 �
     const access = new NextRequest('http://localhost/api/projects', { headers: { cookie: `${SESSION_COOKIE_NAME}=${session}` } });
     expect(await requireAuth(access, { allowIncompleteOnboarding: true })).not.toBeInstanceOf(NextResponse);
     expect((await db.inviteCode.findUniqueOrThrow({ where: { id: code.id } })).usedAt).toEqual(originalUsedAt);
+});
+it('이름을 입력하기 전에는 등록과 코드 사용이 일어나지 않고 이름 입력 후 한 번만 생성된다', async () => {
+    const code = await invite('required_name');
+    capturedCookies.clear();
+    for (const name of [undefined, '', '   ']) {
+        const response = await login(request('/api/auth/invite-login', { email: code.email, inviteCode: code.code, name }));
+        expect(response.status).toBe(400);
+        expect((await response.json()).code).toBe('INVITE_NAME_REQUIRED');
+        expect(await db.user.count({ where: { email: code.email } })).toBe(0);
+        const current = await db.inviteCode.findUniqueOrThrow({ where: { id: code.id } });
+        expect([current.usedAt, current.usedById]).toEqual([null, null]);
+        expect(capturedCookies.size).toBe(0);
+    }
+    expect((await signIn(code, ' 실제 이름 ')).status).toBe(200);
+    const created = await db.user.findFirstOrThrow({ where: { email: code.email } });
+    expect(created.name).toBe('실제 이름');
+    expect((await login(request('/api/auth/invite-login', { email: code.email, inviteCode: code.code }))).status).toBe(200);
+    expect(await db.user.count({ where: { email: code.email } })).toBe(1);
+});
+
+it('이름 없는 기존 계정은 본인 코드 확인 후 이름만 보완하고 등록된 이름을 덮어쓰지 않는다', async () => {
+    const code = await invite('legacy_name');
+    expect((await signIn(code)).status).toBe(200);
+    const used = await db.inviteCode.findUniqueOrThrow({ where: { id: code.id }, include: { usedBy: true } });
+    await db.user.update({ where: { id: used.usedById! }, data: { name: null } });
+    const missing = await login(request('/api/auth/invite-login', { email: code.email, inviteCode: code.code }));
+    expect(missing.status).toBe(400);
+    expect((await signIn(code, '보완 이름')).status).toBe(200);
+    expect((await signIn(code, '바꿀 수 없는 이름')).status).toBe(200);
+    const after = await db.inviteCode.findUniqueOrThrow({ where: { id: code.id }, include: { usedBy: true } });
+    expect(after.usedBy?.name).toBe('보완 이름');
+    expect(after.usedAt).toEqual(used.usedAt);
+    expect(after.usedBy?.accessExpiresAt).toEqual(used.usedBy?.accessExpiresAt);
 });

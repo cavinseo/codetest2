@@ -334,3 +334,17 @@ describe('초대 코드 가입', () => {
         expect(transaction).not.toHaveBeenCalled();
     });
 });
+describe('이름 필수 검증', () => {
+    it.each([undefined, '', '   ', '\t\n'])('이름 %j로 가입하면 DB 처리 전에 거절한다', async name => {
+        const result = await POST(signupRequest({ name, email: 'm@x.com', password: 'password123', inviteCode: 'KSQF-TEST', profile: menteeProfile }));
+        expect(result.status).toBe(400);
+        expect(findUniqueUser).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+        expect(cookieSet).not.toHaveBeenCalled();
+    });
+    it('정상 이름의 앞뒤 공백을 제거하여 저장한다', async () => {
+        const result = await POST(signupRequest({ name: ' 새회원 ', email: 'm@x.com', password: 'password123', profile: menteeProfile }));
+        expect(result.status).toBe(200);
+        expect(txCreateUser.mock.calls[0][0].data.name).toBe('새회원');
+    });
+});
