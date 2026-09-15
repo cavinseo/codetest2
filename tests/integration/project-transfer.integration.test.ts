@@ -215,7 +215,9 @@ function holdNextTransaction() {
             if (key !== '$queryRaw') return Reflect.get(client, key, receiver);
             return async (...args: Parameters<Prisma.TransactionClient['$queryRaw']>) => {
                 const rows = await client.$queryRaw(...args);
-                if (!held) {
+                const sql = 'sql' in args[0] ? args[0].sql : args[0].join(' ');
+                // 삭제의 선행 advisory lock이 아니라 실제 사용자 행 잠금을 취득한 뒤 멈춘다.
+                if (!held && /\bFROM\s+"?users"?\s/i.test(sql) && /\bFOR\s+UPDATE\b/i.test(sql)) {
                     held = true;
                     const [row] = await client.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
                     locked.resolve(row.pid);
