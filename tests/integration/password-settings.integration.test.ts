@@ -49,6 +49,7 @@ import { POST as passwordLogin } from '../../app/api/auth/login/route';
 import { POST as logout } from '../../app/api/auth/logout/route';
 import { POST as changePassword } from '../../app/api/admin/password/route';
 import { GET as readProfile, PUT as saveProfile } from '../../app/api/me/profile/route';
+import { PATCH as editProgram } from '../../app/api/programs/[id]/route';
 
 const day = 86_400_000;
 const initialPassword = 'Initial-password-123';
@@ -380,4 +381,40 @@ it.each(['logout', 'code'] as const)('인증 완료 후 %s 상태가 바뀌면 �
     expect(after.mustChangePassword).toBe(before.mustChangePassword);
     expect(after.sessionVersion).toBe(before.sessionVersion + (race === 'logout' ? 1 : 0));
     if (changedCode) expect(await baseDb.inviteCode.findUniqueOrThrow({ where: { id: changedCode.id } })).toEqual(changedCode);
+});
+
+it('현재 비밀번호 확인 후 관리자 API가 프로그램을 종료하면 진행 중인 변경과 쿠키 발급을 거절한다', async () => {
+    const member = await inviteMember();
+    capturedCookies.length = 0;
+    const initialChange = await changePassword(request('/api/admin/password', 'POST', member.cookie,
+        inviteInput(member.code.code, initialPassword)));
+    expect(initialChange.status).toBe(200);
+    const memberCookie = issuedCookie();
+    const { cookie: adminCookie } = await signIn(admin.email, initialPassword);
+    expect((await saveProfile(request('/api/me/profile', 'PUT', adminCookie, {
+        organization: '비밀번호 검수기관', phone: '01000000000', privacyConsent: true,
+    }))).status).toBe(200);
+    const before = await baseDb.user.findUniqueOrThrow({ where: { id: member.account.id } });
+    const endsAt = new Date(Date.now() - day).toISOString().slice(0, 10);
+    let arrivals = 0;
+    passwordWriteGate = async () => {
+        arrivals += 1;
+        const edited = await editProgram(request(`/api/programs/${programId}`, 'PATCH', adminCookie, {
+            name: '비밀번호 격리 프로그램', organization: '검수기관',
+            startsAt: new Date(Date.now() - 3 * day).toISOString().slice(0, 10), endsAt,
+        }), { params: Promise.resolve({ id: programId }) });
+        expect(edited.status).toBe(200);
+        expect((await baseDb.program.findUniqueOrThrow({ where: { id: programId } })).endsAt).toEqual(new Date(endsAt));
+        expect((await baseDb.user.findUniqueOrThrow({ where: { id: member.account.id } })).sessionVersion).toBe(before.sessionVersion);
+    };
+    capturedCookies.length = 0;
+    const response = await changePassword(request('/api/admin/password', 'POST', memberCookie,
+        passwordInput('Program-race-password-456')));
+    passwordWriteGate = null;
+    expect(arrivals).toBe(1);
+    expect.soft(response.status).toBe(409);
+    const after = await baseDb.user.findUniqueOrThrow({ where: { id: member.account.id } });
+    expect.soft(after.passwordHash).toBe(before.passwordHash);
+    expect.soft(after.sessionVersion).toBe(before.sessionVersion);
+    expect(capturedCookies).toEqual([]);
 });
