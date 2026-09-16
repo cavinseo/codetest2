@@ -50,6 +50,9 @@ export async function GET(
             );
         }
 
+        // respondentEmail 은 내보내지 않는다. 이 라우트는 인증 없이 토큰만으로
+        // 열리고 설문 링크는 메신저로 전달되기 쉬운 값이라, 링크를 받은 누구나
+        // 초대받은 사람의 이메일을 알게 된다. 응답 화면도 이 값을 쓰지 않는다.
         return NextResponse.json({
             projectName,
             requirements: requirements.map((r: any) => ({
@@ -61,7 +64,6 @@ export async function GET(
                 kanoNegativeQ: r.kanoNegativeQ ?? null,
                 order: r.order,
             })),
-            respondentEmail: invitation.email,
         });
     } catch (error: unknown) {
         log.error('설문 조회 오류', error);
