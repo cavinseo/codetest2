@@ -43,6 +43,9 @@ export default function LoginPage() {
             pending: '가입 승인 대기 중입니다. 관리자 승인 후 이용할 수 있습니다.',
             expired: '이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.',
             google_failed: 'Google 로그인에 실패했습니다. 다시 시도하세요.',
+            google_role: '로그인 역할을 다시 선택해 주세요.',
+            role_mismatch: '선택한 로그인 역할과 계정 역할이 일치하지 않습니다. 계정에 맞는 역할을 선택하세요.',
+            account_role_invalid: '계정 역할 정보가 올바르지 않습니다. 관리자에게 문의하세요.',
         };
         const googleLoginError = params.get('error');
         if (googleLoginError && googleLoginErrors[googleLoginError]) {
@@ -66,7 +69,7 @@ export default function LoginPage() {
             const response = await fetch(isInviteLogin ? '/api/auth/invite-login' : '/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(isInviteLogin ? { email, inviteCode, ...(needsInviteName ? { name: inviteName.trim() } : {}) } : { email, password }),
+                body: JSON.stringify(isInviteLogin ? { email, inviteCode, ...(needsInviteName ? { name: inviteName.trim() } : {}) } : { email, password, role }),
             });
 
             const data = await response.json();
@@ -300,7 +303,7 @@ export default function LoginPage() {
                     </div>
 
                     <a
-                        href="/api/auth/google/login"
+                        href={`/api/auth/google/login?role=${role}`}
                         aria-disabled={isLoading}
                         onClick={(event) => { if (submittingRef.current) event.preventDefault(); }}
                         className="w-full btn-secondary py-3.5 text-base font-semibold flex items-center justify-center"

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { encodeSessionCookie } from '@/lib/auth';
 import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
 import { exchangeLoginCodeForEmail } from '@/lib/google-auth';
-import { verifyLoginState } from '@/lib/login-state';
+import { readLoginStateRole } from '@/lib/login-state';
 import { parseMemberRole } from '@/lib/member-roles';
 import { isUserAccessExpired } from '@/lib/invite-access';
 import { isProfileCompleteForRole } from '@/lib/member-profile';
@@ -27,11 +27,12 @@ export async function GET(request: NextRequest) {
     const code = searchParams.get('code');
     const stateParam = searchParams.get('state');
     const stateCookie = request.cookies.get(STATE_COOKIE)?.value;
+    const stateParamRole = readLoginStateRole(stateParam ?? undefined);
+    const stateCookieRole = readLoginStateRole(stateCookie);
 
     // 파라미터·쿠키 각각 서명 검증 + 상호 동일성. 쿠키만 믿으면 공격자가 자기
     // 브라우저의 쿠키로 피해자 URL 을 열게 하는 고정 공격이 남는다.
-    if (!code || !verifyLoginState(stateParam ?? undefined)
-        || !verifyLoginState(stateCookie) || stateParam !== stateCookie) {
+    if (!code || !stateParamRole || !stateCookieRole || stateParam !== stateCookie) {
         return fail(origin, 'google_state');
     }
 
@@ -56,13 +57,15 @@ export async function GET(request: NextRequest) {
         });
 
         if (!user) return fail(origin, 'no_account');
+        const role = parseMemberRole(user.role);
+        if (!role) return fail(origin, 'account_role_invalid');
+        if (role !== stateParamRole) return fail(origin, 'role_mismatch');
         if (user.status !== 'APPROVED') return fail(origin, 'pending');
         if (isUserAccessExpired(user)) return fail(origin, 'expired');
 
         const [profile] = await Promise.all([
             prisma.memberProfile.findUnique({ where: { userId: user.id } }),
         ]);
-        const role = parseMemberRole(user.role) ?? 'MENTEE';
         const needsOnboarding = user.mustChangePassword
             || !isProfileCompleteForRole(role, profile);
 

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { encodeSessionCookie, verifySessionCookie } from '../lib/auth';
-import { issueLoginState, verifyLoginState } from '../lib/login-state';
+import { issueLoginState, readLoginStateRole, verifyLoginState } from '../lib/login-state';
 
 const isGoogleConfigured = vi.fn();
 vi.mock('../lib/service-settings', () => ({
@@ -69,8 +69,10 @@ function approvedUser(overrides: Record<string, unknown> = {}) {
     };
 }
 
-function startRequest(): NextRequest {
-    return new NextRequest(`${ORIGIN}/api/auth/google/login`);
+function startRequest(role: string | null = 'MENTEE'): NextRequest {
+    const url = new URL(`${ORIGIN}/api/auth/google/login`);
+    if (role !== null) url.searchParams.set('role', role);
+    return new NextRequest(url);
 }
 
 function callbackRequest(options: {
@@ -95,8 +97,9 @@ function validCallbackRequest(overrides: {
     code?: string;
     state?: string;
     stateCookie?: string;
+    role?: 'PROGRAM_MANAGER' | 'MENTOR' | 'MENTEE';
 } = {}): NextRequest {
-    const state = issueLoginState();
+    const state = issueLoginState(overrides.role ?? 'MENTEE');
     return callbackRequest({
         code: overrides.code ?? 'google-code',
         state: overrides.state ?? state,
@@ -156,6 +159,7 @@ describe('Google 회원 로그인 시작', () => {
         );
         const state = responseCookie(response, 'google_login_state');
         expect(verifyLoginState(state)).toBe(true);
+        expect(readLoginStateRole(state)).toBe('MENTEE');
         expect(getGoogleLoginAuthUrl).toHaveBeenCalledWith(CALLBACK_URL, state);
 
         const setCookie = response.headers.get('set-cookie') ?? '';
@@ -163,6 +167,27 @@ describe('Google 회원 로그인 시작', () => {
         expect(setCookie.toLowerCase()).toContain('samesite=lax');
         expect(setCookie).toContain('Max-Age=300');
         expect(setCookie).toContain('Path=/api/auth/google/login');
+    });
+
+    it.each(['PROGRAM_MANAGER', 'MENTOR', 'MENTEE'] as const)(
+        '%s 선택 역할을 서명 state에서 복원한다',
+        async role => {
+            const response = await startGoogleLogin(startRequest(role));
+
+            expect(readLoginStateRole(responseCookie(response, 'google_login_state'))).toBe(role);
+        }
+    );
+
+    it.each([
+        ['누락', null],
+        ['관리자', 'ADMIN'],
+        ['알 수 없는 값', 'UNKNOWN'],
+    ])('시작 역할이 %s이면 Google OAuth를 시작하지 않는다', async (_label, role) => {
+        const response = await startGoogleLogin(startRequest(role));
+
+        expect(redirectError(response)).toBe('google_role');
+        expect(getGoogleLoginAuthUrl).not.toHaveBeenCalled();
+        expect(response.headers.get('set-cookie')).toBeNull();
     });
 });
 
@@ -175,7 +200,7 @@ describe('Google 회원 로그인 콜백 state', () => {
     });
 
     it('서명되지 않은 state 파라미터를 거부한다', async () => {
-        const stateCookie = issueLoginState();
+        const stateCookie = issueLoginState('MENTEE');
         const response = await finishGoogleLogin(callbackRequest({
             code: 'google-code',
             state: 'forged-state',
@@ -187,7 +212,7 @@ describe('Google 회원 로그인 콜백 state', () => {
     });
 
     it('서명되지 않은 state 쿠키를 거부한다', async () => {
-        const state = issueLoginState();
+        const state = issueLoginState('MENTEE');
         const response = await finishGoogleLogin(callbackRequest({
             code: 'google-code',
             state,
@@ -201,8 +226,8 @@ describe('Google 회원 로그인 콜백 state', () => {
     it('각각 유효해도 파라미터와 쿠키 값이 다르면 거부한다', async () => {
         const response = await finishGoogleLogin(callbackRequest({
             code: 'google-code',
-            state: issueLoginState(),
-            stateCookie: issueLoginState(),
+            state: issueLoginState('MENTEE'),
+            stateCookie: issueLoginState('MENTEE'),
         }));
 
         expect(redirectError(response)).toBe('google_state');
@@ -227,6 +252,30 @@ describe('Google 회원 로그인 콜백 state', () => {
 });
 
 describe('Google 회원 로그인 콜백 회원 게이트', () => {
+    it('서명 state 역할과 DB 역할이 다르면 세션 없이 거부한다', async () => {
+        const state = issueLoginState('MENTOR');
+
+        const response = await finishGoogleLogin(callbackRequest({
+            code: 'google-code',
+            state,
+            stateCookie: state,
+        }));
+
+        expect(redirectError(response)).toBe('role_mismatch');
+        expect(responseCookie(response, 'session')).toBeUndefined();
+        expect(findUniqueProfile).not.toHaveBeenCalled();
+    });
+
+    it('DB 역할이 올바르지 않으면 멘티로 처리하지 않고 거부한다', async () => {
+        parseMemberRole.mockReturnValue(null);
+
+        const response = await finishGoogleLogin(validCallbackRequest());
+
+        expect(redirectError(response)).toBe('account_role_invalid');
+        expect(responseCookie(response, 'session')).toBeUndefined();
+        expect(findUniqueProfile).not.toHaveBeenCalled();
+    });
+
     it('관리자가 연장한 초대 계정은 원래 초대 기간 후에도 Google로 로그인한다', async () => {
         findFirstUser.mockResolvedValue(approvedUser({
             programId: 'program', accessExpiresAt: new Date(Date.now() + 10 * 86_400_000),
@@ -317,6 +366,19 @@ describe('Google 회원 로그인 콜백 회원 게이트', () => {
 });
 
 describe('Google 회원 로그인 콜백 성공과 실패', () => {
+    it.each(['PROGRAM_MANAGER', 'MENTOR', 'MENTEE'] as const)(
+        '%s 역할과 DB 역할이 같으면 세션을 발급한다',
+        async role => {
+            parseMemberRole.mockReturnValue(role);
+            findFirstUser.mockResolvedValue(approvedUser({ role }));
+
+            const response = await finishGoogleLogin(validCallbackRequest({ role }));
+
+            expect(response.headers.get('location')).toBe(`${ORIGIN}/dashboard`);
+            expect(responseCookie(response, 'session')).toBeDefined();
+        }
+    );
+
     it('승인 회원에게 sessionVersion이 든 세션 쿠키를 발급하고 dashboard로 보낸다', async () => {
         const response = await finishGoogleLogin(validCallbackRequest());
 

@@ -91,7 +91,7 @@ function inviteInput(code: string, password: string) {
 
 async function signIn(email: string, password: string) {
     capturedCookies.length = 0;
-    const response = await passwordLogin(request('/api/auth/login', 'POST', undefined, { email, password }));
+    const response = await passwordLogin(request('/api/auth/login', 'POST', undefined, { email, password, role: 'MENTEE' }));
     expect(response.status).toBe(200);
     return { response, cookie: issuedCookie() };
 }
@@ -235,7 +235,7 @@ it('초대 가입 후 본인 코드로 설정하고 비밀번호·기존 코드�
     expect(await preservedAccount(account.id)).toEqual(before);
     await signIn(account.email, secondPassword);
     const oldPasswordLogin = await passwordLogin(request('/api/auth/login', 'POST', undefined, {
-        email: account.email, password: firstPassword,
+        email: account.email, password: firstPassword, role: 'MENTEE',
     }));
     expect(oldPasswordLogin.status).toBe(401);
 });
@@ -345,7 +345,7 @@ it.each(['password', 'invite'] as const)('%s 확인을 마친 두 변경 요청�
     await signIn(account.email, passwords[winner]);
     capturedCookies.length = 0;
     expect((await passwordLogin(request('/api/auth/login', 'POST', undefined, {
-        email: account.email, password: passwords[1 - winner],
+        email: account.email, password: passwords[1 - winner], role: 'MENTEE',
     }))).status).toBe(401);
     expect(capturedCookies).toEqual([]);
 }, 15_000);

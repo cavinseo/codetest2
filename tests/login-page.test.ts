@@ -72,24 +72,25 @@ it('프로그램 매니저·멘토·멘티 선택을 순서대로 표시하고 �
     expect([...container.querySelectorAll('[aria-pressed]')].map((node) => node.textContent)).toEqual(['프로그램 매니저', '멘토', '멘티']);
     expect(button('멘토').getAttribute('aria-pressed')).toBe('true');
     expect(container.querySelector('#password')).not.toBeNull();
-    expect(container.querySelector('a[href="/api/auth/google/login"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/api/auth/google/login?role=MENTOR"]')).not.toBeNull();
     await enter('email', 'mentor@example.test');
     await enter('password', 'test-password');
     await submit();
     expect(fetchMock).toHaveBeenCalledWith('/api/auth/login', expect.objectContaining({
-        body: JSON.stringify({ email: 'mentor@example.test', password: 'test-password' }),
+        body: JSON.stringify({ email: 'mentor@example.test', password: 'test-password', role: 'MENTOR' }),
     }));
     expect(pushMock).toHaveBeenCalledWith('/dashboard');
 });
 
-it('역할 선택은 프로그램 매니저의 서버 요청에 권한을 추가하지 않는다', async () => {
+it('프로그램 매니저 선택 역할을 비밀번호 요청과 Google 로그인 URL에 전달한다', async () => {
     await renderLogin();
     await click('프로그램 매니저');
     expect(button('프로그램 매니저').getAttribute('aria-pressed')).toBe('true');
     await enter('email', 'manager@example.test');
     await enter('password', 'test-password');
     await submit();
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ email: 'manager@example.test', password: 'test-password' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ email: 'manager@example.test', password: 'test-password', role: 'PROGRAM_MANAGER' });
+    expect(container.querySelector('a[href="/api/auth/google/login?role=PROGRAM_MANAGER"]')).not.toBeNull();
 });
 
 it('멘티를 선택하면 이메일·초대코드를 기본 표시하고 비밀번호와 Google 링크를 숨긴다', async () => {
@@ -99,7 +100,7 @@ it('멘티를 선택하면 이메일·초대코드를 기본 표시하고 비밀
     expect(container.querySelector('label[for="email"]')?.textContent?.trim()).toBe('이메일');
     expect(container.querySelector('#inviteCode')).not.toBeNull();
     expect(container.querySelector('#password')).toBeNull();
-    expect(container.querySelector('a[href="/api/auth/google/login"]')).toBeNull();
+    expect(container.querySelector('a[href^="/api/auth/google/login"]')).toBeNull();
 });
 
 it('초대 링크로 진입하면 멘티·초대코드 로그인을 선택한다', async () => {
@@ -128,11 +129,12 @@ it('멘티도 기존 계정 비밀번호로 로그인할 수 있고 다시 선�
     await renderLogin('?mode=invite');
     await click('비밀번호 로그인');
     expect(container.querySelector('#password')).not.toBeNull();
-    expect(container.querySelector('a[href="/api/auth/google/login"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/api/auth/google/login?role=MENTEE"]')).not.toBeNull();
     await enter('email', 'mentee@example.test');
     await enter('password', 'test-password');
     await submit();
     expect(fetchMock.mock.calls[0][0]).toBe('/api/auth/login');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ email: 'mentee@example.test', password: 'test-password', role: 'MENTEE' });
     await click('멘토');
     await click('멘티');
     expect(container.querySelector('#inviteCode')).not.toBeNull();
@@ -184,7 +186,7 @@ it('비밀번호 처리 중 Google 로그인을 시작하지 않는다', async (
     await enter('email', 'mentor@example.test');
     await enter('password', 'test-password');
     await submit();
-    const link = container.querySelector<HTMLAnchorElement>('a[href="/api/auth/google/login"]')!;
+    const link = container.querySelector<HTMLAnchorElement>('a[href="/api/auth/google/login?role=MENTOR"]')!;
     const event = new MouseEvent('click', { bubbles: true, cancelable: true });
     await act(async () => { link.dispatchEvent(event); });
     expect(event.defaultPrevented).toBe(true);
@@ -196,6 +198,15 @@ it('기존 승인 대기 안내와 Google 오류를 유지한다', async () => {
     await renderLogin('?signup=pending&error=google_denied');
     expect(container.textContent).toContain('가입이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.');
     expect(container.textContent).toContain('Google 로그인을 취소했습니다.');
+});
+
+it.each([
+    ['role_mismatch', '선택한 로그인 역할과 계정 역할이 일치하지 않습니다. 계정에 맞는 역할을 선택하세요.'],
+    ['account_role_invalid', '계정 역할 정보가 올바르지 않습니다. 관리자에게 문의하세요.'],
+    ['google_role', '로그인 역할을 다시 선택해 주세요.'],
+])('Google 오류 %s를 안내한다', async (code, message) => {
+    await renderLogin(`?error=${code}`);
+    expect(container.textContent).toContain(message);
 });
 
 it('로그인 화면을 떠난 뒤 도착한 성공 응답이 현재 화면을 바꾸지 않는다', async () => {

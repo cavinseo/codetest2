@@ -2,18 +2,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isGoogleConfigured } from '@/lib/service-settings';
 import { getGoogleLoginAuthUrl } from '@/lib/google-auth';
-import { issueLoginState } from '@/lib/login-state';
+import { issueLoginState, parseGoogleLoginRole } from '@/lib/login-state';
 
 const STATE_COOKIE = 'google_login_state';
 
 export async function GET(request: NextRequest) {
-    const { origin } = new URL(request.url);
+    const { origin, searchParams } = new URL(request.url);
+    const role = parseGoogleLoginRole(searchParams.get('role'));
+
+    if (!role) {
+        return NextResponse.redirect(new URL('/login?error=google_role', origin));
+    }
 
     if (!(await isGoogleConfigured())) {
         return NextResponse.redirect(new URL('/login?error=google_unconfigured', origin));
     }
 
-    const state = issueLoginState();
+    const state = issueLoginState(role);
     const authUrl = await getGoogleLoginAuthUrl(`${origin}/api/auth/google/login/callback`, state);
 
     const response = NextResponse.redirect(authUrl);

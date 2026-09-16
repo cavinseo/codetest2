@@ -14,6 +14,8 @@ import { isUserAccessExpired } from '@/lib/invite-access';
 const log = createLogger('api/auth/login');
 
 const INVALID_CREDENTIALS_MSG = '이메일 또는 비밀번호가 올바르지 않습니다.';
+const ROLE_MISMATCH_MSG = '선택한 로그인 역할과 계정 역할이 일치하지 않습니다. 계정에 맞는 역할을 선택하세요.';
+const ACCOUNT_ROLE_INVALID_MSG = '계정 역할 정보가 올바르지 않습니다. 관리자에게 문의하세요.';
 
 // 존재하지 않는 계정에도 같은 비용의 bcrypt 비교를 태우기 위한 더미 해시.
 // 모듈 로드 시 한 번만 만든다.
@@ -22,12 +24,13 @@ const TIMING_SAFE_DUMMY_HASH = bcrypt.hashSync('timing-safe-dummy-password', BCR
 const loginSchema = z.object({
     email: z.string().trim().email('유효한 이메일을 입력하세요').transform(value => value.toLowerCase()),
     password: z.string().min(1, '비밀번호를 입력하세요'),
+    role: z.enum(['PROGRAM_MANAGER', 'MENTOR', 'MENTEE']).optional(),
 });
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { email, password } = loginSchema.parse(body);
+        const { email, password, role: selectedRole } = loginSchema.parse(body);
 
         // IP 와 이메일을 함께 키로 쓴다. IP 만 쓰면 공유 IP 뒤의 정상 사용자가
         // 말려들고, 이메일만 쓰면 IP 를 바꿔 가며 계정을 돌려 칠 수 있다.
@@ -69,6 +72,22 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: INVALID_CREDENTIALS_MSG }, { status: 401 });
         }
 
+        const role = parseMemberRole(user.role);
+        if (!role) {
+            log.warn('로그인 거부 — 계정 역할 오류', { userId: user.id });
+            return NextResponse.json(
+                { code: 'ACCOUNT_ROLE_INVALID', error: ACCOUNT_ROLE_INVALID_MSG },
+                { status: 403 }
+            );
+        }
+        if (selectedRole ? role !== selectedRole : role !== 'ADMIN') {
+            log.warn('로그인 거부 — 선택 역할 불일치', { userId: user.id });
+            return NextResponse.json(
+                { code: 'LOGIN_ROLE_MISMATCH', error: ROLE_MISMATCH_MSG },
+                { status: 403 }
+            );
+        }
+
         // 비밀번호가 맞아도 관리자가 승인하기 전에는 로그인시키지 않는다.
         if (user.status !== 'APPROVED') {
             log.warn('로그인 거부 — 승인 대기 계정', { userId: user.id });
@@ -96,8 +115,6 @@ export async function POST(request: NextRequest) {
         const profile = await prisma.memberProfile.findUnique({
             where: { userId: user.id },
         });
-        const role = parseMemberRole(user.role) ?? 'MENTEE';
-
         const sessionPayload = { userId: user.id, email: user.email, name: user.name };
 
         const cookieStore = await cookies();

@@ -10,11 +10,15 @@ import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { getSessionSecret } from './auth';
 
 const STATE_MAX_AGE_SECONDS = 300;
-const STATE_CONTEXT = 'google-login-state.v1';
+const STATE_CONTEXT = 'google-login-state.v2';
+
+const GOOGLE_LOGIN_ROLES = ['PROGRAM_MANAGER', 'MENTOR', 'MENTEE'] as const;
+export type GoogleLoginRole = (typeof GOOGLE_LOGIN_ROLES)[number];
 
 interface LoginStatePayload {
     nonce: string;
     exp: number;
+    role: GoogleLoginRole;
 }
 
 function signPayload(payload: string): string {
@@ -23,19 +27,26 @@ function signPayload(payload: string): string {
         .digest('base64url');
 }
 
-export function issueLoginState(): string {
+export function parseGoogleLoginRole(value: unknown): GoogleLoginRole | null {
+    return GOOGLE_LOGIN_ROLES.includes(value as GoogleLoginRole)
+        ? value as GoogleLoginRole
+        : null;
+}
+
+export function issueLoginState(role: GoogleLoginRole): string {
     const body: LoginStatePayload = {
         nonce: randomUUID(),
         exp: Math.floor(Date.now() / 1000) + STATE_MAX_AGE_SECONDS,
+        role,
     };
     const payload = Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
     return `${payload}.${signPayload(payload)}`;
 }
 
-export function verifyLoginState(value: string | undefined): boolean {
-    if (!value) return false;
+function readLoginState(value: string | undefined): LoginStatePayload | null {
+    if (!value) return null;
     const dot = value.lastIndexOf('.');
-    if (dot <= 0) return false;
+    if (dot <= 0) return null;
 
     const payload = value.slice(0, dot);
     const signature = value.slice(dot + 1);
@@ -43,12 +54,24 @@ export function verifyLoginState(value: string | undefined): boolean {
 
     const a = Buffer.from(signature);
     const b = Buffer.from(expected);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
 
     try {
         const body = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as LoginStatePayload;
-        return typeof body.exp === 'number' && body.exp > Math.floor(Date.now() / 1000);
+        const role = parseGoogleLoginRole(body.role);
+        if (typeof body.exp !== 'number' || body.exp <= Math.floor(Date.now() / 1000) || !role) {
+            return null;
+        }
+        return { ...body, role };
     } catch {
-        return false;
+        return null;
     }
+}
+
+export function verifyLoginState(value: string | undefined): boolean {
+    return readLoginState(value) !== null;
+}
+
+export function readLoginStateRole(value: string | undefined): GoogleLoginRole | null {
+    return readLoginState(value)?.role ?? null;
 }

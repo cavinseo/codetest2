@@ -2,10 +2,10 @@
 import { createHmac } from 'crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeSessionCookie } from '../lib/auth';
-import { issueLoginState, verifyLoginState } from '../lib/login-state';
+import { issueLoginState, readLoginStateRole, verifyLoginState } from '../lib/login-state';
 import { issueOAuthNonce } from '../lib/oauth-nonce';
 
-const LOGIN_STATE_CONTEXT = 'google-login-state.v1';
+const LOGIN_STATE_CONTEXT = 'google-login-state.v2';
 
 function signPayload(payload: string, context: string = LOGIN_STATE_CONTEXT): string {
     const signature = createHmac('sha256', 'test-secret')
@@ -30,25 +30,26 @@ afterEach(() => {
 
 describe('Google 로그인 state', () => {
     it('발급한 state를 검증하며 매번 다른 nonce를 쓴다', () => {
-        const first = issueLoginState();
-        const second = issueLoginState();
+        const first = issueLoginState('MENTEE');
+        const second = issueLoginState('MENTEE');
 
         expect(verifyLoginState(first)).toBe(true);
         expect(verifyLoginState(second)).toBe(true);
+        expect(readLoginStateRole(first)).toBe('MENTEE');
         expect(first).not.toBe(second);
     });
 
     it('state payload를 명시적인 UTF-8로 직렬화한다', () => {
         const bufferFrom = vi.spyOn(Buffer, 'from');
 
-        issueLoginState();
+        issueLoginState('MENTOR');
 
         expect(bufferFrom).toHaveBeenCalledWith(expect.any(String), 'utf8');
         bufferFrom.mockRestore();
     });
 
     it('payload를 바꿔 서명이 일치하지 않으면 거부한다', () => {
-        const state = issueLoginState();
+        const state = issueLoginState('MENTEE');
         const [payload, signature] = state.split('.');
         const body = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
         body.nonce = 'attacker';
@@ -60,7 +61,7 @@ describe('Google 로그인 state', () => {
     it('발급 후 301초가 지나면 거부한다', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-08-25T00:00:00.000Z'));
-        const state = issueLoginState();
+        const state = issueLoginState('PROGRAM_MANAGER');
 
         vi.advanceTimersByTime(301_000);
 
@@ -70,7 +71,7 @@ describe('Google 로그인 state', () => {
     it('정확히 300초인 만료 경계에서도 거부한다', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-08-25T00:00:00.000Z'));
-        const state = issueLoginState();
+        const state = issueLoginState('MENTOR');
 
         vi.advanceTimersByTime(300_000);
 
@@ -110,14 +111,27 @@ describe('Google 로그인 state', () => {
         expect(verifyLoginState(issueOAuthNonce('admin_1'))).toBe(false);
     });
 
-    it('google-login-state.v1 컨텍스트만 승인한다', () => {
+    it('google-login-state.v2 컨텍스트와 허용 역할만 승인한다', () => {
         const body = {
             nonce: 'nonce_1',
             exp: Math.floor(Date.now() / 1000) + 300,
+            role: 'MENTEE',
         };
 
         expect(verifyLoginState(signedState(body))).toBe(true);
+        expect(readLoginStateRole(signedState(body))).toBe('MENTEE');
         expect(verifyLoginState(signedState(body, ''))).toBe(false);
+    });
+
+    it('서명된 역할을 바꾸면 거부한다', () => {
+        const state = issueLoginState('MENTEE');
+        const [payload, signature] = state.split('.');
+        const body = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+        body.role = 'MENTOR';
+        const tampered = Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
+
+        expect(verifyLoginState(`${tampered}.${signature}`)).toBe(false);
+        expect(readLoginStateRole(`${tampered}.${signature}`)).toBeNull();
     });
 
     it('서명은 맞아도 payload가 JSON이 아니면 거부한다', () => {
@@ -127,10 +141,21 @@ describe('Google 로그인 state', () => {
     });
 
     it.each([
-        { nonce: 'nonce_1' },
-        { nonce: 'nonce_1', exp: 'later' },
-        { nonce: 'nonce_1', exp: String(Math.floor(Date.now() / 1000) + 300) },
+        { nonce: 'nonce_1', role: 'MENTEE' },
+        { nonce: 'nonce_1', exp: 'later', role: 'MENTEE' },
+        { nonce: 'nonce_1', exp: String(Math.floor(Date.now() / 1000) + 300), role: 'MENTEE' },
     ])('exp가 유효한 숫자가 아니면 거부한다', (body) => {
         expect(verifyLoginState(signedState(body))).toBe(false);
+    });
+
+    it.each([
+        { nonce: 'nonce_1', exp: Math.floor(Date.now() / 1000) + 300 },
+        { nonce: 'nonce_1', exp: Math.floor(Date.now() / 1000) + 300, role: 'ADMIN' },
+        { nonce: 'nonce_1', exp: Math.floor(Date.now() / 1000) + 300, role: 'UNKNOWN' },
+    ])('역할이 없거나 허용되지 않으면 거부한다', (body) => {
+        const state = signedState(body);
+
+        expect(verifyLoginState(state)).toBe(false);
+        expect(readLoginStateRole(state)).toBeNull();
     });
 });
