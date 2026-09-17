@@ -92,6 +92,20 @@ it('여러 줄 이메일 입력란을 표시한다', async () => {
     expect(container.querySelector('#invites-email')?.tagName).toBe('TEXTAREA');
 });
 
+it('기한 저장으로 기존 멘티가 연결되면 사용 상태와 회수 버튼도 갱신한다', async () => {
+    patchMock.mockResolvedValueOnce(response({ success: true, invite: {
+        id: invite.id, expiresAt: '2099-02-01T14:59:59.999Z', usedAt: '2026-09-17T03:00:00Z',
+    } }));
+    await renderInvites();
+    await click('#invites-expiry-existing');
+    await enterExpiry('2099-02-01', '#invites-expiry-input-existing');
+    await click('#invites-expiry-save-existing');
+
+    expect(container.querySelector('table')!.textContent).toContain('사용됨');
+    expect(container.querySelector('#invites-revoke-existing')).toBeNull();
+    expect(container.querySelector('#invites-expiry-existing')!.textContent).toContain('2099-02-01');
+});
+
 it('기존 발급 코드가 관리자 목록에 표시된다', async () => {
     await renderInvites();
     expect(container.querySelector('table')!.textContent).toContain('EXISTING-CODE');

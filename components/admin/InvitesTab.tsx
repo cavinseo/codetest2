@@ -195,7 +195,8 @@ export default function InvitesTab() {
                 setEditingExpiry((prev) => prev && ({ ...prev, error: data?.error || '기한 저장에 실패했습니다.' }));
                 return;
             }
-            setInvites((prev) => prev.map((item) => item.id === invite.id ? { ...item, expiresAt: data.invite.expiresAt } : item));
+            setInvites((prev) => prev.map((item) => item.id === invite.id
+                ? { ...item, expiresAt: data.invite.expiresAt, usedAt: data.invite.usedAt ?? item.usedAt } : item));
             setEditingExpiry(null);
             setMessage({ type: 'success', text: '이용 기한을 연장했습니다.' });
         } catch {

@@ -213,22 +213,10 @@ export async function PATCH(request: NextRequest) {
                 return { error: '현재 기한보다 늦은 날짜를 선택하세요.', status: 400 };
             }
 
-            if (invite.usedAt) {
-                const user = invite.usedBy;
-                if (!user || user.id !== invite.usedById || user.role !== 'MENTEE' || user.isAdmin || user.status !== 'APPROVED'
-                    || user.programId !== invite.programId || user.email.trim().toLowerCase() !== email) {
-                    return { error: '초대 코드에 연결된 멘티 정보를 확인하세요.', status: 400 };
-                }
-                const updated = await tx.user.updateMany({
-                    where: { id: user.id, role: 'MENTEE', isAdmin: false, status: 'APPROVED', programId: invite.programId,
-                        email: { equals: email, mode: 'insensitive' }, accessExpiresAt: user.accessExpiresAt },
-                    data: { accessExpiresAt: expiresAt },
-                });
-                if (updated.count !== 1) return { error: '멘티 정보가 변경되었습니다. 목록을 새로고침하세요.', status: 409 };
-            } else {
+            let user = invite.usedBy;
+            let linkExisting = false;
+            if (!invite.usedAt) {
                 if (invite.usedById) return { error: '초대 코드에 연결된 멘티 정보를 확인하세요.', status: 400 };
-                const existing = await tx.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select: { id: true } });
-                if (existing) return { error: '이미 가입된 이메일입니다.', status: 409 };
                 const others = await tx.inviteCode.findMany({
                     where: { id: { not: invite.id }, email: { equals: email, mode: 'insensitive' } },
                     include: { program: { select: { endsAt: true } }, usedBy: { select: { accessExpiresAt: true } } },
@@ -236,10 +224,39 @@ export async function PATCH(request: NextRequest) {
                 if (others.some((record) => inviteAccessExpiresAt(record) > now)) {
                     return { error: '이미 발행된 다른 유효한 초대 코드가 있습니다.', status: 409 };
                 }
+                const existing = await tx.user.findFirst({
+                    where: { email: { equals: email, mode: 'insensitive' } },
+                    include: { usedInviteCode: { select: { id: true } } },
+                });
+                if (existing?.usedInviteCode) {
+                    return { error: '이 멘티는 다른 초대 코드에 연결되어 있습니다.', status: 409 };
+                }
+                // 기존 가입 경로로 등록되어 초대 연결이 없는 승인 멘티도 같은 기한을 적용한다.
+                user = existing;
+                linkExisting = !!existing;
+            }
+            if (invite.usedAt || user) {
+                if (!user || (invite.usedAt && user.id !== invite.usedById) || user.role !== 'MENTEE' || user.isAdmin || user.status !== 'APPROVED'
+                    || user.programId !== invite.programId || user.email.trim().toLowerCase() !== email) {
+                    return { error: '초대와 같은 프로그램의 승인된 멘티인지 확인하세요.', status: invite.usedAt ? 400 : 409 };
+                }
+                if (linkExisting && user.accessExpiresAt && expiresAt < user.accessExpiresAt) {
+                    return { error: '현재 멘티 이용 기한보다 이른 날짜로 변경할 수 없습니다.', status: 400 };
+                }
+                const updated = await tx.user.updateMany({
+                    where: { id: user.id, role: 'MENTEE', isAdmin: false, status: 'APPROVED', programId: invite.programId,
+                        email: { equals: email, mode: 'insensitive' }, accessExpiresAt: user.accessExpiresAt,
+                        ...(linkExisting ? { usedInviteCode: { is: null } } : {}) },
+                    data: { accessExpiresAt: expiresAt },
+                });
+                if (updated.count !== 1) return { error: '멘티 정보가 변경되었습니다. 목록을 새로고침하세요.', status: 409 };
             }
 
-            await tx.inviteCode.update({ where: { id: invite.id }, data: { expiresAt, accessExpiresAt: expiresAt } });
-            return { invite: { id: invite.id, expiresAt } };
+            await tx.inviteCode.update({ where: { id: invite.id }, data: {
+                expiresAt, accessExpiresAt: expiresAt,
+                ...(linkExisting && user ? { usedAt: now, usedById: user.id } : {}),
+            } });
+            return { invite: { id: invite.id, expiresAt, usedAt: linkExisting ? now : invite.usedAt } };
         });
         if ('error' in result) return NextResponse.json({ error: result.error }, { status: result.status });
         log.info('초대 기한 연장', { inviteId: result.invite.id });
