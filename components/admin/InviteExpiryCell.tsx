@@ -3,7 +3,7 @@
 import { formatInviteExpiryDate, getInviteExpiryInputError } from '@/lib/invite-expiry';
 
 interface InviteExpiryCellProps {
-    invite: { id: string; email: string; expiresAt: string; programEndsAt: string };
+    invite: { id: string; email: string; expiresAt: string; programEndsAt: string; usedAt?: string | null; accessExpiresAt?: string | null };
     editState: { value: string; error: string } | null;
     isBusy: boolean;
     isSaving: boolean;
@@ -17,14 +17,17 @@ interface InviteExpiryCellProps {
 export default function InviteExpiryCell({
     invite, editState, isBusy, isSaving, today, onStartEditing, onDateChange, onSave, onCancel,
 }: InviteExpiryCellProps) {
-    const validationError = editState ? getInviteExpiryInputError(editState.value, invite.programEndsAt) : '';
+    const memberAccessExpiresAt = invite.usedAt ? invite.accessExpiresAt : null;
+    const validationError = editState ? getInviteExpiryInputError(editState.value, invite.programEndsAt, memberAccessExpiresAt) : '';
+    const maxDate = formatInviteExpiryDate(memberAccessExpiresAt && memberAccessExpiresAt < invite.programEndsAt
+        ? memberAccessExpiresAt : invite.programEndsAt);
     const errorMessage = editState?.error || validationError;
 
     return <td className="px-5 py-4 text-sm text-gray-400">
         {editState ? <div className="space-y-2">
             <input type="date" className="input" value={editState.value} required min={today}
-                max={formatInviteExpiryDate(invite.programEndsAt)} disabled={isBusy}
-                aria-label={`${invite.email} 이용 기한`}
+                max={maxDate} disabled={isBusy}
+                aria-label={`${invite.email} 최초 접속 기한`}
                 onChange={(event) => onDateChange(event.target.value)}
                 id={`invites-expiry-input-${invite.id}`} />
             <div className="flex gap-2">
@@ -35,7 +38,7 @@ export default function InviteExpiryCell({
             </div>
             {errorMessage && <p className="text-xs text-rose-400" role="alert">{errorMessage}</p>}
         </div> : <button type="button" className="text-indigo-300 underline underline-offset-4 disabled:opacity-50" disabled={isBusy}
-            aria-label={`${invite.email} 이용 기한 연장`} title="이용 기한 연장"
+            aria-label={`${invite.email} 최초 접속 기한 연장`} title="최초 접속 기한 연장"
             onClick={onStartEditing}
             id={`invites-expiry-${invite.id}`}>{formatInviteExpiryDate(invite.expiresAt)}</button>}
     </td>;

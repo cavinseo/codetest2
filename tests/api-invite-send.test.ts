@@ -130,7 +130,8 @@ describe('발송 가능한 코드와 이용 기한', () => {
         expect((await POST(request(), context)).status).toBe(200);
         const html = sendMail.mock.calls[0][0].html;
         expect(html).toContain(future(10).toISOString().slice(0, 10));
-        expect(html).toContain('위 기한까지 같은 코드로 로그인');
+        expect(html).toContain('첫 로그인 기한');
+        expect(html).toContain('회원 이용만료일까지 같은 코드로 로그인');
         expect(html).not.toContain('최초 로그인 후 90일');
     });
     it.each(['MENTOR', 'PROGRAM_MANAGER', 'ADMIN'])('%s 역할의 기존 코드는 발송하지 않는다', async (role) => {
@@ -193,13 +194,13 @@ describe('발송 가능한 코드와 이용 기한', () => {
         expect(sendMail.mock.calls[0][0].html).toContain('연장되지는 않습니다');
     });
 
-    it('프로그램이 더 일찍 끝나면 재발송 본문에 그 실제 종료 기한을 표시한다', async () => {
+    it('프로그램 종료일과 구분해 회원관리에서 정한 이용만료일을 안내한다', async () => {
         const invite = usedInvite();
         invite.program.endsAt = future(20);
         findUniqueInvite.mockResolvedValue(invite);
         expect((await POST(request(), context)).status).toBe(200);
-        expect(sendMail.mock.calls[0][0].html).toContain(future(20).toISOString().slice(0, 10));
-        expect(sendMail.mock.calls[0][0].html).not.toContain(future(60).toISOString().slice(0, 10));
+        expect(sendMail.mock.calls[0][0].html).not.toContain(future(20).toISOString().slice(0, 10));
+        expect(sendMail.mock.calls[0][0].html).toContain(`회원 이용만료일: ${future(60).toISOString().slice(0, 10)}`);
     });
 });
 

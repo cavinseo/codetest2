@@ -432,12 +432,15 @@ describe('초대 코드 목록', () => {
         expect(findManyInvite).not.toHaveBeenCalled();
     });
 
-    it('사용된 코드도 프로그램 종료일을 실효 만료일로 제공한다', async () => {
+    it('최초 접속 기한과 회원 이용만료일을 서로 다른 필드로 제공한다', async () => {
         authAs('ADMIN');
         const end = new Date(0);
         findManyInvite.mockResolvedValue([{ id: 'i', usedAt: new Date(), accessDurationDays: 90, expiresAt: new Date(Date.now() + 86400000), program: { name: '종료 프로그램', endsAt: end }, usedBy: { accessExpiresAt: null } }]);
         const result = await GET(new NextRequest('http://localhost/api/invites'));
-        expect((await result.json()).invites[0]).toMatchObject({ expiresAt: end.toISOString(), programName: '종료 프로그램' });
+        expect((await result.json()).invites[0]).toMatchObject({
+            expiresAt: new Date(Date.now() + 86400000).toISOString(),
+            accessExpiresAt: end.toISOString(), programName: '종료 프로그램',
+        });
     });
 
     it('멘토는 목록을 볼 수 없다', async () => {

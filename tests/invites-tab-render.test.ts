@@ -347,7 +347,8 @@ it('신규 이용 기한은 빈 필수 입력이며 한국 시간 오늘과 프�
     expect(input.required).toBe(true);
     expect(input.min).toBe('2026-09-17');
     expect(input.max).toBe('2099-12-31');
-    expect(container.textContent).toContain('가입과 로그인');
+    expect(container.textContent).toContain('최초 접속');
+    expect(container.textContent).toContain('회원관리에서 더 길게 조정');
     expect(container.textContent).toContain('한국 시간');
     expect(container.querySelector<HTMLButtonElement>('#invites-issue-submit')!.disabled).toBe(true);
     await issue();

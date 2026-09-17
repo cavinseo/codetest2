@@ -15,6 +15,8 @@ import { memberProfileSchemaFor } from '@/lib/member-profile';
 import { describeMenteeDeletion, parseDeletionReason } from '@/lib/account-deletion';
 import { isTransferConflictError, lockTransferUsers, ProjectTransferError, transferSnapshotToken } from '@/lib/project-transfer';
 import { Prisma } from '@prisma/client';
+import { memberAccessExpirySchema } from '@/lib/member-access-expiry';
+import { setMemberAccessExpiry } from '@/lib/member-access-management';
 import {
     accessExpiryFrom, canTransitionRole, parseDirectCreateRole,
     parseMemberRole, isAccessExpired, MEMBER_ROLE_LABELS, type MemberRole,
@@ -39,6 +41,7 @@ export async function GET(request: NextRequest) {
                 role: true,
                 mentorProjectCreationEnabled: true,
                 accessExpiresAt: true,
+                usedInviteCode: { select: { expiresAt: true } },
                 mustChangePassword: true,
                 createdAt: true,
                 updatedAt: true,
@@ -52,9 +55,10 @@ export async function GET(request: NextRequest) {
         });
 
         return NextResponse.json({
-            users: users.map(({ program, ...rest }) => ({
+            users: users.map(({ program, usedInviteCode, ...rest }) => ({
                 ...rest,
                 programName: program?.name ?? null,
+                inviteExpiresAt: usedInviteCode?.expiresAt ?? null,
             })),
         });
     } catch (error: unknown) {
@@ -85,7 +89,7 @@ export async function PATCH(request: NextRequest) {
         const userId: string | undefined = body?.userId;
         const action: string | undefined = body?.action;
 
-        const allowedActions = ['approve', 'revoke', 'setRole', 'extendAccess', 'setMentorProjectCreation'];
+        const allowedActions = ['approve', 'revoke', 'setRole', 'extendAccess', 'setAccessExpiry', 'setMentorProjectCreation'];
         if (!userId || !allowedActions.includes(action ?? '')) {
             return NextResponse.json(
                 { error: 'userId 와 유효한 action이 필요합니다.' },
@@ -96,6 +100,15 @@ export async function PATCH(request: NextRequest) {
         const target = await prisma.user.findUnique({ where: { id: userId } });
         if (!target) {
             return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 });
+        }
+
+        if (action === 'setAccessExpiry') {
+            const parsed = memberAccessExpirySchema.safeParse(body.accessExpiresAt);
+            if (!parsed.success) return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
+            const result = await setMemberAccessExpiry(userId, target.email, parsed.data);
+            if ('error' in result) return NextResponse.json({ error: result.error }, { status: result.status });
+            log.info('회원 이용만료일 변경', { userId, actorId: adminResult.userId });
+            return NextResponse.json({ success: true, user: result.user });
         }
 
         if (action === 'setMentorProjectCreation') {

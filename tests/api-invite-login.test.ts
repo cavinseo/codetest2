@@ -125,13 +125,13 @@ describe('초대 코드 로그인', () => {
         expect(mocks.update).not.toHaveBeenCalled();
         expect(mocks.cookie).toHaveBeenCalledOnce();
     });
-    it('관리자가 연장했어도 프로그램 종료 후에는 초대 코드 로그인을 거절한다', async () => {
+    it('프로그램 종료 후에도 회원 이용만료일이 남으면 같은 코드로 로그인한다', async () => {
         mocks.findInvite.mockResolvedValue({
             ...used, usedAt: after(-100), expiresAt: after(-86),
             program: { endsAt: now }, usedBy: { ...user, accessExpiresAt: after(10) },
         });
-        expect((await POST(request())).status).toBe(403);
-        expect(mocks.cookie).not.toHaveBeenCalled();
+        expect((await POST(request())).status).toBe(200);
+        expect(mocks.cookie).toHaveBeenCalledOnce();
         expect(mocks.update).not.toHaveBeenCalled();
     });
     it.each([

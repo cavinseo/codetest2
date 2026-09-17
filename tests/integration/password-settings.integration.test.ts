@@ -89,9 +89,9 @@ function inviteInput(code: string, password: string) {
     return { verificationMethod: 'invite', inviteCode: code, newPassword: password, confirmPassword: password };
 }
 
-async function signIn(email: string, password: string) {
+async function signIn(email: string, password: string, role: 'MENTEE' | null = 'MENTEE') {
     capturedCookies.length = 0;
-    const response = await passwordLogin(request('/api/auth/login', 'POST', undefined, { email, password, role: 'MENTEE' }));
+    const response = await passwordLogin(request('/api/auth/login', 'POST', undefined, { email, password, ...(role ? { role } : {}) }));
     expect(response.status).toBe(200);
     return { response, cookie: issuedCookie() };
 }
@@ -260,11 +260,10 @@ it('타인 코드·미사용 코드·틀린 코드로는 본인의 비밀번호�
     expect(capturedCookies).toEqual([]);
 });
 
-it.each(['program', 'member'] as const)('%s 이용 기한이 끝나면 초대 확인과 기존 쿠키·코드 로그인을 거절한다', async (deadline) => {
+it('회원 이용 기한이 끝나면 초대 확인과 기존 쿠키·코드 로그인을 거절한다', async () => {
     const member = await inviteMember();
     const past = new Date(Date.now() - day);
-    if (deadline === 'program') await baseDb.program.update({ where: { id: programId }, data: { endsAt: past } });
-    else await baseDb.user.update({ where: { id: member.account.id }, data: { accessExpiresAt: past } });
+    await baseDb.user.update({ where: { id: member.account.id }, data: { accessExpiresAt: past } });
     const before = await baseDb.user.findUniqueOrThrow({ where: { id: member.account.id } });
     capturedCookies.length = 0;
     expect((await changePassword(request('/api/admin/password', 'POST', member.cookie,
@@ -275,6 +274,14 @@ it.each(['program', 'member'] as const)('%s 이용 기한이 끝나면 초대 �
     }))).status).toBe(403);
     expect(capturedCookies).toEqual([]);
     expect(await baseDb.user.findUniqueOrThrow({ where: { id: member.account.id } })).toEqual(before);
+});
+
+it('프로그램이 종료되어도 회원 이용 기한이 남으면 초대 코드로 비밀번호를 설정한다', async () => {
+    const member = await inviteMember();
+    await baseDb.program.update({ where: { id: programId }, data: { endsAt: new Date(Date.now() - day) } });
+    const response = await changePassword(request('/api/admin/password', 'POST', member.cookie,
+        inviteInput(member.code.code, 'Valid-member-expiry-123')));
+    expect(response.status).toBe(200);
 });
 
 it('기존 현재 비밀번호 요청을 유지하며 임시 비밀번호 온보딩을 해제하고 잘못된 입력은 변경하지 않는다', async () => {
@@ -390,7 +397,7 @@ it('현재 비밀번호 확인 후 관리자 API가 프로그램을 종료하면
         inviteInput(member.code.code, initialPassword)));
     expect(initialChange.status).toBe(200);
     const memberCookie = issuedCookie();
-    const { cookie: adminCookie } = await signIn(admin.email, initialPassword);
+    const { cookie: adminCookie } = await signIn(admin.email, initialPassword, null);
     expect((await saveProfile(request('/api/me/profile', 'PUT', adminCookie, {
         organization: '비밀번호 검수기관', phone: '01000000000', privacyConsent: true,
     }))).status).toBe(200);

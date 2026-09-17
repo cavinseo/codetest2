@@ -22,9 +22,9 @@ interface IssueInviteInput {
 
 function resolveInviteExpiry(requestedExpiresAt: Date, programEndsAt: Date, now: Date): { expiresAt: Date } | InviteValidationError {
     if (programEndsAt <= now) return { error: '종료된 프로그램의 초대 기한은 지정할 수 없습니다.', status: 400 };
-    if (requestedExpiresAt <= now) return { error: '이용 기한은 오늘 이후 날짜로 입력하세요.', status: 400 };
+    if (requestedExpiresAt <= now) return { error: '최초 접속 기한은 오늘 이후 날짜로 입력하세요.', status: 400 };
     if (formatInviteExpiryDate(requestedExpiresAt) > formatInviteExpiryDate(programEndsAt)) {
-        return { error: '이용 기한은 프로그램 종료일을 넘길 수 없습니다.', status: 400 };
+        return { error: '최초 접속 기한은 프로그램 종료일을 넘길 수 없습니다.', status: 400 };
     }
     return { expiresAt: new Date(Math.min(requestedExpiresAt.getTime(), programEndsAt.getTime())) };
 }
@@ -94,7 +94,7 @@ async function findMenteeForExtension(tx: Prisma.TransactionClient, invite: Invi
     if (existingMentee?.usedInviteCode) {
         return { error: '이 멘티는 다른 초대 코드에 연결되어 있습니다.', status: 409 };
     }
-    // 기존 가입 경로로 등록되어 초대 연결이 없는 승인 멘티도 같은 기한을 적용한다.
+    // 기존 가입 경로의 승인 멘티도 연결하되 회원관리에서 정한 이용 기한을 보존한다.
     return { mentee: existingMentee, shouldLinkExistingMentee: !!existingMentee };
 }
 
@@ -107,14 +107,15 @@ async function updateMenteeExpiry(
         || mentee.programId !== invite.programId || mentee.email.trim().toLowerCase() !== email) {
         return { error: '초대와 같은 프로그램의 승인된 멘티인지 확인하세요.', status: invite.usedAt ? 400 : 409 };
     }
-    if (shouldLinkExistingMentee && mentee.accessExpiresAt && expiresAt < mentee.accessExpiresAt) {
-        return { error: '현재 멘티 이용 기한보다 이른 날짜로 변경할 수 없습니다.', status: 400 };
+    const accessExpiresAt = mentee.accessExpiresAt ?? (invite.usedAt ? inviteAccessExpiresAt(invite) : expiresAt);
+    if (expiresAt > accessExpiresAt) {
+        return { error: '초대 기한은 회원 이용만료일보다 늦을 수 없습니다. 회원관리에서 이용만료일을 먼저 연장하세요.', status: 400 };
     }
     const updatedMentees = await tx.user.updateMany({
         where: { id: mentee.id, role: 'MENTEE', isAdmin: false, status: 'APPROVED', programId: invite.programId,
             email: { equals: email, mode: 'insensitive' }, accessExpiresAt: mentee.accessExpiresAt,
             ...(shouldLinkExistingMentee ? { usedInviteCode: { is: null } } : {}) },
-        data: { accessExpiresAt: expiresAt },
+        data: { accessExpiresAt },
     });
     if (updatedMentees.count !== 1) return { error: '멘티 정보가 변경되었습니다. 목록을 새로고침하세요.', status: 409 };
     return null;
@@ -127,7 +128,7 @@ export async function extendMenteeInvite(inviteId: string, requestedExpiresAt: D
 
     return prisma.$transaction(async (tx) => {
         await lockInviteEmail(tx, email);
-        // 첫 로그인과 경합해도 연결된 계정의 기한까지 한 번에 연장한다.
+        // 첫 로그인과 경합해도 변경된 초대와 회원 기한을 함께 검증한다.
         await tx.$queryRaw`SELECT id FROM invite_codes WHERE id = ${inviteId} FOR UPDATE`;
         const invite = await tx.inviteCode.findUnique({
             where: { id: inviteId }, include: { program: true, usedBy: true },
@@ -141,7 +142,7 @@ export async function extendMenteeInvite(inviteId: string, requestedExpiresAt: D
         const expiry = resolveInviteExpiry(requestedExpiresAt, invite.program.endsAt, now);
         if ('error' in expiry) return expiry;
         const { expiresAt } = expiry;
-        if (expiresAt <= inviteAccessExpiresAt(invite)) {
+        if (expiresAt <= invite.expiresAt) {
             return { error: '현재 기한보다 늦은 날짜를 선택하세요.', status: 400 };
         }
 
@@ -151,8 +152,12 @@ export async function extendMenteeInvite(inviteId: string, requestedExpiresAt: D
         const updateError = await updateMenteeExpiry(tx, invite, mentee, email, expiresAt, shouldLinkExistingMentee);
         if (updateError) return updateError;
 
+        const initialAccessExpiry = mentee?.accessExpiresAt ?? new Date(Math.max(
+            expiresAt.getTime(), invite.accessExpiresAt?.getTime() ?? 0,
+        ));
         await tx.inviteCode.update({ where: { id: invite.id }, data: {
-            expiresAt, accessExpiresAt: expiresAt,
+            expiresAt,
+            ...(!invite.usedAt ? { accessExpiresAt: initialAccessExpiry } : {}),
             ...(shouldLinkExistingMentee && mentee ? { usedAt: now, usedById: mentee.id } : {}),
         } });
         return { invite: { id: invite.id, expiresAt, usedAt: shouldLinkExistingMentee ? now : invite.usedAt } };

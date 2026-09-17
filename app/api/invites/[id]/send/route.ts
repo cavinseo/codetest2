@@ -49,9 +49,9 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
                 <p>${escapeHtml(invite.program.name)} 프로그램의 기존 초대 코드를 안내합니다.</p>
                 <p>등록된 이메일과 아래 코드로 로그인하세요.</p>
                 <p style="font-family: monospace; font-size: 22px; font-weight: bold;">${escapeHtml(invite.code)}</p>
-                <p>코드 이용 기한: ${formatInviteExpiryDate(expiresAt)}까지 (한국 시간, 프로그램 종료 시각 이내)</p>
+                <p>첫 로그인 기한: ${formatInviteExpiryDate(invite.expiresAt)}까지 (한국 시간)</p>
                 <p>${invite.accessExpiresAt || invite.usedAt
-                    ? '위 기한까지 같은 코드로 로그인할 수 있습니다.'
+                    ? `회원 이용만료일: ${formatInviteExpiryDate(invite.usedAt ? expiresAt : invite.accessExpiresAt!)}까지. 최초 접속 후에는 회원 이용만료일까지 같은 코드로 로그인할 수 있습니다.`
                     : `최초 로그인 후 ${invite.accessDurationDays}일과 프로그램 종료일 중 빠른 날까지 이용할 수 있습니다.`} 메일 재발송으로 기존 이용 기한이 연장되지는 않습니다.</p>
                 <p><a href="${escapeHtml(loginUrl)}">초대 코드로 로그인</a></p>
             </div>`,

@@ -16,6 +16,7 @@ interface Invite {
     programName: string;
     programEndsAt: string;
     expiresAt: string;
+    accessExpiresAt?: string | null;
     usedAt: string | null;
 }
 
@@ -169,7 +170,8 @@ export default function InvitesTab() {
     };
 
     const extendExpiry = async (invite: Invite) => {
-        if (operationInFlight.current || editingExpiry?.id !== invite.id || getInviteExpiryInputError(editingExpiry.value, invite.programEndsAt)) return;
+        if (operationInFlight.current || editingExpiry?.id !== invite.id
+            || getInviteExpiryInputError(editingExpiry.value, invite.programEndsAt, invite.usedAt ? invite.accessExpiresAt : null)) return;
         operationInFlight.current = true;
         setOperation('extend');
         setMessage(null);
@@ -188,7 +190,7 @@ export default function InvitesTab() {
             setInvites((prev) => prev.map((item) => item.id === invite.id
                 ? { ...item, expiresAt: data.invite.expiresAt, usedAt: data.invite.usedAt ?? item.usedAt } : item));
             setEditingExpiry(null);
-            setMessage({ type: 'success', text: '이용 기한을 연장했습니다.' });
+            setMessage({ type: 'success', text: '최초 접속 기한을 연장했습니다.' });
         } catch {
             if (isMounted.current) setEditingExpiry((prev) => prev && ({ ...prev, error: '기한 저장 결과를 확인하지 못했습니다. 연결 상태와 초대 목록을 확인하세요.' }));
         } finally {
@@ -197,6 +199,8 @@ export default function InvitesTab() {
     };
 
     const isExpired = (invite: Invite) => new Date(invite.expiresAt).getTime() <= Date.now();
+    const canResend = (invite: Invite) => new Date(invite.usedAt
+        ? invite.accessExpiresAt ?? invite.expiresAt : invite.expiresAt).getTime() > Date.now();
 
     return (
         <div className="space-y-4">
@@ -219,7 +223,7 @@ export default function InvitesTab() {
                         </select>
                     </label>
                     <label className="block text-sm font-medium text-gray-400">
-                        이용 기한 (필수)
+                        최초 접속 기한 (필수)
                         <input type="date" className="input mt-2" value={expiresAt} required min={today}
                             max={selectedProgram ? formatInviteExpiryDate(selectedProgram.endsAt) : undefined}
                             disabled={isBusy || isLoading || !selectedProgram} onChange={(e) => setExpiresAt(e.target.value)}
@@ -231,7 +235,7 @@ export default function InvitesTab() {
                     </button>
                 </div>
                 <p className="text-xs text-gray-500">줄바꿈, 공백, 쉼표 또는 세미콜론으로 구분해 최대 {INVITE_BATCH_LIMIT}명까지 입력하세요. 이메일별로 다른 코드와 개별 메일을 보냅니다.</p>
-                <p className="text-xs text-gray-500" id="invites-expiry-help">가입과 로그인은 한국 시간으로 선택한 날짜의 끝까지 가능하며, 프로그램이 먼저 종료되면 그 종료 시각까지 이용할 수 있습니다.</p>
+                <p className="text-xs text-gray-500" id="invites-expiry-help">초대 코드는 선택한 날짜까지 최초 접속할 수 있습니다. 회원 이용만료일도 처음에는 같은 날짜로 설정되며, 가입 후 회원관리에서 더 길게 조정할 수 있습니다. 날짜는 한국 시간 기준입니다.</p>
                 {issueExpiryError && (expiresAt || parsedEmails.emails.length > 0) && <p className="text-xs text-rose-400" role="alert">{issueExpiryError}</p>}
                 {parsedEmails.duplicateCount > 0 && <p className="text-xs text-amber-400">중복 이메일 {parsedEmails.duplicateCount}개를 제외했습니다.</p>}
                 {parsedEmails.invalid.length > 0 && <p className="text-xs text-rose-400 break-words" role="alert">잘못된 이메일은 발급에서 제외됩니다. {parsedEmails.invalid.join(', ')}</p>}
@@ -279,7 +283,7 @@ export default function InvitesTab() {
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">이메일</th>
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500">초대코드</th>
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">프로그램</th>
-                                <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">기한</th>
+                                <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">최초 접속 기한</th>
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">상태</th>
                                 <th className="px-5 py-3.5" />
                             </tr>
@@ -305,7 +309,7 @@ export default function InvitesTab() {
                                         )}
                                     </td>
                                     <td className="px-5 py-4 text-right">
-                                        {!isExpired(invite) && <button type="button" onClick={() => resend(invite)} disabled={isBusy}
+                                        {canResend(invite) && <button type="button" onClick={() => resend(invite)} disabled={isBusy}
                                             className="btn-secondary text-xs mr-2" id={`invites-resend-${invite.id}`}>메일 재발송</button>}
                                         {!invite.usedAt && !isExpired(invite) && (
                                             <button type="button" onClick={() => revoke(invite.id)} disabled={isBusy}

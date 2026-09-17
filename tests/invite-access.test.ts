@@ -18,9 +18,9 @@ describe('초대 계정 이용 기한', () => {
     it('명시한 기한이 있어도 미사용 코드 회수를 무시하지 않는다', () => {
         expect(inviteAccessExpiresAt({ ...invite, usedAt: null, expiresAt: after(-1), accessExpiresAt: after(10) })).toEqual(after(-1));
     });
-    it('명시한 기한보다 연장된 회원 기한을 보존하되 프로그램 종료를 지킨다', () => {
+    it('회원 기한을 우선하며 저장된 초기 기한도 프로그램 변경 때문에 줄이지 않는다', () => {
         expect(inviteAccessExpiresAt({ ...invite, accessExpiresAt: after(10), usedBy: { accessExpiresAt: after(20) } })).toEqual(after(20));
-        expect(inviteAccessExpiresAt({ ...invite, accessExpiresAt: after(600) })).toEqual(after(500));
+        expect(inviteAccessExpiresAt({ ...invite, accessExpiresAt: after(600) })).toEqual(after(600));
     });
     it.each([1, 30, 90, 365])('저장된 %i일 기간을 최초 사용일부터 계산한다', (days) => {
         expect(inviteAccessExpiresAt({ ...invite, accessDurationDays: days })).toEqual(after(days));
@@ -37,8 +37,8 @@ describe('초대 계정 이용 기한', () => {
     it('관리자가 연장한 기존 계정의 기한을 적용한다', () => {
         expect(inviteAccessExpiresAt({ ...invite, usedBy: { accessExpiresAt: after(400) } })).toEqual(after(400));
     });
-    it('관리자가 계정 기한을 연장해도 프로그램 종료를 넘지 않는다', () => {
-        expect(inviteAccessExpiresAt({ ...invite, program: { endsAt: after(200) }, usedBy: { accessExpiresAt: after(400) } })).toEqual(after(200));
+    it('가입 후에는 프로그램 종료일보다 늦더라도 회원 이용만료일을 적용한다', () => {
+        expect(inviteAccessExpiresAt({ ...invite, program: { endsAt: after(200) }, usedBy: { accessExpiresAt: after(400) } })).toEqual(after(400));
     });
     it('계정의 기한이 없으면 저장된 초대 기간을 적용한다', () => {
         expect(inviteAccessExpiresAt({ ...invite, usedBy: { accessExpiresAt: null } })).toEqual(after(90));

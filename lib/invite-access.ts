@@ -1,4 +1,4 @@
-// 초대 코드의 저장된 이용 기간과 프로그램 종료를 모든 인증 경로에서 동일하게 판정한다.
+// 최초 접속은 초대 기한으로, 가입 후 이용은 회원 이용만료일로 판정한다.
 import { isAccessExpired } from './member-roles';
 
 interface InviteAccess {
@@ -11,13 +11,14 @@ interface InviteAccess {
 }
 
 export function inviteAccessExpiresAt(invite: InviteAccess): Date {
+    const savedAccessExpiry = invite.usedBy?.accessExpiresAt ?? invite.accessExpiresAt;
+    if (invite.usedAt && savedAccessExpiry) {
+        return savedAccessExpiry;
+    }
     const deadlines = [invite.program.endsAt.getTime()];
     if (invite.usedAt) {
-        // 기존 계정은 관리자가 연장한 기한을 보존한다. 최초 생성 또는 기한이
-        // 없는 계정만 초대에 저장된 기간을 사용하며, 프로그램 종료는 항상 적용한다.
-        deadlines.push(invite.usedBy?.accessExpiresAt?.getTime()
-            ?? invite.accessExpiresAt?.getTime()
-            ?? invite.usedAt.getTime() + invite.accessDurationDays * 86_400_000);
+        // 명시된 이용만료일이 없는 구형 계정만 기존 기간 규칙을 적용한다.
+        deadlines.push(invite.usedAt.getTime() + invite.accessDurationDays * 86_400_000);
     } else {
         deadlines.push(invite.expiresAt.getTime());
     }

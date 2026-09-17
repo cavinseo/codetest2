@@ -289,7 +289,7 @@ describe('Google 회원 로그인 콜백 회원 게이트', () => {
         expect(responseCookie(response, 'session')).toBeDefined();
     });
 
-    it('초대 계정은 개인 기한이 남아도 프로그램 종료 후 Google 로그인을 막는다', async () => {
+    it('프로그램 종료 후에도 회원 이용만료일이 남으면 Google 로그인을 허용한다', async () => {
         findFirstUser.mockResolvedValue(approvedUser({
             programId: 'program', accessExpiresAt: new Date(Date.now() + 86_400_000),
             usedInviteCode: {
@@ -298,8 +298,8 @@ describe('Google 회원 로그인 콜백 회원 게이트', () => {
             },
         }));
         const response = await finishGoogleLogin(validCallbackRequest());
-        expect(redirectError(response)).toBe('expired');
-        expect(responseCookie(response, 'session')).toBeUndefined();
+        expect(response.headers.get('location')).toBe(`${ORIGIN}/dashboard`);
+        expect(responseCookie(response, 'session')).toBeDefined();
     });
 
     it('검증되지 않은 Google 이메일은 차단한다', async () => {

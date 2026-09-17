@@ -116,9 +116,10 @@ export function buildInviteEmail(params: {
             </div>
             <ul style="color: #555; font-size: 13px; line-height: 1.8; padding-left: 18px;">
                 <li>이 메일을 받은 주소로만 로그인할 수 있습니다.</li>
+                <li>첫 로그인 기한: <strong>${expiry}</strong>까지 (한국 시간)</li>
                 ${params.accessExpiresAt
-                    ? `<li>가입 및 로그인 이용 기한: <strong>${expiry}</strong>까지 (한국 시간, 프로그램 종료 시각 이내)</li>`
-                    : `<li>첫 로그인 기한: <strong>${expiry}</strong>까지</li>
+                    ? `<li>회원 이용만료일: <strong>${formatInviteExpiryDate(params.accessExpiresAt)}</strong>까지. 가입 후 관리자가 별도로 연장할 수 있습니다.</li>`
+                    : `
                 <li>첫 로그인 후 <strong>${params.accessDurationDays}일</strong>과 프로그램 종료일 중 먼저 도래하는 시점까지 이용할 수 있습니다.</li>`}
             </ul>
             <div style="text-align: center; margin: 26px 0 8px;">

@@ -193,7 +193,6 @@ describe('초대 코드 확인', () => {
         ['관리자 플래그', (user: ReturnType<typeof account>) => { user.isAdmin = true; }],
         ['프로그램 불일치', (user: ReturnType<typeof account>) => { user.programId = 'other-program'; }],
         ['회원 이용 기간 만료', (user: ReturnType<typeof account>) => { user.accessExpiresAt = new Date(Date.now() - 1); }],
-        ['프로그램 기간 만료', (user: ReturnType<typeof account>) => { user.usedInviteCode.program.endsAt = new Date(Date.now() - 1); }],
     ])('%s이면 거절하고 비밀번호와 쿠키를 보존한다', async (_name, mutate) => {
         const user = account();
         mutate(user);
@@ -201,6 +200,14 @@ describe('초대 코드 확인', () => {
         expect((await POST(request(inviteBody))).status).toBe(403);
         expect(updateMany).not.toHaveBeenCalled();
         expect(cookieSet).not.toHaveBeenCalled();
+    });
+    it('프로그램이 끝나도 회원 이용만료일이 남으면 비밀번호를 설정할 수 있다', async () => {
+        const user = account();
+        user.usedInviteCode.program.endsAt = new Date(Date.now() - 1);
+        findUser.mockResolvedValue(user);
+        expect((await POST(request(inviteBody))).status).toBe(200);
+        expect(updateMany).toHaveBeenCalledOnce();
+        expect(cookieSet).toHaveBeenCalledOnce();
     });
     it.each([null, { ...account().usedInviteCode, usedAt: null }, { ...account().usedInviteCode, usedById: null }])('연결되지 않거나 미사용 코드를 거부한다', async (usedInviteCode) => {
         findUser.mockResolvedValue({ ...account(), usedInviteCode });

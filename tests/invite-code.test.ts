@@ -143,14 +143,14 @@ describe('buildInviteEmail', () => {
         escapeHtml,
     };
 
-    it('명시한 기한은 가입과 이후 로그인에 공통으로 안내하고 기간을 다시 부여하지 않는다', () => {
+    it('최초 접속 기한과 회원 이용만료일을 각각 안내하고 기간을 다시 부여하지 않는다', () => {
         const expiry = new Date('2026-06-15T14:59:59.999Z');
         const { html } = buildInviteEmail({ ...params, expiresAt: expiry, accessExpiresAt: expiry });
-        expect(html).toContain('가입 및 로그인 이용 기한: <strong>2026-06-15</strong>');
+        expect(html).toContain('첫 로그인 기한: <strong>2026-06-15</strong>');
+        expect(html).toContain('회원 이용만료일: <strong>2026-06-15</strong>');
         expect(html).toContain('한국 시간');
-        expect(html).toContain('프로그램 종료 시각 이내');
         expect(html).not.toContain('90일');
-        expect(html).not.toContain('첫 로그인 기한');
+        expect(html).toContain('가입 후 관리자가 별도로 연장');
     });
 
     it('코드와 기한, 이용 기간을 본문에 담는다', () => {

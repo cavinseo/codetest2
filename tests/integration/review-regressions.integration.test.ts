@@ -160,7 +160,10 @@ it('F01 PM 발급은 메일 결과만 반환하고 관리자 발급은 저장된
     for (const [actor, suffix] of [[manager, 'pm_issue'], [admin, 'admin_issue']] as const) {
         const email = emailFor(suffix);
         issuedEmails.push(email);
-        const response = await issueInvite(request('/api/invites', 'POST', actor, { email, role: 'MENTEE', programId: programA }));
+        const response = await issueInvite(request('/api/invites', 'POST', actor, {
+            email, role: 'MENTEE', programId: programA,
+            expiresAt: new Date(Date.now() + 14 * day).toISOString().slice(0, 10),
+        }));
         expect(response.status).toBe(200);
         const body = await response.json();
         expect(body).toMatchObject({ success: true, emailSent: true, invite: { email, programId: programA } });
@@ -190,12 +193,12 @@ it('F02 멘티 재배정은 계정과 사용 코드의 프로그램만 함께 �
     expect((await readProfile(request('/api/me/profile', 'GET', mentee))).status).toBe(200);
 });
 
-it('F02 이동한 프로그램이 종료되면 보존된 코드와 세션 모두 차단하고 계정 기한은 바꾸지 않는다', async () => {
+it('F02 이동한 프로그램 종료 후에도 회원 이용만료일이 남으면 코드와 세션을 보존한다', async () => {
     const code = await invite('move_ends', admin, mentee);
     expect((await moveMentee(request(`/api/programs/${programB}/mentees`, 'POST', admin, { userId: mentee.id, confirmReassign: true }), context(programB))).status).toBe(200);
     await db.program.update({ where: { id: programB }, data: { endsAt: new Date(Date.now() - 1_000) } });
-    expect((await codeLogin(code)).status).toBe(403);
-    expect((await readProfile(request('/api/me/profile', 'GET', mentee))).status).toBe(403);
+    expect((await codeLogin(code)).status).toBe(200);
+    expect((await readProfile(request('/api/me/profile', 'GET', mentee))).status).toBe(200);
     expect((await db.user.findUniqueOrThrow({ where: { id: mentee.id } })).accessExpiresAt).toEqual(mentee.accessExpiresAt);
 });
 

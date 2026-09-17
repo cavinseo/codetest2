@@ -2,6 +2,7 @@
 // 회원 목록·역할 변경·승인·기간 연장·계정 생성 UI. 관리자 전용이며 상태는 app/admin/page.tsx 가 갖는다.
 
 import { useEffect, useState } from 'react';
+import MemberExpiryCell from './MemberExpiryCell';
 import ProfileFields, { EMPTY_PROFILE, toProfilePayload, type ProfileValue } from '@/components/member/ProfileFields';
 import {
     MEMBER_ROLES, MEMBER_ROLE_LABELS, canTransitionRole,
@@ -23,6 +24,7 @@ export interface User {
     role: MemberRole;
     mentorProjectCreationEnabled?: boolean;
     accessExpiresAt: string | null;
+    inviteExpiresAt?: string | null;
     mustChangePassword: boolean;
     createdAt: string;
     updatedAt: string;
@@ -296,7 +298,7 @@ export default function MembersTab({
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">역할</th>
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">프로그램</th>
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">승인 상태</th>
-                                <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">이용 만료</th>
+                                <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">이용만료일</th>
                                 <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">가입일</th>
                                 <th className="px-5 py-3.5" />
                             </tr>
@@ -364,11 +366,7 @@ export default function MembersTab({
                                             <span className="badge-rose text-[10px]">승인 대기</span>
                                         )}
                                     </td>
-                                    <td className="px-5 py-4">
-                                        <span className="text-xs text-gray-500">
-                                            {m.accessExpiresAt ? new Date(m.accessExpiresAt).toLocaleDateString('ko-KR') : '무기한'}
-                                        </span>
-                                    </td>
+                                    <MemberExpiryCell member={m} onSaved={onReload} />
                                     <td className="px-5 py-4 hidden md:table-cell">
                                         <span className="text-xs text-gray-500">{new Date(m.createdAt).toLocaleDateString('ko-KR')}</span>
                                     </td>

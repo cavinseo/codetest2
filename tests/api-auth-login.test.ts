@@ -88,7 +88,7 @@ describe('로그인 이용 기간 확인', () => {
         expect(cookieSet).toHaveBeenCalledOnce();
     });
 
-    it('초대 계정은 개인 기한이 남아도 프로그램 종료 후 비밀번호 로그인을 막는다', async () => {
+    it('프로그램 종료 후에도 회원 이용만료일이 남으면 비밀번호 로그인을 허용한다', async () => {
         findUniqueUser.mockResolvedValue(approvedUser({
             programId: 'program', accessExpiresAt: new Date(Date.now() + 86_400_000),
             usedInviteCode: {
@@ -97,8 +97,8 @@ describe('로그인 이용 기간 확인', () => {
             },
         }));
         const res = await POST(loginRequest({ email: 'u@x.com', password: 'password123', role: 'MENTEE' }));
-        expect(res.status).toBe(403);
-        expect(cookieSet).not.toHaveBeenCalled();
+        expect(res.status).toBe(200);
+        expect(cookieSet).toHaveBeenCalledOnce();
     });
 
     it('이용 기간이 지난 계정은 403 으로 막고 쿠키를 심지 않는다', async () => {

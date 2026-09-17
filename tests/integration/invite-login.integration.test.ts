@@ -88,7 +88,7 @@ it('기존 관리자와 같은 이메일로 발급된 새 코드는 기존 계�
     expect((await db.inviteCode.findUniqueOrThrow({ where: { id: code.id } })).usedById).toBeNull();
 });
 
-it('프로그램이 종료되면 사용된 코드와 이전에 발급한 세션을 모두 차단한다', async () => {
+it('프로그램이 종료되어도 회원 이용만료일이 남으면 코드와 기존 세션을 허용한다', async () => {
     const code = await invite('ended');
     expect((await signIn(code)).status).toBe(200);
     const used = await db.inviteCode.findUniqueOrThrow({ where: { id: code.id }, include: { usedBy: true } });
@@ -98,8 +98,8 @@ it('프로그램이 종료되면 사용된 코드와 이전에 발급한 세션�
     expect(await requireAuth(req, { allowIncompleteOnboarding: true })).not.toBeInstanceOf(NextResponse);
     const saved = await db.program.findUniqueOrThrow({ where: { id: programId } });
     await db.program.update({ where: { id: programId }, data: { endsAt: new Date(Date.now() - day) } });
-    expect((await signIn(code)).status).toBe(403);
-    expect((await requireAuth(req, { allowIncompleteOnboarding: true }) as NextResponse).status).toBe(403);
+    expect((await signIn(code)).status).toBe(200);
+    expect(await requireAuth(req, { allowIncompleteOnboarding: true })).not.toBeInstanceOf(NextResponse);
     expect(await db.user.count({ where: { id: user.id } })).toBe(1);
     await db.program.update({ where: { id: programId }, data: { endsAt: saved.endsAt } });
 });

@@ -22,7 +22,8 @@ model User {
   role                String                 @default("MENTEE")
   // 관리자가 멘토별로 허용하는 배정 멘티 프로젝트 대리 개설 권한.
   mentorProjectCreationEnabled Boolean        @default(false)
-  // 초대 코드로 가입한 계정의 접근 만료 시각. null 이면 만료 없음(관리자 생성 계정).
+  // 가입 후 실제 이용만료일. 회원관리에서 조정하며 초대 최초 접속 기한보다 빠를 수 없다.
+  // null인 관리자 생성 계정은 만료 없음이며, 구형 초대 계정은 기존 기간 규칙을 적용한다.
   accessExpiresAt     DateTime?
   // 발급된 세션을 한꺼번에 무효화하기 위한 값. 비밀번호 변경이나 승인 취소 때
   // 1 올리면, 그 전에 발급된 쿠키는 전부 거부된다.
@@ -639,9 +640,10 @@ model InviteCode {
   // 이 코드로 들어온 멘티가 참여할 프로그램. 코드는 이 프로그램에만 쓸 수 있다.
   programId String
   program   Program @relation(fields: [programId], references: [id], onDelete: Cascade)
-  // 코드 자체의 사용 기한
+  // 코드로 최초 접속할 수 있는 기한. 가입 후 재로그인은 회원 이용만료일을 적용한다.
   expiresAt DateTime
-  // 명시한 가입·로그인 공통 기한이다. null인 기존 코드는 종전 이용 기간을 유지한다.
+  // 계정 생성 시 적용할 초기 이용만료일. 발급 시 expiresAt과 같게 설정한다.
+  // 가입 후에는 User.accessExpiresAt이 우선하며 null인 기존 코드는 종전 기간을 유지한다.
   accessExpiresAt DateTime?
   // 가입 후 부여할 접근 기간(일). 기본 90일(약 3개월).
   accessDurationDays Int @default(90)

@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
             invites: invites.map(({ program, usedBy, code, ...rest }) => ({
                 ...rest, ...(authResult.role === 'ADMIN' ? { code } : {}), programName: program.name,
                 programEndsAt: program.endsAt,
-                expiresAt: inviteAccessExpiresAt({ ...rest, program, usedBy }),
+                accessExpiresAt: rest.usedAt ? inviteAccessExpiresAt({ ...rest, program, usedBy }) : rest.accessExpiresAt,
             })),
         });
     } catch (error: unknown) {

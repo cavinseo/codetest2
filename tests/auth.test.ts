@@ -132,7 +132,7 @@ describe('requireAuth', () => {
         expect(result).toMatchObject({ userId: SESSION.userId });
     });
 
-    it('초대 프로그램 종료 후 기존 세션과 온보딩 허용 요청도 거부한다', async () => {
+    it('프로그램 종료 후에도 회원 이용만료일이 남으면 세션과 온보딩을 허용한다', async () => {
         findUser.mockResolvedValue(approvedUser({
             programId: 'program', accessExpiresAt: new Date(Date.now() + 86_400_000),
             usedInviteCode: {
@@ -143,8 +143,8 @@ describe('requireAuth', () => {
         const request = requestWithSessionCookie(encodeSessionCookie(SESSION));
         for (const options of [{}, { allowIncompleteOnboarding: true }]) {
             const result = await requireAuth(request, options);
-            expect((result as NextResponse).status).toBe(403);
-            expect(await (result as NextResponse).json()).toMatchObject({ error: '이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.' });
+            expect(result).not.toBeInstanceOf(NextResponse);
+            expect(result).toMatchObject({ userId: SESSION.userId });
         }
     });
 
