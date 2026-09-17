@@ -6,17 +6,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { INVITE_BATCH_LIMIT, parseInviteEmails, runInviteBatch, type InviteBatchResult } from '@/lib/invite-batch';
-import { formatInviteExpiryDate, inviteExpirySchema } from '@/lib/invite-expiry';
+import { formatInviteExpiryDate, getInviteExpiryInputError } from '@/lib/invite-expiry';
+import InviteExpiryCell from './InviteExpiryCell';
 
 interface Invite {
     id: string;
     code?: string;
     email: string;
-    programId: string;
     programName: string;
     programEndsAt: string;
     expiresAt: string;
-    accessDurationDays: number;
     usedAt: string | null;
 }
 
@@ -25,14 +24,6 @@ interface ProgramOption {
     name: string;
     organization: string;
     endsAt: string;
-}
-
-function getExpiryError(value: string, programEndsAt: string) {
-    if (!value) return '이용 기한을 입력하세요.';
-    if (!inviteExpirySchema.safeParse(value).success) return '올바른 이용 기한 날짜를 입력하세요.';
-    if (value < formatInviteExpiryDate(new Date())) return '한국 시간 오늘 이후 날짜를 선택하세요.';
-    if (value > formatInviteExpiryDate(programEndsAt)) return '프로그램 종료일 이내 날짜를 선택하세요.';
-    return '';
 }
 
 export default function InvitesTab() {
@@ -48,20 +39,17 @@ export default function InvitesTab() {
     const [loadError, setLoadError] = useState('');
     const [results, setResults] = useState<InviteBatchResult[]>([]);
     const [batchTotal, setBatchTotal] = useState(0);
-    const mounted = useRef(true);
-    const busy = useRef(false);
-    const loadRequest = useRef(0);
+    const isMounted = useRef(true);
+    const operationInFlight = useRef(false);
+    const latestLoadRequestId = useRef(0);
     const isBusy = operation !== null;
     const parsedEmails = parseInviteEmails(email);
     const selectedProgram = programs.find((program) => program.id === programId);
-    const issueExpiryError = selectedProgram ? getExpiryError(expiresAt, selectedProgram.endsAt) : '';
-    const editingInvite = invites.find((invite) => invite.id === editingExpiry?.id);
-    const editingExpiryError = editingExpiry && editingInvite
-        ? editingExpiry.error || getExpiryError(editingExpiry.value, editingInvite.programEndsAt) : '';
+    const issueExpiryError = selectedProgram ? getInviteExpiryInputError(expiresAt, selectedProgram.endsAt) : '';
     const today = formatInviteExpiryDate(new Date());
 
-    const load = useCallback(async () => {
-        const request = ++loadRequest.current;
+    const loadInvitesAndPrograms = useCallback(async () => {
+        const requestId = ++latestLoadRequestId.current;
         const [invitesResult, programsResult] = await Promise.allSettled([
             fetch('/api/invites').then(async (res) => {
                 if (!res.ok) throw new Error('초대 코드 목록을 불러오지 못했습니다.');
@@ -72,7 +60,7 @@ export default function InvitesTab() {
                 return res.json();
             }),
         ]);
-        if (!mounted.current || request !== loadRequest.current) return;
+        if (!isMounted.current || requestId !== latestLoadRequestId.current) return;
         const errors: string[] = [];
         if (invitesResult.status === 'fulfilled') {
             setInvites(invitesResult.value.invites);
@@ -93,17 +81,22 @@ export default function InvitesTab() {
     }, []);
 
     useEffect(() => {
-        mounted.current = true;
-        void load();
+        isMounted.current = true;
+        void loadInvitesAndPrograms();
         return () => {
-            mounted.current = false;
+            isMounted.current = false;
         };
-    }, [load]);
+    }, [loadInvitesAndPrograms]);
+
+    const finishOperation = () => {
+        operationInFlight.current = false;
+        if (isMounted.current) setOperation(null);
+    };
 
     const issue = async () => {
         const parsed = parseInviteEmails(email);
-        if (busy.current || isLoading || !parsed.emails.length || parsed.emails.length > INVITE_BATCH_LIMIT || !selectedProgram || getExpiryError(expiresAt, selectedProgram.endsAt)) return;
-        busy.current = true;
+        if (operationInFlight.current || isLoading || !parsed.emails.length || parsed.emails.length > INVITE_BATCH_LIMIT || !selectedProgram || getInviteExpiryInputError(expiresAt, selectedProgram.endsAt)) return;
+        operationInFlight.current = true;
         setOperation('issue');
         setMessage(null);
         setResults([]);
@@ -111,10 +104,10 @@ export default function InvitesTab() {
         try {
             const completed = await runInviteBatch(
                 parsed.emails.map((address) => ({ kind: 'issue', email: address, programId, expiresAt })),
-                (result) => { if (mounted.current) setResults((prev) => [...prev, result]); },
-                () => mounted.current,
+                (result) => { if (isMounted.current) setResults((prev) => [...prev, result]); },
+                () => isMounted.current,
             );
-            if (!mounted.current) return;
+            if (!isMounted.current) return;
             const done = new Set(completed.filter((result) => result.status !== 'failed').map((result) => result.email));
             setEmail([...parsed.invalid, ...parsed.emails.filter((address) => !done.has(address))].join('\n'));
             const sent = completed.filter((result) => result.status === 'sent').length;
@@ -124,19 +117,18 @@ export default function InvitesTab() {
                 type: issued || failed ? 'error' : 'success',
                 text: `메일 발송 ${sent}건${issued ? ` · 코드 발급 완료, 메일 미발송 ${issued}건` : ''}${failed ? ` · 실패 ${failed}건` : ''}. 이메일별 결과를 확인하세요.`,
             });
-            await load();
+            await loadInvitesAndPrograms();
         } catch (error) {
-            if (mounted.current) setMessage({ type: 'error', text: error instanceof Error ? error.message : '발행에 실패했습니다.' });
+            if (isMounted.current) setMessage({ type: 'error', text: error instanceof Error ? error.message : '발행에 실패했습니다.' });
         } finally {
-            busy.current = false;
-            if (mounted.current) setOperation(null);
+            finishOperation();
         }
     };
 
     const revoke = async (id: string) => {
-        if (busy.current) return;
+        if (operationInFlight.current) return;
         if (!window.confirm('이 코드를 회수하시겠습니까? 기록은 남습니다.')) return;
-        busy.current = true;
+        operationInFlight.current = true;
         setOperation('revoke');
         try {
             const res = await fetch('/api/invites', {
@@ -145,42 +137,40 @@ export default function InvitesTab() {
                 body: JSON.stringify({ id }),
             });
             const data = await res.json().catch(() => null);
-            if (!mounted.current) return;
+            if (!isMounted.current) return;
             setMessage(res.ok
                 ? { type: 'success', text: '회수했습니다.' }
                 : { type: 'error', text: data?.error ?? '회수에 실패했습니다.' });
-            await load();
+            await loadInvitesAndPrograms();
         } catch {
-            if (mounted.current) setMessage({ type: 'error', text: '회수 결과를 확인하지 못했습니다. 목록을 새로고침하세요.' });
+            if (isMounted.current) setMessage({ type: 'error', text: '회수 결과를 확인하지 못했습니다. 목록을 새로고침하세요.' });
         } finally {
-            busy.current = false;
-            if (mounted.current) setOperation(null);
+            finishOperation();
         }
     };
 
     const resend = async (invite: Invite) => {
-        if (busy.current) return;
-        busy.current = true;
+        if (operationInFlight.current) return;
+        operationInFlight.current = true;
         setOperation('resend');
         setMessage(null);
         try {
             const res = await fetch(`/api/invites/${invite.id}/send`, { method: 'POST' });
             const data = await res.json().catch(() => null);
-            if (!mounted.current) return;
+            if (!isMounted.current) return;
             setMessage(res.ok && data?.emailSent
                 ? { type: 'success', text: `${invite.email} 주소로 기존 초대코드를 다시 발송했습니다.` }
                 : { type: 'error', text: data?.error || '메일 재발송에 실패했습니다.' });
         } catch {
-            if (mounted.current) setMessage({ type: 'error', text: '메일 발송 결과를 확인하지 못했습니다. 연결을 확인하세요.' });
+            if (isMounted.current) setMessage({ type: 'error', text: '메일 발송 결과를 확인하지 못했습니다. 연결을 확인하세요.' });
         } finally {
-            busy.current = false;
-            if (mounted.current) setOperation(null);
+            finishOperation();
         }
     };
 
     const extendExpiry = async (invite: Invite) => {
-        if (busy.current || editingExpiry?.id !== invite.id || getExpiryError(editingExpiry.value, invite.programEndsAt)) return;
-        busy.current = true;
+        if (operationInFlight.current || editingExpiry?.id !== invite.id || getInviteExpiryInputError(editingExpiry.value, invite.programEndsAt)) return;
+        operationInFlight.current = true;
         setOperation('extend');
         setMessage(null);
         try {
@@ -190,7 +180,7 @@ export default function InvitesTab() {
                 body: JSON.stringify({ id: invite.id, expiresAt: editingExpiry.value }),
             });
             const data = await res.json().catch(() => null);
-            if (!mounted.current) return;
+            if (!isMounted.current) return;
             if (!res.ok || !data?.success || !data?.invite?.expiresAt) {
                 setEditingExpiry((prev) => prev && ({ ...prev, error: data?.error || '기한 저장에 실패했습니다.' }));
                 return;
@@ -200,10 +190,9 @@ export default function InvitesTab() {
             setEditingExpiry(null);
             setMessage({ type: 'success', text: '이용 기한을 연장했습니다.' });
         } catch {
-            if (mounted.current) setEditingExpiry((prev) => prev && ({ ...prev, error: '기한 저장 결과를 확인하지 못했습니다. 연결 상태와 초대 목록을 확인하세요.' }));
+            if (isMounted.current) setEditingExpiry((prev) => prev && ({ ...prev, error: '기한 저장 결과를 확인하지 못했습니다. 연결 상태와 초대 목록을 확인하세요.' }));
         } finally {
-            busy.current = false;
-            if (mounted.current) setOperation(null);
+            finishOperation();
         }
     };
 
@@ -301,25 +290,11 @@ export default function InvitesTab() {
                                     <td className="px-5 py-4 text-sm text-white">{invite.email}</td>
                                     <td className="px-5 py-4 text-xs text-gray-300 font-mono whitespace-nowrap">{invite.code ?? '관리자만 열람 가능'}</td>
                                     <td className="px-5 py-4 text-sm text-gray-400">{invite.programName}</td>
-                                    <td className="px-5 py-4 text-sm text-gray-400">
-                                        {editingExpiry?.id === invite.id ? <div className="space-y-2">
-                                            <input type="date" className="input" value={editingExpiry.value} required min={today}
-                                                max={formatInviteExpiryDate(invite.programEndsAt)} disabled={isBusy}
-                                                aria-label={`${invite.email} 이용 기한`}
-                                                onChange={(e) => setEditingExpiry({ id: invite.id, value: e.target.value, error: '' })}
-                                                id={`invites-expiry-input-${invite.id}`} />
-                                            <div className="flex gap-2">
-                                                <button type="button" className="btn-primary text-xs" disabled={isBusy || !!getExpiryError(editingExpiry.value, invite.programEndsAt)}
-                                                    onClick={() => extendExpiry(invite)} id={`invites-expiry-save-${invite.id}`}>{operation === 'extend' ? '저장 중...' : '저장'}</button>
-                                                <button type="button" className="btn-secondary text-xs" disabled={isBusy}
-                                                    onClick={() => setEditingExpiry(null)} id={`invites-expiry-cancel-${invite.id}`}>취소</button>
-                                            </div>
-                                            {editingExpiryError && <p className="text-xs text-rose-400" role="alert">{editingExpiryError}</p>}
-                                        </div> : <button type="button" className="text-indigo-300 underline underline-offset-4 disabled:opacity-50" disabled={isBusy}
-                                            aria-label={`${invite.email} 이용 기한 연장`} title="이용 기한 연장"
-                                            onClick={() => { if (!busy.current) setEditingExpiry({ id: invite.id, value: formatInviteExpiryDate(invite.expiresAt), error: '' }); }}
-                                            id={`invites-expiry-${invite.id}`}>{formatInviteExpiryDate(invite.expiresAt)}</button>}
-                                    </td>
+                                    <InviteExpiryCell invite={invite} editState={editingExpiry?.id === invite.id ? editingExpiry : null}
+                                        isBusy={isBusy} isSaving={operation === 'extend'} today={today}
+                                        onStartEditing={() => { if (!operationInFlight.current) setEditingExpiry({ id: invite.id, value: formatInviteExpiryDate(invite.expiresAt), error: '' }); }}
+                                        onDateChange={(value) => setEditingExpiry({ id: invite.id, value, error: '' })}
+                                        onSave={() => extendExpiry(invite)} onCancel={() => setEditingExpiry(null)} />
                                     <td className="px-5 py-4">
                                         {invite.usedAt ? (
                                             <span className="badge-emerald text-[10px]">사용됨</span>
