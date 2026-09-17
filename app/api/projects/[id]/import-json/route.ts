@@ -5,6 +5,7 @@ import { createLogger } from '@/lib/logger';
 import { generateId } from '@/lib/id';
 import { importDeletionPlan, importHasAnyData } from '@/lib/import-json-plan';
 import { importJsonSchema, MAX_IMPORT_ROWS } from '@/lib/import-json-schema';
+import { ImportReferenceError, restoreResponseInvitations, validateImportReferences } from '@/lib/import-json-relations';
 import {
     countCascadeImpact,
     describeCascadeImpact,
@@ -76,6 +77,8 @@ export async function POST(
         // 재수집이 불가능한 데이터라 건수를 세어 확인을 받는다(엑셀 import 와 동일).
         const cascadeImpact = await countCascadeImpact(prisma, projectId, {
             replacesCustomerRequirements: Array.isArray(importData.customerRequirements),
+            replacesProductAttributes: Array.isArray(importData.productAttributes),
+            replacesTechnicalCharacteristics: Array.isArray(importData.technicalCharacteristics),
         });
         if (hasCascadeImpact(cascadeImpact) && importData.confirmCascade !== true) {
             return NextResponse.json(
@@ -106,6 +109,9 @@ export async function POST(
         const fitnesses = importData.attributeFitnesses ?? [];
         const qfdRelationships = importData.qfdRelationships ?? [];
         const kanoResponses = importData.kanoResponses ?? [];
+        const benchmarks = importData.benchmarks ?? [];
+        const techCorrelations = importData.techCorrelations ?? [];
+        const technicalBenchmarks = importData.technicalBenchmarks ?? [];
 
         const requirementIds = assignIds(requirements, 'spec');
         const technicalIds = assignIds(technicals, 'tech');
@@ -116,6 +122,7 @@ export async function POST(
         // 중요: payload에 실제로 포함된 컬렉션만 삭제합니다. 부분 payload가
         // 무관한 컬렉션(고객요구/설문응답/벤치마크 등)을 전부 지우던 문제를 방지.
         await prisma.$transaction(async (tx) => {
+            await validateImportReferences(tx, projectId, importData);
             const delegates = tx as unknown as Record<
                 string,
                 { deleteMany: (args: { where: { projectId: string } }) => Promise<unknown> }
@@ -217,17 +224,46 @@ export async function POST(
                 });
             }
             if (kanoResponses.length > 0) {
+                const invitationIds = await restoreResponseInvitations(tx, projectId, kanoResponses);
                 await tx.kanoResponse.createMany({
                     data: kanoResponses.map((k) => ({
                         id: generateId('response'),
                         projectId,
                         requirementId: linkId(requirementIds.map, k.requirementId),
-                        invitationId: k.invitationId,
+                        invitationId: invitationIds.get(k.respondentEmail)!,
                         respondentEmail: k.respondentEmail,
                         positiveAnswer: k.positiveAnswer,
                         negativeAnswer: k.negativeAnswer,
                         kanoCategory: k.kanoCategory,
                         respondedAt: k.respondedAt ? new Date(k.respondedAt) : undefined,
+                    })),
+                });
+            }
+            if (benchmarks.length > 0) {
+                await tx.benchmark.createMany({
+                    data: benchmarks.map(row => ({
+                        id: generateId('bm'), projectId,
+                        requirementId: linkId(requirementIds.map, row.requirementId),
+                        company: row.company, score: row.score,
+                    })),
+                });
+            }
+            if (techCorrelations.length > 0) {
+                await tx.techCorrelation.createMany({
+                    data: techCorrelations.map(row => ({
+                        id: generateId('corr'), projectId,
+                        techId1: linkId(technicalIds.map, row.techId1),
+                        techId2: linkId(technicalIds.map, row.techId2),
+                        correlation: row.correlation,
+                    })),
+                });
+            }
+            if (technicalBenchmarks.length > 0) {
+                await tx.technicalBenchmark.createMany({
+                    data: technicalBenchmarks.map(row => ({
+                        id: generateId('techbm'), projectId,
+                        technicalCharId: linkId(technicalIds.map, row.technicalCharId),
+                        company: row.company, value: row.value,
                     })),
                 });
             }
@@ -258,9 +294,15 @@ export async function POST(
                 technicalCharacteristics: technicals.length,
                 qfdRelationships: qfdRelationships.length,
                 kanoResponses: kanoResponses.length,
+                benchmarks: benchmarks.length,
+                techCorrelations: techCorrelations.length,
+                technicalBenchmarks: technicalBenchmarks.length,
             },
         });
     } catch (error: unknown) {
+        if (error instanceof ImportReferenceError) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         log.error('Import error', error);
         return NextResponse.json(
             { error: '데이터 가져오기에 실패했습니다.' },

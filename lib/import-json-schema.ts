@@ -104,6 +104,27 @@ const kanoRow = z.object({
     respondedAt: z.string().datetime().optional(),
 }).strict();
 
+const benchmarkRow = z.object({
+    ...identity,
+    requirementId: z.string(),
+    company: z.string(),
+    score: z.number().int(),
+}).strict();
+
+const correlationRow = z.object({
+    ...identity,
+    techId1: z.string(),
+    techId2: z.string(),
+    correlation: z.string(),
+}).strict();
+
+const technicalBenchmarkRow = z.object({
+    ...identity,
+    technicalCharId: z.string(),
+    company: z.string(),
+    value: z.string(),
+}).strict();
+
 export const importJsonSchema = z.object({
     // export 는 '1.0-prisma' 를 쓴다. 옛 파일에는 숫자가 들어 있을 수 있다.
     version: z.union([z.string(), z.number()]).optional(),
@@ -122,11 +143,9 @@ export const importJsonSchema = z.object({
     attributeFitnesses: rows(fitnessRow).optional(),
     qfdRelationships: rows(qfdRow).optional(),
     kanoResponses: rows(kanoRow).optional(),
-    // 아래 두 컬렉션은 export 가 내보내지만 라우트가 복원하지 않는다. 라우트가
-    // 버릴 값이라 행수 상한을 걸어도 얻는 것 없이 정상 백업만 거부할 수 있으므로
-    // 상한 없이 받아만 두고 버린다.
-    techCorrelations: z.array(z.unknown()).optional(),
-    benchmarks: z.array(z.unknown()).optional(),
+    techCorrelations: rows(correlationRow).optional(),
+    benchmarks: rows(benchmarkRow).optional(),
+    technicalBenchmarks: rows(technicalBenchmarkRow).optional(),
 }).strict();
 
 export type ImportJsonPayload = z.infer<typeof importJsonSchema>;

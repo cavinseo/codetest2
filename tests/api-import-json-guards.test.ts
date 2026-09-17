@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { MAX_IMPORT_ROWS } from '../lib/import-json-schema';
 
-const counts = { kano: 0, benchmark: 0, qfd: 0 };
+const counts = { kano: 0, benchmark: 0, qfd: 0, fitness: 0, correlation: 0, technicalBenchmark: 0 };
 
 const tx = new Proxy({} as Record<string, Record<string, ReturnType<typeof vi.fn>>>, {
     get(target, model: string) {
@@ -17,6 +17,8 @@ const tx = new Proxy({} as Record<string, Record<string, ReturnType<typeof vi.fn
                 deleteMany: vi.fn(),
                 createMany: vi.fn(),
                 update: vi.fn(),
+                findMany: vi.fn(async () => []),
+                upsert: vi.fn(async (args: { create: unknown }) => args.create),
             };
         }
         return target[model];
@@ -32,6 +34,9 @@ vi.mock('../lib/prisma', () => ({
         kanoResponse: { count: async () => counts.kano },
         benchmark: { count: async () => counts.benchmark },
         qFDMatrix: { count: async () => counts.qfd },
+        attributeFitness: { count: async () => counts.fitness },
+        techCorrelation: { count: async () => counts.correlation },
+        technicalBenchmark: { count: async () => counts.technicalBenchmark },
         $transaction: (fn: (client: typeof tx) => unknown) => transaction(fn),
     },
 }));
@@ -66,6 +71,9 @@ beforeEach(() => {
     counts.kano = 0;
     counts.benchmark = 0;
     counts.qfd = 0;
+    counts.fitness = 0;
+    counts.correlation = 0;
+    counts.technicalBenchmark = 0;
 });
 
 afterEach(() => {
@@ -73,6 +81,31 @@ afterEach(() => {
 });
 
 describe('import-json 가드', () => {
+    it.each([
+        { payload: { productAttributes: [{ attribute: '새 속성' }] }, count: 'fitness', label: '적합도' },
+        { payload: { technicalCharacteristics: [{ name: '새 기능' }] }, count: 'correlation', label: '기술 상관관계' },
+        { payload: { technicalCharacteristics: [{ name: '새 기능' }] }, count: 'technicalBenchmark', label: '기술 벤치마크' },
+        { payload: { technicalCharacteristics: [{ name: '새 기능' }] }, count: 'qfd', label: 'QFD 관계' },
+    ] as const)('$label이 삭제될 때 확인 없이 복원을 진행하지 않는다', async ({ payload, count, label }) => {
+        counts[count] = 4;
+        const response = await POST(jsonRequest(payload), params);
+        expect(response.status).toBe(409);
+        expect((await response.json()).error).toContain(`${label} 4건`);
+        expect(transaction).not.toHaveBeenCalled();
+        const confirmed = await POST(jsonRequest({ ...payload, confirmCascade: true }), params);
+        expect(confirmed.status).toBe(200);
+    });
+
+    it.each([
+        { benchmarks: [{ requirementId: 'outside', company: 'self', score: 2 }] },
+        { techCorrelations: [{ techId1: 'outside', techId2: 'outside', correlation: '+' }] },
+        { technicalBenchmarks: [{ technicalCharId: 'outside', company: 'self', value: '10' }] },
+    ])('복원 대상 프로젝트에 없는 연결은 삭제 전에 거부한다', async payload => {
+        const response = await POST(jsonRequest(payload), params);
+        expect(response.status).toBe(400);
+        for (const model of Object.values(tx)) expect(model.deleteMany).not.toHaveBeenCalled();
+    });
+
     it('설문 응답이 지워질 상황이면 409 로 막고 건수를 알려준다', async () => {
         counts.kano = 42;
 
@@ -253,6 +286,9 @@ describe('import-json 가드', () => {
             benchmarks: [
                 { id: 'bm_old', projectId: 'proj_old', requirementId: 'req_old', company: 'X', score: 3 },
             ],
+            technicalBenchmarks: [
+                { id: 'tb_old', projectId: 'proj_old', technicalCharId: 'tech_old', company: 'X', value: '25 ms' },
+            ],
             exportedAt: '2026-01-03T00:00:00.000Z',
             version: '1.0-prisma',
         };
@@ -276,7 +312,16 @@ describe('import-json 가드', () => {
 
         const kanoRows = tx.kanoResponse.createMany.mock.calls[0][0].data;
         expect(kanoRows[0].requirementId).toBe(requirementRows[0].id);
-        expect(kanoRows[0].invitationId).toBe('inv_1');
+        const invitation = tx.kanoSurveyInvitation.upsert.mock.calls[0][0];
+        expect(invitation.where).toEqual({ projectId_email: { projectId: 'proj_1', email: 'a@b.com' } });
+        expect(invitation.create).toMatchObject({ projectId: 'proj_1', email: 'a@b.com', isUsed: true });
+        expect(invitation.create.id).not.toBe('inv_1');
+        expect(kanoRows[0].invitationId).toBe(invitation.create.id);
+
+        const techId = tx.technicalCharacteristic.createMany.mock.calls[0][0].data[0].id;
+        expect(tx.benchmark.createMany).toHaveBeenCalledWith({ data: [expect.objectContaining({ projectId: 'proj_1', requirementId: requirementRows[0].id, company: 'X', score: 3 })] });
+        expect(tx.techCorrelation.createMany).toHaveBeenCalledWith({ data: [expect.objectContaining({ projectId: 'proj_1', techId1: techId, techId2: techId, correlation: '+' })] });
+        expect(tx.technicalBenchmark.createMany).toHaveBeenCalledWith({ data: [expect.objectContaining({ projectId: 'proj_1', technicalCharId: techId, company: 'X', value: '25 ms' })] });
 
         const fitnessRows = tx.attributeFitness.createMany.mock.calls[0][0].data;
         const attributeRows = tx.productAttribute.createMany.mock.calls[0][0].data;
@@ -328,11 +373,11 @@ describe('import-json 가드', () => {
             jsonRequest({
                 version: '1.0-prisma',
                 customerRequirements: [
-                    { category: 'A', requirement: '요구', order: 0 },
+                    { id: 'req_old', category: 'A', requirement: '요구', order: 0 },
                 ],
                 kanoResponses: [
                     {
-                        requirementId: 'req_missing',
+                        requirementId: 'req_old',
                         invitationId: 'inv_1',
                         respondentEmail: 'a@b.com',
                         positiveAnswer: 1,

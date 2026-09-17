@@ -21,6 +21,9 @@ export const IMPORT_COLLECTION_MODELS: ReadonlyArray<readonly [string, string]> 
     ['attributeFitnesses', 'attributeFitness'],
     ['qfdRelationships', 'qFDMatrix'],
     ['kanoResponses', 'kanoResponse'],
+    ['benchmarks', 'benchmark'],
+    ['techCorrelations', 'techCorrelation'],
+    ['technicalBenchmarks', 'technicalBenchmark'],
 ];
 
 /**

@@ -26,6 +26,7 @@ export async function GET(
                 kanoResponses: true,
                 techCorrelations: true,
                 benchmarks: true,
+                technicalBenchmarks: true,
             },
         });
 
@@ -51,6 +52,7 @@ export async function GET(
             kanoResponses: project.kanoResponses,
             techCorrelations: project.techCorrelations,
             benchmarks: project.benchmarks,
+            technicalBenchmarks: project.technicalBenchmarks,
             exportedAt: new Date().toISOString(),
             version: '1.0-prisma',
         };

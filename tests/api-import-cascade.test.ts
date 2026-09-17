@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 
-const counts = { kano: 0, benchmark: 0, qfd: 0 };
+const counts = { kano: 0, benchmark: 0, qfd: 0, fitness: 0, correlation: 0, technicalBenchmark: 0 };
 
 const tx = new Proxy({} as Record<string, Record<string, ReturnType<typeof vi.fn>>>, {
     get(target, model: string) {
@@ -17,6 +17,7 @@ const tx = new Proxy({} as Record<string, Record<string, ReturnType<typeof vi.fn
                 createMany: vi.fn(),
                 create: vi.fn(async () => ({ id: 'row_1' })),
                 findMany: vi.fn(async () => []),
+                update: vi.fn(),
             };
         }
         return target[model];
@@ -28,6 +29,9 @@ vi.mock('../lib/prisma', () => ({
         kanoResponse: { count: vi.fn(async () => counts.kano) },
         benchmark: { count: vi.fn(async () => counts.benchmark) },
         qFDMatrix: { count: vi.fn(async () => counts.qfd) },
+        attributeFitness: { count: vi.fn(async () => counts.fitness) },
+        techCorrelation: { count: vi.fn(async () => counts.correlation) },
+        technicalBenchmark: { count: vi.fn(async () => counts.technicalBenchmark) },
         $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
     },
 }));
@@ -61,9 +65,9 @@ function requirementsWorkbookFile(): File {
     });
 }
 
-function importRequest(fields: Record<string, string>): NextRequest {
+function importRequest(fields: Record<string, string>, file = requirementsWorkbookFile()): NextRequest {
     const form = new FormData();
-    form.append('file', requirementsWorkbookFile());
+    form.append('file', file);
     for (const [key, value] of Object.entries(fields)) form.append(key, value);
     return new NextRequest('http://localhost/api/projects/project_1/import', {
         method: 'POST',
@@ -75,6 +79,9 @@ beforeEach(() => {
     counts.kano = 0;
     counts.benchmark = 0;
     counts.qfd = 0;
+    counts.fitness = 0;
+    counts.correlation = 0;
+    counts.technicalBenchmark = 0;
     requireProjectAccess.mockResolvedValue({
         user: { userId: 'user_1', email: 'a@b.com', name: null },
         role: 'OWNER',
@@ -86,6 +93,25 @@ afterEach(() => {
 });
 
 describe('import POST — 캐스케이드 가드', () => {
+    it.each([
+        { sheet: '제품속성표', rows: [['제품명', '고객명', '세분시장', '제품속성'], ['새 제품', '고객', '시장', '새 속성']], count: 'fitness', label: '적합도' },
+        { sheet: 'QFD', rows: [['Spec', '응답시간', '측정단위'], ['', 'ms', ''], [], ['', '200', '']], count: 'correlation', label: '기술 상관관계' },
+        { sheet: 'QFD', rows: [['Spec', '응답시간', '측정단위'], ['', 'ms', ''], [], ['', '200', '']], count: 'technicalBenchmark', label: '기술 벤치마크' },
+        { sheet: 'QFD', rows: [['Spec', '응답시간', '측정단위'], ['', 'ms', ''], [], ['', '200', '']], count: 'qfd', label: 'QFD 관계' },
+    ] as const)('$sheet의 $label 삭제를 미리 알리고 확인 전에는 차단한다', async ({ sheet, rows, count, label }) => {
+        counts[count] = 6;
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows.map(row => [...row])), sheet);
+        const file = new File([new Uint8Array(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }))], 'replace.xlsx');
+        const preview = await POST(importRequest({ action: 'preview', writePolicy: 'replace' }, file), params);
+        expect((await preview.json()).cascadeWarning).toContain(`${label} 6건`);
+        const apply = await POST(importRequest({ action: 'apply', writePolicy: 'replace' }, file), params);
+        expect(apply.status).toBe(409);
+        for (const model of Object.values(tx)) expect(model.deleteMany).not.toHaveBeenCalled();
+        const confirmed = await POST(importRequest({ action: 'apply', writePolicy: 'replace', confirmCascade: 'true' }, file), params);
+        expect(confirmed.status).toBe(200);
+    });
+
     it('설문 응답이 있는데 확인하지 않으면 409 로 막고 아무것도 지우지 않는다', async () => {
         counts.kano = 37;
 

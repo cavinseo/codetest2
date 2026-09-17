@@ -15,16 +15,29 @@ function counterWith(counts: { kano: number; benchmark: number; qfd: number }): 
         kanoResponse: { count: vi.fn(async () => counts.kano) },
         benchmark: { count: vi.fn(async () => counts.benchmark) },
         qFDMatrix: { count: vi.fn(async () => counts.qfd) },
+        attributeFitness: { count: vi.fn(async () => 5) },
+        techCorrelation: { count: vi.fn(async () => 7) },
+        technicalBenchmark: { count: vi.fn(async () => 11) },
     };
 }
 
 describe('countCascadeImpact', () => {
+    it('여러 시트를 덮어쓸 때 QFD를 중복 집계하지 않고 연결된 자료를 모두 안내한다', async () => {
+        const db = counterWith({ kano: 2, benchmark: 3, qfd: 4 });
+        const impact = await countCascadeImpact(db, 'project_1', {
+            replacesCustomerRequirements: true, replacesProductAttributes: true, replacesTechnicalCharacteristics: true,
+        });
+        expect(impact).toEqual({ kanoResponses: 2, benchmarks: 3, qfdMatrices: 4, attributeFitnesses: 5, techCorrelations: 7, technicalBenchmarks: 11 });
+        expect(db.qFDMatrix.count).toHaveBeenCalledTimes(1);
+        expect(describeCascadeImpact(impact)).toContain('적합도 5건, 기술 상관관계 7건, 기술 벤치마크 11건');
+    });
+
     it('고객요구사항을 덮어쓸 때 함께 지워질 건수를 센다', async () => {
         const db = counterWith({ kano: 42, benchmark: 3, qfd: 17 });
 
         const impact = await countCascadeImpact(db, 'project_1', { replacesCustomerRequirements: true });
 
-        expect(impact).toEqual({ kanoResponses: 42, benchmarks: 3, qfdMatrices: 17 });
+        expect(impact).toEqual({ ...EMPTY_CASCADE_IMPACT, kanoResponses: 42, benchmarks: 3, qfdMatrices: 17 });
         expect(db.kanoResponse.count).toHaveBeenCalledWith({ where: { projectId: 'project_1' } });
     });
 
@@ -40,8 +53,8 @@ describe('countCascadeImpact', () => {
 
 describe('hasCascadeImpact', () => {
     it('하나라도 0 이 아니면 true', () => {
-        expect(hasCascadeImpact({ kanoResponses: 1, benchmarks: 0, qfdMatrices: 0 })).toBe(true);
-        expect(hasCascadeImpact({ kanoResponses: 0, benchmarks: 0, qfdMatrices: 5 })).toBe(true);
+        expect(hasCascadeImpact({ ...EMPTY_CASCADE_IMPACT, kanoResponses: 1 })).toBe(true);
+        expect(hasCascadeImpact({ ...EMPTY_CASCADE_IMPACT, qfdMatrices: 5 })).toBe(true);
     });
 
     it('전부 0 이면 false', () => {
@@ -51,7 +64,7 @@ describe('hasCascadeImpact', () => {
 
 describe('describeCascadeImpact', () => {
     it('0 인 항목은 문구에서 뺀다', () => {
-        const text = describeCascadeImpact({ kanoResponses: 12, benchmarks: 0, qfdMatrices: 4 });
+        const text = describeCascadeImpact({ ...EMPTY_CASCADE_IMPACT, kanoResponses: 12, qfdMatrices: 4 });
 
         expect(text).toContain('Kano 설문 응답 12건');
         expect(text).toContain('QFD 관계 4건');
@@ -61,7 +74,7 @@ describe('describeCascadeImpact', () => {
     it('벤치마크 건수도 문구에 담는다', () => {
         // 이 항목만 0 이 아닌 경우가 테스트에 없어, 문구가 아예 실행되지 않았다.
         // 데이터 파괴 직전 사용자에게 보여줄 경고라 문구 자체를 고정해 둔다.
-        const text = describeCascadeImpact({ kanoResponses: 0, benchmarks: 7, qfdMatrices: 0 });
+        const text = describeCascadeImpact({ ...EMPTY_CASCADE_IMPACT, benchmarks: 7 });
 
         expect(text).toContain('벤치마크 7건');
         expect(text).not.toContain('Kano');
@@ -69,7 +82,7 @@ describe('describeCascadeImpact', () => {
     });
 
     it('설문 응답이 복구 불가라는 점을 알린다', () => {
-        expect(describeCascadeImpact({ kanoResponses: 1, benchmarks: 0, qfdMatrices: 0 }))
+        expect(describeCascadeImpact({ ...EMPTY_CASCADE_IMPACT, kanoResponses: 1 }))
             .toContain('다시 모을 수 없습니다');
     });
 

@@ -16,42 +16,57 @@ export interface CascadeImpact {
     kanoResponses: number;
     benchmarks: number;
     qfdMatrices: number;
+    attributeFitnesses: number;
+    techCorrelations: number;
+    technicalBenchmarks: number;
 }
 
 export interface CascadeCounter {
     kanoResponse: { count: (args: { where: { projectId: string } }) => Promise<number> };
     benchmark: { count: (args: { where: { projectId: string } }) => Promise<number> };
     qFDMatrix: { count: (args: { where: { projectId: string } }) => Promise<number> };
+    attributeFitness: { count: (args: { where: { projectId: string } }) => Promise<number> };
+    techCorrelation: { count: (args: { where: { projectId: string } }) => Promise<number> };
+    technicalBenchmark: { count: (args: { where: { projectId: string } }) => Promise<number> };
 }
 
 export const EMPTY_CASCADE_IMPACT: CascadeImpact = {
     kanoResponses: 0,
     benchmarks: 0,
     qfdMatrices: 0,
+    attributeFitnesses: 0,
+    techCorrelations: 0,
+    technicalBenchmarks: 0,
 };
 
 export function hasCascadeImpact(impact: CascadeImpact): boolean {
-    return impact.kanoResponses > 0 || impact.benchmarks > 0 || impact.qfdMatrices > 0;
+    return Object.values(impact).some(count => count > 0);
 }
 
 /**
- * 고객요구사항을 replace 로 덮어쓸 때 함께 사라질 데이터의 건수를 센다.
- * 고객요구사항을 건드리지 않는 import 라면 셀 필요가 없으므로 0 을 돌려준다.
+ * 덮어쓰는 요구사항·제품 속성·기술특성에 연결된 데이터의 삭제 건수를 센다.
  */
 export async function countCascadeImpact(
     db: CascadeCounter,
     projectId: string,
-    options: { replacesCustomerRequirements: boolean }
+    options: {
+        replacesCustomerRequirements: boolean;
+        replacesProductAttributes?: boolean;
+        replacesTechnicalCharacteristics?: boolean;
+    }
 ): Promise<CascadeImpact> {
-    if (!options.replacesCustomerRequirements) return { ...EMPTY_CASCADE_IMPACT };
-
-    const [kanoResponses, benchmarks, qfdMatrices] = await Promise.all([
-        db.kanoResponse.count({ where: { projectId } }),
-        db.benchmark.count({ where: { projectId } }),
-        db.qFDMatrix.count({ where: { projectId } }),
+    const { replacesCustomerRequirements: requirements, replacesProductAttributes: attributes, replacesTechnicalCharacteristics: technicals } = options;
+    const where = { projectId };
+    const [kanoResponses, benchmarks, qfdMatrices, attributeFitnesses, techCorrelations, technicalBenchmarks] = await Promise.all([
+        requirements ? db.kanoResponse.count({ where }) : 0,
+        requirements ? db.benchmark.count({ where }) : 0,
+        requirements || technicals ? db.qFDMatrix.count({ where }) : 0,
+        attributes ? db.attributeFitness.count({ where }) : 0,
+        technicals ? db.techCorrelation.count({ where }) : 0,
+        technicals ? db.technicalBenchmark.count({ where }) : 0,
     ]);
 
-    return { kanoResponses, benchmarks, qfdMatrices };
+    return { kanoResponses, benchmarks, qfdMatrices, attributeFitnesses, techCorrelations, technicalBenchmarks };
 }
 
 /** 사용자에게 보여줄 한국어 경고 문구. 0 인 항목은 빼고 적는다. */
@@ -60,10 +75,13 @@ export function describeCascadeImpact(impact: CascadeImpact): string {
     if (impact.kanoResponses > 0) parts.push(`Kano 설문 응답 ${impact.kanoResponses}건`);
     if (impact.benchmarks > 0) parts.push(`벤치마크 ${impact.benchmarks}건`);
     if (impact.qfdMatrices > 0) parts.push(`QFD 관계 ${impact.qfdMatrices}건`);
+    if (impact.attributeFitnesses > 0) parts.push(`적합도 ${impact.attributeFitnesses}건`);
+    if (impact.techCorrelations > 0) parts.push(`기술 상관관계 ${impact.techCorrelations}건`);
+    if (impact.technicalBenchmarks > 0) parts.push(`기술 벤치마크 ${impact.technicalBenchmarks}건`);
     if (parts.length === 0) return '';
 
-    return `고객요구사항을 덮어쓰면 ${parts.join(', ')}이 함께 삭제됩니다. `
-        + '설문 응답은 다시 모을 수 없습니다.';
+    return `데이터를 덮어쓰면 ${parts.join(', ')}이 함께 삭제됩니다.`
+        + (impact.kanoResponses > 0 ? ' 설문 응답은 다시 모을 수 없습니다.' : '');
 }
 
 // ─── 제품 속성 ──────────────────────────────────────────────────

@@ -301,6 +301,8 @@ export async function POST(
             writePolicy === 'replace' && importResult.records.customerRequirements.length > 0;
         const cascadeImpact = await countCascadeImpact(prisma, projectId, {
             replacesCustomerRequirements,
+            replacesProductAttributes: writePolicy === 'replace' && importResult.records.productAttributes.length > 0,
+            replacesTechnicalCharacteristics: writePolicy === 'replace' && importResult.records.technicalCharacteristics.length > 0,
         });
 
         let appliedCounts: Record<string, number> | null = null;
