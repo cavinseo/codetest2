@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, KeyboardEvent } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import Link from 'next/link';
+import WorksheetLoadError from './WorksheetLoadError';
 import {
     shouldShowPrimaryGroup,
     shouldShowSecondaryGroup,
@@ -48,6 +49,8 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=requirements`;
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -128,10 +131,14 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     };
 
     const loadRequirements = useCallback(async () => {
+        setIsLoading(true);
+        setLoadFailed(false);
         try {
             const res = await fetch(`/api/projects/${projectId}/requirements`);
+            if (!res.ok) throw new Error('요구사항 조회 실패');
             if (res.ok) {
                 const data = await res.json();
+                if (!Array.isArray(data.requirements)) throw new Error('요구사항 응답 형식 오류');
                 // 엑셀 업로드로 들어온 행은 2차 분류가 비어 있으면 null 이므로 빈 문자열로 맞춰 둔다.
                 setRequirements((data.requirements || []).map((row: Partial<Requirement>) => ({
                     id: row.id ?? '',
@@ -140,8 +147,10 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                     requirement: row.requirement ?? '',
                     order: row.order ?? 0,
                 })));
+                setLoadedProjectId(projectId);
             }
         } catch (e) {
+            setLoadFailed(true);
             console.error('요구사항 로딩 실패:', e);
         } finally {
             setIsLoading(false);
@@ -153,6 +162,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     }, [loadRequirements]);
 
     const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         // 열려 있는 인라인 편집을 먼저 반영한다. 예전에는 editValues 를 둔 채
         // requirements 만 보내고 성공하면 editValues 를 버려서, 항목을 고치는
         // 중에 저장을 누르면 "저장되었습니다" 가 뜨는데도 방금 친 글자가 원래
@@ -331,7 +341,8 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
     const groupedCategories = [...new Set(sorted.map(r => r.category))];
 
-    if (isLoading) {
+    if (loadFailed) return <WorksheetLoadError onRetry={loadRequirements} />;
+    if (isLoading || loadedProjectId !== projectId) {
         return (
             <div className="flex items-center justify-center p-16">
                 <div className="text-center">

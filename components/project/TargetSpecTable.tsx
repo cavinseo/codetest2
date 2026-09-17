@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
+import WorksheetLoadError from './WorksheetLoadError';
 
 interface TargetSpecRow {
     performanceImprovement?: string;
@@ -30,13 +31,21 @@ export default function TargetSpecTable({ projectId }: Props) {
     const [newCategory, setNewCategory] = useState('');
     const [newSubCategory, setNewSubCategory] = useState('');
     const [isLoading, setIsLoading] = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const { toast, showToast } = useToast();
 
     useEffect(() => {
+        let active = true;
+        setIsLoading(true);
+        setLoadFailed(false);
         fetch(`/api/projects/${projectId}/target-spec`)
-            .then((r) => (r.ok ? r.json() : null))
+            .then(r => { if (!r.ok) throw new Error('목표 사양 조회 실패'); return r.json(); })
             .then((data) => {
+                if (!active) return;
+                if (!Array.isArray(data?.rows)) throw new Error('목표 사양 응답 형식 오류');
                 setSuggestions(data?.suggestions || []);
                 setAsIsRows(data?.asIsRows || []);
                 const sourceRows = data?.rows?.length > 0 ? data.rows : (data?.asIsRows || []);
@@ -53,10 +62,12 @@ export default function TargetSpecTable({ projectId }: Props) {
                         order: r.order,
                     })));
                 }
+                setLoadedProjectId(projectId);
             })
-            .catch(console.error)
-            .finally(() => setIsLoading(false));
-    }, [projectId]);
+            .catch(() => { if (active) setLoadFailed(true); })
+            .finally(() => { if (active) setIsLoading(false); });
+        return () => { active = false; };
+    }, [projectId, loadAttempt]);
 
     const addFeature = () => {
         const feature = suggestions.find((item) => item.id === newFeatureId);
@@ -102,6 +113,7 @@ export default function TargetSpecTable({ projectId }: Props) {
         Array.from(new Set(rows.map((row) => String(row[field] ?? '').trim()).filter(Boolean)));
 
     const handleSave = async () => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/target-spec`, {
@@ -163,7 +175,8 @@ export default function TargetSpecTable({ projectId }: Props) {
         </>
     );
 
-    if (isLoading) {
+    if (loadFailed) return <WorksheetLoadError onRetry={() => setLoadAttempt(attempt => attempt + 1)} />;
+    if (isLoading || loadedProjectId !== projectId) {
         return <div className="flex items-center justify-center p-12"><div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" /></div>;
     }
 

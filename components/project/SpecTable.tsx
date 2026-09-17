@@ -5,6 +5,7 @@ import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import WorksheetLoadError from './WorksheetLoadError';
 import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
 import { readBusinessPlanForSpec } from '@/lib/business-plan-sections';
 import { describeAiEngine } from '@/lib/ai/engine-label';
@@ -98,6 +99,9 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const [project, setProject] = useState<ProjectData | null>(null);
     const [rows, setRows] = useState<FlatSpecRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
@@ -132,6 +136,9 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
 
     // 데이터 로드
     useEffect(() => {
+        let active = true;
+        setIsLoading(true);
+        setLoadFailed(false);
         async function loadData() {
             try {
                 const [projRes, specRes] = await Promise.all([
@@ -147,17 +154,22 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
 
                 if (specRes.ok) {
                     const specData = await specRes.json();
-                    const loadedSpecs: SpecFunction[] = specData.specFunctions || [];
+                    if (!active) return;
+                    if (!Array.isArray(specData.specFunctions)) throw new Error('스펙 응답 형식 오류');
+                    const loadedSpecs: SpecFunction[] = specData.specFunctions;
                     setRows(buildRowsFromSpecs(loadedSpecs));
-                }
+                    setLoadedProjectId(projectId);
+                } else throw new Error('스펙 조회 실패');
             } catch (error) {
+                if (active) setLoadFailed(true);
                 console.error('데이터 로딩 실패:', error);
             } finally {
-                setIsLoading(false);
+                if (active) setIsLoading(false);
             }
         }
         loadData();
-    }, [buildRowsFromSpecs, projectId]);
+        return () => { active = false; };
+    }, [buildRowsFromSpecs, projectId, loadAttempt]);
 
     const addRow = () => {
         setRows([...rows, { id: Math.random().toString(36).slice(2), core: '', sub: '', detail: '', technology: '' }]);
@@ -691,6 +703,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
 
     // 저장
     const handleSave = async (moveNext = false) => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const finalSpecs = serializeSpecs();
@@ -719,6 +732,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     };
 
     const handleReset = async () => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/spec`, {
@@ -743,7 +757,8 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         }
     };
 
-    if (isLoading) {
+    if (loadFailed) return <WorksheetLoadError onRetry={() => setLoadAttempt(attempt => attempt + 1)} />;
+    if (isLoading || loadedProjectId !== projectId) {
         return (
             <div className="flex items-center justify-center p-12">
                 <div className="text-center">

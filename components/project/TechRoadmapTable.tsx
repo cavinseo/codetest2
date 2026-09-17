@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { getImprovementCustomerNeeds, mergeRoadmapWithCustomerNeeds, type RoadmapLinkRow } from '@/lib/worksheet-links';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
+import WorksheetLoadError from './WorksheetLoadError';
 
 type FutureCustomerRow = RoadmapLinkRow;
 
@@ -14,19 +15,29 @@ interface Props {
 export default function TechRoadmapTable({ projectId }: Props) {
     const [rows, setRows] = useState<FutureCustomerRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const { toast, showToast } = useToast();
 
     useEffect(() => {
+        let active = true;
+        setIsLoading(true);
+        setLoadFailed(false);
         Promise.all([
-            fetch(`/api/projects/${projectId}/tech-roadmap`).then((response) => response.ok ? response.json() : null),
+            fetch(`/api/projects/${projectId}/tech-roadmap`).then(response => { if (!response.ok) throw new Error('로드맵 조회 실패'); return response.json(); }),
             fetch(`/api/projects/${projectId}/improvements`).then((response) => response.ok ? response.json() : null).catch(() => null),
         ]).then(([data, improvementData]) => {
-            if (!data?.rows) return;
+            if (!active) return;
+            if (!Array.isArray(data?.rows)) throw new Error('로드맵 응답 형식 오류');
             const saved = data.rows.map((row: RoadmapLinkRow) => ({ ...row, category: row.category ?? '', techItem: row.techItem ?? '', currentLevel: row.currentLevel ?? '', targetLevel: row.targetLevel ?? row.owner ?? '' }));
             setRows(improvementData ? mergeRoadmapWithCustomerNeeds(saved, getImprovementCustomerNeeds(improvementData.items || [])) : saved);
-        }).catch(console.error).finally(() => setIsLoading(false));
-    }, [projectId]);
+            setLoadedProjectId(projectId);
+        }).catch(() => { if (active) setLoadFailed(true); })
+            .finally(() => { if (active) setIsLoading(false); });
+        return () => { active = false; };
+    }, [projectId, loadAttempt]);
 
     const addRow = () => {
         setRows((prev) => [...prev, {
@@ -48,6 +59,7 @@ export default function TechRoadmapTable({ projectId }: Props) {
         Array.from(new Set(rows.map((row) => String(row[field] ?? '').trim()).filter(Boolean)));
 
     const handleSave = async () => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/tech-roadmap`, {
@@ -108,7 +120,8 @@ export default function TechRoadmapTable({ projectId }: Props) {
         </>
     );
 
-    if (isLoading) {
+    if (loadFailed) return <WorksheetLoadError onRetry={() => setLoadAttempt(attempt => attempt + 1)} />;
+    if (isLoading || loadedProjectId !== projectId) {
         return <div className="flex items-center justify-center p-12"><div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" /></div>;
     }
 

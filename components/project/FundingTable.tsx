@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import MoneyInput from '@/components/ui/MoneyInput';
 import { formatMoney } from '@/lib/money';
 import { parseSourceYear } from '@/lib/funding-ai-agent';
+import WorksheetLoadError from './WorksheetLoadError';
 
 interface FundingPlan {
     id: string;
@@ -69,19 +70,26 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
     const [plans, setPlans] = useState<FundingPlan[]>([]);
     const [sources, setSources] = useState<FundingSource[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [aiMessage, setAiMessage] = useState<string | null>(null);
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
+        setLoadFailed(false);
         try {
             const res = await fetch(`/api/projects/${projectId}/funding`);
+            if (!res.ok) throw new Error('자금 계획 조회 실패');
             if (res.ok) {
                 const data = await res.json();
+                if (!Array.isArray(data.plans) || !Array.isArray(data.sources)) throw new Error('자금 계획 응답 형식 오류');
                 setPlans(data.plans || []);
                 setSources(data.sources || []);
+                setLoadedProjectId(projectId);
             }
         } catch (error) {
+            setLoadFailed(true);
             console.error('Failed to load funding data:', error);
         } finally {
             setIsLoading(false);
@@ -93,6 +101,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
     }, [loadData]);
 
     const handleSave = async () => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const payload = mode === 'plan' ? { plans } : { sources };
@@ -155,7 +164,8 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
         )
     );
 
-    if (isLoading) {
+    if (loadFailed) return <WorksheetLoadError onRetry={loadData} />;
+    if (isLoading || loadedProjectId !== projectId) {
         return <div className="p-8 text-center text-gray-400">로딩 중...</div>;
     }
 

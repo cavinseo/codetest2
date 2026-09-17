@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import WorksheetLoadError from './WorksheetLoadError';
 
 interface AssetItem {
     id: string;
@@ -17,17 +18,24 @@ interface AssetsTableProps {
 export default function AssetsTable({ projectId }: AssetsTableProps) {
     const [assets, setAssets] = useState<AssetItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
+        setLoadFailed(false);
         try {
             const res = await fetch(`/api/projects/${projectId}/assets`);
+            if (!res.ok) throw new Error('자산 조회 실패');
             if (res.ok) {
                 const data = await res.json();
-                setAssets(data.assets || []);
+                if (!Array.isArray(data.assets)) throw new Error('자산 응답 형식 오류');
+                setAssets(data.assets);
+                setLoadedProjectId(projectId);
             }
         } catch (error) {
+            setLoadFailed(true);
             console.error('Failed to load assets:', error);
         } finally {
             setIsLoading(false);
@@ -60,6 +68,7 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
         Array.from(new Set(assets.filter((asset) => !type || asset.type === type).map((asset) => (asset[field] || '').trim()).filter(Boolean)));
 
     const handleSave = async () => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/assets`, {
@@ -78,7 +87,8 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
         }
     };
 
-    if (isLoading) return <div className="p-8 text-center text-gray-400">로딩 중...</div>;
+    if (loadFailed) return <WorksheetLoadError onRetry={loadData} />;
+    if (isLoading || loadedProjectId !== projectId) return <div className="p-8 text-center text-gray-400">로딩 중...</div>;
 
     const coreAssets = assets.filter(a => a.type === 'CORE');
     const compAssets = assets.filter(a => a.type === 'COMPLEMENTARY');

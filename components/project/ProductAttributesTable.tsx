@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
+import WorksheetLoadError from './WorksheetLoadError';
 import AttributeMentorWizard from './AttributeMentorWizard';
 import type { MentorAppliedRow } from '@/lib/attribute-mentor-utils';
 import {
@@ -185,6 +186,8 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const [rows, setRows] = useState<ProductAttributeRow[]>([]);
     const [specFunctions, setSpecFunctions] = useState<SpecFunction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     // 기술 역량은 행별이 아니라 표 전체에 하나만 두고, 저장 시 모든 행에 같은 값을 기록한다.
     const [techCapability, setTechCapability] = useState('');
     const [showSpecPicker, setShowSpecPicker] = useState<{ rowId: string | null; field: 'attribute' | 'techCapability' } | null>(null);
@@ -200,6 +203,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
+        setLoadFailed(false);
         try {
             const [attrRes, specRes, projRes] = await Promise.all([
                 fetch(`/api/projects/${projectId}/attributes`),
@@ -216,9 +220,11 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             }
 
             let loadedAttrs: any[] = [];
+            if (!attrRes.ok) throw new Error('제품 속성 조회 실패');
             if (attrRes.ok) {
                 const data = await attrRes.json();
-                loadedAttrs = data.attributes || [];
+                if (!Array.isArray(data.attributes)) throw new Error('제품 속성 응답 형식 오류');
+                loadedAttrs = data.attributes;
                 setRows(loadedAttrs.map((a: any) => ({
                     id: a.id,
                     productName: a.productName || '',
@@ -257,7 +263,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 });
                 setImportedFields(autoImported);
             }
+            setLoadedProjectId(projectId);
         } catch (error) {
+            setLoadFailed(true);
             console.error('데이터 로드 실패:', error);
         } finally {
             setIsLoading(false);
@@ -323,6 +331,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     };
 
     const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/attributes`, {
@@ -377,7 +386,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         setPendingExcelFile(file);
     };
 
-    const uploadExcelFile = async (file: File, writePolicy: 'append' | 'replace') => {
+    const uploadExcelFile = async (file: File, writePolicy: 'append' | 'replace', options: { confirmCascade?: boolean } = {}) => {
         setIsUploadingExcel(true);
         try {
             const formData = new FormData();
@@ -385,12 +394,20 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             formData.append('action', 'apply');
             formData.append('writePolicy', writePolicy);
             formData.append('sheetNames', '제품속성표');
+            if (options.confirmCascade) formData.append('confirmCascade', 'true');
 
             const res = await fetch(`/api/projects/${projectId}/import`, {
                 method: 'POST',
                 body: formData,
             });
             const data = await res.json().catch(() => null);
+
+            if (res.status === 409 && data?.needsCascadeConfirm && !options.confirmCascade) {
+                if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
+                    await uploadExcelFile(file, writePolicy, { confirmCascade: true });
+                }
+                return;
+            }
 
             if (!res.ok) {
                 const available = data?.availableSheets?.length
@@ -413,6 +430,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     };
 
     const handleReset = async () => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         try {
             await fetch(`/api/projects/${projectId}/attributes`, { method: 'DELETE' });
             setRows([]);
@@ -569,7 +587,8 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         showToast(`멘토링 결과 ${appended.length}개 행을 표에 추가했습니다. 저장을 눌러 반영하세요.`, 'success');
     };
 
-    if (isLoading) {
+    if (loadFailed) return <WorksheetLoadError onRetry={loadData} />;
+    if (isLoading || loadedProjectId !== projectId) {
         return (
             <div className="flex items-center justify-center p-16">
                 <div className="text-center">

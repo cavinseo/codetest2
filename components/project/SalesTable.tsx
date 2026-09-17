@@ -6,6 +6,7 @@ import { formatMoney } from '@/lib/money';
 import { useEffect, useMemo, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
+import WorksheetLoadError from './WorksheetLoadError';
 
 type SalesPeriod = 'Y' | 'Y_PLUS_1';
 
@@ -59,6 +60,9 @@ function formatAmount(value: number) {
 export default function SalesTable({ projectId, onSaved }: Props) {
     const [rows, setRows] = useState<SalesRow[]>([createRow('Y'), createRow('Y_PLUS_1')]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -84,9 +88,14 @@ export default function SalesTable({ projectId, onSaved }: Props) {
     }, [rowsByPeriod]);
 
     useEffect(() => {
+        let active = true;
+        setIsLoading(true);
+        setLoadFailed(false);
         fetch(`/api/projects/${projectId}/sales`)
-            .then((r) => (r.ok ? r.json() : null))
+            .then(r => { if (!r.ok) throw new Error('매출 조회 실패'); return r.json(); })
             .then((data) => {
+                if (!active) return;
+                if (!Array.isArray(data?.rows)) throw new Error('매출 응답 형식 오류');
                 if (data?.rows && data.rows.length > 0) {
                     const loadedRows: SalesRow[] = [];
                     for (const r of data.rows) {
@@ -122,10 +131,12 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                 } else {
                     setRows([createRow('Y'), createRow('Y_PLUS_1')]);
                 }
+                setLoadedProjectId(projectId);
             })
-            .catch(console.error)
-            .finally(() => setIsLoading(false));
-    }, [projectId]);
+            .catch(() => { if (active) setLoadFailed(true); })
+            .finally(() => { if (active) setIsLoading(false); });
+        return () => { active = false; };
+    }, [projectId, loadAttempt]);
 
     const addRow = (period: SalesPeriod) => {
         setRows((current) => {
@@ -149,6 +160,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
     };
 
     const handleSave = async () => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const payload = PERIODS.flatMap(({ key }) => rowsByPeriod[key].map((row, idx) => ({
@@ -188,6 +200,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
     };
 
     const handleReset = async () => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/sales`, {
@@ -207,7 +220,8 @@ export default function SalesTable({ projectId, onSaved }: Props) {
         }
     };
 
-    if (isLoading) {
+    if (loadFailed) return <WorksheetLoadError onRetry={() => setLoadAttempt(attempt => attempt + 1)} />;
+    if (isLoading || loadedProjectId !== projectId) {
         return (
             <div className="flex items-center justify-center p-12">
                 <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />

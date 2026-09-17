@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
+import WorksheetLoadError from './WorksheetLoadError';
 
 interface DevPlanRow {
     id: string; phase: string; task: string; description: string;
@@ -20,21 +21,32 @@ const STATUS_COLORS: Record<string, string> = {
 export default function DevPlanTable({ projectId }: Props) {
     const [rows, setRows] = useState<DevPlanRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     useEffect(() => {
+        let active = true;
+        setIsLoading(true);
+        setLoadFailed(false);
         fetch(`/api/projects/${projectId}/dev-plan`)
-            .then(r => r.ok ? r.json() : null)
+            .then(r => { if (!r.ok) throw new Error('개발계획 조회 실패'); return r.json(); })
             .then(data => {
-                if (data?.rows) setRows(data.rows.map((r: any) => ({
+                if (!active) return;
+                if (!Array.isArray(data?.rows)) throw new Error('개발계획 응답 형식 오류');
+                setRows(data.rows.map((r: any) => ({
                     id: r.id, phase: r.phase ?? '', task: r.task ?? '', description: r.description ?? '',
                     start: r.startDate ?? '', end: r.endDate ?? '', owner: r.owner ?? '',
                     status: r.status ?? '미시작', order: r.order,
                 })));
-            }).catch(console.error).finally(() => setIsLoading(false));
-    }, [projectId]);
+                setLoadedProjectId(projectId);
+            }).catch(() => { if (active) setLoadFailed(true); })
+            .finally(() => { if (active) setIsLoading(false); });
+        return () => { active = false; };
+    }, [projectId, loadAttempt]);
 
     const addRow = () => setRows(prev => [...prev, { id: `new_${Date.now()}`, phase: '', task: '', description: '', start: '', end: '', owner: '', status: '미시작', order: prev.length }]);
     const updateRow = (id: string, field: keyof DevPlanRow, val: string) => setRows(rows.map(r => r.id === id ? { ...r, [field]: val } : r));
@@ -42,6 +54,7 @@ export default function DevPlanTable({ projectId }: Props) {
     const getUniqueValues = (field: 'phase' | 'task' | 'owner') => Array.from(new Set(rows.map(row => row[field].trim()).filter(Boolean)));
 
     const save = async (data: typeof rows) => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return false;
         const res = await fetch(`/api/projects/${projectId}/dev-plan`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ rows: data.map((r, idx) => ({ phase: r.phase, task: r.task, description: r.description, startDate: r.start, endDate: r.end, owner: r.owner, status: r.status, order: idx })) }),
@@ -57,7 +70,8 @@ export default function DevPlanTable({ projectId }: Props) {
     const handleSave = async () => { setIsSaving(true); const ok = await save(rows); showToast(ok ? '저장되었습니다.' : '저장에 실패했습니다.'); setIsSaving(false); };
     const handleReset = async () => { setIsSaving(true); const ok = await save([]); if (ok) { setRows([]); setShowResetConfirm(false); showToast('초기화되었습니다.'); } else showToast('초기화에 실패했습니다.'); setIsSaving(false); };
 
-    if (isLoading) return <div className="flex items-center justify-center p-12"><div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" /></div>;
+    if (loadFailed) return <WorksheetLoadError onRetry={() => setLoadAttempt(attempt => attempt + 1)} />;
+    if (isLoading || loadedProjectId !== projectId) return <div className="flex items-center justify-center p-12"><div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" /></div>;
 
     return (
         <div className="space-y-4 relative">

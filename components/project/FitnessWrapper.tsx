@@ -3,6 +3,7 @@
 import { Fragment, useState, useEffect, useCallback, useMemo } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
+import WorksheetLoadError from './WorksheetLoadError';
 import {
     buildCustomerNamesByMarketSegment,
     dedupeByAttributeName,
@@ -141,6 +142,8 @@ export default function FitnessWrapper({ projectId }: Props) {
     const [markets, setMarkets] = useState<Market[]>([]);
     const [matrix, setMatrix] = useState<MatrixData>({});
     const [isLoading, setIsLoading] = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [managerComment, setManagerComment] = useState('');
     const [savedConsultantComment, setSavedConsultantComment] = useState('');
@@ -148,10 +151,13 @@ export default function FitnessWrapper({ projectId }: Props) {
 
     // ── 데이터 로드 ──
     const loadData = useCallback(async () => {
+        setIsLoading(true);
+        setLoadFailed(false);
         try {
             const attrRes = await fetch(`/api/projects/${projectId}/attributes`);
-            if (!attrRes.ok) return;
+            if (!attrRes.ok) throw new Error('제품 속성 조회 실패');
             const attrData = await attrRes.json();
+            if (!Array.isArray(attrData.attributes)) throw new Error('제품 속성 응답 형식 오류');
             const loadedAttrs: ProductAttribute[] = (attrData.attributes || [])
                 .filter((a: ProductAttribute) => a.attribute?.trim())
                 .sort((a: ProductAttribute, b: ProductAttribute) => a.order - b.order);
@@ -165,19 +171,19 @@ export default function FitnessWrapper({ projectId }: Props) {
 
             // 저장된 피트니스 데이터 로드 (DB)
             const fitnessRes = await fetch(`/api/projects/${projectId}/fitness-matrix`);
+            if (!fitnessRes.ok) throw new Error('적합도 조회 실패');
             let savedData: FitnessData | null = null;
             if (fitnessRes.ok) {
                 const fitnessData = await fitnessRes.json();
+                if (!fitnessData || !Object.hasOwn(fitnessData, 'fitnessMatrix')) throw new Error('적합도 응답 형식 오류');
                 if (fitnessData?.fitnessMatrix) {
-                    try {
-                        const fm = fitnessData.fitnessMatrix;
-                        savedData = {
-                            markets: JSON.parse(fm.marketsJson || '[]'),
-                            matrix: JSON.parse(fm.matrixJson || '{}'),
-                            managerComment: fm.managerComment || '',
-                            consultantComment: fm.consultantNote || '',
-                        };
-                    } catch { }
+                    const fm = fitnessData.fitnessMatrix;
+                    savedData = {
+                        markets: JSON.parse(fm.marketsJson || '[]'),
+                        matrix: JSON.parse(fm.matrixJson || '{}'),
+                        managerComment: fm.managerComment || '',
+                        consultantComment: fm.consultantNote || '',
+                    };
                 }
             }
 
@@ -224,7 +230,9 @@ export default function FitnessWrapper({ projectId }: Props) {
                 setMarkets(newMarkets);
                 setMatrix({});
             }
+            setLoadedProjectId(projectId);
         } catch (e) {
+            setLoadFailed(true);
             console.error(e);
         } finally {
             setIsLoading(false);
@@ -412,6 +420,7 @@ export default function FitnessWrapper({ projectId }: Props) {
 
     // ── 저장 ──
     const handleSave = async () => {
+        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const consultantComment = generateConsultantComment();
@@ -443,7 +452,8 @@ export default function FitnessWrapper({ projectId }: Props) {
     const marketOptions = useMemo(() => Array.from(new Set(markets.map((market) => market.name.trim()).filter(Boolean))), [markets]);
     const subSegmentOptions = useMemo(() => Array.from(new Set(markets.flatMap((market) => market.subSegments.map((subSegment) => subSegment.name.trim())).filter(Boolean))), [markets]);
 
-    if (isLoading) {
+    if (loadFailed) return <WorksheetLoadError onRetry={loadData} />;
+    if (isLoading || loadedProjectId !== projectId) {
         return (
             <div className="flex items-center justify-center p-16">
                 <div className="animate-spin h-7 w-7 border-2 border-primary-500 border-t-transparent rounded-full" />
