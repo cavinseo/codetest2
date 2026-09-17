@@ -81,7 +81,7 @@ it('기존 관리자와 같은 이메일로 발급된 새 코드는 기존 계�
     const code = await invite('existing');
     const email = `${adminId}@example.test`;
     await db.inviteCode.update({ where: { id: code.id }, data: { email } });
-    expect((await signIn({ ...code, email })).status).toBe(403);
+    expect((await signIn({ ...code, email })).status).toBe(409);
     const admin = await db.user.findUniqueOrThrow({ where: { id: adminId } });
     expect(admin.role).toBe('ADMIN');
     expect(admin.isAdmin).toBe(true);

@@ -23,6 +23,7 @@ const schema = z.object({
 });
 class InviteLoginDenied extends Error {}
 class InviteNameRequired extends Error {}
+class InviteAccountExists extends Error {}
 const denied = () => NextResponse.json({ error: '이메일과 초대 코드를 확인하세요. 이용 기한이 만료되었거나 사용할 수 없는 코드입니다.' }, { status: 403 });
 
 export async function POST(request: NextRequest) {
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
         const user = await prisma.$transaction(async (tx) => {
             // 만료 코드 연장·재발급과 계정 생성을 같은 이메일 단위로 직렬화한다.
             await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`invite-email:${email}`}))::text`;
+            await tx.$queryRaw`SELECT id FROM users WHERE lower(email) = ${email} ORDER BY id FOR UPDATE`;
             // 최초 로그인과 기존 가입 경로가 같은 코드를 동시에 연결하지 못하게 한다.
             await tx.$queryRaw`SELECT id FROM invite_codes WHERE code = ${code} FOR UPDATE`;
             const invite = await tx.inviteCode.findUnique({ where: { code }, include: { program: true, usedBy: true } });
@@ -47,20 +49,27 @@ export async function POST(request: NextRequest) {
             if (!invite || invite.role !== 'MENTEE' || invite.email.trim().toLowerCase() !== email
                 || inviteAccessExpiresAt(invite).getTime() <= now.getTime()) throw new InviteLoginDenied();
 
-            if (invite.usedAt) {
+            if (invite.usedAt || invite.usedById) {
                 const linked = invite.usedBy;
                 if (!linked || linked.id !== invite.usedById || linked.email.trim().toLowerCase() !== email
                     || linked.role !== 'MENTEE' || linked.isAdmin || linked.status !== 'APPROVED'
-                    || linked.programId !== invite.programId) throw new InviteLoginDenied();
-                if (!linked.name?.trim()) {
-                    if (!name) throw new InviteNameRequired();
+                    || linked.programId !== invite.programId
+                    || (linked.accessExpiresAt && linked.accessExpiresAt <= now)) throw new InviteLoginDenied();
+                if (!linked.name?.trim() && !name) throw new InviteNameRequired();
+                if (!invite.usedAt) {
+                    const activated = await tx.inviteCode.updateMany({
+                        where: { id: invite.id, usedAt: null, usedById: linked.id },
+                        data: { usedAt: now },
+                    });
+                    if (activated.count !== 1) throw new InviteLoginDenied();
+                }
+                if (!linked.name?.trim() && name) {
                     return tx.user.update({ where: { id: linked.id }, data: { name } });
                 }
                 return linked;
             }
-            if (invite.usedById) throw new InviteLoginDenied();
             const existing = await tx.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
-            if (existing) throw new InviteLoginDenied();
+            if (existing) throw new InviteAccountExists();
             if (!name) throw new InviteNameRequired();
 
             const created = await tx.user.create({ data: {
@@ -91,6 +100,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, user: { id: user.id, email: user.email, name: user.name },
             mustChangePassword: user.mustChangePassword, needsProfile: !isProfileCompleteForRole('MENTEE', profile) });
     } catch (error) {
+        if (error instanceof InviteAccountExists) {
+            return NextResponse.json({ code: 'INVITE_ACCOUNT_EXISTS', error: '이 이메일로 이미 가입된 계정이 있습니다. 관리자에게 기존 회원 연결을 요청하세요.' }, { status: 409 });
+        }
         if (error instanceof InviteNameRequired) {
             return NextResponse.json({ code: 'INVITE_NAME_REQUIRED', error: '등록을 완료하려면 이름을 입력하세요.' }, { status: 400 });
         }

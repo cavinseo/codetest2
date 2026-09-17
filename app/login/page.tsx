@@ -26,7 +26,7 @@ export default function LoginPage() {
     useEffect(() => {
         mountedRef.current = true;
         const params = new URLSearchParams(window.location.search);
-        if (params.get('mode') === 'invite') {
+        if (params.get('mode') === 'invite' || params.get('error') === 'invite_required') {
             setRole('MENTEE');
             setMode('invite');
         }
@@ -41,6 +41,7 @@ export default function LoginPage() {
             google_unverified: '확인되지 않은 Google 이메일입니다.',
             no_account: '이 Google 계정으로 가입된 회원이 없습니다. 먼저 회원가입을 해주세요.',
             pending: '가입 승인 대기 중입니다. 관리자 승인 후 이용할 수 있습니다.',
+            invite_required: '관리자가 초대 코드를 연결했습니다. 처음에는 초대 메일의 코드로 로그인하세요.',
             expired: '이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.',
             google_failed: 'Google 로그인에 실패했습니다. 다시 시도하세요.',
             google_role: '로그인 역할을 다시 선택해 주세요.',
@@ -77,6 +78,12 @@ export default function LoginPage() {
 
             if (!response.ok) {
                 if (isInviteLogin && data.code === 'INVITE_NAME_REQUIRED') setNeedsInviteName(true);
+                if (data.code === 'INVITE_LOGIN_REQUIRED') {
+                    setRole('MENTEE');
+                    setMode('invite');
+                    setNeedsInviteName(false);
+                    setPassword('');
+                }
                 throw new Error(data.error || '로그인에 실패했습니다.');
             }
 

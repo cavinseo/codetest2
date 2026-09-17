@@ -99,6 +99,9 @@ export async function POST(request: NextRequest) {
 
         // 이용 기간이 끝난 계정은 로그인시켜도 모든 요청이 requireAuth 에서 403 이 되어
         // 빈 대시보드만 보게 된다. 여기서 requireAuth 와 같은 문구로 미리 막는다.
+        if (user.usedInviteCode && !user.usedInviteCode.usedAt) {
+            return NextResponse.json({ code: 'INVITE_LOGIN_REQUIRED', error: '연결된 초대 코드로 첫 로그인을 완료하세요. 이메일과 초대 코드를 입력하면 됩니다.' }, { status: 403 });
+        }
         if (isUserAccessExpired(user)) {
             log.warn('로그인 거부 — 이용 기간 만료 계정', { userId: user.id });
             return NextResponse.json(

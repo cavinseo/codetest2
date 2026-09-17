@@ -1,21 +1,27 @@
 'use client';
 // 본인 확인 수단을 선택해 회원 비밀번호를 독립적으로 설정·변경하는 폼.
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { PASSWORD_MIN_LENGTH, getNewPasswordError, getPasswordChangeError } from '@/lib/password-policy';
 
 interface Props {
     canVerifyPasswordWithInviteCode: boolean;
+    onChanged?: () => void;
 }
 
 const EMPTY_FORM = { currentPassword: '', inviteCode: '', newPassword: '', confirmPassword: '' };
 
-export default function PasswordChangeForm({ canVerifyPasswordWithInviteCode }: Props) {
+export default function PasswordChangeForm({ canVerifyPasswordWithInviteCode, onChanged }: Props) {
     const [verificationMethod, setVerificationMethod] = useState<'password' | 'invite'>(canVerifyPasswordWithInviteCode ? 'invite' : 'password');
     const [form, setForm] = useState(EMPTY_FORM);
     const [isSaving, setIsSaving] = useState(false);
     const saving = useRef(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const id = useId();
+    const mounted = useRef(false);
+    useEffect(() => {
+        mounted.current = true;
+        return () => { mounted.current = false; };
+    }, []);
 
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
@@ -43,14 +49,16 @@ export default function PasswordChangeForm({ canVerifyPasswordWithInviteCode }: 
                 }),
             });
             const data = await response.json().catch(() => null);
+            if (!mounted.current) return;
             if (!response.ok) throw new Error(data?.error || '비밀번호 변경에 실패했습니다.');
             setForm(EMPTY_FORM);
             setMessage({ type: 'success', text: data?.message || '비밀번호를 변경했습니다. 다른 기기의 로그인은 해제됩니다.' });
+            onChanged?.();
         } catch (error) {
-            setMessage({ type: 'error', text: error instanceof Error ? error.message : '비밀번호 변경에 실패했습니다.' });
+            if (mounted.current) setMessage({ type: 'error', text: error instanceof Error ? error.message : '비밀번호 변경에 실패했습니다.' });
         } finally {
             saving.current = false;
-            setIsSaving(false);
+            if (mounted.current) setIsSaving(false);
         }
     };
 

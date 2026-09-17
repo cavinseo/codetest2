@@ -166,6 +166,13 @@ describe('buildInviteEmail', () => {
         expect(buildInviteEmail(params).html).toContain('받은 주소로만');
     });
 
+    it('별도 가입을 예방하고 기존 가입자의 관리자 연결과 첫 접속 기한을 안내한다', () => {
+        const { html } = buildInviteEmail(params);
+        expect(html).toContain('별도로 회원가입할 필요가 없습니다.');
+        expect(html).toContain('재가입하지 말고 관리자에게 기존 회원 연결을 요청');
+        expect(html).toContain('연결 후에도 최초 접속 기한 안에 초대 코드로 로그인');
+    });
+
     it('첫 로그인 기한과 같은 코드 재로그인, 프로그램 종료에 따른 이용 제한을 안내한다', () => {
         const { html } = buildInviteEmail({ ...params, accessDurationDays: 30 });
 

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { INVITE_BATCH_LIMIT, parseInviteEmails, runInviteBatch, type InviteBatchResult } from '@/lib/invite-batch';
 import { formatInviteExpiryDate, getInviteExpiryInputError } from '@/lib/invite-expiry';
 import InviteExpiryCell from './InviteExpiryCell';
+import InviteMemberLinkDialog from './InviteMemberLinkDialog';
 
 interface Invite {
     id: string;
@@ -18,6 +19,7 @@ interface Invite {
     expiresAt: string;
     accessExpiresAt?: string | null;
     usedAt: string | null;
+    usedById?: string | null;
 }
 
 interface ProgramOption {
@@ -35,7 +37,9 @@ export default function InvitesTab() {
     const [expiresAt, setExpiresAt] = useState('');
     const [editingExpiry, setEditingExpiry] = useState<{ id: string; value: string; error: string } | null>(null);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-    const [operation, setOperation] = useState<'issue' | 'revoke' | 'resend' | 'extend' | null>(null);
+    const [operation, setOperation] = useState<'issue' | 'revoke' | 'resend' | 'extend' | 'link' | null>(null);
+    const [canLinkExistingMember, setCanLinkExistingMember] = useState(false);
+    const [linkingInvite, setLinkingInvite] = useState<Invite | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
     const [results, setResults] = useState<InviteBatchResult[]>([]);
@@ -43,6 +47,7 @@ export default function InvitesTab() {
     const isMounted = useRef(true);
     const operationInFlight = useRef(false);
     const latestLoadRequestId = useRef(0);
+    const linkTrigger = useRef<HTMLButtonElement | null>(null);
     const isBusy = operation !== null;
     const parsedEmails = parseInviteEmails(email);
     const selectedProgram = programs.find((program) => program.id === programId);
@@ -65,6 +70,7 @@ export default function InvitesTab() {
         const errors: string[] = [];
         if (invitesResult.status === 'fulfilled') {
             setInvites(invitesResult.value.invites);
+            setCanLinkExistingMember(invitesResult.value.canLinkExistingMember === true);
         } else {
             errors.push('초대 코드 목록을 불러오지 못했습니다.');
         }
@@ -88,6 +94,10 @@ export default function InvitesTab() {
             isMounted.current = false;
         };
     }, [loadInvitesAndPrograms]);
+
+    useEffect(() => {
+        if (!linkingInvite) linkTrigger.current?.focus();
+    }, [linkingInvite]);
 
     const finishOperation = () => {
         operationInFlight.current = false;
@@ -126,16 +136,18 @@ export default function InvitesTab() {
         }
     };
 
-    const revoke = async (id: string) => {
+    const revoke = async (invite: Invite) => {
         if (operationInFlight.current) return;
-        if (!window.confirm('이 코드를 회수하시겠습니까? 기록은 남습니다.')) return;
+        if (!window.confirm(invite.usedById
+            ? '이 코드를 회수하시겠습니까? 연결된 회원의 첫 접속도 차단됩니다. 회원 자료와 초대 기록은 남습니다.'
+            : '이 코드를 회수하시겠습니까? 기록은 남습니다.')) return;
         operationInFlight.current = true;
         setOperation('revoke');
         try {
             const res = await fetch('/api/invites', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id }),
+                body: JSON.stringify({ id: invite.id }),
             });
             const data = await res.json().catch(() => null);
             if (!isMounted.current) return;
@@ -171,7 +183,7 @@ export default function InvitesTab() {
 
     const extendExpiry = async (invite: Invite) => {
         if (operationInFlight.current || editingExpiry?.id !== invite.id
-            || getInviteExpiryInputError(editingExpiry.value, invite.programEndsAt, invite.usedAt ? invite.accessExpiresAt : null)) return;
+            || getInviteExpiryInputError(editingExpiry.value, invite.programEndsAt, invite.usedAt || invite.usedById ? invite.accessExpiresAt : null)) return;
         operationInFlight.current = true;
         setOperation('extend');
         setMessage(null);
@@ -201,6 +213,11 @@ export default function InvitesTab() {
     const isExpired = (invite: Invite) => new Date(invite.expiresAt).getTime() <= Date.now();
     const canResend = (invite: Invite) => new Date(invite.usedAt
         ? invite.accessExpiresAt ?? invite.expiresAt : invite.expiresAt).getTime() > Date.now();
+
+    const closeMemberLink = () => {
+        setLinkingInvite(null);
+        finishOperation();
+    };
 
     return (
         <div className="space-y-4">
@@ -305,14 +322,25 @@ export default function InvitesTab() {
                                         ) : isExpired(invite) ? (
                                             <span className="badge-rose text-[10px]">만료</span>
                                         ) : (
-                                            <span className="badge-amber text-[10px]">대기</span>
+                                            <span className="badge-amber text-[10px]">{invite.usedById ? '첫 접속 대기' : '대기'}</span>
                                         )}
                                     </td>
                                     <td className="px-5 py-4 text-right">
+                                        {canLinkExistingMember && !invite.usedAt && !invite.usedById && !isExpired(invite) && (
+                                            <button type="button" disabled={isBusy} className="btn-secondary text-xs mr-2"
+                                                id={`invites-link-${invite.id}`} onClick={(event) => {
+                                                    if (operationInFlight.current) return;
+                                                    operationInFlight.current = true;
+                                                    linkTrigger.current = event.currentTarget;
+                                                    setOperation('link');
+                                                    setEditingExpiry(null);
+                                                    setLinkingInvite(invite);
+                                                }}>기존 회원 연결</button>
+                                        )}
                                         {canResend(invite) && <button type="button" onClick={() => resend(invite)} disabled={isBusy}
                                             className="btn-secondary text-xs mr-2" id={`invites-resend-${invite.id}`}>메일 재발송</button>}
                                         {!invite.usedAt && !isExpired(invite) && (
-                                            <button type="button" onClick={() => revoke(invite.id)} disabled={isBusy}
+                                            <button type="button" onClick={() => revoke(invite)} disabled={isBusy}
                                                 className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"
                                                 id={`invites-revoke-${invite.id}`}>
                                                 회수
@@ -326,6 +354,13 @@ export default function InvitesTab() {
                     </div>
                 </div>
             )}
+            {linkingInvite && <InviteMemberLinkDialog inviteId={linkingInvite.id}
+                onClose={closeMemberLink} onLinked={async () => {
+                    await loadInvitesAndPrograms();
+                    if (!isMounted.current) return;
+                    setMessage({ type: 'success', text: '기존 회원을 연결했습니다. 멘티가 최초 접속 기한 안에 초대 코드로 로그인해야 이용할 수 있습니다.' });
+                    closeMemberLink();
+                }} />}
         </div>
     );
 }

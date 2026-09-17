@@ -252,6 +252,19 @@ describe('Google 회원 로그인 콜백 state', () => {
 });
 
 describe('Google 회원 로그인 콜백 회원 게이트', () => {
+    it('관리자 연결 후 첫 접속 전에는 확인된 Google 계정도 초대 로그인으로 안내하고 세션을 발급하지 않는다', async () => {
+        findFirstUser.mockResolvedValue(approvedUser({
+            programId: 'program', accessExpiresAt: new Date(Date.now() + 30 * 86_400_000),
+            usedInviteCode: { programId: 'program', usedAt: null, expiresAt: new Date(Date.now() + 10 * 86_400_000), accessDurationDays: 90, program: { endsAt: new Date(Date.now() + 90 * 86_400_000) } },
+        }));
+        const res = await finishGoogleLogin(validCallbackRequest());
+        expect(redirectError(res)).toBe('invite_required');
+        expect(responseCookie(res, 'session')).toBeUndefined();
+        expect(responseCookie(res, 'google_login_state')).toBe('');
+        expect(findUniqueProfile).not.toHaveBeenCalled();
+        expect(createUser).not.toHaveBeenCalled();
+    });
+
     it('서명 state 역할과 DB 역할이 다르면 세션 없이 거부한다', async () => {
         const state = issueLoginState('MENTOR');
 

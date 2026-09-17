@@ -200,6 +200,25 @@ it('기존 승인 대기 안내와 Google 오류를 유지한다', async () => {
     expect(container.textContent).toContain('Google 로그인을 취소했습니다.');
 });
 
+it('연결 후 Google 로그인에서 돌아오면 첫 초대 코드 로그인 안내와 입력란을 표시한다', async () => {
+    await renderLogin('?error=invite_required');
+    expect(button('멘티').getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelector('#inviteCode')).not.toBeNull();
+    expect(container.querySelector('#password')).toBeNull();
+    expect(container.textContent).toContain('처음에는 초대 메일의 코드로 로그인하세요.');
+});
+
+it('비밀번호 로그인에서 첫 코드 로그인이 필요하면 이메일을 유지하고 초대 코드 입력으로 전환한다', async () => {
+    fetchMock.mockResolvedValueOnce(response({ code: 'INVITE_LOGIN_REQUIRED', error: '연결된 초대 코드로 첫 로그인을 완료하세요.' }, 403));
+    await renderLogin(); await click('멘티'); await click('비밀번호 로그인');
+    await enter('email', 'mentee@example.test'); await enter('password', 'test-password'); await submit();
+    expect(container.querySelector<HTMLInputElement>('#email')!.value).toBe('mentee@example.test');
+    expect(container.querySelector('#inviteCode')).not.toBeNull();
+    expect(container.querySelector('#password')).toBeNull();
+    expect(container.textContent).toContain('연결된 초대 코드로 첫 로그인을 완료하세요.');
+    expect(pushMock).not.toHaveBeenCalled();
+});
+
 it.each([
     ['role_mismatch', '선택한 로그인 역할과 계정 역할이 일치하지 않습니다. 계정에 맞는 역할을 선택하세요.'],
     ['account_role_invalid', '계정 역할 정보가 올바르지 않습니다. 관리자에게 문의하세요.'],

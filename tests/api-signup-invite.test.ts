@@ -9,6 +9,9 @@ const transaction = vi.fn();
 const txCreateUser = vi.fn();
 const txCreateProfile = vi.fn();
 const txUpdateInvite = vi.fn();
+const txFindUser = vi.fn();
+const txFindInvites = vi.fn();
+const txLock = vi.fn();
 const cookieSet = vi.fn();
 vi.mock('next/headers', () => ({ cookies: async () => ({ set: cookieSet }) }));
 vi.mock('../lib/auth', () => ({ encodeSessionCookie: () => 'signup-first-session' }));
@@ -52,12 +55,15 @@ beforeEach(() => {
     txCreateUser.mockResolvedValue({ id: 'user_new', email: 'm@x.com', name: '새회원' });
     txCreateProfile.mockResolvedValue({});
     txUpdateInvite.mockResolvedValue({ count: 1 });
+    txFindUser.mockResolvedValue(null);
+    txFindInvites.mockResolvedValue([]);
+    txLock.mockResolvedValue([]);
     transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
-            $queryRaw: vi.fn(),
-            user: { create: txCreateUser },
+            $queryRaw: txLock,
+            user: { create: txCreateUser, findFirst: txFindUser },
             memberProfile: { create: txCreateProfile },
-            inviteCode: { updateMany: txUpdateInvite, findUnique: findUniqueInvite },
+            inviteCode: { updateMany: txUpdateInvite, findUnique: findUniqueInvite, findMany: txFindInvites },
         })
     );
 });
@@ -67,6 +73,49 @@ afterEach(() => {
 });
 
 describe('초대 코드 없는 가입', () => {
+    const future = new Date('2099-01-01T00:00:00Z');
+    const activeInvite = { id: 'invite', role: 'MENTEE', email: 'm@x.com', usedAt: null, usedById: null,
+        expiresAt: future, accessExpiresAt: future, program: { endsAt: future }, accessDurationDays: 90 };
+
+    it.each(['MENTEE', 'MENTOR'])('유효한 미사용 멘티 초대가 있으면 %s 가입 대신 코드 로그인을 안내한다', async role => {
+        txFindInvites.mockResolvedValue([activeInvite]);
+        const response = await POST(signupRequest({ name: '새회원', email: 'M@X.COM', password: 'password123',
+            role, profile: role === 'MENTOR' ? mentorProfile : menteeProfile }));
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({ code: 'INVITE_LOGIN_REQUIRED', error: expect.stringContaining('초대') });
+        expect(txLock.mock.calls[0][0].join('')).toContain('pg_advisory_xact_lock');
+        expect(txLock.mock.calls[0].slice(1)).toContain('invite-email:m@x.com');
+        expect(txLock.mock.invocationCallOrder[0]).toBeLessThan(txFindInvites.mock.invocationCallOrder[0]);
+        expect(txFindInvites).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+            email: { equals: 'm@x.com', mode: 'insensitive' }, role: 'MENTEE', usedAt: null,
+        }) }));
+        expect(txCreateUser).not.toHaveBeenCalled();
+        expect(txCreateProfile).not.toHaveBeenCalled();
+        expect(txUpdateInvite).not.toHaveBeenCalled();
+        expect(cookieSet).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { expiresAt: new Date(0) },
+        { program: { endsAt: new Date(0) } },
+    ])('초대 또는 프로그램이 만료된 경우에는 일반 가입을 허용한다 (%j)', async changes => {
+        txFindInvites.mockResolvedValue([{ ...activeInvite, ...changes }]);
+        const response = await POST(signupRequest({ name: '새회원', email: 'm@x.com', password: 'password123', profile: menteeProfile }));
+        expect(response.status).toBe(200);
+        expect(txCreateUser).toHaveBeenCalledOnce();
+        expect(txCreateUser.mock.calls[0][0].data.status).toBe('PENDING');
+    });
+
+    it('최초 조회 후 다른 가입이 완료되면 이메일 잠금 안에서 다시 확인하여 거절한다', async () => {
+        txFindUser.mockResolvedValue({ id: 'other-created-user' });
+        const response = await POST(signupRequest({ name: '새회원', email: 'm@x.com', password: 'password123', profile: menteeProfile }));
+        expect(response.status).toBe(409);
+        expect(txFindUser).toHaveBeenCalledWith(expect.objectContaining({ where: { email: { equals: 'm@x.com', mode: 'insensitive' } } }));
+        expect(txLock.mock.invocationCallOrder[0]).toBeLessThan(txFindUser.mock.invocationCallOrder[0]);
+        expect(txCreateUser).not.toHaveBeenCalled();
+        expect(txCreateProfile).not.toHaveBeenCalled();
+    });
+
     it('기존 혼합 대소문자 이메일과 같은 주소의 중복 가입을 거절한다', async () => {
         findUniqueUser.mockImplementation(async ({ where }: { where: { email: string | { equals: string; mode: string } } }) => {
             const storedEmail = 'User@Example.com';

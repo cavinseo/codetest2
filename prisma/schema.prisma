@@ -627,7 +627,7 @@ model ServiceSetting {
   @@map("service_settings")
 }
 
-// 멘토·멘티를 초대하기 위한 1회용 코드. 신청 이메일로 발송한다.
+// 멘티의 최초 접속과 이후 로그인을 허용하는 개인 초대 코드. 신청 이메일로 발송한다.
 model InviteCode {
   id String @id @default(cuid())
   // 이메일로 보내는 값. 조회 키라 유니크하다.
@@ -651,6 +651,7 @@ model InviteCode {
   issuedById String
   issuedBy   User   @relation("InviteIssuer", fields: [issuedById], references: [id], onDelete: Cascade)
 
+  // 실제 첫 코드 로그인 시각. 관리자 연결만 마친 회원은 usedById가 있어도 null이다.
   usedAt     DateTime?
   usedById   String?   @unique
   usedBy     User?     @relation("InviteRedeemer", fields: [usedById], references: [id], onDelete: SetNull)

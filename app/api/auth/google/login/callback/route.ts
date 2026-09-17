@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
         if (!role) return fail(origin, 'account_role_invalid');
         if (role !== stateParamRole) return fail(origin, 'role_mismatch');
         if (user.status !== 'APPROVED') return fail(origin, 'pending');
+        if (user.usedInviteCode && !user.usedInviteCode.usedAt) return fail(origin, 'invite_required');
         if (isUserAccessExpired(user)) return fail(origin, 'expired');
 
         const [profile] = await Promise.all([

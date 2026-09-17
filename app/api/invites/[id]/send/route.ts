@@ -31,27 +31,28 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             return NextResponse.json({ error: '만료되었거나 사용할 수 없는 멘티 초대 코드입니다.' }, { status: 400 });
         }
         // 발송만으로 가입 상태나 코드의 최초 사용일이 바뀌지 않게 읽기만 한다.
-        if (invite.usedAt) {
+        if (invite.usedAt || invite.usedById) {
             const member = invite.usedBy;
             if (!member || member.id !== invite.usedById || member.email.trim().toLowerCase() !== email
                 || member.role !== 'MENTEE' || member.isAdmin || member.status !== 'APPROVED' || member.programId !== invite.programId) {
                 return NextResponse.json({ error: '초대 코드와 멘티의 등록 정보가 일치하지 않아 발송할 수 없습니다.' }, { status: 409 });
             }
-        } else if (invite.usedById || await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select: { id: true } })) {
+        } else if (await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select: { id: true } })) {
             return NextResponse.json({ error: '이미 등록된 회원 정보와 연결되지 않은 코드입니다. 초대 정보를 확인하세요.' }, { status: 409 });
         }
         const loginUrl = `${new URL(request.url).origin}/login?mode=invite`;
+        const memberExpiresAt = invite.usedBy?.accessExpiresAt ?? invite.accessExpiresAt;
         const emailSent = await sendMail({
             to: email,
             subject: '[KS-QFD] 멘티 초대 코드 안내',
             html: `<div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 24px; line-height: 1.8; color: #222;">
                 <h2>KS-QFD 멘티 초대 코드</h2>
                 <p>${escapeHtml(invite.program.name)} 프로그램의 기존 초대 코드를 안내합니다.</p>
-                <p>등록된 이메일과 아래 코드로 로그인하세요.</p>
+                <p>별도로 회원가입하지 말고 등록된 이메일과 아래 코드로 로그인하세요. 이미 가입했다면 관리자에게 기존 회원 연결을 요청하세요.</p>
                 <p style="font-family: monospace; font-size: 22px; font-weight: bold;">${escapeHtml(invite.code)}</p>
                 <p>첫 로그인 기한: ${formatInviteExpiryDate(invite.expiresAt)}까지 (한국 시간)</p>
-                <p>${invite.accessExpiresAt || invite.usedAt
-                    ? `회원 이용만료일: ${formatInviteExpiryDate(invite.usedAt ? expiresAt : invite.accessExpiresAt!)}까지. 최초 접속 후에는 회원 이용만료일까지 같은 코드로 로그인할 수 있습니다.`
+                <p>${memberExpiresAt || invite.usedAt
+                    ? `회원 이용만료일: ${formatInviteExpiryDate(invite.usedAt ? expiresAt : memberExpiresAt!)}까지. 최초 접속 후에는 회원 이용만료일까지 같은 코드로 로그인할 수 있습니다.`
                     : `최초 로그인 후 ${invite.accessDurationDays}일과 프로그램 종료일 중 빠른 날까지 이용할 수 있습니다.`} 메일 재발송으로 기존 이용 기한이 연장되지는 않습니다.</p>
                 <p><a href="${escapeHtml(loginUrl)}">초대 코드로 로그인</a></p>
             </div>`,

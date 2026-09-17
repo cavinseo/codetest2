@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { hasAdminAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { errorCodeOf, toErrorResponse } from '@/lib/api-error';
 import { sendMail } from '@/lib/email';
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
             where: scope,
             select: {
                 id: true, code: authResult.role === 'ADMIN', email: true, role: true, expiresAt: true,
-                accessDurationDays: true, accessExpiresAt: true, usedAt: true, createdAt: true,
+                accessDurationDays: true, accessExpiresAt: true, usedAt: true, usedById: true, createdAt: true,
                 programId: true, program: { select: { name: true, endsAt: true } },
                 usedBy: { select: { accessExpiresAt: true } },
             },
@@ -63,10 +64,11 @@ export async function GET(request: NextRequest) {
         });
 
         return NextResponse.json({
+            canLinkExistingMember: hasAdminAccess(authResult),
             invites: invites.map(({ program, usedBy, code, ...rest }) => ({
                 ...rest, ...(authResult.role === 'ADMIN' ? { code } : {}), programName: program.name,
                 programEndsAt: program.endsAt,
-                accessExpiresAt: rest.usedAt ? inviteAccessExpiresAt({ ...rest, program, usedBy }) : rest.accessExpiresAt,
+                accessExpiresAt: usedBy?.accessExpiresAt ?? (rest.usedAt ? inviteAccessExpiresAt({ ...rest, program, usedBy }) : rest.accessExpiresAt),
             })),
         });
     } catch (error: unknown) {
@@ -188,7 +190,7 @@ export async function DELETE(request: NextRequest) {
 
         // 삭제가 아니라 만료 처리다. 누가 누구에게 발급했는지가 이력으로 남아야 한다.
         const revoked = await prisma.inviteCode.updateMany({
-            where: { id: invite.id, usedAt: null, usedById: null },
+            where: { id: invite.id, usedAt: null },
             data: { expiresAt: new Date() },
         });
         if (revoked.count !== 1) {

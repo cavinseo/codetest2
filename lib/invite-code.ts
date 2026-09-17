@@ -111,6 +111,7 @@ export function buildInviteEmail(params: {
         </div>
         <div style="background: white; padding: 28px; border-radius: 0 0 12px 12px;">
             <p style="color: #333; font-size: 15px;">이메일과 초대 코드로 로그인해 주세요. 처음 로그인하면 계정이 생성되며, 이후에도 같은 코드로 로그인할 수 있습니다.</p>
+            <p style="color: #555; font-size: 13px;">별도로 회원가입할 필요가 없습니다. 이미 같은 이메일로 가입했다면 재가입하지 말고 관리자에게 기존 회원 연결을 요청하세요. 연결 후에도 최초 접속 기한 안에 초대 코드로 로그인해야 합니다.</p>
             <div style="margin: 20px 0; padding: 16px; background: #f1f5f9; border-radius: 8px; text-align: center;">
                 <span style="font-family: monospace; font-size: 20px; font-weight: 700; letter-spacing: 2px; color: #0f172a;">${code}</span>
             </div>

@@ -3,7 +3,7 @@
 import { formatInviteExpiryDate, getInviteExpiryInputError } from '@/lib/invite-expiry';
 
 interface InviteExpiryCellProps {
-    invite: { id: string; email: string; expiresAt: string; programEndsAt: string; usedAt?: string | null; accessExpiresAt?: string | null };
+    invite: { id: string; email: string; expiresAt: string; programEndsAt: string; usedAt?: string | null; usedById?: string | null; accessExpiresAt?: string | null };
     editState: { value: string; error: string } | null;
     isBusy: boolean;
     isSaving: boolean;
@@ -17,7 +17,7 @@ interface InviteExpiryCellProps {
 export default function InviteExpiryCell({
     invite, editState, isBusy, isSaving, today, onStartEditing, onDateChange, onSave, onCancel,
 }: InviteExpiryCellProps) {
-    const memberAccessExpiresAt = invite.usedAt ? invite.accessExpiresAt : null;
+    const memberAccessExpiresAt = invite.usedAt || invite.usedById ? invite.accessExpiresAt : null;
     const validationError = editState ? getInviteExpiryInputError(editState.value, invite.programEndsAt, memberAccessExpiresAt) : '';
     const maxDate = formatInviteExpiryDate(memberAccessExpiresAt && memberAccessExpiresAt < invite.programEndsAt
         ? memberAccessExpiresAt : invite.programEndsAt);

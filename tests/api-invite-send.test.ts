@@ -125,6 +125,25 @@ describe('초대 코드 재발송 권한', () => {
 });
 
 describe('발송 가능한 코드와 이용 기한', () => {
+    it('관리자가 연결한 첫 접속 대기 초대는 기존 코드와 최신 회원 이용만료일을 함께 안내한다', async () => {
+        const invite = { ...usedInvite(), usedAt: null, expiresAt: future(10), accessExpiresAt: future(10) };
+        const before = structuredClone(invite);
+        findUniqueInvite.mockResolvedValue(invite);
+        expect((await POST(request(), context)).status).toBe(200);
+        const html = sendMail.mock.calls[0][0].html;
+        expect(html).toContain(`첫 로그인 기한: ${future(10).toISOString().slice(0, 10)}`);
+        expect(html).toContain(`회원 이용만료일: ${future(60).toISOString().slice(0, 10)}`);
+        expect(html).toContain('EXISTING-CODE');
+        expect(invite).toEqual(before);
+        expect(findFirstUser).not.toHaveBeenCalled();
+    });
+
+    it.each([NOW, future(-1)])('연결돼도 최초 접속 전에 코드 기한 %s가 지났으면 재발송하지 않는다', async expiresAt => {
+        findUniqueInvite.mockResolvedValue({ ...usedInvite(), usedAt: null, expiresAt });
+        expect((await POST(request(), context)).status).toBe(400);
+        expect(sendMail).not.toHaveBeenCalled();
+    });
+
     it('명시한 이용 기한을 안내하고 가입 후 기간을 별도로 부여한다고 하지 않는다', async () => {
         findUniqueInvite.mockResolvedValue({ ...unusedInvite(), expiresAt: future(10), accessExpiresAt: future(10) });
         expect((await POST(request(), context)).status).toBe(200);
@@ -227,8 +246,20 @@ describe('초대 이메일과 회원 연결', () => {
         expect(sendMail).not.toHaveBeenCalled();
     });
 
-    it('미사용 코드에 회원 연결 ID가 남아 있으면 발송하지 않는다', async () => {
+    it('미사용 코드에 회원 연결 ID만 있고 실제 회원이 없으면 발송하지 않는다', async () => {
         findUniqueInvite.mockResolvedValue({ ...unusedInvite(), usedById: 'mentee_1' });
+        expect((await POST(request(), context)).status).toBe(409);
+        expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['이메일 불일치', { email: 'other@example.com' }],
+        ['승인 취소', { status: 'PENDING' }],
+        ['프로그램 불일치', { programId: 'other_program' }],
+    ])('첫 접속 대기 회원도 %s이면 재발송하지 않는다', async (_label, change) => {
+        const invite = { ...usedInvite(), usedAt: null };
+        Object.assign(invite.usedBy, change);
+        findUniqueInvite.mockResolvedValue(invite);
         expect((await POST(request(), context)).status).toBe(409);
         expect(sendMail).not.toHaveBeenCalled();
     });

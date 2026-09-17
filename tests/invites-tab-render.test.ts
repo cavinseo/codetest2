@@ -11,6 +11,8 @@ const fetchMock = vi.fn();
 const postMock = vi.fn();
 const deleteMock = vi.fn();
 const patchMock = vi.fn();
+const linkPreviewMock = vi.fn();
+const linkPostMock = vi.fn();
 const invite = {
     id: 'existing', code: 'EXISTING-CODE', email: 'existing@example.test',
     programId: 'program_1', programName: '기존 프로그램', expiresAt: '2099-01-01T00:00:00Z',
@@ -18,6 +20,12 @@ const invite = {
     accessDurationDays: 90, usedAt: null,
 };
 const programs = [{ id: 'program_1', name: '기존 프로그램', organization: '기관', endsAt: invite.programEndsAt }];
+const linkPreview = {
+    inviteId: invite.id, email: invite.email,
+    member: { id: 'member_1', name: '기존 멘티', status: 'PENDING', programName: null, accessExpiresAt: null },
+    program: { id: 'program_1', name: '기존 프로그램' }, inviteExpiresAt: invite.expiresAt,
+    accessExpiresAt: invite.expiresAt, resetPassword: true, previewToken: 'preview-state',
+};
 
 function response(body: unknown, status = 200) {
     return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -64,14 +72,20 @@ beforeEach(() => {
     vi.setSystemTime(new Date('2026-09-16T15:30:00Z'));
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.stubGlobal('fetch', fetchMock);
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
     postMock.mockImplementation(async () => response({ success: true, emailSent: true, code: 'NEW-CODE' }));
     deleteMock.mockImplementation(async () => response({ success: true }));
     patchMock.mockImplementation(async (body) => response({ success: true, invite: { id: body.id, expiresAt: `${body.expiresAt}T14:59:59.999Z` } }));
+    linkPreviewMock.mockImplementation(async () => response({ preview: linkPreview }));
+    linkPostMock.mockImplementation(async () => response({ success: true }));
     fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
+        if (url.endsWith('/link')) return options?.method === 'POST'
+            ? linkPostMock(JSON.parse(options.body as string)) : linkPreviewMock();
         if (options?.method === 'POST') return postMock(JSON.parse(options.body as string));
         if (options?.method === 'DELETE') return deleteMock(JSON.parse(options.body as string));
         if (options?.method === 'PATCH') return patchMock(JSON.parse(options.body as string));
-        return response(url === '/api/programs' ? { programs } : { invites: [invite] });
+        return response(url === '/api/programs' ? { programs } : { invites: [invite], canLinkExistingMember: true });
     });
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -92,18 +106,124 @@ it('여러 줄 이메일 입력란을 표시한다', async () => {
     expect(container.querySelector('#invites-email')?.tagName).toBe('TEXTAREA');
 });
 
-it('기한 저장으로 기존 멘티가 연결되면 사용 상태와 회수 버튼도 갱신한다', async () => {
+it('기한만 저장해도 첫 로그인 전 코드는 미사용 상태를 유지한다', async () => {
     patchMock.mockResolvedValueOnce(response({ success: true, invite: {
-        id: invite.id, expiresAt: '2099-02-01T14:59:59.999Z', usedAt: '2026-09-17T03:00:00Z',
+        id: invite.id, expiresAt: '2099-02-01T14:59:59.999Z', usedAt: null,
     } }));
     await renderInvites();
     await click('#invites-expiry-existing');
     await enterExpiry('2099-02-01', '#invites-expiry-input-existing');
     await click('#invites-expiry-save-existing');
 
-    expect(container.querySelector('table')!.textContent).toContain('사용됨');
-    expect(container.querySelector('#invites-revoke-existing')).toBeNull();
+    expect(container.querySelector('table')!.textContent).not.toContain('사용됨');
+    expect(container.querySelector('#invites-revoke-existing')).not.toBeNull();
+    expect(container.querySelector('#invites-link-existing')).not.toBeNull();
     expect(container.querySelector('#invites-expiry-existing')!.textContent).toContain('2099-02-01');
+});
+
+it('기존 회원 연결은 관리자 권한과 유효한 미연결 초대에만 표시한다', async () => {
+    fetchMock.mockImplementation(async (url: string) => response(url === '/api/programs' ? { programs } : {
+        canLinkExistingMember: true, invites: [invite,
+            { ...invite, id: 'used', usedAt: '2026-09-01T00:00:00Z' },
+            { ...invite, id: 'linked', usedById: 'member_1' },
+            { ...invite, id: 'expired', expiresAt: '2020-01-01T00:00:00Z' },
+        ],
+    }));
+    await renderInvites();
+    expect(container.querySelector('#invites-link-existing')).not.toBeNull();
+    for (const id of ['used', 'linked', 'expired']) expect(container.querySelector(`#invites-link-${id}`)).toBeNull();
+    expect(container.querySelector('table')!.textContent).toContain('첫 접속 대기');
+    await act(async () => { root.render(null); });
+    fetchMock.mockImplementation(async (url: string) => response(url === '/api/programs' ? { programs } : { invites: [invite], canLinkExistingMember: false }));
+    await renderInvites();
+    expect(container.querySelector('#invites-link-existing')).toBeNull();
+});
+
+it('회원과 기한·기존 자료 보존·로그인 해제 영향을 확인하기 전에는 연결할 수 없다', async () => {
+    await renderInvites();
+    await click('#invites-link-existing');
+    expect(container.querySelector<HTMLDialogElement>('dialog')!.open).toBe(true);
+    expect(document.activeElement?.id).toBe('invite-member-link-title');
+    for (const text of ['기존 멘티', invite.email, '승인 대기 → 승인', '미배정', '기존 프로그램', '2099-01-01', '기존 프로젝트·작성 자료', '비밀번호를 무효화', '기존 로그인은 모두 해제', '최초 접속 기한 안에']) {
+        expect(container.querySelector('dialog')!.textContent).toContain(text);
+    }
+    expect(container.querySelector<HTMLButtonElement>('#invite-member-link-submit')!.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('#invites-expiry-existing')!.disabled).toBe(true);
+    await click('#invite-member-link-submit');
+    expect(linkPostMock).not.toHaveBeenCalled();
+    await click('#invite-member-link-close');
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('#invites-expiry-existing')!.disabled).toBe(false);
+    expect(document.activeElement?.id).toBe('invites-link-existing');
+});
+
+it('승인된 회원은 비밀번호 유지와 로그인 해제 영향을 안내한다', async () => {
+    linkPreviewMock.mockResolvedValueOnce(response({ preview: { ...linkPreview, resetPassword: false, member: { ...linkPreview.member, status: 'APPROVED', programName: '기존 프로그램' } } }));
+    await renderInvites(); await click('#invites-link-existing');
+    expect(container.querySelector('dialog')!.textContent).toContain('기존 비밀번호는 유지됩니다.');
+    expect(container.querySelector('dialog')!.textContent).not.toContain('비밀번호를 무효화');
+    expect(container.querySelector('dialog')!.textContent).toContain('기존 로그인은 모두 해제');
+});
+
+it('신원 확인 후 연결을 한 번만 보내고 응답 전 닫기·회수·기한 변경을 막는다', async () => {
+    const pending = deferred<Response>();
+    linkPostMock.mockImplementationOnce(() => pending.promise);
+    await renderInvites(); await click('#invites-link-existing'); await click('#invite-member-link-confirm');
+    await act(async () => {
+        const button = container.querySelector<HTMLButtonElement>('#invite-member-link-submit')!;
+        button.click(); button.click();
+    });
+    expect(linkPostMock).toHaveBeenCalledExactlyOnceWith({ memberId: 'member_1', previewToken: 'preview-state', confirmIdentity: true });
+    for (const selector of ['#invite-member-link-close', '#invite-member-link-confirm', '#invite-member-link-submit', '#invites-revoke-existing', '#invites-expiry-existing']) {
+        expect(container.querySelector<HTMLInputElement>(selector)!.disabled, selector).toBe(true);
+    }
+    await act(async () => { container.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true })); });
+    expect(container.querySelector('dialog')).not.toBeNull();
+    fetchMock.mockImplementation(async (url: string) => response(url === '/api/programs' ? { programs } : { invites: [{ ...invite, usedById: 'member_1' }], canLinkExistingMember: true }));
+    await act(async () => { pending.resolve(response({ success: true })); });
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(container.querySelector('table')!.textContent).toContain('첫 접속 대기');
+    expect(container.querySelector('#invites-link-existing')).toBeNull();
+    expect(container.querySelector('[role="status"]')!.textContent).toContain('기존 회원을 연결했습니다.');
+});
+
+it.each(['http', 'network'])('연결 %s 실패는 미리보기와 확인을 초기화하고 다시 확인해야 재시도한다', async (failure) => {
+    if (failure === 'http') linkPostMock.mockResolvedValueOnce(response({ error: '회원 정보가 변경되었습니다.' }, 409));
+    else linkPostMock.mockRejectedValueOnce(new Error('network unavailable'));
+    await renderInvites(); await click('#invites-link-existing'); await click('#invite-member-link-confirm'); await click('#invite-member-link-submit');
+    expect(container.querySelector('#invite-member-link-submit')).toBeNull();
+    expect(container.querySelector('dialog [role="alert"]')!.textContent).toContain(failure === 'http' ? '회원 정보가 변경' : '연결 결과를 확인하지');
+    expect(linkPostMock).toHaveBeenCalledTimes(1);
+    await click('#invite-member-link-retry');
+    expect(linkPreviewMock).toHaveBeenCalledTimes(2);
+    expect(container.querySelector<HTMLInputElement>('#invite-member-link-confirm')!.checked).toBe(false);
+    expect(container.querySelector<HTMLButtonElement>('#invite-member-link-submit')!.disabled).toBe(true);
+});
+
+it('연결 미리보기 오류를 안내하고 취소된 조회 응답은 다시 연 대화상자에 반영하지 않는다', async () => {
+    linkPreviewMock.mockResolvedValueOnce(response({ error: '연결할 기존 회원이 없습니다.' }, 404));
+    await renderInvites(); await click('#invites-link-existing');
+    expect(container.querySelector('dialog [role="alert"]')!.textContent).toContain('연결할 기존 회원이 없습니다.');
+    const pending = deferred<Response>();
+    linkPreviewMock.mockImplementationOnce(() => pending.promise);
+    await click('#invite-member-link-retry'); await click('#invite-member-link-close'); await click('#invites-link-existing');
+    await act(async () => { pending.resolve(response({ preview: { ...linkPreview, email: 'stale@example.test' } })); });
+    expect(container.querySelector('dialog')!.textContent).toContain(invite.email);
+    expect(container.querySelector('dialog')!.textContent).not.toContain('stale@example.test');
+});
+
+it('연결된 첫 접속 대기 회원의 이용만료일을 넘기는 연장을 막고 회수 영향을 안내한다', async () => {
+    fetchMock.mockImplementation(async (url: string) => response(url === '/api/programs' ? { programs } : {
+        invites: [{ ...invite, usedById: 'member_1', accessExpiresAt: '2099-03-01T14:59:59.999Z' }], canLinkExistingMember: true,
+    }));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await renderInvites(); await click('#invites-expiry-existing'); await enterExpiry('2099-04-01', '#invites-expiry-input-existing');
+    expect(container.querySelector<HTMLInputElement>('#invites-expiry-input-existing')!.max).toBe('2099-03-01');
+    expect(container.querySelector<HTMLButtonElement>('#invites-expiry-save-existing')!.disabled).toBe(true);
+    expect(container.querySelector('[role="alert"]')!.textContent).toContain('회원 이용만료일');
+    await click('#invites-revoke-existing');
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('연결된 회원의 첫 접속도 차단됩니다.'));
+    expect(deleteMock).not.toHaveBeenCalled();
 });
 
 it('기존 발급 코드가 관리자 목록에 표시된다', async () => {

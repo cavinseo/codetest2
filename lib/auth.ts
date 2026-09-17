@@ -175,6 +175,9 @@ export async function requireAuth(
         );
     }
     // 초대 코드로 들어온 계정은 이용 기간이 정해져 있다.
+    if (dbUser.usedInviteCode && !dbUser.usedInviteCode.usedAt) {
+        return NextResponse.json({ code: 'INVITE_LOGIN_REQUIRED', error: '연결된 초대 코드로 첫 로그인을 완료하세요.' }, { status: 403 });
+    }
     if (isUserAccessExpired(dbUser)) {
         return NextResponse.json(
             { error: '이용 기간이 만료되었습니다. 관리자에게 연장을 요청하세요.' },

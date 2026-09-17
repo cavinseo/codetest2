@@ -33,6 +33,8 @@ const signupSchema = z.object({
 /** 코드를 쓰려는 순간 다른 요청이 먼저 써 버린 경우. */
 class InviteAlreadyUsedError extends Error {}
 class InviteExpiredError extends Error {}
+class InviteLoginRequiredError extends Error {}
+class ExistingAccountError extends Error {}
 
 export async function POST(request: NextRequest) {
     try {
@@ -107,8 +109,11 @@ export async function POST(request: NextRequest) {
         // 사용자 생성·프로필 저장·코드 사용 처리를 한 트랜잭션으로 묶는다.
         // 그렇지 않으면 프로필 없는 회원이나, 계정 없이 소진된 코드가 남을 수 있다.
         const newUser = await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`invite-email:${email}`}))::text`;
+            if (await tx.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select: { id: true } })) {
+                throw new ExistingAccountError();
+            }
             if (invite) {
-                await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`invite-email:${email}`}))::text`;
                 await tx.$queryRaw`SELECT id FROM invite_codes WHERE id = ${invite.id} FOR UPDATE`;
                 const current = await tx.inviteCode.findUnique({ where: { id: invite.id }, include: { program: { select: { endsAt: true } } } });
                 if (!current || current.usedAt || current.usedById) throw new InviteAlreadyUsedError();
@@ -117,6 +122,14 @@ export async function POST(request: NextRequest) {
                 invite = { id: current.id, role: 'MENTEE',
                     programId: current.programId, endsAt: current.program.endsAt, accessDurationDays: current.accessDurationDays,
                     accessExpiresAt: current.accessExpiresAt };
+            } else {
+                const unusedInvites = await tx.inviteCode.findMany({
+                    where: { email: { equals: email, mode: 'insensitive' }, role: 'MENTEE', usedAt: null },
+                    include: { program: { select: { endsAt: true } } },
+                });
+                if (unusedInvites.some((unused) => inviteAccessExpiresAt(unused) > new Date())) {
+                    throw new InviteLoginRequiredError();
+                }
             }
             const now = new Date();
             const user = await tx.user.create({
@@ -189,6 +202,10 @@ export async function POST(request: NextRequest) {
             user: { id: newUser.id, name: newUser.name, email: newUser.email },
         });
     } catch (error: unknown) {
+        if (error instanceof InviteLoginRequiredError) {
+            return NextResponse.json({ code: 'INVITE_LOGIN_REQUIRED', error: '이 이메일로 받은 유효한 초대가 있습니다. 별도로 가입하지 말고 이메일과 초대 코드로 로그인하세요.' }, { status: 409 });
+        }
+        if (error instanceof ExistingAccountError) return NextResponse.json({ error: '이미 사용 중인 이메일입니다.' }, { status: 409 });
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }

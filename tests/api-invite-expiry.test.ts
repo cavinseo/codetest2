@@ -8,34 +8,26 @@ const findOtherInvites = vi.fn();
 const updateInvite = vi.fn();
 const findUser = vi.fn();
 const updateUsers = vi.fn();
-const createUser = vi.fn();
-const setCookie = vi.fn();
 const lock = vi.fn();
 const transaction = vi.fn(async (fn: (tx: unknown) => unknown) => fn({
     $queryRaw: lock,
     inviteCode: { findUnique: findLockedInvite, findMany: findOtherInvites, update: updateInvite },
-    user: { findFirst: findUser, updateMany: updateUsers, create: createUser },
+    user: { findFirst: findUser, updateMany: updateUsers },
 }));
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
         inviteCode: { findUnique: findInvite },
         $transaction: transaction,
-        memberProfile: { findUnique: vi.fn(async () => null) },
     },
 }));
 
 const requireAuth = vi.fn();
-vi.mock('../lib/auth', () => ({ requireAuth: (...args: unknown[]) => requireAuth(...args), encodeSessionCookie: () => 'test-session' }));
-vi.mock('next/headers', () => ({ cookies: async () => ({ set: setCookie }) }));
-vi.mock('../lib/rate-limit', () => ({
-    LOGIN_RATE_LIMIT: {}, clientIpFrom: () => 'local', consumeRateLimit: () => ({ allowed: true }), resetRateLimit: vi.fn(),
-}));
+vi.mock('../lib/auth', () => ({ requireAuth: (...args: unknown[]) => requireAuth(...args) }));
 const sendMail = vi.fn();
 vi.mock('../lib/email', () => ({ sendMail: (...args: unknown[]) => sendMail(...args) }));
 
 const { PATCH } = await import('../app/api/invites/route');
-const { POST: login } = await import('../app/api/auth/invite-login/route');
 
 const ISSUER_ID = 'issuer_1';
 const TARGET_EXPIRY = new Date('2026-10-15T14:59:59.999Z');
@@ -206,37 +198,6 @@ describe('초대 연장의 날짜 경계', () => {
 });
 
 describe('초대 연장과 연결 계정', () => {
-    it('기존 멘티의 대기 초대를 연장한 뒤 같은 코드로 재로그인하고 새 기한에 만료된다', async () => {
-        const storedUser = { ...usedInviteRecord().usedBy, name: '기존 멘티', accessExpiresAt: null as Date | null,
-            usedInviteCode: null, sessionVersion: 1, mustChangePassword: false };
-        const storedInvite = { ...inviteRecord(), usedAt: null as Date | null, usedById: null as string | null };
-        findUser.mockImplementation(async () => ({ ...storedUser }));
-        findLockedInvite.mockImplementation(async () => ({ ...storedInvite,
-            usedBy: storedInvite.usedById ? { ...storedUser } : null }));
-        updateUsers.mockImplementation(async ({ data }) => { Object.assign(storedUser, data); return { count: 1 }; });
-        updateInvite.mockImplementation(async ({ data }) => { Object.assign(storedInvite, data); return storedInvite; });
-        const loginRequest = () => new NextRequest('http://localhost/api/auth/invite-login', {
-            method: 'POST', body: JSON.stringify({ email: storedUser.email, inviteCode: storedInvite.code }),
-        });
-
-        expect((await login(loginRequest())).status).toBe(403);
-        expect(setCookie).not.toHaveBeenCalled();
-        expect((await PATCH(patchRequest())).status).toBe(200);
-        expect(storedUser.accessExpiresAt).toEqual(TARGET_EXPIRY);
-        expect(storedInvite.usedById).toBe(storedUser.id);
-
-        const firstLogin = await login(loginRequest());
-        expect(firstLogin.status).toBe(200);
-        expect(await firstLogin.json()).toMatchObject({ user: { id: storedUser.id } });
-        vi.setSystemTime(new Date(TARGET_EXPIRY.getTime() - 1));
-        expect((await login(loginRequest())).status).toBe(200);
-        setCookie.mockClear();
-        vi.setSystemTime(TARGET_EXPIRY);
-        expect((await login(loginRequest())).status).toBe(403);
-        expect(setCookie).not.toHaveBeenCalled();
-        expect(createUser).not.toHaveBeenCalled();
-    });
-
     it('미사용 초대의 가입·이용 기한만 바꾸고 코드와 이력은 보존한다', async () => {
         const res = await PATCH(patchRequest());
 
@@ -260,65 +221,63 @@ describe('초대 연장과 연결 계정', () => {
         expect(updateInvite).toHaveBeenCalledOnce();
     });
 
-    it.each(['ADMIN', 'PROGRAM_MANAGER'])('%s가 같은 프로그램의 승인된 기존 멘티를 연결하며 기한을 저장한다', async role => {
+    it.each(['ADMIN', 'PROGRAM_MANAGER'])('%s의 기한 편집으로는 기존 계정을 연결하지 않는다', async role => {
         authAs(role);
         findUser.mockResolvedValue({ ...usedInviteRecord().usedBy, accessExpiresAt: null, usedInviteCode: null });
 
         const res = await PATCH(patchRequest());
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ success: true, invite: {
-            id: 'inv_1', expiresAt: TARGET_EXPIRY.toISOString(), usedAt: new Date().toISOString(),
-        } });
-        expect(updateUsers).toHaveBeenCalledWith({
-            where: {
-                id: 'mentee_1', role: 'MENTEE', isAdmin: false, status: 'APPROVED', programId: 'prog_1',
-                email: { equals: 'mentee@example.test', mode: 'insensitive' }, accessExpiresAt: null,
-                usedInviteCode: { is: null },
-            },
-            data: { accessExpiresAt: TARGET_EXPIRY },
-        });
-        expect(updateInvite).toHaveBeenCalledWith({ where: { id: 'inv_1' }, data: {
-            expiresAt: TARGET_EXPIRY, accessExpiresAt: TARGET_EXPIRY, usedAt: new Date(), usedById: 'mentee_1',
-        } });
+        expect(await res.json()).toMatchObject({ invite: { usedAt: null, expiresAt: TARGET_EXPIRY.toISOString() } });
+        expect(updateUsers).not.toHaveBeenCalled();
+        expect(updateInvite).toHaveBeenCalledWith({ where: { id: 'inv_1' }, data: { expiresAt: TARGET_EXPIRY, accessExpiresAt: TARGET_EXPIRY } });
         expect(sendMail).not.toHaveBeenCalled();
     });
 
     it.each([
         { role: 'MENTOR' }, { isAdmin: true }, { status: 'PENDING' }, { status: 'REJECTED' },
-        { programId: 'other_program' }, { programId: null }, { email: 'other@example.test' },
-        { usedInviteCode: { id: 'other_invite' } },
-    ])('기존 계정 조건이 맞지 않으면 연결과 연장을 거절한다 (%j)', async changes => {
+        { programId: 'other_program' }, { programId: null },
+    ])('기한만 편집할 때 기존 계정의 역할·승인·프로그램은 변경하지 않는다 (%j)', async changes => {
         findUser.mockResolvedValue({ ...usedInviteRecord().usedBy, usedInviteCode: null, ...changes });
 
+        expect((await PATCH(patchRequest())).status).toBe(200);
+        expect(updateInvite.mock.calls[0][0].data).toEqual({ expiresAt: TARGET_EXPIRY, accessExpiresAt: TARGET_EXPIRY });
+        expect(updateUsers).not.toHaveBeenCalled();
+    });
+
+    it('다른 초대에 연결된 기존 계정의 대기 초대는 연장하지 않는다', async () => {
+        findUser.mockResolvedValue({ ...usedInviteRecord().usedBy, usedInviteCode: { id: 'other_invite' } });
         expect((await PATCH(patchRequest())).status).toBe(409);
         expect(updateInvite).not.toHaveBeenCalled();
         expect(updateUsers).not.toHaveBeenCalled();
     });
 
-    it('기존 멘티를 연결할 때 이미 더 긴 이용 기한을 줄이지 않는다', async () => {
-        findUser.mockResolvedValue({ ...usedInviteRecord().usedBy,
-            accessExpiresAt: new Date('2026-11-01T14:59:59.999Z'), usedInviteCode: null });
-
-        expect((await PATCH(patchRequest())).status).toBe(200);
-        expect(updateUsers.mock.calls[0][0].data.accessExpiresAt).toEqual(new Date('2026-11-01T14:59:59.999Z'));
-        expect(updateInvite.mock.calls[0][0].data.expiresAt).toEqual(TARGET_EXPIRY);
-    });
-
-    it('기존 멘티의 기한과 같으면 계정을 연결하고 기한을 유지한다', async () => {
-        findUser.mockResolvedValue({ ...usedInviteRecord().usedBy,
-            accessExpiresAt: TARGET_EXPIRY, usedInviteCode: null });
-
-        expect((await PATCH(patchRequest())).status).toBe(200);
-        expect(updateInvite).toHaveBeenCalledOnce();
-    });
-
-    it('기존 계정 연결 중 회원 정보가 바뀌면 초대는 저장하지 않는다', async () => {
-        findUser.mockResolvedValue({ ...usedInviteRecord().usedBy, usedInviteCode: null });
-        updateUsers.mockResolvedValue({ count: 0 });
-
-        expect((await PATCH(patchRequest())).status).toBe(409);
+    it('아직 연결하지 않은 회원도 이용만료일보다 늦게 초대 기한을 연장하지 못한다', async () => {
+        findUser.mockResolvedValue({ ...usedInviteRecord().usedBy, accessExpiresAt: new Date('2026-10-01T14:59:59.999Z'), usedInviteCode: null });
+        const response = await PATCH(patchRequest());
+        expect(response.status).toBe(400);
+        expect((await response.json()).error).toContain('회원관리');
         expect(updateInvite).not.toHaveBeenCalled();
+        expect(updateUsers).not.toHaveBeenCalled();
+    });
+
+    it('회원 연결 전 만료 초대를 연장해도 회원을 승인하거나 코드를 사용 처리하지 않는다', async () => {
+        findLockedInvite.mockResolvedValue({ ...inviteRecord(), expiresAt: new Date(0) });
+        findUser.mockResolvedValue({ ...usedInviteRecord().usedBy, status: 'PENDING', programId: null, accessExpiresAt: null, usedInviteCode: null });
+        expect((await PATCH(patchRequest())).status).toBe(200);
+        expect(updateInvite.mock.calls[0][0].data).toEqual({ expiresAt: TARGET_EXPIRY, accessExpiresAt: TARGET_EXPIRY });
+        expect(updateUsers).not.toHaveBeenCalled();
+    });
+
+    it.each(['2026-10-15T14:59:59.999Z', '2026-11-01T14:59:59.999Z'])('관리자가 이미 연결한 첫 로그인 대기 계정은 이용 기한 %s를 유지하며 초대만 연장한다', async accessExpiresAt => {
+        const record = usedInviteRecord();
+        findLockedInvite.mockResolvedValue({ ...record, usedAt: null, usedBy: { ...record.usedBy, accessExpiresAt: new Date(accessExpiresAt) } });
+        const response = await PATCH(patchRequest());
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ invite: { usedAt: null } });
+        expect(updateUsers.mock.calls[0][0].data.accessExpiresAt).toEqual(new Date(accessExpiresAt));
+        expect(updateInvite.mock.calls[0][0].data).toEqual({ expiresAt: TARGET_EXPIRY, accessExpiresAt: new Date(accessExpiresAt) });
+        expect(findUser).not.toHaveBeenCalled();
     });
 
     it('기존 멘티가 있어도 다른 유효 초대가 있으면 어느 기한도 변경하지 않는다', async () => {
@@ -371,11 +330,10 @@ describe('초대 연장과 연결 계정', () => {
         expect(updateInvite.mock.calls[0][0].data).toEqual({ expiresAt: TARGET_EXPIRY });
     });
 
-    it.each([false, true])('회원 이용만료일보다 늦은 초대 연장은 거절한다 (사용됨 %s)', async used => {
+    it.each([false, true])('회원 이용만료일보다 늦은 초대 연장은 연결 상태와 무관하게 거절한다 (첫 로그인 완료 %s)', async used => {
         const record = usedInviteRecord();
         const mentee = { ...record.usedBy, accessExpiresAt: new Date('2026-10-01T14:59:59.999Z'), usedInviteCode: null };
-        findLockedInvite.mockResolvedValue(used ? { ...record, usedBy: mentee } : inviteRecord());
-        findUser.mockResolvedValue(mentee);
+        findLockedInvite.mockResolvedValue({ ...record, usedAt: used ? record.usedAt : null, usedBy: mentee });
         const res = await PATCH(patchRequest());
         expect(res.status).toBe(400);
         expect((await res.json()).error).toContain('회원관리');
@@ -424,7 +382,7 @@ describe('초대 연장과 연결 계정', () => {
     it('미사용 초대에 계정 연결만 남은 불일치 상태에서는 변경하지 않는다', async () => {
         findLockedInvite.mockResolvedValue({ ...inviteRecord(), usedById: 'mentee_1' });
 
-        expect((await PATCH(patchRequest())).status).toBe(400);
+        expect((await PATCH(patchRequest())).status).toBe(409);
         expect(updateUsers).not.toHaveBeenCalled();
         expect(updateInvite).not.toHaveBeenCalled();
     });
@@ -451,13 +409,14 @@ describe('초대 연장 동시 처리와 실패', () => {
         await PATCH(patchRequest());
 
         expect(findInvite).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'inv_1' } }));
-        expect(lock).toHaveBeenCalledTimes(2);
+        expect(lock).toHaveBeenCalledTimes(3);
         expect(lock.mock.calls[0][0].join('')).toContain('pg_advisory_xact_lock');
         expect(lock.mock.calls[0].slice(1)).toContain('invite-email:mentee@example.test');
-        expect(lock.mock.calls[1][0].join('')).toMatch(/invite_codes[\s\S]*FOR UPDATE/);
-        expect(lock.mock.calls[1].slice(1)).toContain('inv_1');
+        expect(lock.mock.calls[1][0].join('')).toMatch(/users[\s\S]*FOR UPDATE/);
+        expect(lock.mock.calls[2][0].join('')).toMatch(/invite_codes[\s\S]*FOR UPDATE/);
+        expect(lock.mock.calls[2].slice(1)).toContain('inv_1');
         expect(findLockedInvite).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'inv_1' } }));
-        expect(lock.mock.invocationCallOrder[1]).toBeLessThan(findLockedInvite.mock.invocationCallOrder[0]);
+        expect(lock.mock.invocationCallOrder[2]).toBeLessThan(findLockedInvite.mock.invocationCallOrder[0]);
         expect(findLockedInvite.mock.invocationCallOrder[0]).toBeLessThan(updateInvite.mock.invocationCallOrder[0]);
     });
 

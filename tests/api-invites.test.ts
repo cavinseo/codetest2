@@ -313,7 +313,7 @@ describe('초대 코드 회수', () => {
         expect(res.status).toBe(400);
         expect(await res.json()).toEqual({ error: '이미 사용된 코드는 회수할 수 없습니다.' });
         expect(updateManyInvite).toHaveBeenCalledWith({
-            where: { id: 'inv_1', usedAt: null, usedById: null },
+            where: { id: 'inv_1', usedAt: null },
             data: { expiresAt: expect.any(Date) },
         });
     });
@@ -324,7 +324,7 @@ describe('초대 코드 회수', () => {
 
         expect(res.status).toBe(200);
         expect(updateManyInvite).toHaveBeenCalledWith({
-            where: { id: 'inv_1', usedAt: null, usedById: null },
+            where: { id: 'inv_1', usedAt: null },
             data: { expiresAt: expect.any(Date) },
         });
         const data = updateManyInvite.mock.calls[0][0].data;
@@ -341,6 +341,20 @@ describe('초대 코드 회수', () => {
 
         expect(res.status).toBe(400);
         expect(updateManyInvite).not.toHaveBeenCalled();
+    });
+
+    it('연결 후 첫 접속 전에는 회원 연결과 자료를 보존하면서 코드만 만료 처리한다', async () => {
+        findUniqueInvite.mockResolvedValue({
+            id: 'inv_1', usedAt: null, usedById: 'member_1', issuedById: ISSUER_ID,
+            program: { managerId: ISSUER_ID },
+        });
+        const res = await DELETE(jsonRequest('DELETE', { id: 'inv_1' }));
+        expect(res.status).toBe(200);
+        expect(updateManyInvite).toHaveBeenCalledExactlyOnceWith({
+            where: { id: 'inv_1', usedAt: null }, data: { expiresAt: new Date() },
+        });
+        expect(createInvite).not.toHaveBeenCalled();
+        expect(sendMail).not.toHaveBeenCalled();
     });
 
     it('매니저도 회수할 수 있다', async () => {
@@ -378,6 +392,23 @@ describe('초대 코드 회수', () => {
 });
 
 describe('초대 코드 목록', () => {
+    it.each(['ADMIN', 'PROGRAM_MANAGER'])('%s 목록은 첫 접속 대기 연결과 현재 회원 이용만료일을 제공하고 관리자만 연결할 수 있다', async role => {
+        authAs(role);
+        findManyInvite.mockResolvedValue([{
+            id: 'linked', usedById: 'member_1', usedAt: null,
+            expiresAt: new Date('2026-10-01'), accessExpiresAt: new Date('2026-10-01'),
+            program: { name: '기존 프로그램', endsAt: new Date('2026-12-31') },
+            usedBy: { accessExpiresAt: new Date('2026-12-15') },
+        }]);
+        const res = await GET(new NextRequest('http://localhost/api/invites'));
+        expect(res.status).toBe(200);
+        expect(await res.json()).toMatchObject({
+            canLinkExistingMember: role === 'ADMIN',
+            invites: [{ id: 'linked', usedById: 'member_1', usedAt: null, expiresAt: '2026-10-01T00:00:00.000Z', accessExpiresAt: '2026-12-15T00:00:00.000Z' }],
+        });
+        expect(findManyInvite.mock.calls[0][0].select.usedById).toBe(true);
+    });
+
     it('프로그램 매니저 응답에는 이메일 인증용 원문 코드가 없다', async () => {
         authAs('PROGRAM_MANAGER');
         findManyInvite.mockResolvedValue([{ id: 'inv', code: 'SECRET-LOGIN-CODE', email: 'mentee@example.test',

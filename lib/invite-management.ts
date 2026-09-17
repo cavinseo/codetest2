@@ -1,4 +1,4 @@
-// 초대 발급과 기한 연장의 검증·계정 연결·저장을 트랜잭션 안에서 처리한다.
+// 초대 발급과 기한 연장의 검증·저장을 트랜잭션 안에서 처리한다.
 import type { Prisma, User } from '@prisma/client';
 import { prisma } from './prisma';
 import { generateId } from './id';
@@ -81,9 +81,8 @@ export async function issueMenteeInvite(input: IssueInviteInput, manager: Invite
 }
 
 async function findMenteeForExtension(tx: Prisma.TransactionClient, invite: InviteWithMentee, email: string, now: Date):
-    Promise<{ mentee: User | null; shouldLinkExistingMentee: boolean } | InviteValidationError> {
-    if (invite.usedAt) return { mentee: invite.usedBy, shouldLinkExistingMentee: false };
-    if (invite.usedById) return { error: '초대 코드에 연결된 멘티 정보를 확인하세요.', status: 400 };
+    Promise<{ mentee: User | null; existingAccessExpiresAt?: Date | null } | InviteValidationError> {
+    if (invite.usedAt || invite.usedById) return { mentee: invite.usedBy };
     if (await hasActiveInviteForEmail(tx, email, now, invite.id)) {
         return { error: '이미 발행된 다른 유효한 초대 코드가 있습니다.', status: 409 };
     }
@@ -94,16 +93,16 @@ async function findMenteeForExtension(tx: Prisma.TransactionClient, invite: Invi
     if (existingMentee?.usedInviteCode) {
         return { error: '이 멘티는 다른 초대 코드에 연결되어 있습니다.', status: 409 };
     }
-    // 기존 가입 경로의 승인 멘티도 연결하되 회원관리에서 정한 이용 기한을 보존한다.
-    return { mentee: existingMentee, shouldLinkExistingMentee: !!existingMentee };
+    // 날짜 편집으로 계정을 승인하거나 연결하지 않는다. 만료 초대도 연결 전에 연장할 수 있다.
+    return { mentee: null, existingAccessExpiresAt: existingMentee?.accessExpiresAt };
 }
 
 async function updateMenteeExpiry(
     tx: Prisma.TransactionClient, invite: InviteWithMentee, mentee: User | null,
-    email: string, expiresAt: Date, shouldLinkExistingMentee: boolean,
+    email: string, expiresAt: Date,
 ): Promise<InviteValidationError | null> {
-    if (!invite.usedAt && !mentee) return null;
-    if (!mentee || (invite.usedAt && mentee.id !== invite.usedById) || mentee.role !== 'MENTEE' || mentee.isAdmin || mentee.status !== 'APPROVED'
+    if (!invite.usedAt && !invite.usedById) return null;
+    if (!mentee || mentee.id !== invite.usedById || mentee.role !== 'MENTEE' || mentee.isAdmin || mentee.status !== 'APPROVED'
         || mentee.programId !== invite.programId || mentee.email.trim().toLowerCase() !== email) {
         return { error: '초대와 같은 프로그램의 승인된 멘티인지 확인하세요.', status: invite.usedAt ? 400 : 409 };
     }
@@ -113,8 +112,7 @@ async function updateMenteeExpiry(
     }
     const updatedMentees = await tx.user.updateMany({
         where: { id: mentee.id, role: 'MENTEE', isAdmin: false, status: 'APPROVED', programId: invite.programId,
-            email: { equals: email, mode: 'insensitive' }, accessExpiresAt: mentee.accessExpiresAt,
-            ...(shouldLinkExistingMentee ? { usedInviteCode: { is: null } } : {}) },
+            email: { equals: email, mode: 'insensitive' }, accessExpiresAt: mentee.accessExpiresAt },
         data: { accessExpiresAt },
     });
     if (updatedMentees.count !== 1) return { error: '멘티 정보가 변경되었습니다. 목록을 새로고침하세요.', status: 409 };
@@ -128,6 +126,7 @@ export async function extendMenteeInvite(inviteId: string, requestedExpiresAt: D
 
     return prisma.$transaction(async (tx) => {
         await lockInviteEmail(tx, email);
+        await tx.$queryRaw`SELECT id FROM users WHERE lower(email) = ${email} ORDER BY id FOR UPDATE`;
         // 첫 로그인과 경합해도 변경된 초대와 회원 기한을 함께 검증한다.
         await tx.$queryRaw`SELECT id FROM invite_codes WHERE id = ${inviteId} FOR UPDATE`;
         const invite = await tx.inviteCode.findUnique({
@@ -148,8 +147,11 @@ export async function extendMenteeInvite(inviteId: string, requestedExpiresAt: D
 
         const account = await findMenteeForExtension(tx, invite, email, now);
         if ('error' in account) return account;
-        const { mentee, shouldLinkExistingMentee } = account;
-        const updateError = await updateMenteeExpiry(tx, invite, mentee, email, expiresAt, shouldLinkExistingMentee);
+        if (account.existingAccessExpiresAt && expiresAt > account.existingAccessExpiresAt) {
+            return { error: '초대 기한은 회원 이용만료일보다 늦을 수 없습니다. 회원관리에서 이용만료일을 먼저 연장하세요.', status: 400 };
+        }
+        const { mentee } = account;
+        const updateError = await updateMenteeExpiry(tx, invite, mentee, email, expiresAt);
         if (updateError) return updateError;
 
         const initialAccessExpiry = mentee?.accessExpiresAt ?? new Date(Math.max(
@@ -158,8 +160,7 @@ export async function extendMenteeInvite(inviteId: string, requestedExpiresAt: D
         await tx.inviteCode.update({ where: { id: invite.id }, data: {
             expiresAt,
             ...(!invite.usedAt ? { accessExpiresAt: initialAccessExpiry } : {}),
-            ...(shouldLinkExistingMentee && mentee ? { usedAt: now, usedById: mentee.id } : {}),
         } });
-        return { invite: { id: invite.id, expiresAt, usedAt: shouldLinkExistingMentee ? now : invite.usedAt } };
+        return { invite: { id: invite.id, expiresAt, usedAt: invite.usedAt } };
     });
 }

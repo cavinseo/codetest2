@@ -82,8 +82,9 @@ describe('초대 코드 로그인', () => {
         expect(mocks.hash.mock.calls[0][0]).toMatch(/^[a-f0-9]{64}$/);
         expect(mocks.lock.mock.calls[0][0].join('?')).toContain('pg_advisory_xact_lock');
         expect(mocks.lock.mock.calls[0][1]).toBe(`invite-email:${invite.email}`);
-        expect(mocks.lock.mock.calls[1][0].join('?')).toContain('SELECT id FROM invite_codes WHERE code = ? FOR UPDATE');
-        expect(mocks.lock.mock.calls[1][1]).toBe(invite.code);
+        expect(mocks.lock.mock.calls[1][0].join('?')).toContain('SELECT id FROM users WHERE lower(email) = ? ORDER BY id FOR UPDATE');
+        expect(mocks.lock.mock.calls[2][0].join('?')).toContain('SELECT id FROM invite_codes WHERE code = ? FOR UPDATE');
+        expect(mocks.lock.mock.calls[2][1]).toBe(invite.code);
         expect(mocks.update).toHaveBeenCalledWith({ where: { id: 'invite', usedAt: null, usedById: null }, data: { usedAt: now, usedById: 'user' } });
         expect(mocks.encode).toHaveBeenCalledWith({ userId: 'user', email: invite.email, name: '홍길동' }, { sessionVersion: 3 });
         expect(mocks.cookie).toHaveBeenCalledWith('session', 'signed-session', expect.objectContaining({ httpOnly: true, sameSite: 'strict', path: '/' }));
@@ -161,11 +162,64 @@ describe('초대 코드 로그인', () => {
         expect(mocks.update).not.toHaveBeenCalled();
         expect(mocks.reset).not.toHaveBeenCalled();
     });
-    it('기존 이메일 계정에 새 코드를 연결하지 않는다', async () => {
+    it('유효한 코드의 기존 이메일 계정은 자동 연결하지 않고 관리자 연결을 안내한다', async () => {
         mocks.findUser.mockResolvedValue(user);
-        expect((await POST(request())).status).toBe(403);
+        const response = await POST(request());
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({ code: 'INVITE_ACCOUNT_EXISTS', error: expect.stringContaining('관리자') });
         expect(mocks.create).not.toHaveBeenCalled();
         expect(mocks.update).not.toHaveBeenCalled();
+        expect(mocks.cookie).not.toHaveBeenCalled();
+    });
+    it.each([
+        { ...invite, email: 'other@example.com' },
+        { ...invite, expiresAt: now },
+        null,
+    ])('코드나 이메일 검증에 실패하면 기존 계정 정보를 노출하지 않는다', async record => {
+        mocks.findInvite.mockResolvedValue(record);
+        mocks.findUser.mockResolvedValue(user);
+        const response = await POST(request());
+        expect(response.status).toBe(403);
+        expect(await response.json()).not.toHaveProperty('code', 'INVITE_ACCOUNT_EXISTS');
+        expect(mocks.findUser).not.toHaveBeenCalled();
+    });
+    it('관리자가 연결한 기존 계정은 실제 첫 로그인 시점에만 초대를 사용 처리한다', async () => {
+        const linkedUser = { ...user, accessExpiresAt: after(30), mustChangePassword: true };
+        mocks.findInvite.mockResolvedValue({ ...invite, usedById: user.id, usedBy: linkedUser });
+        const response = await POST(request({ email: invite.email, inviteCode: invite.code }));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ user: { id: user.id }, mustChangePassword: true });
+        expect(mocks.update).toHaveBeenCalledWith({
+            where: { id: invite.id, usedAt: null, usedById: user.id },
+            data: { usedAt: now },
+        });
+        expect(mocks.create).not.toHaveBeenCalled();
+        expect(mocks.hash).not.toHaveBeenCalled();
+        expect(mocks.updateName).not.toHaveBeenCalled();
+        expect(mocks.cookie).toHaveBeenCalledOnce();
+    });
+    it.each([
+        { expiresAt: now, usedBy: { ...user, accessExpiresAt: after(30) } },
+        { program: { endsAt: now }, usedBy: { ...user, accessExpiresAt: after(30) } },
+        { usedBy: { ...user, accessExpiresAt: now } },
+        { usedBy: { ...user, status: 'PENDING', accessExpiresAt: after(30) } },
+        { usedBy: { ...user, programId: 'other', accessExpiresAt: after(30) } },
+        { usedBy: { ...user, email: 'other@example.com', accessExpiresAt: after(30) } },
+        { usedBy: { ...user, role: 'MENTOR', accessExpiresAt: after(30) } },
+        { usedBy: { ...user, isAdmin: true, accessExpiresAt: after(30) } },
+    ])('연결 후 첫 로그인도 기한과 계정 상태 검증을 우회하지 못한다 (%j)', async changes => {
+        mocks.findInvite.mockResolvedValue({ ...invite, usedById: user.id, ...changes });
+        expect((await POST(request())).status).toBe(403);
+        expect(mocks.update).not.toHaveBeenCalled();
+        expect(mocks.create).not.toHaveBeenCalled();
+        expect(mocks.cookie).not.toHaveBeenCalled();
+    });
+    it('연결 계정의 최초 사용 선점이 실패하면 로그인 세션을 만들지 않는다', async () => {
+        mocks.findInvite.mockResolvedValue({ ...invite, usedById: user.id, usedBy: { ...user, accessExpiresAt: after(30) } });
+        mocks.update.mockResolvedValue({ count: 0 });
+        expect((await POST(request())).status).toBe(403);
+        expect(mocks.rollback).toHaveBeenCalledOnce();
+        expect(mocks.cookie).not.toHaveBeenCalled();
     });
     it('코드 선점에 실패하면 트랜잭션을 실패시키고 쿠키를 발급하지 않는다', async () => {
         mocks.update.mockResolvedValue({ count: 0 });

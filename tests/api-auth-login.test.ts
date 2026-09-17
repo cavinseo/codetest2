@@ -67,6 +67,28 @@ afterEach(() => {
 });
 
 describe('로그인 이용 기간 확인', () => {
+    it('관리자 연결 후 첫 접속 전에는 유효한 비밀번호도 초대 로그인 안내로 돌리고 세션을 발급하지 않는다', async () => {
+        findUniqueUser.mockResolvedValue(approvedUser({
+            programId: 'program', accessExpiresAt: new Date(Date.now() + 30 * 86_400_000),
+            usedInviteCode: { programId: 'program', usedAt: null, expiresAt: new Date(Date.now() + 10 * 86_400_000), accessDurationDays: 90, program: { endsAt: new Date(Date.now() + 90 * 86_400_000) } },
+        }));
+        const res = await POST(loginRequest({ email: 'u@x.com', password: 'password123', role: 'MENTEE' }));
+        expect(res.status).toBe(403);
+        expect(await res.json()).toMatchObject({ code: 'INVITE_LOGIN_REQUIRED', error: expect.stringContaining('초대 코드로 첫 로그인') });
+        expect(cookieSet).not.toHaveBeenCalled();
+        expect(findUniqueProfile).not.toHaveBeenCalled();
+        expect(resetRateLimit).not.toHaveBeenCalled();
+    });
+
+    it('연결 대기라도 기존 비밀번호가 무효하면 일반 인증 실패만 안내한다', async () => {
+        findUniqueUser.mockResolvedValue(approvedUser({ usedInviteCode: { usedAt: null } }));
+        compare.mockResolvedValueOnce(false);
+        const res = await POST(loginRequest({ email: 'u@x.com', password: 'old-password', role: 'MENTEE' }));
+        expect(res.status).toBe(401);
+        expect(await res.json()).toEqual({ error: '이메일 또는 비밀번호가 올바르지 않습니다.' });
+        expect(cookieSet).not.toHaveBeenCalled();
+    });
+
     it('이메일 앞뒤 공백과 대소문자를 정규화하되 저장된 초대 기간도 조회한다', async () => {
         const response = await POST(loginRequest({ email: ' U@X.COM ', password: 'password123', role: 'MENTEE' }));
         expect(response.status).toBe(200);

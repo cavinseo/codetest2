@@ -22,6 +22,7 @@ export default function SignupPage() {
     // 실제 계정 역할로 반영된다.
     const [assumedRole, setAssumedRole] = useState<MemberRole>('MENTEE');
     const [error, setError] = useState('');
+    const [inviteLoginRequired, setInviteLoginRequired] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [focusedField, setFocusedField] = useState<string | null>(null);
 
@@ -38,6 +39,7 @@ export default function SignupPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        setInviteLoginRequired(false);
 
         if (formData.password !== formData.confirmPassword) {
             setError('비밀번호가 일치하지 않습니다.');
@@ -68,6 +70,7 @@ export default function SignupPage() {
             const data = await response.json();
 
             if (!response.ok) {
+                setInviteLoginRequired(data.code === 'INVITE_LOGIN_REQUIRED');
                 throw new Error(data.error || '회원가입에 실패했습니다.');
             }
 
@@ -127,7 +130,10 @@ export default function SignupPage() {
                     {error && (
                         <div className="flex items-center gap-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 px-4 py-3 rounded-xl mb-6 animate-slide-down text-sm">
                             <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
-                            <span>{error}</span>
+                            <div>
+                                <p>{error}</p>
+                                {inviteLoginRequired && <Link href="/login?mode=invite" className="inline-block mt-2 font-semibold underline underline-offset-4">초대 코드로 로그인하기</Link>}
+                            </div>
                         </div>
                     )}
 
@@ -200,7 +206,8 @@ export default function SignupPage() {
                                 placeholder="초대 코드(선택)"
                             />
                             <p className="mt-2 text-xs text-gray-500">
-                                초대 코드가 있으면 입력하세요. 없으면 관리자 승인 후 이용할 수 있습니다.
+                                초대 메일을 받았다면 별도 가입 없이 <Link href="/login?mode=invite" className="text-primary-400 underline underline-offset-4">초대 코드로 로그인</Link>하세요.
+                                이미 가입했다면 관리자에게 기존 회원 연결을 요청하세요. 초대가 없으면 관리자 승인 후 이용할 수 있습니다.
                             </p>
                         </div>
 

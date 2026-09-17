@@ -2,14 +2,13 @@
 // 첫 로그인 관문. 임시 비밀번호 변경과 프로필 작성을 이 화면에서 끝낸다.
 // 필요한 단계만 보여주고, 둘 다 끝나면 대시보드로 보낸다.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ProfileFields, { EMPTY_PROFILE, toProfilePayload, type ProfileValue } from '@/components/member/ProfileFields';
-import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-policy';
+import PasswordChangeForm from '@/components/member/PasswordChangeForm';
+import { fromProfileRecord } from '@/lib/member-profile-payload';
 import type { MemberRole } from '@/lib/member-roles';
 import ThemeToggle from '@/components/ThemeToggle';
-
-const EMPTY_PASSWORD_FORM = { currentPassword: '', newPassword: '', confirmPassword: '' };
 
 export default function OnboardingPage() {
     const router = useRouter();
@@ -20,62 +19,42 @@ export default function OnboardingPage() {
     const [profile, setProfile] = useState<ProfileValue>(EMPTY_PROFILE);
     const [message, setMessage] = useState('');
     const [isSaving, setIsSaving] = useState(false);
-    const [passwordForm, setPasswordForm] = useState(EMPTY_PASSWORD_FORM);
-    const [passwordMsg, setPasswordMsg] = useState('');
-    const [isChangingPassword, setIsChangingPassword] = useState(false);
+    const [canVerifyPasswordWithInviteCode, setCanVerifyPasswordWithInviteCode] = useState(false);
+    const [loadError, setLoadError] = useState('');
+    const [loadAttempt, setLoadAttempt] = useState(0);
+    const mounted = useRef(false);
+    const savingProfile = useRef(false);
 
     useEffect(() => {
+        let cancelled = false;
+        mounted.current = true;
+        setLoadError('');
         fetch('/api/me/profile')
-            .then((res) => res.json())
+            .then(async (res) => {
+                const data = await res.json().catch(() => null);
+                if (!res.ok || !data) throw new Error(data?.error || '회원 정보를 불러오지 못했습니다.');
+                return data;
+            })
             .then((data) => {
+                if (cancelled) return;
                 setRole(data.role);
                 setNeedsProfile(data.needsProfile);
                 setMustChangePassword(data.mustChangePassword);
-                // 남은 단계가 하나도 없으면 이 화면에 머물 이유가 없다.
-                if (!data.needsProfile && !data.mustChangePassword) {
-                    router.replace('/dashboard');
-                    return;
-                }
+                setCanVerifyPasswordWithInviteCode(data.canVerifyPasswordWithInviteCode === true);
+                setProfile(fromProfileRecord(data.profile));
                 setReady(true);
             })
-            .catch(() => setMessage('회원 정보를 불러오지 못했습니다.'));
-    }, [router]);
+            .catch((error) => { if (!cancelled) setLoadError(error instanceof Error ? error.message : '회원 정보를 불러오지 못했습니다.'); });
+        return () => { cancelled = true; mounted.current = false; };
+    }, [loadAttempt]);
 
-    const handleChangePassword = async (event: React.FormEvent) => {
-        event.preventDefault();
-        setPasswordMsg('');
-
-        // 서버에 보내기 전에 같은 규칙으로 한 번 걸러 왕복을 줄인다.
-        const localError = getPasswordChangeError(passwordForm);
-        if (localError) {
-            setPasswordMsg(localError);
-            return;
-        }
-
-        setIsChangingPassword(true);
-        try {
-            const res = await fetch('/api/admin/password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(passwordForm),
-            });
-            const data = await res.json().catch(() => null);
-            if (!res.ok) throw new Error(data?.error || '비밀번호 변경에 실패했습니다.');
-            setPasswordForm(EMPTY_PASSWORD_FORM);
-            // 남은 단계(프로필)가 없으면 바로 대시보드로 보낸다.
-            if (!needsProfile) {
-                router.replace('/dashboard');
-                return;
-            }
-            setMustChangePassword(false);
-        } catch (error) {
-            setPasswordMsg(error instanceof Error ? error.message : '비밀번호 변경에 실패했습니다.');
-        } finally {
-            setIsChangingPassword(false);
-        }
-    };
+    useEffect(() => {
+        if (ready && !needsProfile && !mustChangePassword) router.replace('/dashboard');
+    }, [ready, needsProfile, mustChangePassword, router]);
 
     const handleSave = async () => {
+        if (savingProfile.current) return;
+        savingProfile.current = true;
         setIsSaving(true);
         setMessage('');
         try {
@@ -85,21 +64,23 @@ export default function OnboardingPage() {
                 body: JSON.stringify(toProfilePayload(profile, role)),
             });
             const data = await res.json().catch(() => null);
+            if (!mounted.current) return;
             if (!res.ok) throw new Error(data?.error || '저장에 실패했습니다.');
-            // 남은 단계(비밀번호)가 없으면 바로 대시보드로 보낸다.
-            if (!mustChangePassword) {
-                router.replace('/dashboard');
-                return;
-            }
             setNeedsProfile(false);
         } catch (error) {
-            setMessage(error instanceof Error ? error.message : '저장에 실패했습니다.');
+            if (mounted.current) setMessage(error instanceof Error ? error.message : '저장에 실패했습니다.');
         } finally {
-            setIsSaving(false);
+            savingProfile.current = false;
+            if (mounted.current) setIsSaving(false);
         }
     };
 
-    if (!ready) return null;
+    if (!ready) return <main className="mx-auto max-w-lg p-6">
+        {loadError ? <>
+            <p role="alert" className="text-sm text-rose-400">{loadError}</p>
+            <button type="button" className="btn-secondary mt-4" onClick={() => setLoadAttempt((previous) => previous + 1)}>회원 정보 다시 불러오기</button>
+        </> : <p role="status" className="text-sm text-gray-500">회원 정보를 불러오는 중입니다.</p>}
+    </main>;
 
     return (
         <main className="mx-auto max-w-lg p-6">
@@ -114,39 +95,12 @@ export default function OnboardingPage() {
                 <section className="mb-8">
                     <h2 className="mb-2 text-lg font-semibold">비밀번호 변경</h2>
                     <p className="mb-4 text-sm text-gray-500">
-                        메일로 받은 임시 비밀번호를 새 비밀번호로 바꿔 주세요.
+                        {canVerifyPasswordWithInviteCode
+                            ? '초대 코드로 본인을 확인하고 새 비밀번호를 설정해 주세요. 기존 비밀번호는 필요하지 않습니다.'
+                            : '메일로 받은 임시 비밀번호를 현재 비밀번호 칸에 입력하고 새 비밀번호로 바꿔 주세요.'}
                     </p>
-
-                    <form onSubmit={handleChangePassword} className="space-y-3">
-                        {([
-                            { key: 'currentPassword', label: '임시 비밀번호', autoComplete: 'current-password' },
-                            { key: 'newPassword', label: '새 비밀번호', autoComplete: 'new-password' },
-                            { key: 'confirmPassword', label: '새 비밀번호 확인', autoComplete: 'new-password' },
-                        ] as const).map((field) => (
-                            <label key={field.key} className="block text-sm font-medium text-gray-400">
-                                {field.label}
-                                <input
-                                    type="password"
-                                    className="input mt-2"
-                                    value={passwordForm[field.key]}
-                                    autoComplete={field.autoComplete}
-                                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                                    disabled={isChangingPassword}
-                                />
-                            </label>
-                        ))}
-
-                        <p className="text-xs text-gray-500">
-                            새 비밀번호는 최소 {PASSWORD_MIN_LENGTH}자 이상이어야 합니다.
-                        </p>
-
-                        {passwordMsg && <p className="text-sm text-red-600">{passwordMsg}</p>}
-
-                        <button type="submit" disabled={isChangingPassword}
-                            className="w-full rounded-lg bg-indigo-600 py-2 text-white disabled:opacity-50">
-                            {isChangingPassword ? '변경 중…' : '비밀번호 변경'}
-                        </button>
-                    </form>
+                    <PasswordChangeForm canVerifyPasswordWithInviteCode={canVerifyPasswordWithInviteCode}
+                        onChanged={() => setMustChangePassword(false)} />
                 </section>
             )}
 
