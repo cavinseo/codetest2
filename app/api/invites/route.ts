@@ -22,8 +22,9 @@ import {
     DEFAULT_ACCESS_DURATION_DAYS,
 } from '@/lib/member-roles';
 import { canManageThisProgram } from '@/lib/program';
-import { buildInviteEmail, generateInviteCode, inviteCodeExpiryFrom } from '@/lib/invite-code';
+import { buildInviteEmail, generateInviteCode } from '@/lib/invite-code';
 import { inviteAccessExpiresAt } from '@/lib/invite-access';
+import { formatInviteExpiryDate, inviteExpirySchema } from '@/lib/invite-expiry';
 
 const log = createLogger('api/invites');
 
@@ -31,10 +32,21 @@ const issueSchema = z.object({
     email: z.string().email('유효한 이메일을 입력하세요.'),
     role: z.string(),
     programId: z.string().min(1, '프로그램을 선택하세요.'),
+    expiresAt: inviteExpirySchema,
     accessDurationDays: z.number().int().min(1).max(365).optional(),
 });
 
 const revokeSchema = z.object({ id: z.string().min(1) });
+const extendSchema = z.object({ id: z.string().min(1), expiresAt: inviteExpirySchema });
+
+function expiryError(expiresAt: Date, programEndsAt: Date, now: Date): string | null {
+    if (programEndsAt <= now) return '종료된 프로그램의 초대 기한은 지정할 수 없습니다.';
+    if (expiresAt <= now) return '이용 기한은 오늘 이후 날짜로 입력하세요.';
+    if (formatInviteExpiryDate(expiresAt) > formatInviteExpiryDate(programEndsAt)) {
+        return '이용 기한은 프로그램 종료일을 넘길 수 없습니다.';
+    }
+    return null;
+}
 
 export async function GET(request: NextRequest) {
     const authResult = await requireAuth(request);
@@ -52,7 +64,7 @@ export async function GET(request: NextRequest) {
             where: scope,
             select: {
                 id: true, code: authResult.role === 'ADMIN', email: true, role: true, expiresAt: true,
-                accessDurationDays: true, usedAt: true, createdAt: true,
+                accessDurationDays: true, accessExpiresAt: true, usedAt: true, createdAt: true,
                 programId: true, program: { select: { name: true, endsAt: true } },
                 usedBy: { select: { accessExpiresAt: true } },
             },
@@ -62,6 +74,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
             invites: invites.map(({ program, usedBy, code, ...rest }) => ({
                 ...rest, ...(authResult.role === 'ADMIN' ? { code } : {}), programName: program.name,
+                programEndsAt: program.endsAt,
                 expiresAt: inviteAccessExpiresAt({ ...rest, program, usedBy }),
             })),
         });
@@ -78,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const parsed = issueSchema.safeParse(await request.json());
+        const parsed = issueSchema.safeParse(await request.json().catch(() => null));
         if (!parsed.success) {
             return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
         }
@@ -106,7 +119,9 @@ export async function POST(request: NextRequest) {
                 return { error: '이 프로그램에 초대 코드를 발행할 권한이 없습니다.', status: 403 };
             }
             const now = new Date();
-            if (program.endsAt.getTime() <= now.getTime()) return { error: '종료된 프로그램에는 초대 코드를 발행할 수 없습니다.', status: 400 };
+            const error = expiryError(parsed.data.expiresAt, program.endsAt, now);
+            if (error) return { error, status: 400 };
+            const expiresAt = new Date(Math.min(parsed.data.expiresAt.getTime(), program.endsAt.getTime()));
             const existing = await tx.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select: { id: true } });
             if (existing) return { error: '이미 가입된 이메일입니다.', status: 409 };
             const previous = await tx.inviteCode.findMany({
@@ -122,7 +137,8 @@ export async function POST(request: NextRequest) {
                 email,
                 role,
                 programId: program.id,
-                expiresAt: new Date(Math.min(inviteCodeExpiryFrom(now).getTime(), program.endsAt.getTime())),
+                expiresAt,
+                accessExpiresAt: expiresAt,
                 accessDurationDays,
                 issuedById: authResult.userId,
             } });
@@ -136,6 +152,7 @@ export async function POST(request: NextRequest) {
             code,
             roleLabel: MEMBER_ROLE_LABELS[role],
             expiresAt: invite.expiresAt,
+            accessExpiresAt: invite.accessExpiresAt,
             accessDurationDays,
             signupUrl: `${origin}/login?mode=invite`,
             escapeHtml,
@@ -158,6 +175,78 @@ export async function POST(request: NextRequest) {
     } catch (error: unknown) {
         log.error('초대 코드 발행 실패', undefined, { code: errorCodeOf(error) ?? undefined });
         return NextResponse.json({ error: '초대 코드 발행에 실패했습니다.' }, { status: 500 });
+    }
+}
+
+export async function PATCH(request: NextRequest) {
+    const authResult = await requireAuth(request);
+    if (authResult instanceof NextResponse) return authResult;
+    if (!canIssueInviteCode(authResult.role)) {
+        return NextResponse.json({ error: '초대 기한을 변경할 권한이 없습니다.' }, { status: 403 });
+    }
+
+    try {
+        const parsed = extendSchema.safeParse(await request.json().catch(() => null));
+        if (!parsed.success) return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
+        const target = await prisma.inviteCode.findUnique({ where: { id: parsed.data.id }, select: { email: true } });
+        if (!target) return NextResponse.json({ error: '초대 코드를 찾을 수 없습니다.' }, { status: 404 });
+        const email = target.email.trim().toLowerCase();
+
+        const result = await prisma.$transaction(async (tx) => {
+            // 재발급과 연장이 같은 이메일에 유효 코드를 둘 만들지 못하게 한다.
+            await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`invite-email:${email}`}))::text`;
+            // 첫 로그인과 경합해도 연결된 계정의 기한까지 한 번에 연장한다.
+            await tx.$queryRaw`SELECT id FROM invite_codes WHERE id = ${parsed.data.id} FOR UPDATE`;
+            const invite = await tx.inviteCode.findUnique({
+                where: { id: parsed.data.id }, include: { program: true, usedBy: true },
+            });
+            if (!invite) return { error: '초대 코드를 찾을 수 없습니다.', status: 404 };
+            if (!canManageThisProgram({ role: authResult.role, userId: authResult.userId }, invite.program)) {
+                return { error: '이 초대 기한을 변경할 권한이 없습니다.', status: 403 };
+            }
+            if (invite.role !== 'MENTEE') return { error: '멘티 초대 코드만 연장할 수 있습니다.', status: 400 };
+            const now = new Date();
+            const error = expiryError(parsed.data.expiresAt, invite.program.endsAt, now);
+            if (error) return { error, status: 400 };
+            const expiresAt = new Date(Math.min(parsed.data.expiresAt.getTime(), invite.program.endsAt.getTime()));
+            if (expiresAt <= inviteAccessExpiresAt(invite)) {
+                return { error: '현재 기한보다 늦은 날짜를 선택하세요.', status: 400 };
+            }
+
+            if (invite.usedAt) {
+                const user = invite.usedBy;
+                if (!user || user.id !== invite.usedById || user.role !== 'MENTEE' || user.isAdmin || user.status !== 'APPROVED'
+                    || user.programId !== invite.programId || user.email.trim().toLowerCase() !== email) {
+                    return { error: '초대 코드에 연결된 멘티 정보를 확인하세요.', status: 400 };
+                }
+                const updated = await tx.user.updateMany({
+                    where: { id: user.id, role: 'MENTEE', isAdmin: false, status: 'APPROVED', programId: invite.programId,
+                        email: { equals: email, mode: 'insensitive' }, accessExpiresAt: user.accessExpiresAt },
+                    data: { accessExpiresAt: expiresAt },
+                });
+                if (updated.count !== 1) return { error: '멘티 정보가 변경되었습니다. 목록을 새로고침하세요.', status: 409 };
+            } else {
+                if (invite.usedById) return { error: '초대 코드에 연결된 멘티 정보를 확인하세요.', status: 400 };
+                const existing = await tx.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select: { id: true } });
+                if (existing) return { error: '이미 가입된 이메일입니다.', status: 409 };
+                const others = await tx.inviteCode.findMany({
+                    where: { id: { not: invite.id }, email: { equals: email, mode: 'insensitive' } },
+                    include: { program: { select: { endsAt: true } }, usedBy: { select: { accessExpiresAt: true } } },
+                });
+                if (others.some((record) => inviteAccessExpiresAt(record) > now)) {
+                    return { error: '이미 발행된 다른 유효한 초대 코드가 있습니다.', status: 409 };
+                }
+            }
+
+            await tx.inviteCode.update({ where: { id: invite.id }, data: { expiresAt, accessExpiresAt: expiresAt } });
+            return { invite: { id: invite.id, expiresAt } };
+        });
+        if ('error' in result) return NextResponse.json({ error: result.error }, { status: result.status });
+        log.info('초대 기한 연장', { inviteId: result.invite.id });
+        return NextResponse.json({ success: true, invite: result.invite });
+    } catch (error: unknown) {
+        log.error('초대 기한 연장 실패', undefined, { code: errorCodeOf(error) ?? undefined });
+        return NextResponse.json({ error: '초대 기한 변경에 실패했습니다.' }, { status: 500 });
     }
 }
 

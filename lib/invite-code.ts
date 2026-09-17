@@ -1,6 +1,7 @@
 // 멘토·멘티 초대 코드의 생성과 검증.
 import { randomBytes } from 'crypto';
 import type { InvitableRole } from './member-roles';
+import { formatInviteExpiryDate } from './invite-expiry';
 
 /** 코드 자체의 기본 사용 기한(일). 접근 기간(90일)과는 다른 값이다. */
 export const INVITE_CODE_VALID_DAYS = 14;
@@ -91,10 +92,11 @@ export function buildInviteEmail(params: {
     roleLabel: string;
     expiresAt: Date;
     accessDurationDays: number;
+    accessExpiresAt?: Date | null;
     signupUrl: string;
     escapeHtml: (value: string) => string;
 }): { subject: string; html: string } {
-    const expiry = params.expiresAt.toISOString().slice(0, 10);
+    const expiry = formatInviteExpiryDate(params.expiresAt);
     const code = params.escapeHtml(params.code);
     const roleLabel = params.escapeHtml(params.roleLabel);
     const signupUrl = params.escapeHtml(params.signupUrl);
@@ -114,8 +116,10 @@ export function buildInviteEmail(params: {
             </div>
             <ul style="color: #555; font-size: 13px; line-height: 1.8; padding-left: 18px;">
                 <li>이 메일을 받은 주소로만 로그인할 수 있습니다.</li>
-                <li>첫 로그인 기한: <strong>${expiry}</strong>까지</li>
-                <li>첫 로그인 후 <strong>${params.accessDurationDays}일</strong>과 프로그램 종료일 중 먼저 도래하는 시점까지 이용할 수 있습니다.</li>
+                ${params.accessExpiresAt
+                    ? `<li>가입 및 로그인 이용 기한: <strong>${expiry}</strong>까지 (한국 시간, 프로그램 종료 시각 이내)</li>`
+                    : `<li>첫 로그인 기한: <strong>${expiry}</strong>까지</li>
+                <li>첫 로그인 후 <strong>${params.accessDurationDays}일</strong>과 프로그램 종료일 중 먼저 도래하는 시점까지 이용할 수 있습니다.</li>`}
             </ul>
             <div style="text-align: center; margin: 26px 0 8px;">
                 <a href="${signupUrl}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 13px 36px; border-radius: 8px; text-decoration: none; font-size: 15px; font-weight: 600; display: inline-block;">초대 코드로 로그인하기</a>

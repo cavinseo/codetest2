@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
                 status: true, role: true, isAdmin: true, programId: true, accessExpiresAt: true,
                 usedInviteCode: { select: {
                     id: true, code: true, email: true, role: true, usedAt: true, usedById: true,
-                    expiresAt: true, accessDurationDays: true, programId: true,
+                    expiresAt: true, accessExpiresAt: true, accessDurationDays: true, programId: true,
                     program: { select: { endsAt: true } },
                 } },
             },
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
                 usedInviteCode: { is: invite ? {
                     id: invite.id, code: invite.code, email: invite.email, role: invite.role,
                     usedById: invite.usedById, usedAt: invite.usedAt, programId: invite.programId,
-                    expiresAt: invite.expiresAt, accessDurationDays: invite.accessDurationDays,
+                    expiresAt: invite.expiresAt, accessExpiresAt: invite.accessExpiresAt, accessDurationDays: invite.accessDurationDays,
                     program: { is: { endsAt: invite.program.endsAt } },
                 } : null },
             },

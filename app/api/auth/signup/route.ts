@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
         // status: 'PENDING' 으로 남고 관리자가 승인해야 로그인할 수 있으므로
         // 권한 상승 구멍이 아니다. 초대 코드가 있으면 역할이 코드로 정해지고,
         // 그 역할에 맞는 프로필을 받는다(클라이언트가 고른 role 은 무시한다).
-        let invite: { id: string; role: MemberRole; programId: string; endsAt: Date; accessDurationDays: number } | null = null;
+        let invite: { id: string; role: MemberRole; programId: string; endsAt: Date; accessDurationDays: number; accessExpiresAt?: Date | null } | null = null;
         let role: MemberRole = requestedRole ?? 'MENTEE';
 
         if (inviteCode) {
@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
                 programId: record.programId,
                 endsAt: record.program.endsAt,
                 accessDurationDays: record.accessDurationDays,
+                accessExpiresAt: record.accessExpiresAt,
             };
             role = inviteRole;
         }
@@ -107,13 +108,15 @@ export async function POST(request: NextRequest) {
         // 그렇지 않으면 프로필 없는 회원이나, 계정 없이 소진된 코드가 남을 수 있다.
         const newUser = await prisma.$transaction(async (tx) => {
             if (invite) {
+                await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`invite-email:${email}`}))::text`;
                 await tx.$queryRaw`SELECT id FROM invite_codes WHERE id = ${invite.id} FOR UPDATE`;
                 const current = await tx.inviteCode.findUnique({ where: { id: invite.id }, include: { program: { select: { endsAt: true } } } });
                 if (!current || current.usedAt || current.usedById) throw new InviteAlreadyUsedError();
                 if (checkInviteCode(current, email) || current.role !== 'MENTEE'
                     || current.program.endsAt.getTime() <= Date.now()) throw new InviteExpiredError();
                 invite = { id: current.id, role: 'MENTEE',
-                    programId: current.programId, endsAt: current.program.endsAt, accessDurationDays: current.accessDurationDays };
+                    programId: current.programId, endsAt: current.program.endsAt, accessDurationDays: current.accessDurationDays,
+                    accessExpiresAt: current.accessExpiresAt };
             }
             const now = new Date();
             const user = await tx.user.create({
@@ -128,6 +131,7 @@ export async function POST(request: NextRequest) {
                     status: invite ? 'APPROVED' : 'PENDING',
                     accessExpiresAt: invite ? inviteAccessExpiresAt({
                         usedAt: now, expiresAt: now, accessDurationDays: invite.accessDurationDays, program: { endsAt: invite.endsAt },
+                        accessExpiresAt: invite.accessExpiresAt,
                     }) : null,
                     // 코드로 들어온 멘티는 그 코드의 프로그램에 묶인다. 다른
                     // 프로그램의 프로젝트 소유자로는 지정될 수 없다(lib/program.ts).

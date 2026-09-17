@@ -165,6 +165,16 @@ describe('초대 코드 가입', () => {
         expiresAt: new Date(Date.now() + 86400000), accessDurationDays: 90, usedAt: null,
     };
 
+    it('일반 가입 경로도 잠금 후 읽은 명시적 이용 기한을 계정에 보존한다', async () => {
+        const before = new Date(Date.now() + 10 * 86400000);
+        const extended = new Date(Date.now() + 20 * 86400000);
+        findUniqueInvite.mockResolvedValueOnce({ ...validInvite, accessExpiresAt: before })
+            .mockResolvedValueOnce({ ...validInvite, accessExpiresAt: extended });
+        const res = await POST(signupRequest({ name: '새회원', email: 'm@x.com', password: 'password123', inviteCode: validInvite.code, profile: menteeProfile }));
+        expect(res.status).toBe(200);
+        expect(txCreateUser.mock.calls[0][0].data.accessExpiresAt).toEqual(extended);
+    });
+
     it.each([30, 365])('미사용 코드의 저장된 %s일 설정을 적용하되 프로그램 종료를 넘기지 않는다', async (accessDurationDays) => {
         findUniqueInvite.mockResolvedValue({ ...validInvite, accessDurationDays });
         const res = await POST(signupRequest({ name: '새회원', email: 'm@x.com', password: 'password123', inviteCode: validInvite.code, profile: menteeProfile }));

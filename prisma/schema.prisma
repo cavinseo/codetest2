@@ -641,6 +641,8 @@ model InviteCode {
   program   Program @relation(fields: [programId], references: [id], onDelete: Cascade)
   // 코드 자체의 사용 기한
   expiresAt DateTime
+  // 명시한 가입·로그인 공통 기한이다. null인 기존 코드는 종전 이용 기간을 유지한다.
+  accessExpiresAt DateTime?
   // 가입 후 부여할 접근 기간(일). 기본 90일(약 3개월).
   accessDurationDays Int @default(90)
 

@@ -18,7 +18,7 @@ export function parseInviteEmails(text: string) {
     return { emails, invalid, duplicateCount };
 }
 
-export type InviteBatchAction = { kind: 'issue'; email: string; programId: string };
+export type InviteBatchAction = { kind: 'issue'; email: string; programId: string; expiresAt: string };
 
 export interface InviteBatchResult {
     email: string;
@@ -41,7 +41,7 @@ export async function runInviteBatch(
             const response = await fetch('/api/invites', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: action.email, role: 'MENTEE', programId: action.programId }),
+                body: JSON.stringify({ email: action.email, role: 'MENTEE', programId: action.programId, expiresAt: action.expiresAt }),
             });
             const data = await response.json().catch(() => null);
             if (!response.ok || !data?.success) {

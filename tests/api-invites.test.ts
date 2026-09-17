@@ -52,11 +52,13 @@ function jsonRequest(method: string, body: unknown): NextRequest {
     return new NextRequest('http://localhost/api/invites', {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(method === 'POST' ? { expiresAt: '2026-09-17', ...(body as object) } : body),
     });
 }
 
 beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-17T03:00:00.000Z'));
     findUniqueUser.mockResolvedValue(null);
     findManyInvite.mockResolvedValue([]);
     // 기본값은 발행자 자신이 담당 매니저인 프로그램이다. 대부분의 테스트가
@@ -74,6 +76,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
 });
 
@@ -129,16 +132,67 @@ describe('초대 코드 발행 규칙', () => {
         expect(createInvite).not.toHaveBeenCalled();
     });
 
-    it('신규 코드는 발급 후 14일까지 최초 사용 가능하며 로그인 메일을 보낸다', async () => {
-        const before = Date.now();
-        const end = new Date(Date.now() + 180 * 86400000);
-        findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: ISSUER_ID, endsAt: end });
-        await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1' }));
-        const expires = createInvite.mock.calls[0][0].data.expiresAt.getTime();
-        expect(expires).toBeGreaterThanOrEqual(before + 14 * 86400000);
-        expect(expires).toBeLessThanOrEqual(Date.now() + 14 * 86400000);
+    it('신규 코드는 지정한 한국 날짜의 마지막 시각을 가입과 이용 기한에 저장한다', async () => {
+        const res = await POST(jsonRequest('POST', {
+            email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', expiresAt: '2026-10-15',
+        }));
+        expect(res.status).toBe(200);
+        expect(createInvite.mock.calls[0][0].data).toMatchObject({
+            expiresAt: new Date('2026-10-15T14:59:59.999Z'),
+            accessExpiresAt: new Date('2026-10-15T14:59:59.999Z'),
+        });
+        expect((await res.json()).invite.expiresAt).toBe('2026-10-15T14:59:59.999Z');
         expect(sendMail.mock.calls[0][0].html).toContain('/login?mode=invite');
         expect(lock).toHaveBeenCalled();
+    });
+
+    it.each([undefined, '', '2026-02-30', '2026-13-01', '2026-09-16', '2026-10-15T00:00:00Z'])('잘못된 이용 기한 %s는 발급하지 않는다', async expiresAt => {
+        const res = await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', expiresAt }));
+
+        expect(res.status).toBe(400);
+        expect(createInvite).not.toHaveBeenCalled();
+        expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('한국의 오늘 날짜는 그날 마지막 시각까지 발급할 수 있다', async () => {
+        vi.setSystemTime(new Date('2026-09-17T15:00:00.000Z'));
+        const res = await POST(jsonRequest('POST', {
+            email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', expiresAt: '2026-09-18',
+        }));
+
+        expect(res.status).toBe(200);
+        expect(createInvite.mock.calls[0][0].data.expiresAt).toEqual(new Date('2026-09-18T14:59:59.999Z'));
+    });
+
+    it('UTC로는 오늘이어도 한국에서 지난 날짜이면 발급하지 않는다', async () => {
+        vi.setSystemTime(new Date('2026-09-17T15:00:00.000Z'));
+        const res = await POST(jsonRequest('POST', {
+            email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', expiresAt: '2026-09-17',
+        }));
+
+        expect(res.status).toBe(400);
+        expect(createInvite).not.toHaveBeenCalled();
+    });
+
+    it('프로그램 한국 종료 날짜 이후는 발급하지 않는다', async () => {
+        findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: ISSUER_ID, endsAt: new Date('2026-10-14T16:00:00.000Z') });
+        const res = await POST(jsonRequest('POST', {
+            email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', expiresAt: '2026-10-16',
+        }));
+
+        expect(res.status).toBe(400);
+        expect(createInvite).not.toHaveBeenCalled();
+    });
+
+    it('프로그램 한국 종료 날짜와 같으면 정확한 종료 시각을 저장한다', async () => {
+        const endsAt = new Date('2026-10-14T16:00:00.000Z');
+        findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: ISSUER_ID, endsAt });
+        const res = await POST(jsonRequest('POST', {
+            email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', expiresAt: '2026-10-15',
+        }));
+
+        expect(res.status).toBe(200);
+        expect(createInvite.mock.calls[0][0].data).toMatchObject({ expiresAt: endsAt, accessExpiresAt: endsAt });
     });
 
     it('멘토 역할로는 코드를 만들 수 없다', async () => {
@@ -213,23 +267,26 @@ describe('초대 코드 발행 규칙', () => {
         expect(createInvite.mock.calls[0][0].data.programId).toBe('prog_1');
     });
 
-    it('발급 메일은 멘티 초대코드 로그인으로 연결하고 선택한 이용 기간을 안내한다', async () => {
+    it('발급 메일은 멘티 초대코드 로그인으로 연결하고 실제 지정일을 안내한다', async () => {
         const res = await POST(jsonRequest('POST', {
-            email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', accessDurationDays: 30,
+            email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', expiresAt: '2026-10-15',
         }));
 
         expect(res.status).toBe(200);
         expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({
             to: 'm@x.com', html: expect.stringContaining('href="http://localhost/login?mode=invite"'),
         }));
-        expect(sendMail.mock.calls[0][0].html).toContain('30일');
+        expect(sendMail.mock.calls[0][0].html).toContain('2026-10-15');
+        expect(sendMail.mock.calls[0][0].html).not.toContain('첫 로그인 후');
+        expect(sendMail.mock.calls[0][0].html).not.toContain('90일');
         expect(sendMail.mock.calls[0][0].html).toContain('같은 코드로 로그인');
     });
 
-    it('기본 접근 기간 90일을 담는다', async () => {
+    it('기존 코드 호환용 기본 기간 90일과 명시적 이용 기한을 함께 담는다', async () => {
         await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1' }));
 
         expect(createInvite.mock.calls[0][0].data.accessDurationDays).toBe(90);
+        expect(createInvite.mock.calls[0][0].data.accessExpiresAt).toEqual(new Date('2026-09-17T14:59:59.999Z'));
     });
 
     it('메일 발송이 실패하면 코드는 만들되 실패를 알린다', async () => {
@@ -353,6 +410,7 @@ describe('초대 코드 목록', () => {
         expect(findManyInvite.mock.calls[0][0].select.code).toBe(true);
         expect(body.invites).toEqual([expect.objectContaining({
             id: 'inv_visible', code: 'ADMIN-VISIBLE-CODE', programName: '초대 프로그램',
+            programEndsAt: '2099-12-31T00:00:00.000Z',
         })]);
     });
 

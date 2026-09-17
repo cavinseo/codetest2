@@ -38,6 +38,8 @@ export async function POST(request: NextRequest) {
 
         const code = normalizeInviteCode(inviteCode);
         const user = await prisma.$transaction(async (tx) => {
+            // 만료 코드 연장·재발급과 계정 생성을 같은 이메일 단위로 직렬화한다.
+            await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`invite-email:${email}`}))::text`;
             // 최초 로그인과 기존 가입 경로가 같은 코드를 동시에 연결하지 못하게 한다.
             await tx.$queryRaw`SELECT id FROM invite_codes WHERE code = ${code} FOR UPDATE`;
             const invite = await tx.inviteCode.findUnique({ where: { code }, include: { program: true, usedBy: true } });

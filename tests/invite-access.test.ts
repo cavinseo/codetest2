@@ -11,6 +11,17 @@ const invite = {
 };
 
 describe('초대 계정 이용 기한', () => {
+    it('명시한 이용 기한은 최초 로그인부터 90일을 다시 부여하지 않는다', () => {
+        expect(inviteAccessExpiresAt({ ...invite, accessExpiresAt: after(10) })).toEqual(after(10));
+        expect(inviteAccessExpiresAt({ ...invite, usedAt: after(5), accessExpiresAt: after(10) })).toEqual(after(10));
+    });
+    it('명시한 기한이 있어도 미사용 코드 회수를 무시하지 않는다', () => {
+        expect(inviteAccessExpiresAt({ ...invite, usedAt: null, expiresAt: after(-1), accessExpiresAt: after(10) })).toEqual(after(-1));
+    });
+    it('명시한 기한보다 연장된 회원 기한을 보존하되 프로그램 종료를 지킨다', () => {
+        expect(inviteAccessExpiresAt({ ...invite, accessExpiresAt: after(10), usedBy: { accessExpiresAt: after(20) } })).toEqual(after(20));
+        expect(inviteAccessExpiresAt({ ...invite, accessExpiresAt: after(600) })).toEqual(after(500));
+    });
     it.each([1, 30, 90, 365])('저장된 %i일 기간을 최초 사용일부터 계산한다', (days) => {
         expect(inviteAccessExpiresAt({ ...invite, accessDurationDays: days })).toEqual(after(days));
     });

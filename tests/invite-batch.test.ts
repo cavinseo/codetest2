@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { INVITE_BATCH_LIMIT, parseInviteEmails, runInviteBatch } from '../lib/invite-batch';
 
 const fetchMock = vi.fn();
-const issue = (email: string) => ({ kind: 'issue' as const, email, programId: 'program_1' });
+const issue = (email: string) => ({ kind: 'issue' as const, email, programId: 'program_1', expiresAt: '2026-12-31' });
 
 function response(body: unknown, status = 200) {
     return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -45,13 +45,13 @@ describe('다중 이메일 입력', () => {
 });
 
 describe('다중 발급 처리', () => {
-    it('멘티 역할과 선택 프로그램을 단건 POST로 보내고 메일 성공 코드도 결과에 보존한다', async () => {
+    it('멘티 역할과 선택 프로그램·기한을 단건 POST로 보내고 메일 성공 코드도 결과에 보존한다', async () => {
         const result = await runInviteBatch([issue('one@example.com')]);
         expect(fetchMock).toHaveBeenCalledTimes(1);
         const [url, options] = fetchMock.mock.calls[0];
         expect(url).toBe('/api/invites');
         expect(options.method).toBe('POST');
-        expect(JSON.parse(options.body)).toEqual({ email: 'one@example.com', role: 'MENTEE', programId: 'program_1' });
+        expect(JSON.parse(options.body)).toEqual({ email: 'one@example.com', role: 'MENTEE', programId: 'program_1', expiresAt: '2026-12-31' });
         expect(result).toEqual([expect.objectContaining({ email: 'one@example.com', status: 'sent', code: 'CODE-1234' })]);
     });
 

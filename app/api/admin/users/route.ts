@@ -7,7 +7,7 @@ import { createLogger } from '@/lib/logger';
 import { hasAdminAccess, requireAdmin } from '@/lib/authorization';
 import { BCRYPT_ROUNDS } from '@/lib/constants';
 import { generateId } from '@/lib/id';
-import { toErrorResponse } from '@/lib/api-error';
+import { errorCodeOf, toErrorResponse } from '@/lib/api-error';
 import { sendMail } from '@/lib/email';
 import { escapeHtml } from '@/lib/html-escape';
 import { buildTempPasswordEmail } from '@/lib/temp-password-email';
@@ -173,13 +173,18 @@ export async function PATCH(request: NextRequest) {
             const shortened = nextExpiry < current;
 
             const updated = await prisma.user.update({
-                where: { id: userId },
+                // 초대관리에서 동시에 연장한 기한을 오래된 조회값으로 덮어쓰지 않는다.
+                where: { id: userId, accessExpiresAt: current },
                 data: {
                     accessExpiresAt: nextExpiry,
                     ...(shortened ? { sessionVersion: { increment: 1 } } : {}),
                 },
                 select: { id: true, email: true, accessExpiresAt: true },
+            }).catch((error: unknown) => {
+                if (errorCodeOf(error) === 'P2025') return null;
+                throw error;
             });
+            if (!updated) return NextResponse.json({ error: '이용 기한이 변경되었습니다. 새로고침 후 다시 시도하세요.' }, { status: 409 });
 
             log.info('접근 기간 연장', { userId, days });
             return NextResponse.json({ success: true, user: updated });

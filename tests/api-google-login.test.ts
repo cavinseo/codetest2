@@ -338,7 +338,7 @@ describe('Google 회원 로그인 콜백 회원 게이트', () => {
             include: {
                 usedInviteCode: {
                     select: {
-                        usedAt: true, expiresAt: true, accessDurationDays: true, programId: true,
+                        usedAt: true, expiresAt: true, accessExpiresAt: true, accessDurationDays: true, programId: true,
                         program: { select: { endsAt: true } },
                     },
                 },

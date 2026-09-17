@@ -125,6 +125,14 @@ describe('초대 코드 재발송 권한', () => {
 });
 
 describe('발송 가능한 코드와 이용 기한', () => {
+    it('명시한 이용 기한을 안내하고 가입 후 기간을 별도로 부여한다고 하지 않는다', async () => {
+        findUniqueInvite.mockResolvedValue({ ...unusedInvite(), expiresAt: future(10), accessExpiresAt: future(10) });
+        expect((await POST(request(), context)).status).toBe(200);
+        const html = sendMail.mock.calls[0][0].html;
+        expect(html).toContain(future(10).toISOString().slice(0, 10));
+        expect(html).toContain('위 기한까지 같은 코드로 로그인');
+        expect(html).not.toContain('최초 로그인 후 90일');
+    });
     it.each(['MENTOR', 'PROGRAM_MANAGER', 'ADMIN'])('%s 역할의 기존 코드는 발송하지 않는다', async (role) => {
         findUniqueInvite.mockResolvedValue({ ...unusedInvite(), role });
         expect((await POST(request(), context)).status).toBe(400);

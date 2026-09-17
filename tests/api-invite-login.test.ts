@@ -56,14 +56,34 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('초대 코드 로그인', () => {
+    it('지정된 날짜까지 이용하도록 계정을 만들고 재로그인으로 연장하지 않는다', async () => {
+        mocks.findInvite.mockResolvedValue({ ...invite, expiresAt: after(10), accessExpiresAt: after(10) });
+        expect((await POST(request())).status).toBe(200);
+        expect(mocks.create.mock.calls[0][0].data.accessExpiresAt).toEqual(after(10));
+        mocks.findInvite.mockResolvedValue({ ...used, accessExpiresAt: after(10), usedBy: { ...user, accessExpiresAt: after(10) } });
+        vi.setSystemTime(after(9));
+        expect((await POST(request())).status).toBe(200);
+        expect(mocks.create).toHaveBeenCalledTimes(1);
+        mocks.cookie.mockClear();
+        vi.setSystemTime(after(10));
+        expect((await POST(request())).status).toBe(403);
+        expect(mocks.cookie).not.toHaveBeenCalled();
+    });
+    it('공통 이용 기한이 남아 있어도 회수된 미사용 코드는 거부한다', async () => {
+        mocks.findInvite.mockResolvedValue({ ...invite, expiresAt: now, accessExpiresAt: after(10) });
+        expect((await POST(request())).status).toBe(403);
+        expect(mocks.create).not.toHaveBeenCalled();
+    });
     it('비밀번호 없이 멘티 계정을 생성하고 서명된 온보딩 세션을 발급한다', async () => {
         const res = await POST(request());
         expect(res.status).toBe(200);
         expect(await res.json()).toMatchObject({ success: true, needsProfile: true, mustChangePassword: false, user: { id: 'user' } });
         expect(mocks.create.mock.calls[0][0].data).toMatchObject({ name: '홍길동', role: 'MENTEE', status: 'APPROVED', programId: 'program', mustChangePassword: false, accessExpiresAt: after(90), passwordHash: 'hashed-random-password' });
         expect(mocks.hash.mock.calls[0][0]).toMatch(/^[a-f0-9]{64}$/);
-        expect(mocks.lock.mock.calls[0][0].join('?')).toContain('SELECT id FROM invite_codes WHERE code = ? FOR UPDATE');
-        expect(mocks.lock.mock.calls[0][1]).toBe(invite.code);
+        expect(mocks.lock.mock.calls[0][0].join('?')).toContain('pg_advisory_xact_lock');
+        expect(mocks.lock.mock.calls[0][1]).toBe(`invite-email:${invite.email}`);
+        expect(mocks.lock.mock.calls[1][0].join('?')).toContain('SELECT id FROM invite_codes WHERE code = ? FOR UPDATE');
+        expect(mocks.lock.mock.calls[1][1]).toBe(invite.code);
         expect(mocks.update).toHaveBeenCalledWith({ where: { id: 'invite', usedAt: null, usedById: null }, data: { usedAt: now, usedById: 'user' } });
         expect(mocks.encode).toHaveBeenCalledWith({ userId: 'user', email: invite.email, name: '홍길동' }, { sessionVersion: 3 });
         expect(mocks.cookie).toHaveBeenCalledWith('session', 'signed-session', expect.objectContaining({ httpOnly: true, sameSite: 'strict', path: '/' }));

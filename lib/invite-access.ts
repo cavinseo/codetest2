@@ -4,6 +4,7 @@ import { isAccessExpired } from './member-roles';
 interface InviteAccess {
     usedAt: Date | null;
     expiresAt: Date;
+    accessExpiresAt?: Date | null;
     accessDurationDays: number;
     program: { endsAt: Date };
     usedBy?: { accessExpiresAt: Date | null } | null;
@@ -15,6 +16,7 @@ export function inviteAccessExpiresAt(invite: InviteAccess): Date {
         // 기존 계정은 관리자가 연장한 기한을 보존한다. 최초 생성 또는 기한이
         // 없는 계정만 초대에 저장된 기간을 사용하며, 프로그램 종료는 항상 적용한다.
         deadlines.push(invite.usedBy?.accessExpiresAt?.getTime()
+            ?? invite.accessExpiresAt?.getTime()
             ?? invite.usedAt.getTime() + invite.accessDurationDays * 86_400_000);
     } else {
         deadlines.push(invite.expiresAt.getTime());

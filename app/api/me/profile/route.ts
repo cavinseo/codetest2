@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
                     id: true, email: true, role: true, isAdmin: true, status: true,
                     programId: true, accessExpiresAt: true,
                     usedInviteCode: { select: {
-                        email: true, role: true, usedById: true, usedAt: true, expiresAt: true,
+                        email: true, role: true, usedById: true, usedAt: true, expiresAt: true, accessExpiresAt: true,
                         accessDurationDays: true, programId: true, program: { select: { endsAt: true } },
                     } },
                 },

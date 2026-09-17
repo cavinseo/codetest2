@@ -144,7 +144,7 @@ export async function requireAuth(
             sessionVersion: true, role: true, accessExpiresAt: true, programId: true,
             usedInviteCode: {
                 select: {
-                    usedAt: true, expiresAt: true, accessDurationDays: true, programId: true,
+                    usedAt: true, expiresAt: true, accessExpiresAt: true, accessDurationDays: true, programId: true,
                     program: { select: { endsAt: true } },
                 },
             },

@@ -231,9 +231,18 @@ describe('기간 연장', () => {
 
         expect(res.status).toBe(200);
         const nextExpiry = updateUser.mock.calls[0][0].data.accessExpiresAt as Date;
+        expect(updateUser.mock.calls[0][0].where).toEqual({ id: 'user_2', accessExpiresAt: new Date('2027-01-01T00:00:00Z') });
         expect(nextExpiry.toISOString().slice(0, 10)).toBe('2027-01-08');
         // 정상적으로 늘어난 경우(당겨지지 않은 경우)는 세션을 끊을 이유가 없다.
         expect(updateUser.mock.calls[0][0].data.sessionVersion).toBeUndefined();
+    });
+
+    it('초대관리에서 기한을 먼저 바꿨으면 덮어쓰지 않고 재시도를 안내한다', async () => {
+        findUniqueUser.mockResolvedValue({ id: 'user_2', role: 'MENTEE', isAdmin: false, accessExpiresAt: new Date('2027-01-01') });
+        updateUser.mockRejectedValueOnce({ code: 'P2025' });
+        const res = await PATCH(jsonRequest('PATCH', { userId: 'user_2', action: 'extendAccess', days: 7 }));
+        expect(res.status).toBe(409);
+        expect((await res.json()).error).toContain('새로고침');
     });
 
     it('만료 없는 계정은 기간을 연장할 수 없다', async () => {

@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
             include: {
                 usedInviteCode: {
                     select: {
-                        usedAt: true, expiresAt: true, accessDurationDays: true, programId: true,
+                        usedAt: true, expiresAt: true, accessExpiresAt: true, accessDurationDays: true, programId: true,
                         program: { select: { endsAt: true } },
                     },
                 },
