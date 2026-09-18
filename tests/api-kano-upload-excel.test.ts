@@ -11,7 +11,9 @@ const tx = {
     },
     kanoSurveyInvitation: {
         deleteMany: vi.fn(),
-        upsert: vi.fn(),
+        updateMany: vi.fn(),
+        createMany: vi.fn(),
+        findMany: vi.fn(),
     },
 };
 const transaction = vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx));
@@ -68,7 +70,9 @@ function uploadRequest(
 beforeEach(() => {
     requireProjectAccess.mockResolvedValue({ user: USER, role: 'OWNER' });
     findManyRequirement.mockResolvedValue(REQUIREMENTS);
-    tx.kanoSurveyInvitation.upsert.mockResolvedValue({ id: 'invitation_1' });
+    tx.kanoSurveyInvitation.findMany.mockImplementation(async ({ where }) =>
+        where.email.in.map((email: string) => ({ id: `invitation_${email}`, email }))
+    );
 });
 
 afterEach(() => {
@@ -129,6 +133,9 @@ describe('POST /api/projects/[id]/kano/upload-excel', () => {
                 },
             },
         });
+        expect(tx.kanoSurveyInvitation.updateMany).toHaveBeenCalledTimes(1);
+        expect(tx.kanoSurveyInvitation.createMany).toHaveBeenCalledTimes(1);
+        expect(tx.kanoSurveyInvitation.findMany).toHaveBeenCalledTimes(1);
     });
 
     it('성공 응답에 기존 메시지와 집계 결과를 담는다', async () => {
@@ -145,23 +152,34 @@ describe('POST /api/projects/[id]/kano/upload-excel', () => {
         });
     });
 
-    it('초대 결과와 요구사항 순서에 맞춰 Kano 분류 행을 생성한다', async () => {
-        tx.kanoSurveyInvitation.upsert.mockResolvedValue({ id: 'stored_invitation' });
-
+    it('초대를 일괄 저장하고 요구사항 순서에 맞춰 Kano 분류 행을 생성한다', async () => {
         const response = await POST(uploadRequest('append'), params);
 
         expect(response.status).toBe(200);
+        expect(tx.kanoSurveyInvitation.updateMany).toHaveBeenCalledWith({
+            where: { projectId: PROJECT_ID, email: { in: ['respondent@example.test'] } },
+            data: { respondedAt: expect.any(Date), isUsed: true },
+        });
+        expect(tx.kanoSurveyInvitation.createMany).toHaveBeenCalledWith({
+            data: [expect.objectContaining({
+                projectId: PROJECT_ID,
+                email: 'respondent@example.test',
+                invitedBy: USER.userId,
+                isUsed: true,
+            })],
+            skipDuplicates: true,
+        });
         expect(tx.kanoResponse.createMany).toHaveBeenCalledWith({
             data: [
                 expect.objectContaining({
-                    invitationId: 'stored_invitation',
+                    invitationId: 'invitation_respondent@example.test',
                     requirementId: 'requirement_1',
                     positiveAnswer: 1,
                     negativeAnswer: 5,
                     kanoCategory: 'O',
                 }),
                 expect.objectContaining({
-                    invitationId: 'stored_invitation',
+                    invitationId: 'invitation_respondent@example.test',
                     requirementId: 'requirement_2',
                     positiveAnswer: 2,
                     negativeAnswer: 4,

@@ -28,6 +28,7 @@ export async function persistKanoUploadAnswers(
     const { projectId, invitedBy, writePolicy, requirements, answers } = input;
     const respondentEmails = Array.from(new Set(answers.map((answer) => answer.respondentEmail)));
     const invitations = new Map<string, string>();
+    const respondedAt = new Date();
 
     await prisma.$transaction(async (tx) => {
         if (writePolicy === 'replace') {
@@ -42,23 +43,30 @@ export async function persistKanoUploadAnswers(
             });
         }
 
-        for (const email of respondentEmails) {
-            const invitation = await tx.kanoSurveyInvitation.upsert({
-                where: { projectId_email: { projectId, email } },
-                update: { respondedAt: new Date(), isUsed: true },
-                create: {
-                    id: generateId('inv'),
-                    projectId,
-                    email,
-                    token: `excel_${generateId('inv')}`,
-                    invitedBy,
-                    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
-                    respondedAt: new Date(),
-                    isUsed: true,
-                },
-                select: { id: true },
-            });
-            invitations.set(email, invitation.id);
+        await tx.kanoSurveyInvitation.updateMany({
+            where: { projectId, email: { in: respondentEmails } },
+            data: { respondedAt, isUsed: true },
+        });
+        await tx.kanoSurveyInvitation.createMany({
+            data: respondentEmails.map((email) => ({
+                id: generateId('inv'),
+                projectId,
+                email,
+                token: `excel_${generateId('inv')}`,
+                invitedBy,
+                expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
+                respondedAt,
+                isUsed: true,
+            })),
+            skipDuplicates: true,
+        });
+
+        const storedInvitations = await tx.kanoSurveyInvitation.findMany({
+            where: { projectId, email: { in: respondentEmails } },
+            select: { id: true, email: true },
+        });
+        for (const invitation of storedInvitations) {
+            invitations.set(invitation.email, invitation.id);
         }
 
         await tx.kanoResponse.createMany({
