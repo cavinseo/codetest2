@@ -28,6 +28,79 @@ const bulkRequirementsSchema = z.object({
     ).min(1, '요구사항이 비어 있습니다. 전체 삭제가 필요하면 deleteAll 파라미터를 사용하세요.'),
 });
 
+type RequirementInput = z.infer<typeof bulkRequirementsSchema>['requirements'][number];
+type RequirementWriteData = {
+    category: string;
+    subcategory: string | null;
+    requirement: string;
+    kanoPositiveQ: string | null;
+    kanoNegativeQ: string | null;
+    kanoWeight: number | null;
+    order: number;
+};
+type RequirementToCreate = RequirementWriteData & { id: string; projectId: string };
+
+function submittedRequirementIds(requirements: RequirementInput[]) {
+    return requirements
+        .map((requirement) => requirement.id)
+        .filter((id): id is string => Boolean(id));
+}
+
+function requirementWriteData(requirement: RequirementInput): RequirementWriteData {
+    return {
+        category: requirement.category,
+        subcategory: requirement.subcategory ?? null,
+        requirement: requirement.requirement,
+        kanoPositiveQ: requirement.kanoPositiveQ ?? null,
+        kanoNegativeQ: requirement.kanoNegativeQ ?? null,
+        kanoWeight: requirement.kanoWeight ?? null,
+        order: requirement.order,
+    };
+}
+
+async function saveRequirements(
+    projectId: string,
+    requirements: RequirementInput[],
+    submittedIds: string[]
+) {
+    await prisma.$transaction(async (tx) => {
+        await tx.customerRequirement.deleteMany({
+            where: submittedIds.length > 0
+                ? { projectId, id: { notIn: submittedIds } }
+                : { projectId },
+        });
+
+        const existingRows = submittedIds.length > 0
+            ? await tx.customerRequirement.findMany({
+                where: { projectId, id: { in: submittedIds } },
+                select: { id: true },
+            })
+            : [];
+        const existingIds = new Set(existingRows.map((row) => row.id));
+        const requirementsToCreate: RequirementToCreate[] = [];
+
+        for (const requirement of requirements) {
+            const data = requirementWriteData(requirement);
+            if (requirement.id && existingIds.has(requirement.id)) {
+                const updated = await tx.customerRequirement.updateMany({
+                    where: { id: requirement.id, projectId },
+                    data,
+                });
+                if (updated.count > 0) continue;
+            }
+            requirementsToCreate.push({
+                id: requirement.id || generateId('spec'),
+                projectId,
+                ...data,
+            });
+        }
+
+        if (requirementsToCreate.length > 0) {
+            await tx.customerRequirement.createMany({ data: requirementsToCreate });
+        }
+    });
+}
+
 // GET: 요구사항 조회
 export async function GET(
     request: NextRequest,
@@ -77,9 +150,7 @@ export async function POST(
         const body = await request.json();
         const { requirements } = bulkRequirementsSchema.parse(body);
 
-        const submittedIds = requirements
-            .map((req) => req.id)
-            .filter((id): id is string => Boolean(id));
+        const submittedIds = submittedRequirementIds(requirements);
 
         // deleteMany 로 지워질 "기존" 고객요구사항 수를 센다. 제출 id 가 있어도
         // 기존 행과 안 겹치면(예: AI 자동생성 전체 교체의 새 gen_ id) notIn 이
@@ -110,62 +181,7 @@ export async function POST(
             }
         }
 
-        await prisma.$transaction(async (tx) => {
-            await tx.customerRequirement.deleteMany({
-                where: submittedIds.length > 0
-                    ? { projectId, id: { notIn: submittedIds } }
-                    : { projectId },
-            });
-
-            const existingRows = submittedIds.length > 0
-                ? await tx.customerRequirement.findMany({
-                    where: { projectId, id: { in: submittedIds } },
-                    select: { id: true },
-                })
-                : [];
-            const existingIds = new Set(existingRows.map((row) => row.id));
-            const requirementsToCreate: Array<{
-                id: string;
-                projectId: string;
-                category: string;
-                subcategory: string | null;
-                requirement: string;
-                kanoPositiveQ: string | null;
-                kanoNegativeQ: string | null;
-                kanoWeight: number | null;
-                order: number;
-            }> = [];
-
-            for (const req of requirements) {
-                const data = {
-                    category: req.category,
-                    subcategory: req.subcategory ?? null,
-                    requirement: req.requirement,
-                    kanoPositiveQ: req.kanoPositiveQ ?? null,
-                    kanoNegativeQ: req.kanoNegativeQ ?? null,
-                    kanoWeight: req.kanoWeight ?? null,
-                    order: req.order,
-                };
-
-                if (req.id && existingIds.has(req.id)) {
-                    const updated = await tx.customerRequirement.updateMany({
-                        where: { id: req.id, projectId },
-                        data,
-                    });
-                    if (updated.count > 0) continue;
-                }
-
-                requirementsToCreate.push({
-                    id: req.id || generateId('spec'),
-                    projectId,
-                    ...data,
-                });
-            }
-
-            if (requirementsToCreate.length > 0) {
-                await tx.customerRequirement.createMany({ data: requirementsToCreate });
-            }
-        });
+        await saveRequirements(projectId, requirements, submittedIds);
 
         log.info('Requirements saved', { projectId, count: requirements.length });
 
