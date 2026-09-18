@@ -117,6 +117,25 @@ export async function POST(
                     : { projectId },
             });
 
+            const existingRows = submittedIds.length > 0
+                ? await tx.customerRequirement.findMany({
+                    where: { projectId, id: { in: submittedIds } },
+                    select: { id: true },
+                })
+                : [];
+            const existingIds = new Set(existingRows.map((row) => row.id));
+            const requirementsToCreate: Array<{
+                id: string;
+                projectId: string;
+                category: string;
+                subcategory: string | null;
+                requirement: string;
+                kanoPositiveQ: string | null;
+                kanoNegativeQ: string | null;
+                kanoWeight: number | null;
+                order: number;
+            }> = [];
+
             for (const req of requirements) {
                 const data = {
                     category: req.category,
@@ -128,7 +147,7 @@ export async function POST(
                     order: req.order,
                 };
 
-                if (req.id) {
+                if (req.id && existingIds.has(req.id)) {
                     const updated = await tx.customerRequirement.updateMany({
                         where: { id: req.id, projectId },
                         data,
@@ -136,13 +155,15 @@ export async function POST(
                     if (updated.count > 0) continue;
                 }
 
-                await tx.customerRequirement.create({
-                    data: {
-                        id: req.id || generateId('spec'),
-                        projectId,
-                        ...data,
-                    },
+                requirementsToCreate.push({
+                    id: req.id || generateId('spec'),
+                    projectId,
+                    ...data,
                 });
+            }
+
+            if (requirementsToCreate.length > 0) {
+                await tx.customerRequirement.createMany({ data: requirementsToCreate });
             }
         });
 

@@ -62,6 +62,7 @@ beforeEach(() => {
             customerRequirement: {
                 deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
                 updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+                createMany: vi.fn().mockResolvedValue({ count: 1 }),
                 create: vi.fn().mockResolvedValue({}),
                 findMany: vi.fn().mockResolvedValue([]),
             },
