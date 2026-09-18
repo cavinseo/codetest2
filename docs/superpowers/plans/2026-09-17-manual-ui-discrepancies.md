@@ -144,7 +144,8 @@ role: z.enum(['EDITOR'], {
 // DELETE: 팀원 제외
 //
 // 초대(POST)만 있고 회수가 없으면 잘못 초대한 편집자의 쓰기 권한을 거둘 방법이
-// 계정 삭제뿐이 된다. 초대와 같은 권한(소유자)으로 회수도 할 수 있게 한다.
+// 계정 삭제나 프로젝트 삭제뿐이 된다. 초대와 같은 권한으로 회수도 할 수 있게 한다.
+// 접근 권한은 요청마다 resolveProjectRole 이 계산하므로 제외는 즉시 반영된다.
 export async function DELETE(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -152,30 +153,28 @@ export async function DELETE(
     const { id: projectId } = await props.params;
     const accessResult = await requireProjectAccess(request, projectId, { roles: ['OWNER'] });
     if (accessResult instanceof NextResponse) return accessResult;
+    const { userId: requesterId } = accessResult.user;
 
     try {
         const { userId } = removeSchema.parse(await request.json());
 
-        const project = await prisma.project.findUnique({
-            where: { id: projectId },
-            select: { ownerId: true },
-        });
-        if (!project) {
-            return NextResponse.json({ error: '프로젝트를 찾을 수 없습니다.' }, { status: 404 });
-        }
-        // 소유자는 팀원 행이 아니라 프로젝트 자체에 붙는다. 지울 대상이 아니다.
-        if (userId === project.ownerId) {
+        // roles: ['OWNER'] 를 통과했으므로 요청자가 곧 소유자다. 소유자는 멤버 행이
+        // 아니라 프로젝트 자체에 붙으므로 제외 대상이 아니며, 허용하면 소유자가 자기
+        // 프로젝트에서 스스로 잠기는 길이 열린다.
+        if (userId === requesterId) {
             return NextResponse.json({ error: '프로젝트 소유자는 제외할 수 없습니다.' }, { status: 400 });
         }
 
-        // 동시에 두 번 눌러도 안전하도록 조건부 삭제로 처리하고 건수로 판정한다.
+        // 같은 버튼을 두 번 눌러도 안전하도록 조건부 삭제로 처리하고 건수로 판정한다.
         const removed = await prisma.projectMember.deleteMany({ where: { projectId, userId } });
+
         if (removed.count === 0) {
             return NextResponse.json({ error: '이 프로젝트의 팀원이 아닙니다.' }, { status: 404 });
         }
 
         // 이메일은 남기지 않는다(lib/logger.ts 규칙).
-        log.info('팀원 제외', { projectId, userId });
+        log.info('팀원 제외', { projectId, removedUserId: userId });
+
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
         if (error instanceof z.ZodError) {
@@ -186,6 +185,12 @@ export async function DELETE(
     }
 }
 ```
+
+**프로젝트를 다시 조회하지 않는다.** `requireProjectAccess` 가 프로젝트 부재를 이미
+404 로 거르고(`lib/authorization.ts:125-127`), `roles: ['OWNER']` 를 통과했다는 것은
+`resolveProjectRole` 이 요청자를 소유자로 판정했다는 뜻이다. 따라서 요청자 id 가 곧
+소유자 id 이고, 소유자 확인을 위한 두 번째 질의는 도달할 수 없는 방어 코드가 된다
+(`AGENTS.md` 의 단순성 규칙).
 
 대상은 `ProjectMember.id` 가 아니라 **`userId` 로 지정한다.** `GET` 이 소유자를
 `id: 'owner'` 라는 가짜 행으로 끼워 넣기 때문에(`:138-146`) 행 id 는 키로 쓰기에
@@ -219,16 +224,26 @@ const removeSchema = z.object({
 
 **Steps**
 
-- [ ] 결정 1 을 확인한다. 소유자만 허용할지, 시스템 관리자(`roles: ['OWNER', 'ADMIN']`)
-      까지 허용할지다. 권고는 소유자만이며 초대 권한과 대칭을 이룬다.
-- [ ] `tests/api-project-members.test.ts` 에 RED 테스트를 먼저 추가한다. 소유자가 아닌
-      사람의 제외 거절, 소유자 본인 제외 거절, 팀원이 아닌 userId 거절, 정상 제외,
-      **제외 뒤 그 사람의 프로젝트 접근이 실제로 막히는지**까지 검증한다.
-- [ ] `DELETE` 핸들러를 더한다. 기존 `POST`·`GET` 의 계약은 건드리지 않는다.
-- [ ] 화면의 버튼에 확인 창과 처리 중 표시를 잇고, 성공 후 목록을 다시 불러온다.
-- [ ] 제외해도 워크시트 코멘트와 작성물이 남는지 테스트로 고정한다.
-- [ ] 매뉴얼 `docs/manual/05-mentee.md` 5.4 절의 휴지통 주의 문구를 새 동작 설명으로
+- [x] 결정 1 을 확인한다. **사용자가 소유자(멘티) 권한으로 정했다.** 초대와 같은
+      `roles: ['OWNER']` 게이트를 쓴다. 시스템 관리자는 이 경로로 제외할 수 없다.
+- [x] `tests/api-project-members.test.ts` 에 RED 테스트를 먼저 추가한다. 정상 제외,
+      소유자 권한 아님, 소유자 본인 제외, 비팀원 userId, userId 누락, 응답에 이메일
+      미포함 여섯 가지를 덮는다.
+- [x] `DELETE` 핸들러를 더한다. 기존 `POST`·`GET` 의 계약은 건드리지 않는다.
+- [x] 화면의 버튼에 확인 창과 처리 중 표시를 잇고, 성공 후 목록을 다시 불러온다.
+      실패는 목록 위 붉은 배너로 알린다.
+- [x] 제외 뒤 접근이 막히는지 확인한다. **새 테스트를 만들지 않았다.**
+      `tests/authorization.test.ts:140` 의 `rejects a non-member` 가 멤버 행이 없는
+      사용자의 접근 거부를 이미 고정하고 있으며, 제외 후 상태가 정확히 그 상태다.
+- [x] 제외해도 워크시트 코멘트와 작성물이 남는지 확인한다. **테스트를 만들지 않았다.**
+      `ProjectMember` 를 참조하는 하위 모델이 스키마에 없어 구조적으로 지워질 것이
+      없다. 코멘트는 `WorksheetComment.authorId` 로 사용자에 붙고 프로젝트에 속한다.
+- [x] 매뉴얼 `docs/manual/05-mentee.md` 5.4 절의 휴지통 주의 문구를 새 동작 설명으로
       바꾸고 부록 E 줄을 지운다.
+- [ ] **남은 일.** 프로젝트 설정 화면의 DOM 테스트가 없다. 확인 창 취소 시 요청이
+      나가지 않는 것과 처리 중 중복 클릭이 막히는 것을 화면 수준에서 고정해야 한다.
+      이 저장소 컨테이너에서 게이트를 돌릴 수 없어(아래 참고) 검증 못 할 테스트를
+      추가하지 않았다.
 
 **위험.** 중간이다. 접근 권한을 거두는 기능이라 잘못 만들면 남의 프로젝트에서 팀원을
 뺄 수 있게 된다. 권한 검사를 `POST` 와 같은 `roles: ['OWNER']` 로 두고, 소유자 본인과

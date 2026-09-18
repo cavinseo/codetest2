@@ -34,6 +34,8 @@ export default function ProjectSettingsPage() {
     const [inviteRole, setInviteRole] = useState<'EDITOR' | 'COACH'>('EDITOR');
     const [inviteError, setInviteError] = useState('');
     const [isInviting, setIsInviting] = useState(false);
+    const [memberError, setMemberError] = useState('');
+    const [removingUserId, setRemovingUserId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'members' | 'data'>('members');
     const [isExporting, setIsExporting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
@@ -105,6 +107,42 @@ export default function ProjectSettingsPage() {
             setInviteError(error.message);
         } finally {
             setIsInviting(false);
+        }
+    };
+
+    // 제외는 접근 권한을 거두는 조작이라 되돌리려면 다시 초대해야 한다. 무엇이 벌어지는지
+    // 확인창에 적어 두고, 작성물은 남는다는 것까지 말해 준다.
+    const handleRemoveMember = async (userId: string, label: string) => {
+        const confirmed = window.confirm(
+            `${label} 님을 팀원에서 제외할까요? 이 프로젝트에 더 이상 접근할 수 없습니다. 작성한 내용은 그대로 남습니다.`
+        );
+        if (!confirmed) return;
+
+        setMemberError('');
+        setRemovingUserId(userId);
+
+        try {
+            const response = await fetch(`/api/projects/${projectId}/members`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId }),
+            });
+            const data = await response.json().catch(() => null);
+
+            if (!response.ok) {
+                throw new Error(data?.error || '팀원 제외에 실패했습니다.');
+            }
+
+            await loadMembers();
+        } catch (error) {
+            // 실패를 조용히 넘기면 빠진 줄 알고 화면을 떠난다. 목록과 다시 대조하게 한다.
+            setMemberError(
+                error instanceof Error
+                    ? error.message
+                    : '팀원 제외 결과를 확인하지 못했습니다. 목록을 새로고침해 확인하세요.'
+            );
+        } finally {
+            setRemovingUserId(null);
         }
     };
 
@@ -318,6 +356,12 @@ export default function ProjectSettingsPage() {
                                         팀원 목록 ({members.length}명)
                                     </h3>
 
+                                    {memberError && (
+                                        <div role="alert" className="mb-4 bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg text-sm">
+                                            {memberError}
+                                        </div>
+                                    )}
+
                                     {isLoading ? (
                                         <div className="text-center py-8 text-gray-400">로딩 중...</div>
                                     ) : members.length === 0 ? (
@@ -352,8 +396,14 @@ export default function ProjectSettingsPage() {
                                                             {member.role}
                                                         </span>
                                                         {member.role !== 'OWNER' && (
-                                                            <button className="text-gray-400 hover:text-red-400 transition-colors">
-                                                                🗑️
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => void handleRemoveMember(member.userId, member.name || member.email || '이 팀원')}
+                                                                disabled={removingUserId !== null}
+                                                                aria-label={`${member.name || member.email || '팀원'} 제외`}
+                                                                className="text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            >
+                                                                {removingUserId === member.userId ? '제외 중...' : '🗑️'}
                                                             </button>
                                                         )}
                                                     </div>
@@ -361,6 +411,11 @@ export default function ProjectSettingsPage() {
                                             ))}
                                         </div>
                                     )}
+
+                                    <p className="mt-4 text-xs text-gray-500">
+                                        제외하면 이 프로젝트에 접근할 수 없게 되며 작성한 내용은 그대로 남습니다.
+                                        담당 멘토는 팀원이 아니라 멘토 배정으로 연결되므로 여기서 제외되지 않습니다.
+                                    </p>
                                 </div>
                             </>
                         )}
