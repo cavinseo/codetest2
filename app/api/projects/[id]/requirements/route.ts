@@ -121,6 +121,25 @@ export async function POST(
                     : { projectId },
             });
 
+            const existingRows = submittedIds.length > 0
+                ? await tx.customerRequirement.findMany({
+                    where: { projectId, id: { in: submittedIds } },
+                    select: { id: true },
+                })
+                : [];
+            const existingIds = new Set(existingRows.map((row) => row.id));
+            const requirementsToCreate: Array<{
+                id: string;
+                projectId: string;
+                category: string;
+                subcategory: string | null;
+                requirement: string;
+                kanoPositiveQ?: string | null;
+                kanoNegativeQ?: string | null;
+                kanoWeight?: number | null;
+                order: number;
+            }> = [];
+
             for (const req of requirements) {
                 // Kano 질문·가중치는 보낸 경우에만 바꾼다. 요구사항 표는 이 값을 다루지 않아
                 // 보내지 않는데, 빠진 값을 null 로 쓰면 오타 하나 고쳐 저장할 때마다 Kano
@@ -135,8 +154,9 @@ export async function POST(
                     order: req.order,
                 };
 
+                // 다른 프로젝트의 id 는 새 행으로 본다. 이 프로젝트에 이미 있는 id 만 고친다.
                 const ownId = req.id && !foreignIds.has(req.id) ? req.id : undefined;
-                if (ownId) {
+                if (ownId && existingIds.has(ownId)) {
                     const updated = await tx.customerRequirement.updateMany({
                         where: { id: ownId, projectId },
                         data,
@@ -144,13 +164,15 @@ export async function POST(
                     if (updated.count > 0) continue;
                 }
 
-                await tx.customerRequirement.create({
-                    data: {
-                        id: ownId || generateId('req'),
-                        projectId,
-                        ...data,
-                    },
+                requirementsToCreate.push({
+                    id: ownId || generateId('req'),
+                    projectId,
+                    ...data,
                 });
+            }
+
+            if (requirementsToCreate.length > 0) {
+                await tx.customerRequirement.createMany({ data: requirementsToCreate });
             }
         });
 
