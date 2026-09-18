@@ -34,7 +34,7 @@
 
 | 번호 | 무엇을 정하나 | 권고 |
 | --- | --- | --- |
-| 결정 1 | 팀원 삭제 기능을 만들 것인가, 버튼을 뺄 것인가 (A-2) | **버튼을 뺀다.** 삭제는 별도 기능으로 분리 |
+| 결정 1 | 팀원 제외를 누구에게 허용할 것인가 (A-2) | **소유자만.** 초대와 같은 권한으로 맞춘다 |
 | 결정 2 | 관리자 개요의 시스템 정보 카드를 살릴 것인가 (B-3) | **카드를 제거한다.** 실제 점검이 필요하면 별도 과제 |
 | 결정 3 | WS-16 자금 AI 초안을 열 것인가 (C-2) | **연다.** 로직과 테스트가 이미 있다 |
 | 결정 4 | 가져오기 이력 조회 화면을 만들 것인가 (C-4) | **만들지 않는다.** 감사 기록으로만 남긴다 |
@@ -45,6 +45,10 @@
 ## Task A — 잘못 동작하는 UI
 
 사용자가 실제로 막히는 결함이다. 우선순위가 가장 높다.
+
+**A-2 를 먼저 한다.** 세 건 중 유일하게 접근 권한이 걸린 문제다. 나머지 둘은 사용자가
+불편을 겪거나 저장 실패를 놓치는 것이지만, A-2 는 **잘못 초대한 편집자의 쓰기 권한을
+거둘 방법이 없는 상태**다.
 
 ### A-1. 팀원 초대의 Coach 선택은 반드시 실패한다
 
@@ -97,7 +101,7 @@ role: z.enum(['EDITOR'], {
 
 **위험.** 낮다. 화면에서 고를 수 없던 값을 제거하는 것이므로 기존 동작이 줄지 않는다.
 
-### A-2. 팀원 목록의 삭제 버튼이 동작하지 않는다
+### A-2. 팀원을 뺄 수 있는 방법이 아예 없다
 
 **증상.** `app/project/[id]/settings/page.tsx:354-358` 의 🗑️ 버튼에 `onClick` 이 없다.
 눌러도 아무 일이 없다.
@@ -110,22 +114,129 @@ role: z.enum(['EDITOR'], {
 )}
 ```
 
-**결정 1 이 필요하다.** 서버에도 팀원 삭제 엔드포인트가 없다
-(`app/api/projects/[id]/members/route.ts` 는 GET 과 POST 뿐이다).
+**이것은 버튼 하나의 문제가 아니다.** 저장소를 전수 확인한 결과 **팀원 한 명을 빼는
+경로가 코드 어디에도 없다.**
 
-**권고안 — 버튼을 제거한다.** 동작하지 않는 버튼은 없는 것보다 나쁘다. 팀원 삭제는
-소유권·접근 권한이 걸린 기능이라 확인 절차와 서버 검증이 따로 필요하므로 별도 과제로
-분리한다.
+| 확인한 것 | 결과 |
+| --- | --- |
+| `app/api/projects/[id]/members/route.ts` | `POST`(`:21`)와 `GET`(`:113`)뿐. `DELETE` 가 없다 |
+| 코드 전체의 `projectMember` 삭제 호출 | `lib/project-transfer.ts:122` 한 곳뿐 |
+| 그 한 곳이 하는 일 | 관리자의 소유권 이전 중 **옛 소유자와 대상 멘티 행만** 정리한다 |
+| 그 밖의 삭제 | `ProjectMember` 의 `onDelete: Cascade` 로 **회원 계정이나 프로젝트를 통째로 지울 때만** 사라진다 |
+
+따라서 지금 잘못 초대한 편집자를 빼려면 **그 사람의 계정을 지우거나 프로젝트를 통째로
+지우는 수밖에 없다.** 관리자에게 요청해도 같다. 관리자 화면에도 팀원 단위 제외 기능이
+없다.
+
+**그래서 버튼 제거는 답이 아니다.** 잘못 초대한 편집자가 프로젝트에 대한 쓰기 권한을
+영구히 갖는다. 화면에서 버튼만 사라지고 접근 권한을 회수할 수단이 없는 상태는 그대로
+남는다. 초대는 되는데 회수는 안 되는 비대칭 자체가 결함이다.
+
+**수정 — DELETE 라우트를 만들고 버튼을 잇는다.**
+
+다행히 범위가 작다. `ProjectMember` 에 딸린 하위 데이터가 없어 정리할 것이 없다.
+워크시트와 코멘트는 프로젝트에 속하므로 제외해도 남는다. 접근 권한은 요청마다
+`resolveProjectRole` 이 계산하므로 **제외 즉시 반영되고 세션을 따로 끊을 필요가 없다.**
+
+서버는 `app/api/projects/[id]/members/route.ts` 에 다음을 더한다.
+
+```ts
+// DELETE: 팀원 제외
+//
+// 초대(POST)만 있고 회수가 없으면 잘못 초대한 편집자의 쓰기 권한을 거둘 방법이
+// 계정 삭제뿐이 된다. 초대와 같은 권한(소유자)으로 회수도 할 수 있게 한다.
+export async function DELETE(
+    request: NextRequest,
+    props: { params: Promise<{ id: string }> }
+) {
+    const { id: projectId } = await props.params;
+    const accessResult = await requireProjectAccess(request, projectId, { roles: ['OWNER'] });
+    if (accessResult instanceof NextResponse) return accessResult;
+
+    try {
+        const { userId } = removeSchema.parse(await request.json());
+
+        const project = await prisma.project.findUnique({
+            where: { id: projectId },
+            select: { ownerId: true },
+        });
+        if (!project) {
+            return NextResponse.json({ error: '프로젝트를 찾을 수 없습니다.' }, { status: 404 });
+        }
+        // 소유자는 팀원 행이 아니라 프로젝트 자체에 붙는다. 지울 대상이 아니다.
+        if (userId === project.ownerId) {
+            return NextResponse.json({ error: '프로젝트 소유자는 제외할 수 없습니다.' }, { status: 400 });
+        }
+
+        // 동시에 두 번 눌러도 안전하도록 조건부 삭제로 처리하고 건수로 판정한다.
+        const removed = await prisma.projectMember.deleteMany({ where: { projectId, userId } });
+        if (removed.count === 0) {
+            return NextResponse.json({ error: '이 프로젝트의 팀원이 아닙니다.' }, { status: 404 });
+        }
+
+        // 이메일은 남기지 않는다(lib/logger.ts 규칙).
+        log.info('팀원 제외', { projectId, userId });
+        return NextResponse.json({ success: true });
+    } catch (error: unknown) {
+        if (error instanceof z.ZodError) {
+            return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
+        }
+        log.error('팀원 제외 오류', error);
+        return NextResponse.json({ error: '팀원 제외 중 오류가 발생했습니다.' }, { status: 500 });
+    }
+}
+```
+
+대상은 `ProjectMember.id` 가 아니라 **`userId` 로 지정한다.** `GET` 이 소유자를
+`id: 'owner'` 라는 가짜 행으로 끼워 넣기 때문에(`:138-146`) 행 id 는 키로 쓰기에
+불안정하고, 스키마의 `@@unique([projectId, userId])` 가 userId 를 자연 키로 만든다.
+
+```ts
+const removeSchema = z.object({
+    userId: z.string().min(1, '제외할 팀원을 선택하세요.'),
+});
+```
+
+화면은 버튼에 확인 절차를 붙인다. **무엇이 벌어지는지 말해야 한다.**
+
+```tsx
+{member.role !== 'OWNER' && (
+    <button
+        onClick={() => void handleRemoveMember(member.userId, member.name || member.email)}
+        disabled={removingUserId === member.userId}
+        className="text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50"
+        aria-label={`${member.name || member.email} 팀원 제외`}
+    >
+        {removingUserId === member.userId ? '제외 중...' : '🗑️'}
+    </button>
+)}
+```
+
+확인 문구는 이렇게 한다.
+
+> {이름} 님을 팀원에서 제외할까요? 이 프로젝트에 더 이상 접근할 수 없습니다. 작성한
+> 내용은 그대로 남습니다.
 
 **Steps**
 
-- [ ] 결정 1 을 확인한다.
-- [ ] (제거안) 위 `{member.role !== 'OWNER' && (...)}` 블록을 지운다.
-- [ ] (제거안) 목록 하단에 안내 한 줄을 둔다. `팀원 제외가 필요하면 관리자에게
-      요청하세요.`
-- [ ] (구현안을 고른 경우) 이 Task 를 중단하고 별도 계획서를 먼저 쓴다. DELETE 라우트,
-      소유자 검증, 확인 절차, 남은 작업물 처리를 설계해야 한다.
-- [ ] 매뉴얼 `docs/manual/05-mentee.md` 의 휴지통 주의 문구와 부록 E 줄을 지운다.
+- [ ] 결정 1 을 확인한다. 소유자만 허용할지, 시스템 관리자(`roles: ['OWNER', 'ADMIN']`)
+      까지 허용할지다. 권고는 소유자만이며 초대 권한과 대칭을 이룬다.
+- [ ] `tests/api-project-members.test.ts` 에 RED 테스트를 먼저 추가한다. 소유자가 아닌
+      사람의 제외 거절, 소유자 본인 제외 거절, 팀원이 아닌 userId 거절, 정상 제외,
+      **제외 뒤 그 사람의 프로젝트 접근이 실제로 막히는지**까지 검증한다.
+- [ ] `DELETE` 핸들러를 더한다. 기존 `POST`·`GET` 의 계약은 건드리지 않는다.
+- [ ] 화면의 버튼에 확인 창과 처리 중 표시를 잇고, 성공 후 목록을 다시 불러온다.
+- [ ] 제외해도 워크시트 코멘트와 작성물이 남는지 테스트로 고정한다.
+- [ ] 매뉴얼 `docs/manual/05-mentee.md` 5.4 절의 휴지통 주의 문구를 새 동작 설명으로
+      바꾸고 부록 E 줄을 지운다.
+
+**위험.** 중간이다. 접근 권한을 거두는 기능이라 잘못 만들면 남의 프로젝트에서 팀원을
+뺄 수 있게 된다. 권한 검사를 `POST` 와 같은 `roles: ['OWNER']` 로 두고, 소유자 본인과
+비팀원 userId 를 반드시 막는다.
+
+**범위 밖.** 멘토는 `ProjectMember` 가 아니라 `MentorAssignment` 로 붙으므로 이
+기능으로 빠지지 않는다. 멘토 해제는 관리자·매니저의 멘토 배정 화면에서 한다. 화면
+안내에도 이 구분을 적는다.
 
 ### A-3. WS-15 저장 실패가 화면에 표시되지 않는다
 
