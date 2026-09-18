@@ -158,6 +158,35 @@ export const fundingBodySchema = z.object({
     sources: z.array(fundingSourceRowSchema).optional(),
 });
 
+// ── spec functions ────────────────────────────────────────────
+export const specFunctionRowSchema = z.object({
+    id: z.string().trim().min(1).optional(),
+    level: z.enum(['CORE', 'SUB', 'DETAIL']),
+    parentId: z.string().trim().min(1).optional().nullable(),
+    name: z.string().trim().min(1),
+    technology: optionalText,
+    order: z.coerce.number().int().finite().nonnegative(),
+});
+export const specFunctionsBodySchema = z.object({
+    specFunctions: z.array(specFunctionRowSchema),
+});
+
+// ── fitness matrix ────────────────────────────────────────────
+const jsonTextSchema = z.string().refine((value) => {
+    try {
+        JSON.parse(value);
+        return true;
+    } catch {
+        return false;
+    }
+}, { message: '올바른 JSON 문자열을 입력하세요.' });
+export const fitnessMatrixBodySchema = z.object({
+    marketsJson: jsonTextSchema,
+    matrixJson: jsonTextSchema,
+    managerComment: optionalText,
+    consultantNote: optionalText,
+});
+
 export type TargetSpecRow = z.infer<typeof targetSpecRowSchema>;
 export type SalesRow = z.infer<typeof salesRowSchema>;
 export type TechRoadmapRow = z.infer<typeof techRoadmapRowSchema>;

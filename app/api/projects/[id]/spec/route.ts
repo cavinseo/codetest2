@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
+import { specFunctionsBodySchema } from '@/lib/bulk-save-schemas';
 
 const log = createLogger('api/spec');
 
@@ -64,15 +65,11 @@ export async function POST(
             );
         }
 
-        const body = await request.json();
-        const newSpecs: Array<{
-            id?: string;
-            level: string;
-            name: string;
-            parentId?: string;
-            technology?: string;
-            order: number;
-        }> = body.specFunctions || [];
+        const parsed = specFunctionsBodySchema.safeParse(await request.json().catch(() => null));
+        if (!parsed.success) {
+            return NextResponse.json({ error: '유효하지 않은 스펙 데이터입니다.' }, { status: 400 });
+        }
+        const { specFunctions: newSpecs } = parsed.data;
 
         if (newSpecs.length === 0) {
             return NextResponse.json({
