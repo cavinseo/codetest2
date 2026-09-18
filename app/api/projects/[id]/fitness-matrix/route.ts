@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 import { isValidFitnessMatrixJson } from '@/lib/fitness-matrix-data';
+import { fitnessMatrixBodySchema } from '@/lib/bulk-save-schemas';
 
 // GET: 적합도 매트릭스 로드
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -24,17 +25,13 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
-        const body = await readJsonBody(request);
-        const { marketsJson, matrixJson, managerComment, consultantNote } = (body ?? {}) as Record<string, unknown>;
-        // 깨진 값이 한 번 저장되면 엑셀 내보내기와 최종 보고서가 실패하므로 저장 전에 거른다.
-        const isOptionalText = (value: unknown) => value === undefined || value === null || typeof value === 'string';
-        if (!isValidFitnessMatrixJson(marketsJson, matrixJson) || !isOptionalText(managerComment) || !isOptionalText(consultantNote)) {
+        // 형식(문자열·JSON)은 스키마로, 내용(시장·행렬 구조)은 isValidFitnessMatrixJson 으로 거른다.
+        // 깨진 값이 한 번 저장되면 엑셀 내보내기와 최종 보고서가 실패한다.
+        const parsed = fitnessMatrixBodySchema.safeParse(await readJsonBody(request));
+        if (!parsed.success || !isValidFitnessMatrixJson(parsed.data.marketsJson, parsed.data.matrixJson)) {
             return NextResponse.json({ error: '제품속성적합도 저장 형식이 올바르지 않습니다.' }, { status: 400 });
         }
-        const data = {
-            marketsJson: marketsJson as string, matrixJson: matrixJson as string,
-            managerComment: managerComment as string | null | undefined, consultantNote: consultantNote as string | null | undefined,
-        };
+        const data = parsed.data;
         const record = await prisma.fitnessMatrix.upsert({
             where: { projectId },
             update: data,

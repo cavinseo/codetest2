@@ -4,6 +4,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { specFunctionsBodySchema } from '@/lib/bulk-save-schemas';
 
 const log = createLogger('api/spec');
 
@@ -91,20 +92,13 @@ export async function POST(
             );
         }
 
-        const body = await readJsonBody(request);
         // 빈 배열은 "전부 지움"(행을 다 지운 저장·초기화 버튼)이라, 키가 빠진 요청까지 빈 목록으로
-        // 받아 주면 잘못된 요청 하나로 스펙 전체가 지워진다. 배열이 아니면 거절한다.
-        if (!Array.isArray(body?.specFunctions)) {
-            return NextResponse.json({ error: 'specFunctions 배열이 필요합니다.' }, { status: 400 });
+        // 받아 주면 잘못된 요청 하나로 스펙 전체가 지워진다. 스키마가 배열·단계·이름을 확인한다.
+        const parsed = specFunctionsBodySchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+            return NextResponse.json({ error: '유효하지 않은 스펙 데이터입니다.' }, { status: 400 });
         }
-        const newSpecs: Array<{
-            id?: string;
-            level: string;
-            name: string;
-            parentId?: string;
-            technology?: string;
-            order: number;
-        }> = body.specFunctions;
+        const newSpecs = parsed.data.specFunctions;
 
         // 삭제와 삽입을 하나의 트랜잭션으로 묶어 중간 실패 시 롤백한다. 빈 목록이면 삭제만 한다 —
         // 예전에는 빈 목록을 저장 성공으로만 답하고 아무것도 지우지 않아, 행을 다 지우거나
