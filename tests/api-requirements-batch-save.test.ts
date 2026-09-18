@@ -5,6 +5,8 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
     access: vi.fn(),
     deletedExistingCount: vi.fn(),
+    // 트랜잭션 밖에서 "다른 프로젝트의 id" 를 찾는 조회(main 의 기본키 노출 방지)
+    foreignFindMany: vi.fn(),
     transaction: vi.fn(),
     deleteMany: vi.fn(),
     findMany: vi.fn(),
@@ -15,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
-        customerRequirement: { count: mocks.deletedExistingCount },
+        customerRequirement: { count: mocks.deletedExistingCount, findMany: mocks.foreignFindMany },
         $transaction: mocks.transaction,
     },
 }));
@@ -38,6 +40,7 @@ beforeEach(() => {
     mocks.access.mockResolvedValue({ user: { userId: 'user-1' }, role: 'OWNER' });
     mocks.deletedExistingCount.mockResolvedValue(0);
     mocks.findMany.mockResolvedValue([]);
+    mocks.foreignFindMany.mockResolvedValue([]);
     mocks.updateMany.mockResolvedValue({ count: 0 });
     mocks.create.mockResolvedValue({});
     mocks.transaction.mockImplementation(async (callback) => callback({
