@@ -8,15 +8,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
 const findRequirements = vi.fn();
-const findInvitation = vi.fn();
-const createInvitation = vi.fn();
 const createManyResponses = vi.fn();
+const deleteManyResponses = vi.fn();
+const upsertInvitation = vi.fn();
+const lockProject = vi.fn();
+const tx = {
+    $queryRaw: lockProject,
+    kanoSurveyInvitation: { upsert: upsertInvitation },
+    kanoResponse: { deleteMany: deleteManyResponses, createMany: createManyResponses },
+};
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
         customerRequirement: { findMany: findRequirements },
-        kanoSurveyInvitation: { findUnique: findInvitation, create: createInvitation },
-        kanoResponse: { createMany: createManyResponses },
+        $transaction: (callback: (client: typeof tx) => unknown) => callback(tx),
     },
 }));
 
@@ -57,8 +62,7 @@ const params = Promise.resolve({ id: 'proj_1' });
 beforeEach(() => {
     requireProjectAccess.mockResolvedValue({ user: REQUESTER, role: 'OWNER' });
     findRequirements.mockResolvedValue([{ id: 'req_1', order: 0 }]);
-    findInvitation.mockResolvedValue(null);
-    createInvitation.mockResolvedValue({ id: 'inv_1' });
+    upsertInvitation.mockResolvedValue({ id: 'inv_1' });
     createManyResponses.mockResolvedValue({ count: 1 });
     getFormResponses.mockResolvedValue({
         responses: [
@@ -80,24 +84,65 @@ describe('form-responses 시스템 초대', () => {
         const res = await POST(postRequest({ formId: 'form_1' }), { params });
 
         expect(res.status).toBe(200);
-        expect(createInvitation).toHaveBeenCalledTimes(1);
-        const created = createInvitation.mock.calls[0][0].data;
+        expect(upsertInvitation).toHaveBeenCalledTimes(1);
+        const created = upsertInvitation.mock.calls[0][0].create;
         expect(created.invitedBy).toBe('user_42');
     });
 
     it("invitedBy 에 'system' 같은 가짜 ID 를 넣지 않는다", async () => {
         await POST(postRequest({ formId: 'form_1' }), { params });
 
-        const created = createInvitation.mock.calls[0][0].data;
+        const created = upsertInvitation.mock.calls[0][0].create;
         expect(created.invitedBy).not.toBe('system');
     });
 
-    it('초대가 이미 있으면 새로 만들지 않는다', async () => {
-        findInvitation.mockResolvedValue({ id: 'inv_old' });
+    it('초대가 이미 있으면 기존 ID에 응답을 저장한다', async () => {
+        upsertInvitation.mockResolvedValue({ id: 'inv_old' });
 
         await POST(postRequest({ formId: 'form_1' }), { params });
 
-        expect(createInvitation).not.toHaveBeenCalled();
         expect(createManyResponses.mock.calls[0][0].data[0].invitationId).toBe('inv_old');
+    });
+
+    it('같은 Google Forms 응답을 다시 가져오면 기존 응답을 지운 뒤 한 번만 저장한다', async () => {
+        const response = await POST(postRequest({ formId: 'form_1' }), { params });
+
+        expect(response.status).toBe(200);
+        expect(lockProject.mock.calls[0][0].join('')).toContain('pg_advisory_xact_lock');
+        expect(lockProject.mock.calls[0].slice(1)).toContain('google-forms-sync:proj_1');
+        expect(deleteManyResponses).toHaveBeenCalledWith({
+            where: {
+                projectId: 'proj_1',
+                invitationId: 'inv_1',
+                OR: [{ respondentEmail: 'r@example.com', requirementId: 'req_1' }],
+            },
+        });
+        expect(deleteManyResponses.mock.invocationCallOrder[0]).toBeLessThan(
+            createManyResponses.mock.invocationCallOrder[0]
+        );
+    });
+
+    it('같은 응답자의 같은 요구사항은 가장 마지막 응답만 한 번 저장한다', async () => {
+        getFormResponses.mockResolvedValue({
+            responses: [
+                {
+                    respondentEmail: 'r@example.com',
+                    submittedAt: '2026-08-20T00:00:00.000Z',
+                    answers: [{ requirementIndex: 0, functional: 'LIKE', dysfunctional: 'TOLERATE' }],
+                },
+                {
+                    respondentEmail: 'r@example.com',
+                    submittedAt: '2026-08-21T00:00:00.000Z',
+                    answers: [{ requirementIndex: 0, functional: 'EXPECT', dysfunctional: 'LIKE' }],
+                },
+            ],
+        });
+
+        const response = await POST(postRequest({ formId: 'form_1' }), { params });
+
+        expect((await response.json()).importedCount).toBe(1);
+        expect(createManyResponses.mock.calls[0][0].data).toMatchObject([
+            { respondentEmail: 'r@example.com', requirementId: 'req_1', positiveAnswer: 2, negativeAnswer: 1 },
+        ]);
     });
 });
