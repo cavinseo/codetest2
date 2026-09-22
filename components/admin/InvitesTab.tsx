@@ -1,5 +1,5 @@
 'use client';
-// 멘티 초대 코드 발행·목록·회수 화면. 관리자와 프로그램 매니저가 함께 쓴다.
+// 멘티 초대 코드 발행·목록·회수·삭제 화면. 관리자와 프로그램 매니저가 함께 쓴다.
 //
 // 멘토는 여기서 만들지 않는다(정식 등록으로만 들어온다). 코드는 반드시
 // 프로그램에 묶인다 — 그 코드로 가입한 멘티는 그 프로그램에만 속하게 된다.
@@ -37,7 +37,7 @@ export default function InvitesTab() {
     const [expiresAt, setExpiresAt] = useState('');
     const [editingExpiry, setEditingExpiry] = useState<{ id: string; value: string; error: string } | null>(null);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-    const [operation, setOperation] = useState<'issue' | 'revoke' | 'resend' | 'extend' | 'link' | null>(null);
+    const [operation, setOperation] = useState<'issue' | 'revoke' | 'delete' | 'resend' | 'extend' | 'link' | null>(null);
     const [canLinkExistingMember, setCanLinkExistingMember] = useState(false);
     const [linkingInvite, setLinkingInvite] = useState<Invite | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -157,6 +157,33 @@ export default function InvitesTab() {
             await loadInvitesAndPrograms();
         } catch {
             if (isMounted.current) setMessage({ type: 'error', text: '회수 결과를 확인하지 못했습니다. 목록을 새로고침하세요.' });
+        } finally {
+            finishOperation();
+        }
+    };
+
+    const deleteInvite = async (invite: Invite) => {
+        if (operationInFlight.current || invite.usedAt || invite.usedById) return;
+        if (!window.confirm(`${invite.programName} · ${invite.email} 초대 코드를 삭제하시겠습니까?\n삭제한 코드는 복구할 수 없습니다.`)) return;
+        operationInFlight.current = true;
+        setOperation('delete');
+        setMessage(null);
+        try {
+            const res = await fetch(`/api/invites/${encodeURIComponent(invite.id)}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => null);
+            if (!isMounted.current) return;
+            if (!res.ok || data?.success !== true) {
+                setMessage({ type: 'error', text: data?.error || '삭제 결과를 확인하지 못했습니다. 목록을 새로고침하세요.' });
+                if (res.status === 409) await loadInvitesAndPrograms();
+                return;
+            }
+            // 이전 목록 요청의 늦은 응답이 삭제한 행을 다시 표시하지 않게 한다.
+            latestLoadRequestId.current += 1;
+            setInvites((prev) => prev.filter((item) => item.id !== invite.id));
+            setEditingExpiry((prev) => prev?.id === invite.id ? null : prev);
+            setMessage({ type: 'success', text: '초대 코드를 삭제했습니다.' });
+        } catch {
+            if (isMounted.current) setMessage({ type: 'error', text: '삭제 결과를 확인하지 못했습니다. 목록을 새로고침하세요.' });
         } finally {
             finishOperation();
         }
@@ -285,6 +312,7 @@ export default function InvitesTab() {
                 </ul>
             </div>}
 
+            <p className="text-xs text-gray-500">미사용이며 회원이 연결되지 않은 초대 코드만 삭제할 수 있습니다. 만료·회수된 코드도 이 조건이면 삭제할 수 있습니다.</p>
             {isLoading ? (
                 <div className="card text-center py-16"><p className="text-gray-500 text-sm">초대 정보를 불러오는 중...</p></div>
             ) : invites.length === 0 ? (!loadError && (
@@ -346,6 +374,11 @@ export default function InvitesTab() {
                                                 회수
                                             </button>
                                         )}
+                                        <button type="button" onClick={() => deleteInvite(invite)}
+                                            disabled={isBusy || Boolean(invite.usedAt || invite.usedById)}
+                                            title={invite.usedAt || invite.usedById ? '사용했거나 회원이 연결된 초대 코드는 삭제할 수 없습니다.' : '초대 코드와 발급 기록을 삭제합니다.'}
+                                            className="text-xs ml-2 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                            id={`invites-delete-${invite.id}`}>삭제</button>
                                     </td>
                                 </tr>
                             ))}
