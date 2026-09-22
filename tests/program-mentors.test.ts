@@ -10,6 +10,7 @@ let root: Root;
 const fetchMock = vi.fn();
 const mentor = { id: 'mentor', name: '멘토 하나', email: 'mentor@example.com', role: 'MENTOR' };
 const previous = { id: 'previous', name: '기존 멘토', email: 'previous@example.com', role: 'MENTOR' };
+const manager = { id: 'manager', name: '담당 매니저', email: 'manager@example.com', role: 'PROGRAM_MANAGER' };
 let rows: Array<{ id: string; name: string; email: string; mentorAssignment: null | { mentorId: string; mentor: typeof mentor } }>;
 let failedIds: string[];
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
@@ -43,11 +44,11 @@ beforeEach(() => {
     fetchMock.mockImplementation(async (input, init) => {
         const url = String(input);
         if (url === '/api/programs/program/mentees') return json({ mentees: rows });
-        if (url.endsWith('?candidates=1')) return json({ candidates: [mentor, previous] });
+        if (url.endsWith('?candidates=1')) return json({ candidates: [mentor, previous, manager] });
         const id = url.split('/')[3];
         if (failedIds.includes(id)) return json({ error: '배정 권한을 확인하세요.' }, 403);
         if (init?.method === 'POST') {
-            const target = JSON.parse(init.body).userId === mentor.id ? mentor : previous;
+            const target = [mentor, previous, manager].find(candidate => candidate.id === JSON.parse(init.body).userId)!;
             rows = rows.map(row => row.id === id ? { ...row, mentorAssignment: { mentorId: target.id, mentor: target } } : row);
             return json({ success: true });
         }
@@ -80,6 +81,21 @@ it('선택한 두 멘티를 한 멘토에게 배정하고 미선택 멘티의 �
     expect(rows.map(row => row.mentorAssignment?.mentorId)).toEqual(['mentor', 'mentor', 'previous']);
     expect(container.textContent).toContain('2명을 배정했습니다.');
     expect(window.confirm).not.toHaveBeenCalled();
+});
+it('프로그램 매니저를 멘토로 선택해 배정하고 해제할 수 있다', async () => {
+    await open();
+    expect(container.querySelector('option[value="manager"]')?.textContent).toBe('담당 매니저 (프로그램 매니저)');
+    await chooseMentor(manager.id);
+    await selectMentee('멘티 가');
+    await click('선택한 1명에게 배정');
+    expect(writes().map(([url, init]) => [url, JSON.parse(init.body)])).toEqual([
+        ['/api/mentees/m1/mentor', { userId: manager.id }],
+    ]);
+    expect(rows[0].mentorAssignment?.mentorId).toBe(manager.id);
+    expect(container.textContent).toContain('담당 멘토: 담당 매니저');
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="멘티 가 멘토 배정 해제"]')!.click(); });
+    expect(rows[0].mentorAssignment).toBeNull();
+    expect(rows[2].mentorAssignment?.mentorId).toBe(previous.id);
 });
 it('다른 멘토를 교체할 때만 확인하고 취소하면 배정을 유지한다', async () => {
     await open();

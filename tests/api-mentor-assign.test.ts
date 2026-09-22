@@ -13,7 +13,8 @@ vi.mock('../lib/prisma', () => ({ prisma: {
     $transaction: mocks.transaction,
 } }));
 import { GET, POST, DELETE } from '../app/api/projects/[id]/mentors/route';
-import { POST as assignMentee } from '../app/api/mentees/[id]/mentor/route';
+import { POST as assignMentee, DELETE as unassignMentee } from '../app/api/mentees/[id]/mentor/route';
+import { requireProjectAccess } from '../lib/authorization';
 const params = { params: Promise.resolve({ id: 'p1' }) };
 const request = (method = 'POST', userId = 'mentor') => new NextRequest('http://localhost/api/projects/p1/mentors', {
     method, ...(method === 'GET' ? {} : { body: JSON.stringify({ userId }) }),
@@ -88,6 +89,38 @@ it('프로그램 매니저를 멘토로 지정할 수 있다', async () => {
         .mockResolvedValueOnce({ id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } })
         .mockResolvedValueOnce({ id: 'mentor', role: 'PROGRAM_MANAGER', status: 'APPROVED' });
     expect((await POST(request(), params)).status).toBe(200);
+});
+it.each(['mentee', 'project'])('담당 매니저가 %s 경로로 자신을 멘토로 배정하면 편집 권한이 생기고 해제하면 회수된다', async entry => {
+    let mentorId: string | null = null;
+    mocks.user.mockImplementation(async ({ where }) => where.id === 'mentee'
+        ? { id: 'mentee', role: 'MENTEE', program: { managerId: 'manager' } }
+        : { id: 'manager', role: 'PROGRAM_MANAGER', status: 'APPROVED', accessExpiresAt: null });
+    mocks.project.mockImplementation(async () => ({
+        ownerId: 'mentee', members: [], owner: { mentorAssignment: mentorId ? { mentorId } : null },
+    }));
+    mocks.upsert.mockImplementation(async ({ create }) => { mentorId = create.mentorId; });
+    mocks.remove.mockImplementation(async () => { mentorId = null; });
+    expect(await requireProjectAccess(request('GET'), 'p1')).toMatchObject({ role: 'VIEWER' });
+    expect((await requireProjectAccess(request(), 'p1', { write: true }) as NextResponse).status).toBe(403);
+
+    const endpointParams = entry === 'mentee' ? { params: Promise.resolve({ id: 'mentee' }) } : params;
+    const assign = entry === 'mentee' ? assignMentee : POST;
+    const unassign = entry === 'mentee' ? unassignMentee : DELETE;
+    expect((await assign(request('POST', 'manager'), endpointParams)).status).toBe(200);
+    expect(mentorId).toBe('manager');
+    expect(await requireProjectAccess(request(), 'p1', { write: true })).toMatchObject({
+        role: 'EDITOR', user: { userId: 'manager', role: 'PROGRAM_MANAGER' },
+    });
+
+    expect((await unassign(request('DELETE', 'manager'), endpointParams)).status).toBe(200);
+    expect(await requireProjectAccess(request('GET'), 'p1')).toMatchObject({ role: 'VIEWER' });
+    expect((await requireProjectAccess(request(), 'p1', { write: true }) as NextResponse).status).toBe(403);
+});
+it('다른 프로그램의 매니저가 자신을 멘토로 배정하는 요청도 차단한다', async () => {
+    mocks.auth.mockResolvedValue({ userId: 'other', role: 'PROGRAM_MANAGER' });
+    expect((await assignMentee(request('POST', 'other'), { params: Promise.resolve({ id: 'mentee' }) })).status).toBe(403);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
 });
 it('해당 멘티의 배정 한 건만 조회한다', async () => {
     mocks.assignment.mockResolvedValue({ mentorId: 'mentor', mentor: { name: '멘토', role: 'MENTOR' } });
