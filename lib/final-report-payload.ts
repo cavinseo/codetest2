@@ -4,6 +4,7 @@ import { worksheetAnalysisSchema } from '@/lib/mentor-worksheet-analysis';
 
 // Vercel 요청·응답 한도보다 여유를 두고 메타데이터를 함께 반환한다.
 export const REPORT_MAX_BYTES = 3_500_000;
+const REPORT_MAX_TABLE_CELLS = 10_000;
 const text = z.string().max(100_000);
 const image = z.string().max(REPORT_MAX_BYTES).regex(/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/)
     .refine(value => value.slice(value.indexOf(',') + 1).length % 4 === 0, '이미지 데이터의 Base64 길이가 올바르지 않습니다.');
@@ -40,11 +41,17 @@ export const reportDocumentSchema = z.object({
     fileName: z.string().max(255).regex(/^[^\\/\u0000-\u001f]+\.docx$/i),
     blocks: z.array(blockSchema).max(500),
 }).strict().superRefine((document, context) => {
+    let tableCells = 0;
     document.blocks.forEach((block, index) => {
+        if (block.kind === 'keyValueTable') tableCells += block.rows.length * 2;
         if (block.kind === 'dataTable' && block.rows.some(row => row.length !== block.headers.length)) {
             context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'rows'], message: '표의 열 수가 일치하지 않습니다.' });
         }
+        if (block.kind === 'dataTable') tableCells += block.headers.length * (block.rows.length + 1);
     });
+    if (tableCells > REPORT_MAX_TABLE_CELLS) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks'], message: '보고서의 표 셀이 너무 많습니다.' });
+    }
 });
 
 export const reportDraftSchema = z.object({

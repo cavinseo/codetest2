@@ -89,6 +89,19 @@ describe('결과보고서 초안 형식', () => {
         expect(reportDraftSchema.safeParse(draft([{ kind: 'dataTable', headers: ['열'], rows: [...rows, ['값']] }])).success).toBe(false);
     });
 
+    it('문서 전체의 표 셀은 10,000개까지 허용하고 여러 표의 합계가 넘으면 거절한다', () => {
+        const headers = Array.from({ length: 100 }, () => '열');
+        const row = Array.from({ length: 100 }, () => '');
+        const table = (count: number) => ({ kind: 'dataTable', headers, rows: Array.from({ length: count }, () => row) });
+
+        expect(reportDraftSchema.safeParse(draft([table(99)])).success).toBe(true);
+        expect(reportDraftSchema.safeParse(draft([table(49), table(49)])).success).toBe(true);
+        expect(reportDraftSchema.safeParse(draft([table(49), table(50)])).success).toBe(false);
+        const rows = Array.from({ length: 5000 }, () => ({ label: '', value: '' }));
+        expect(reportDraftSchema.safeParse(draft([{ kind: 'keyValueTable', rows }])).success).toBe(true);
+        expect(reportDraftSchema.safeParse(draft([{ kind: 'keyValueTable', rows }, { kind: 'keyValueTable', rows: [{ label: '', value: '' }] }])).success).toBe(false);
+    });
+
     it.each(['../report.docx', 'folder/report.docx', 'folder\\report.docx', 'report.txt', 'report\u0000.docx'])('경로나 잘못된 확장자·제어 문자가 있는 파일명 %s는 거절한다', (fileName) => {
         expect(reportDraftSchema.safeParse({ free: free(), document: { ...document(), fileName } }).success).toBe(false);
     });

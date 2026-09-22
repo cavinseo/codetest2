@@ -2,6 +2,7 @@
 // 직렬화 자체(블록별 렌더링)는 lib/final-report-docx.ts 쪽 tests/final-report-docx.test.ts 가 맡는다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
+import { REPORT_MAX_BYTES } from '../lib/final-report-payload';
 
 const renderFinalReportDocx = vi.fn();
 vi.mock('../lib/final-report-docx', () => ({
@@ -71,6 +72,48 @@ describe('POST /api/projects/[id]/report/docx', () => {
 
     it('blocks 가 배열이 아니면 400 으로 막는다', async () => {
         const res = await call({ ...MODEL, blocks: 'oops' });
+
+        expect(res.status).toBe(400);
+        expect(renderFinalReportDocx).not.toHaveBeenCalled();
+    });
+
+    it('블록 내부 형식이 잘못되면 직렬화하지 않는다', async () => {
+        const res = await call({ ...MODEL, blocks: [{ kind: 'image', title: '사진', pngDataUrl: 'invalid', widthMm: 10, heightMm: 10, landscape: false }] });
+
+        expect(res.status).toBe(400);
+        expect(renderFinalReportDocx).not.toHaveBeenCalled();
+    });
+
+    it('용량 안에 들어도 표 셀 총합이 지나치게 많으면 직렬화하지 않는다', async () => {
+        const headers = Array.from({ length: 100 }, () => '열');
+        const row = Array.from({ length: 100 }, () => '');
+        const table = { kind: 'dataTable', headers, rows: Array.from({ length: 100 }, () => row) };
+        const res = await call({ ...MODEL, blocks: [table] });
+
+        expect(res.status).toBe(400);
+        expect(renderFinalReportDocx).not.toHaveBeenCalled();
+    });
+
+    it('요청 본문이 보고서 용량 제한을 넘으면 직렬화하지 않는다', async () => {
+        const res = await call({ ...MODEL, blocks: [{ kind: 'paragraph', text: 'x'.repeat(REPORT_MAX_BYTES) }] });
+
+        expect(res.status).toBe(413);
+        expect(renderFinalReportDocx).not.toHaveBeenCalled();
+    });
+
+    it('Content-Length 가 제한을 넘으면 본문을 읽기 전에 거절한다', async () => {
+        const request = new NextRequest('http://localhost/api/projects/proj_1/report/docx', {
+            method: 'POST', headers: { 'Content-Length': String(REPORT_MAX_BYTES + 1) }, body: JSON.stringify(MODEL),
+        });
+        const res = await POST(request, { params: Promise.resolve({ id: 'proj_1' }) });
+
+        expect(res.status).toBe(413);
+        expect(renderFinalReportDocx).not.toHaveBeenCalled();
+    });
+
+    it('JSON 형식이 잘못되면 400 으로 응답한다', async () => {
+        const request = new NextRequest('http://localhost/api/projects/proj_1/report/docx', { method: 'POST', body: '{bad json' });
+        const res = await POST(request, { params: Promise.resolve({ id: 'proj_1' }) });
 
         expect(res.status).toBe(400);
         expect(renderFinalReportDocx).not.toHaveBeenCalled();

@@ -107,6 +107,7 @@ export default function FinalReportPage() {
     const [publishedAt, setPublishedAt] = useState<string | null>(null);
     const [payloads, setPayloads] = useState<Record<string, unknown> | null>(null);
     const [worksheetsLoading, setWorksheetsLoading] = useState(false);
+    const [captureRevision, setCaptureRevision] = useState(0);
     const [loadedCount, setLoadedCount] = useState(0);
     const [failedKeys, setFailedKeys] = useState<string[]>([]);
     const [free, setFree] = useState<FinalReportFreeInput>(EMPTY_FREE_INPUT);
@@ -298,6 +299,7 @@ export default function FinalReportPage() {
                 const node = document.querySelector<HTMLElement>(`[data-worksheet-id="${target.id}"]`);
                 if (!node) throw new Error(`${target.title} 화면을 찾지 못했습니다.`);
                 if (node.querySelector('.animate-spin')) throw new Error(`${target.title} 화면을 불러오는 중입니다. 값이 표시된 뒤 다시 만들어 주세요.`);
+                if (node.querySelector('[role="alert"]')) throw new Error(`${target.title} 화면을 불러오지 못했습니다. 워크시트를 다시 불러온 뒤 미리보기를 만들어 주세요.`);
                 if (target.id === 'qfd' && node.textContent?.includes('QFD 데이터를 불러오지 못했습니다.')) {
                     throw new Error('QFD 화면을 불러오지 못했습니다. 워크시트를 다시 불러온 뒤 미리보기를 만들어 주세요.');
                 }
@@ -355,7 +357,10 @@ export default function FinalReportPage() {
             setPublishedAt(latest.publishedAt);
             setPreviewNeedsRefresh(Boolean(latest.draft?.document) || (latest.draft?.previewNeedsRefresh ?? false));
             setHasLocalChanges(Boolean(latest.canEdit));
-            if (latest.canEdit) await loadWorksheets();
+            if (latest.canEdit) {
+                setCaptureRevision(revision => revision + 1);
+                await loadWorksheets();
+            }
         } catch (error) { fail(error, '최신 분석을 불러오지 못했습니다.'); }
         finally { finish(); }
     }
@@ -496,13 +501,13 @@ export default function FinalReportPage() {
         {editing && !worksheetsLoading && worksheets && <div className="space-y-6">
             <p className="text-sm text-gray-400">아래 워크시트는 읽기 전용이며 문서의 그림으로 저장됩니다. 값이 표시된 뒤 미리보기를 만들어 주세요.</p>
             <section className="card overflow-x-auto p-0"><h3 className="border-b border-white/[0.06] px-4 py-3 text-sm font-semibold text-white">[WS-4] 제품속성적합도</h3>
-                <div inert data-worksheet-id="fitness" style={{ width: CAPTURE_WIDTH_PX }} className="p-4"><FitnessWrapper projectId={projectId} /></div>
+                <div inert data-worksheet-id="fitness" style={{ width: CAPTURE_WIDTH_PX }} className="p-4"><FitnessWrapper key={captureRevision} projectId={projectId} /></div>
             </section>
             <section className="card overflow-x-auto p-0"><h3 className="border-b border-white/[0.06] px-4 py-3 text-sm font-semibold text-white">[WS-7] TIMKO/만족계수 그래프</h3>
                 <div inert data-worksheet-id="kano-aggregation" style={{ width: CAPTURE_WIDTH_PX }} className="p-4">{kanoPoints.length ? <KanoSatisfactionGraph analysis={kanoPoints} /> : <p className="text-sm text-gray-400">Kano 응답이 없어 산점도를 그릴 수 없습니다. (요구사항 {worksheets.requirements.length}개)</p>}</div>
             </section>
             <section className="card overflow-x-auto p-0"><h3 className="border-b border-white/[0.06] px-4 py-3 text-sm font-semibold text-white">[WS-9] QFD</h3>
-                <div inert data-worksheet-id="qfd" style={{ width: CAPTURE_WIDTH_PX }} className="p-4"><QFDMatrix projectId={projectId} /></div>
+                <div inert data-worksheet-id="qfd" style={{ width: CAPTURE_WIDTH_PX }} className="p-4"><QFDMatrix key={captureRevision} projectId={projectId} /></div>
             </section>
         </div>}
 
