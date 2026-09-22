@@ -10,6 +10,7 @@ let root: Root;
 const fetchMock = vi.fn();
 const postMock = vi.fn();
 const deleteMock = vi.fn();
+const removeMock = vi.fn();
 const patchMock = vi.fn();
 const linkPreviewMock = vi.fn();
 const linkPostMock = vi.fn();
@@ -76,10 +77,12 @@ beforeEach(() => {
     Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
     postMock.mockImplementation(async () => response({ success: true, emailSent: true, code: 'NEW-CODE' }));
     deleteMock.mockImplementation(async () => response({ success: true }));
+    removeMock.mockImplementation(async () => response({ success: true, id: invite.id }));
     patchMock.mockImplementation(async (body) => response({ success: true, invite: { id: body.id, expiresAt: `${body.expiresAt}T14:59:59.999Z` } }));
     linkPreviewMock.mockImplementation(async () => response({ preview: linkPreview }));
     linkPostMock.mockImplementation(async () => response({ success: true }));
     fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
+        if (url.startsWith('/api/invites/') && options?.method === 'DELETE') return removeMock(url);
         if (url.endsWith('/link')) return options?.method === 'POST'
             ? linkPostMock(JSON.parse(options.body as string)) : linkPreviewMock();
         if (options?.method === 'POST') return postMock(JSON.parse(options.body as string));
@@ -104,6 +107,62 @@ afterEach(async () => {
 it('여러 줄 이메일 입력란을 표시한다', async () => {
     await renderInvites();
     expect(container.querySelector('#invites-email')?.tagName).toBe('TEXTAREA');
+});
+
+it('삭제를 취소하면 요청을 보내거나 행을 제거하지 않는다', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await renderInvites();
+    await click('#invites-delete-existing');
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining(invite.email));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('복구할 수 없습니다'));
+    expect(removeMock).not.toHaveBeenCalled();
+    expect(container.querySelector('table')!.textContent).toContain(invite.code);
+});
+
+it('삭제 응답 전에는 행을 보존하고 중복 삭제·발급·회수를 막으며 성공하면 행을 제거한다', async () => {
+    const pending = deferred<Response>();
+    removeMock.mockImplementationOnce(() => pending.promise);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await renderInvites();
+    await enterEmails('next@example.com'); await enterExpiry();
+    await act(async () => {
+        const button = container.querySelector<HTMLButtonElement>('#invites-delete-existing')!;
+        button.click(); button.click();
+    });
+    expect(removeMock).toHaveBeenCalledExactlyOnceWith('/api/invites/existing');
+    expect(container.querySelector('table')!.textContent).toContain(invite.code);
+    for (const id of ['invites-delete-existing', 'invites-revoke-existing', 'invites-expiry-existing', 'invites-issue-submit']) {
+        expect(container.querySelector<HTMLButtonElement>(`#${id}`)!.disabled).toBe(true);
+    }
+    await act(async () => pending.resolve(response({ success: true, id: invite.id })));
+    expect(container.querySelector('#invites-delete-existing')).toBeNull();
+    expect(container.textContent).toContain('초대 코드를 삭제했습니다.');
+    expect(container.textContent).toContain('발행된 초대 코드가 없습니다.');
+    expect(container.querySelector<HTMLButtonElement>('#invites-issue-submit')!.disabled).toBe(false);
+});
+
+it.each(['http', 'network', 'invalid-response'])('삭제 %s 실패 시 행을 보존하고 오류를 표시한다', async failure => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    if (failure === 'network') removeMock.mockRejectedValueOnce(new Error('offline'));
+    else if (failure === 'invalid-response') removeMock.mockResolvedValueOnce(new Response('invalid'));
+    else removeMock.mockResolvedValueOnce(response({ error: '사용했거나 회원이 연결된 초대 코드는 삭제할 수 없습니다.' }, 409));
+    await renderInvites(); await click('#invites-delete-existing');
+    expect(container.querySelector('table')!.textContent).toContain(invite.code);
+    expect(container.textContent).not.toContain('초대 코드를 삭제했습니다.');
+    expect(container.textContent).toMatch(/삭제할 수 없습니다|삭제 결과를 확인하지 못했습니다/);
+    expect(container.querySelector<HTMLButtonElement>('#invites-delete-existing')!.disabled).toBe(false);
+});
+
+it('만료된 미사용 코드는 삭제할 수 있고 사용 이력이나 회원 연결이 있으면 삭제를 막는다', async () => {
+    fetchMock.mockImplementation(async (url: string) => response(url === '/api/programs' ? { programs } : { invites: [
+        { ...invite, id: 'expired', expiresAt: '2020-01-01T00:00:00Z' },
+        { ...invite, id: 'used', usedAt: '2026-09-01T00:00:00Z', usedById: null },
+        { ...invite, id: 'linked', usedById: 'member' },
+    ] }));
+    await renderInvites();
+    expect(container.querySelector<HTMLButtonElement>('#invites-delete-expired')!.disabled).toBe(false);
+    expect(container.querySelector<HTMLButtonElement>('#invites-delete-used')!.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('#invites-delete-linked')!.disabled).toBe(true);
 });
 
 it('기한만 저장해도 첫 로그인 전 코드는 미사용 상태를 유지한다', async () => {
