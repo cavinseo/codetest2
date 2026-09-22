@@ -53,6 +53,7 @@ export default function AdminModePage() {
     const [users, setUsers] = useState<User[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
     const [searchProject, setSearchProject] = useState('');
     const [projectProgramId, setProjectProgramId] = useState('');
     const [projectPrograms, setProjectPrograms] = useState<{ id: string; name: string; organization: string }[]>([]);
@@ -88,6 +89,9 @@ export default function AdminModePage() {
 
     const load = useCallback(async () => {
         setLoading(true);
+        setLoadError('');
+        setNeedsLogin(false);
+        setAccessDenied(false);
         try {
             const [statsRes, usersRes, projectsRes, meRes] = await Promise.all([
                 fetch('/api/admin/stats'),
@@ -98,31 +102,30 @@ export default function AdminModePage() {
 
             // 미로그인이면 이 자리에서 로그인 화면을 띄운다. 다른 주소로 넘기면
             // 관리자 진입점이 /admin 과 /admin/login 두 개로 갈라진다.
-            if (statsRes.status === 401) {
+            const responses = [statsRes, usersRes, projectsRes, meRes];
+            if (responses.some(response => response.status === 401)) {
                 setNeedsLogin(true);
                 return;
             }
-            if (statsRes.status === 403) {
+            if (responses.some(response => response.status === 403)) {
                 setAccessDenied(true);
                 return;
             }
 
-            if (statsRes.ok) setStats(await statsRes.json());
-            if (usersRes.ok) { const d = await usersRes.json(); setUsers(d.users); }
-            if (projectsRes.ok) {
-                const d = await projectsRes.json();
-                setProjects(d.projects);
-                setProjectPrograms(d.programs);
-            }
-            if (meRes.ok) {
-                const d = await meRes.json();
-                setRole(d.role ?? null);
-            }
-        } finally {
-            setLoading(false);
+            if (responses.some(response => !response.ok)) throw new Error('Admin data request failed');
+            const [nextStats, nextUsers, nextProjects, me] = await Promise.all(responses.map(response => response.json()));
+            setStats(nextStats);
+            setUsers(nextUsers.users);
+            setProjects(nextProjects.projects);
+            setProjectPrograms(nextProjects.programs);
+            setRole(me.role ?? null);
             // 마지막 갱신 시각은 브라우저에서만 정한다. 렌더 중에 new Date() 를
             // 부르면 서버가 찍은 시각이 HTML 에 박혀 hydration 이 어긋난다.
             setLoadedAt(new Date().toLocaleString('ko-KR'));
+        } catch {
+            setLoadError('관리자 정보를 확인하지 못했습니다. 다시 시도하세요.');
+        } finally {
+            setLoading(false);
         }
     }, []);
 
@@ -403,6 +406,19 @@ export default function AdminModePage() {
         Q: { label: 'Question', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
     };
 
+    if (loading || loadError) {
+        return (
+            <div className="min-h-screen bg-surface-900 flex items-center justify-center px-4">
+                <div className="glass-strong w-full max-w-md p-8 text-center">
+                    {loading ? <p role="status" className="text-gray-400">관리자 접근 권한을 확인하고 있습니다.</p> : <>
+                        <p role="alert" className="text-rose-300">{loadError}</p>
+                        <button type="button" onClick={load} className="btn-primary mt-6">다시 시도</button>
+                    </>}
+                </div>
+            </div>
+        );
+    }
+
     if (needsLogin) {
         // 로그인에 성공하면 주소를 바꾸지 않고 그대로 다시 불러온다.
         return (
@@ -649,17 +665,6 @@ export default function AdminModePage() {
                     ))}
                 </div>
 
-                {loading ? (
-                    <div className="flex items-center justify-center py-24">
-                        <div className="flex flex-col items-center gap-4">
-                            <svg className="animate-spin h-8 w-8 text-primary-400" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
-                            <p className="text-gray-500 text-sm">데이터를 불러오는 중...</p>
-                        </div>
-                    </div>
-                ) : (
                     <>
                         {/* ── Overview Tab ─────────────────────────────── */}
                         {tab === 'overview' && (
@@ -1002,7 +1007,6 @@ export default function AdminModePage() {
                             </div>
                         )}
                     </>
-                )}
             </main>
         </div>
     );

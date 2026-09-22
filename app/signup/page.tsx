@@ -17,9 +17,7 @@ export default function SignupPage() {
     });
     const [inviteCode, setInviteCode] = useState('');
     const [profile, setProfile] = useState<ProfileValue>(EMPTY_PROFILE);
-    // 가입자가 멘토·멘티 중 하나를 직접 고른다. 기본값은 멘티다. 초대 코드가
-    // 있으면 서버가 코드의 역할로 덮어쓰므로, 여기 선택은 코드가 없을 때만
-    // 실제 계정 역할로 반영된다.
+    // 가입자가 고른 역할을 유지하고, 초대 코드는 멘티에게만 받는다.
     const [assumedRole, setAssumedRole] = useState<MemberRole>('MENTEE');
     const [error, setError] = useState('');
     const [inviteLoginRequired, setInviteLoginRequired] = useState(false);
@@ -61,7 +59,7 @@ export default function SignupPage() {
                     name: formData.name,
                     email: formData.email,
                     password: formData.password,
-                    ...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
+                    ...(assumedRole === 'MENTEE' && inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
                     role: assumedRole,
                     profile: toProfilePayload(profile, assumedRole),
                 }),
@@ -190,12 +188,12 @@ export default function SignupPage() {
                             </div>
                         ))}
 
-                        <div>
+                        {assumedRole === 'MENTEE' && <div>
                             <label
                                 htmlFor="inviteCode"
                                 className="block text-sm font-medium mb-2 text-gray-400"
                             >
-                                초대 코드
+                                멘티 초대 코드
                             </label>
                             <input
                                 id="inviteCode"
@@ -209,7 +207,7 @@ export default function SignupPage() {
                                 초대 메일을 받았다면 별도 가입 없이 <Link href="/login?mode=invite" className="text-primary-400 underline underline-offset-4">초대 코드로 로그인</Link>하세요.
                                 이미 가입했다면 관리자에게 기존 회원 연결을 요청하세요. 초대가 없으면 관리자 승인 후 이용할 수 있습니다.
                             </p>
-                        </div>
+                        </div>}
 
                         <div>
                             <label className="block text-sm font-medium mb-2 text-gray-400">
@@ -217,14 +215,20 @@ export default function SignupPage() {
                                 <select
                                     className="input mt-2"
                                     value={assumedRole}
-                                    onChange={(e) => setAssumedRole(e.target.value as MemberRole)}
+                                    onChange={(e) => {
+                                        setAssumedRole(e.target.value as MemberRole);
+                                        setInviteCode('');
+                                        setInviteLoginRequired(false);
+                                        setError('');
+                                    }}
                                 >
                                     <option value="MENTEE">멘티</option>
                                     <option value="MENTOR">멘토</option>
                                 </select>
                             </label>
                             <p className="mt-2 text-xs text-gray-500">
-                                초대 코드가 있으면 코드에 정해진 역할이 우선 적용됩니다.
+                                멘토는 초대 코드 없이 가입 신청하며 관리자 승인 후 이용할 수 있습니다.
+                                프로그램 매니저는 관리자가 멘토 계정의 역할을 변경해 지정합니다.
                             </p>
                         </div>
 
