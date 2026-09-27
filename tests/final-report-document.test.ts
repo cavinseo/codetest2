@@ -33,36 +33,36 @@ const heading = (text: string, level: 1 | 2 = 2): FinalReportBlock => ({ kind: '
 const table = (headers: string[], rows: string[][]): FinalReportBlock => ({ kind: 'dataTable', headers, rows });
 const missing: FinalReportBlock = { kind: 'paragraph', text: '그림을 캡처하지 못했습니다' };
 const expected: FinalReportBlock[] = [
-    heading('KS-QFD 결과보고서', 1), { kind: 'keyValueTable', rows: [{ label: '기업명', value: '제품 A' }, { label: '작성일', value: overview.generatedAt }, { label: '코치명', value: '코치' }] },
-    heading('Ⅰ. 제품/서비스 개요', 1), { kind: 'keyValueTable', rows: [{ label: '제품명', value: '제품 A' }, { label: '제품설명', value: '제품 설명' }] },
+    heading('KS-QFD 활용 제품개선보고서', 1), { kind: 'keyValueTable', rows: [{ label: '기업명', value: '제품 A' }, { label: '작성일', value: overview.generatedAt }, { label: '코치명', value: '코치' }] },
+    heading('Ⅰ. (As-Is) 제품/서비스 정의', 1), { kind: 'keyValueTable', rows: [{ label: '제품명', value: '제품 A' }, { label: '제품설명', value: '제품 설명' }] },
     heading('매출처별 매출 현황'), table(['매출처', '매출액', '경쟁사명'], [['현재 고객', '1,234', '현재 경쟁사']]),
     heading('향후 1년 목표매출액'), table(['매출처', '매출액', '경쟁사명'], [['미래 고객', '2,345', '미래 경쟁사']]),
-    heading('Ⅱ. 제품/서비스 속성 분석', 1),
+    heading('Ⅱ. 고객과 경쟁자를 고려한 제품/서비스 진단', 1),
     heading('(AS-IS) 스펙표'), table(['핵심스펙', '세부스펙', '기술적특성'], [['핵심', '', '핵심 기술'], ['핵심', '세부', '세부 기술'], ['핵심', '세부 > 상세', '상세 기술']]),
-    heading('제품속성서'), table(['제품명', '고객명', '세분시장', '니즈', '혜택', '속성', '기술역량'], [['제품', '고객', '시장', '니즈', '혜택', '속성', '역량']]),
+    heading('제품속성표'), table(['제품명', '고객명', '세분시장', '고객 니즈', '제품속성', '기술역량'], [['제품', '고객', '시장', '니즈', '속성', '역량']]),
     heading('제품/서비스 속성 적합도'), missing,
-    heading('Ⅲ. 고객수요 및 기술 분석', 1),
-    heading('고객요구사항 도출표'), table(['번호', '1차 그룹', '2차 그룹', '항목'], [['1', '1차', '2차', '고객 요구']]),
+    heading('Ⅲ. QFD를 통한 제품(서비스)스펙 도출', 1),
+    heading('고객요구사항 도출표'), table(['번호', '항목', '1차 그룹', '2차 그룹'], [['1', '고객 요구', '1차', '2차']]),
     heading('Kano 집계표'), table(['항목', '만족계수', '불만족계수', '품질', '가중치'], [['고객 요구', '0.7', '-0.3', '매력', '4']]),
     heading('Kano 2D 산점도'), missing,
     heading('Competitive Assessment'), table(['항목', '가중치', '가중치 백분율', '자사', '경쟁사', '기획품질', '수준향상율', '절대중요도', '요구품질중요도%', 'RANK'], [['경쟁 평가 요구', '4', '12', '2', '3', '5', '1.5', '6', '25', '1']]),
-    heading('개선포인트점수 기반 고객니즈 우선순위'), table(['고객니즈', '경쟁사대비 수준향상율', '개발향상비중'], [['우선 니즈', '1.8', '30%']]),
+    heading('개선포인트점수 기반 고객니즈 우선순위'), table(['순위', '고객니즈', '경쟁사대비 수준향상율', '개발향상비중'], [['1', '우선 니즈', '1.8', '30%']]),
     heading('Engineering Metrics: 기술요구사항 도출'), table(['고객의소리', '핵심스펙', '세부스펙', '기술적특성'], [['목소리', '핵심 기능', '세부 기능', '기술']]),
     heading('고객수요기반 기술스펙 관계도'), missing,
-    heading('개선포인트기반 개선 기능/성능 List'), table(['개선포인트 우선순위(고객니즈)', '추가 기능', '성능향상'], [['추가 니즈', '신규 기능', '성능 개선']]),
-    heading('Ⅳ. 최종 개선 방향', 1),
+    heading('개선포인트기반 개선 기능/성능 List'), table(['순위', '고객니즈', '추가 기능', '성능향상'], [['1', '추가 니즈', '신규 기능', '성능 개선']]),
+    heading('Ⅳ. (To-Be) 최종 고객요구사항기반 제품정의서', 1),
     heading('최종 제품/서비스 제공 스펙 List'), table(['스펙분류', '세부항목', '기술적특성', '개선여부'], [['분류', '항목', '특성', '신규']]),
+    heading('KS-QFD 개선 방향성'), table(['순위', '개선 방향(차별화)', '개선기능 및 성능향상', '구현가능성', '목표 고객'], [['1', '차별화', '개선 기능', '구현 가능', '목표 고객']]),
+    heading('Ⅴ. 자산 및 자금계획', 1),
     heading('핵심자산 도출표'), table(['핵심자산'], [['특허']]),
     heading('보완자산 도출표'), table(['필요항목', '해결방안'], [['인력', '채용']]),
-    heading('KS-QFD 개선 방향성'), table(['순위', '개선 방향(차별화)', '개선기능 및 성능향상', '구현가능성', '목표 고객'], [['1', '차별화', '개선 기능', '구현 가능', '목표 고객']]),
-    heading('Ⅴ. 자금 계획', 1),
     heading('자금소요계획표'), table(['구분', '항목', '1차년도', '2차년도', '3차년도'], [['자금', '개발비', '1,234.5', '0', '']]),
     heading('자금조달계획표'), table(['구분', '1차년도 출처', '1차년도 금액', '2차년도 출처', '2차년도 금액', '3차년도 출처', '3차년도 금액'], [['정부', '지원', '1,234.5', '출자', '2,000', '', '']]),
 ];
 
 it('maps every DB section, original field meaning, row order and caller time exactly', () => {
     const before = JSON.stringify({ overview, data, free });
-    expect(buildFinalReportModel(overview, data, free, [])).toEqual({ title: 'KS-QFD 결과보고서', fileName: '결과보고서_제품 A.docx', blocks: expected });
+    expect(buildFinalReportModel(overview, data, free, [])).toEqual({ title: 'KS-QFD 활용 제품개선보고서', fileName: '결과보고서_제품 A.docx', blocks: expected });
     expect(JSON.stringify({ overview, data, free })).toBe(before);
 });
 
@@ -95,7 +95,7 @@ it('leaves nullable cells blank without interpreting target values as improvemen
         competitiveAssessment: data.competitiveAssessment.map(r => ({ ...r, rank: null })),
     };
     const tables = buildFinalReportModel(overview, nullable, free, []).blocks.filter(b => b.kind === 'dataTable');
-    expect(tables.find(t => t.headers.includes('기술역량'))?.rows).toEqual([['', '', '', '', '', '', '']]);
+    expect(tables.find(t => t.headers.includes('기술역량'))?.rows).toEqual([['', '', '', '', '', '']]);
     expect(tables.find(t => t.headers.includes('개선여부'))?.rows).toEqual([['', '', '', '']]);
     expect(tables.find(t => t.headers.includes('RANK'))?.rows[0].at(-1)).toBe('');
 });
@@ -173,17 +173,18 @@ it('places all eight worksheet analyses immediately beside their corresponding w
     };
     for (const [worksheetTitle, analysisTitle, text] of [
         ['(AS-IS) 스펙표', 'WS-2 멘토 분석', '기능 구성 검토'],
-        ['제품속성서', 'WS-3 멘토 분석', '혜택과 속성 검토'],
+        ['제품속성표', 'WS-3 멘토 분석', '혜택과 속성 검토'],
         ['제품/서비스 속성 적합도', 'WS-4 멘토 분석', '적합도 검토'],
         ['핵심자산 도출표', 'WS-15 멘토 분석 · 핵심자산', '핵심자산 검토'],
         ['보완자산 도출표', 'WS-15 멘토 분석 · 보완자산', '보완자산 검토'],
         ['자금소요계획표', 'WS-16 멘토 분석', '소요자금 검토'],
         ['자금조달계획표', 'WS-17 멘토 분석', '조달자금 검토'],
     ]) insertAfterTable(worksheetTitle, [heading(analysisTitle), { kind: 'paragraph', text }]);
-    insertAfterTable('최종 제품/서비스 제공 스펙 List', [
+    const targetSpecIndex = expanded.findIndex(block => block.kind === 'heading' && block.text === '최종 제품/서비스 제공 스펙 List');
+    expanded.splice(targetSpecIndex, 0,
         heading('WS-12 멘토 분석 · 최종 목표 스펙 항목별 설명'),
         table(['항목', '설명'], [['분류 / 항목 / 특성', '항목별 목표 근거'], ['이전 항목', '이름이 바뀌어도 보존한 설명']]),
-    ]);
+    );
     const roadmapIndex = expanded.findIndex(block => block.kind === 'heading' && block.text === 'KS-QFD 개선 방향성');
     expanded.splice(roadmapIndex, 0, heading('개선 제품명'), { kind: 'paragraph', text: '개선 서비스명' }, heading('개선 제품설명'), { kind: 'paragraph', text: '개선 서비스 설명' });
     expect(blocks).toEqual(expanded);

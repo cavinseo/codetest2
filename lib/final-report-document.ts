@@ -77,7 +77,7 @@ export interface FinalReportModel {
 }
 
 /** 표지 제목이자 문서 제목이다. 두 자리에 같은 값이 들어가야 해서 한 곳에 둔다. */
-const REPORT_TITLE = 'KS-QFD 결과보고서';
+const REPORT_TITLE = 'KS-QFD 활용 제품개선보고서';
 
 /**
  * 표로 재현하기 어려워 화면을 그림으로 붙이는 세 절의 제목이다.
@@ -169,7 +169,7 @@ function appendProductOverview(
     worksheets: FinalReportWorksheetData,
 ) {
     const productOverview = hasProductOverviewSource(overview) ? overview : freeInput;
-    report.heading('Ⅰ. 제품/서비스 개요', 1);
+    report.heading('Ⅰ. (As-Is) 제품/서비스 정의', 1);
     report.push({ kind: 'keyValueTable', rows: [
         { label: '제품명', value: overview.productName ?? overview.projectName },
         { label: '제품설명', value: overview.description ?? '' },
@@ -196,21 +196,21 @@ function appendProductOverview(
 }
 
 function appendAttributeAnalysis(report: ReportBuilder, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
-    report.heading('Ⅱ. 제품/서비스 속성 분석', 1);
+    report.heading('Ⅱ. 고객과 경쟁자를 고려한 제품/서비스 진단', 1);
     report.table('(AS-IS) 스펙표', ['핵심스펙', '세부스펙', '기술적특성'],
         buildTargetSpecsFromAsIs(worksheets.specFunctions).map(row => [row.category, row.subCategory, row.specItem]));
     report.prose('WS-2 멘토 분석', analysis.spec?.analysis ?? '');
-    report.table('제품속성서', ['제품명', '고객명', '세분시장', '니즈', '혜택', '속성', '기술역량'],
-        worksheets.productAttributes.map(row => [row.productName, row.customerName, row.marketSegment, row.customerNeed, row.benefit, row.attribute, row.techCapability]));
+    report.table('제품속성표', ['제품명', '고객명', '세분시장', '고객 니즈', '제품속성', '기술역량'],
+        worksheets.productAttributes.map(row => [row.productName, row.customerName, row.marketSegment, row.customerNeed, row.attribute, row.techCapability]));
     report.prose('WS-3 멘토 분석', analysis.attributes?.analysis ?? '');
     report.capture('fitness');
     report.prose('WS-4 멘토 분석', analysis.fitness?.analysis ?? '');
 }
 
 function appendDemandAndTechAnalysis(report: ReportBuilder, worksheets: FinalReportWorksheetData) {
-    report.heading('Ⅲ. 고객수요 및 기술 분석', 1);
-    report.table('고객요구사항 도출표', ['번호', '1차 그룹', '2차 그룹', '항목'],
-        worksheets.requirements.map((row, index) => [index + 1, row.category, row.subcategory, row.requirement]));
+    report.heading('Ⅲ. QFD를 통한 제품(서비스)스펙 도출', 1);
+    report.table('고객요구사항 도출표', ['번호', '항목', '1차 그룹', '2차 그룹'],
+        worksheets.requirements.map((row, index) => [index + 1, row.requirement, row.category, row.subcategory]));
     report.table('Kano 집계표', ['항목', '만족계수', '불만족계수', '품질', '가중치'],
         worksheets.kanoAggregation.map(row => [
             worksheets.requirements.find(requirement => requirement.id === row.requirementId)?.requirement ?? '요구사항 미확인',
@@ -219,21 +219,21 @@ function appendDemandAndTechAnalysis(report: ReportBuilder, worksheets: FinalRep
     report.capture('kano-aggregation');
     report.table('Competitive Assessment', ['항목', '가중치', '가중치 백분율', '자사', '경쟁사', '기획품질', '수준향상율', '절대중요도', '요구품질중요도%', 'RANK'],
         worksheets.competitiveAssessment.map(row => [row.requirement, row.weight, row.weightPercent, row.selfScore, row.competitorScore, row.planQuality, row.improvementRate, row.absoluteImportance, row.qualityImportancePercent, row.rank]));
-    report.table('개선포인트점수 기반 고객니즈 우선순위', ['고객니즈', '경쟁사대비 수준향상율', '개발향상비중'],
+    report.table('개선포인트점수 기반 고객니즈 우선순위', ['순위', '고객니즈', '경쟁사대비 수준향상율', '개발향상비중'],
         improvementRows(worksheets.improvementNeeds));
     report.table('Engineering Metrics: 기술요구사항 도출', ['고객의소리', '핵심스펙', '세부스펙', '기술적특성'],
         worksheets.techTree.map(row => [row.customerVoice, row.coreSpec, row.subSpec, row.techCharacteristic]));
     report.capture('qfd');
-    report.table('개선포인트기반 개선 기능/성능 List', ['개선포인트 우선순위(고객니즈)', '추가 기능', '성능향상'],
+    report.table('개선포인트기반 개선 기능/성능 List', ['순위', '고객니즈', '추가 기능', '성능향상'],
         improvementRows(worksheets.improvementFeatures));
 }
 
 /**
- * 개선포인트(WS-11)의 두 표는 열 제목만 다르고 세 열의 자리는 같다
+ * 개선포인트(WS-11)의 두 표는 순위 뒤 세 열의 자리가 같다
  * (type=need 는 고객니즈 쪽, type=feature 는 기능/성능 쪽 제목을 쓴다).
  */
 function improvementRows(rows: FinalReportWorksheetData['improvementNeeds']) {
-    return rows.map(row => [row.content, row.improvementRate, row.devProportion]);
+    return rows.map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]);
 }
 
 function appendFinalImprovementDirection(
@@ -242,28 +242,28 @@ function appendFinalImprovementDirection(
     worksheets: FinalReportWorksheetData,
     analysis: WorksheetAnalysis,
 ) {
-    report.heading('Ⅳ. 최종 개선 방향', 1);
+    report.heading('Ⅳ. (To-Be) 최종 고객요구사항기반 제품정의서', 1);
     if (analysis['target-spec'] === undefined) report.prose('최종 목표 스펙 항목별 설명', freeInput.finalSpecExplanation);
-    report.table('최종 제품/서비스 제공 스펙 List', ['스펙분류', '세부항목', '기술적특성', '개선여부'],
-        worksheets.targetSpecs.map(row => [row.category, row.subCategory, row.specItem, row.note]));
     if (analysis['target-spec']?.items.length) {
         report.table('WS-12 멘토 분석 · 최종 목표 스펙 항목별 설명', ['항목', '설명'],
             analysis['target-spec'].items.map(item => [item.label, item.explanation]));
     }
-    report.table('핵심자산 도출표', ['핵심자산'],
-        worksheets.assets.filter(row => row.type === 'CORE').map(row => [row.content]));
-    report.prose('WS-15 멘토 분석 · 핵심자산', analysis.assets?.core ?? '');
-    report.table('보완자산 도출표', ['필요항목', '해결방안'],
-        worksheets.assets.filter(row => row.type === 'COMPLEMENTARY').map(row => [row.category, row.content]));
-    report.prose('WS-15 멘토 분석 · 보완자산', analysis.assets?.complementary ?? '');
+    report.table('최종 제품/서비스 제공 스펙 List', ['스펙분류', '세부항목', '기술적특성', '개선여부'],
+        worksheets.targetSpecs.map(row => [row.category, row.subCategory, row.specItem, row.note]));
     report.prose('개선 제품명', analysis['tech-roadmap']?.productName ?? freeInput.improvedProductName);
     report.prose('개선 제품설명', analysis['tech-roadmap']?.description ?? freeInput.improvedProductDescription);
     report.table('KS-QFD 개선 방향성', ['순위', '개선 방향(차별화)', '개선기능 및 성능향상', '구현가능성', '목표 고객'],
         worksheets.improvementDirections.map((row, index) => [index + 1, row.category, row.techItem, row.currentLevel, row.targetLevel]));
 }
 
-function appendFundingPlan(report: ReportBuilder, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
-    report.heading('Ⅴ. 자금 계획', 1);
+function appendAssetsAndFundingPlan(report: ReportBuilder, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
+    report.heading('Ⅴ. 자산 및 자금계획', 1);
+    report.table('핵심자산 도출표', ['핵심자산'],
+        worksheets.assets.filter(row => row.type === 'CORE').map(row => [row.content]));
+    report.prose('WS-15 멘토 분석 · 핵심자산', analysis.assets?.core ?? '');
+    report.table('보완자산 도출표', ['필요항목', '해결방안'],
+        worksheets.assets.filter(row => row.type === 'COMPLEMENTARY').map(row => [row.category, row.content]));
+    report.prose('WS-15 멘토 분석 · 보완자산', analysis.assets?.complementary ?? '');
     report.table('자금소요계획표', ['구분', '항목', '1차년도', '2차년도', '3차년도'],
         worksheets.fundingPlans.map(row => [row.category, row.item, formatMoney(row.year1), formatMoney(row.year2), formatMoney(row.year3)]));
     report.prose('WS-16 멘토 분석', analysis['funding-plan']?.analysis ?? '');
@@ -289,7 +289,7 @@ export function buildFinalReportModel(
     appendAttributeAnalysis(report, worksheets, analysis);
     appendDemandAndTechAnalysis(report, worksheets);
     appendFinalImprovementDirection(report, freeInput, worksheets, analysis);
-    appendFundingPlan(report, worksheets, analysis);
+    appendAssetsAndFundingPlan(report, worksheets, analysis);
 
     return { title: REPORT_TITLE, fileName: finalReportFileName(overview.projectName), blocks: report.blocks };
 }
