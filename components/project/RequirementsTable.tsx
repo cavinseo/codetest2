@@ -7,6 +7,7 @@ import Link from 'next/link';
 import WorksheetLoadError from './WorksheetLoadError';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import {
+    groupRequirementsByCategory,
     shouldShowPrimaryGroup,
     shouldShowSecondaryGroup,
     sortRequirementsByWorksheetOrder,
@@ -163,16 +164,35 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         loadRequirements();
     }, [loadRequirements]);
 
+    const createNewRequirement = (): Requirement | null => {
+        if (!newRow.category.trim() || !newRow.requirement.trim()) {
+            showToast('카테고리와 요구사항을 입력하세요.', 'error');
+            return null;
+        }
+        return {
+            id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            category: newRow.category.trim(),
+            subcategory: newRow.subcategory.trim(),
+            requirement: newRow.requirement.trim(),
+            order: Math.max(-1, ...requirements.map(row => row.order)) + 1,
+        };
+    };
+
     const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
-        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
+        if (isSaving || isLoading || loadFailed || loadedProjectId !== projectId) return;
         // 열려 있는 인라인 편집을 먼저 반영한다. 예전에는 editValues 를 둔 채
         // requirements 만 보내고 성공하면 editValues 를 버려서, 항목을 고치는
         // 중에 저장을 누르면 "저장되었습니다" 가 뜨는데도 방금 친 글자가 원래
         // 값으로 되돌아갔다 — 저장된 줄 알고 화면을 떠나면 그대로 유실된다.
-        const requirementsToSave = editingId
+        const editedRequirements = editingId
             ? requirements.map((item) => (item.id === editingId ? { ...item, ...editValues } : item))
             : requirements;
-        if (editingId) setRequirements(requirementsToSave);
+        const hasNewRowInput = isAddingNew && Object.values(newRow).some(value => value.trim());
+        const newRequirement = hasNewRowInput ? createNewRequirement() : null;
+        if (hasNewRowInput && !newRequirement) return;
+        const requirementsToSave = groupRequirementsByCategory(
+            newRequirement ? [...editedRequirements, newRequirement] : editedRequirements
+        );
 
         setIsSaving(true);
         try {
@@ -199,8 +219,13 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
             if (res.ok) {
                 showToast('저장되었습니다.', 'success');
+                setRequirements(requirementsToSave);
                 setEditingId(null);
                 setEditValues({});
+                if (newRequirement) {
+                    setNewRow({ category: '', subcategory: '', requirement: '' });
+                    setIsAddingNew(false);
+                }
             } else {
                 showToast('저장에 실패했습니다.', 'error');
             }
@@ -279,18 +304,9 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
     // 새 행 추가
     const handleAddNew = () => {
-        if (!newRow.category.trim() || !newRow.requirement.trim()) {
-            showToast('카테고리와 요구사항을 입력하세요.', 'error');
-            return;
-        }
-        const newReq: Requirement = {
-            id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            category: newRow.category.trim(),
-            subcategory: newRow.subcategory.trim(),
-            requirement: newRow.requirement.trim(),
-            order: requirements.length + 1,
-        };
-        setRequirements(prev => [...prev, newReq]);
+        const newReq = createNewRequirement();
+        if (!newReq) return;
+        setRequirements(prev => groupRequirementsByCategory([...prev, newReq]));
         setNewRow({ category: '', subcategory: '', requirement: '' });
         setIsAddingNew(false);
     };
@@ -316,7 +332,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     // 편집 확정
     const commitEdit = (id: string) => {
         setRequirements(prev =>
-            prev.map(r => r.id === id ? { ...r, ...editValues } : r)
+            groupRequirementsByCategory(prev.map(r => r.id === id ? { ...r, ...editValues } : r))
         );
         setEditingId(null);
         setEditValues({});
@@ -332,7 +348,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         setRequirements(prev => prev.filter(r => r.id !== id));
     };
 
-    // 워크시트 행 순서를 보존한다. 1차/2차 그룹 값으로 항목 순서를 재정렬하지 않는다.
+    // 편집·추가·저장 시 그룹별로 정리한 행 순서를 표시한다.
     const sorted = sortRequirementsByWorksheetOrder(requirements);
 
     const groupedCategories = [...new Set(sorted.map(r => r.category))];
@@ -350,7 +366,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     }
 
     return (
-        <div className="space-y-4 relative">
+        <fieldset disabled={isSaving} aria-busy={isSaving} className="space-y-4 relative min-w-0">
             {/* 토스트 */}
             {toast && <HeaderToast message={toast.message} type={toast.type} />}
 
@@ -456,7 +472,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                     </button>
                     <button
                         onClick={() => handleSave()}
-                        disabled={isSaving || requirements.length === 0}
+                        disabled={isSaving || (requirements.length === 0 && (!isAddingNew || !newRow.category.trim() || !newRow.requirement.trim()))}
                         className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -750,6 +766,6 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                     </ul>
                 </div>
             )}
-        </div>
+        </fieldset>
     );
 }
