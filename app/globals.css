@@ -15,6 +15,7 @@
 .light {
   --background: #f1f5f9;
   --foreground: #0f172a;
+  color-scheme: light;
 }
 
 body {
@@ -309,6 +310,11 @@ body {
 .light .bg-gray-900,
 .light .bg-gray-800,
 .light .bg-gray-700 {
+  background-color: #ffffff !important;
+}
+
+/* WS-2 입력의 포커스 클래스는 기본 bg-gray-800 보정에 포함되지 않는다. */
+.light .focus\:bg-gray-800:focus {
   background-color: #ffffff !important;
 }
 
