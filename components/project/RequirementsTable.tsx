@@ -5,6 +5,7 @@ import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import WorksheetLoadError from './WorksheetLoadError';
+import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import {
     shouldShowPrimaryGroup,
     shouldShowSecondaryGroup,
@@ -53,6 +54,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
+    const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValues, setEditValues] = useState<Partial<Requirement>>({});
 
@@ -209,23 +211,16 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         }
     };
 
-    const handleExcelUpload = async (file: File | null) => {
+    const handleExcelUpload = (file: File | null) => {
         if (!file) return;
         const fileName = file.name.toLowerCase();
         if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
             showToast('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', 'error');
+            if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }
 
-        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 데이터를 지우고 새롭게 업로드', '1');
-        if (uploadPolicy === null) return;
-        const shouldReplace = uploadPolicy.trim() === '2';
-        if (!shouldReplace && uploadPolicy.trim() !== '1') {
-            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
-            return;
-        }
-
-        await uploadExcel(file, shouldReplace ? 'replace' : 'append');
+        setPendingExcelFile(file);
     };
 
     const uploadExcel = async (
@@ -253,7 +248,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             // replace 로 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다. 서버가
             // 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받은 뒤
             // 같은 파일을 confirmCascade 와 함께 다시 보낸다.
-            if (res.status === 409 && data?.needsCascadeConfirm) {
+            if (res.status === 409 && data?.needsCascadeConfirm && !options.confirmCascade) {
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
                     await uploadExcel(file, writePolicy, { confirmCascade: true });
                     return;
@@ -277,6 +272,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             showToast(error instanceof Error ? error.message : '고객요구사항도출표 엑셀 업로드에 실패했습니다.', 'error');
         } finally {
             setIsUploadingExcel(false);
+            setPendingExcelFile(null);
             if (excelInputRef.current) excelInputRef.current.value = '';
         }
     };
@@ -357,6 +353,19 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         <div className="space-y-4 relative">
             {/* 토스트 */}
             {toast && <HeaderToast message={toast.message} type={toast.type} />}
+
+            {pendingExcelFile && (
+                <UploadWritePolicyPrompt
+                    fileName={pendingExcelFile.name}
+                    targetLabel="고객요구사항도출표"
+                    isUploading={isUploadingExcel}
+                    onSelect={policy => uploadExcel(pendingExcelFile, policy)}
+                    onCancel={() => {
+                        setPendingExcelFile(null);
+                        if (excelInputRef.current) excelInputRef.current.value = '';
+                    }}
+                />
+            )}
 
             {/* 헤더 */}
             <div className="flex items-center justify-between">

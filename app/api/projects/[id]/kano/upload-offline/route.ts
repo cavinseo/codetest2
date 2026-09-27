@@ -7,6 +7,7 @@ import { parseKanoOfflineResponseHtml } from '@/lib/kano-offline-response';
 import {
     parseWritePolicy,
     persistKanoUploadAnswers,
+    KanoUploadConflictError,
 } from '@/lib/kano-response-store';
 import type { ParsedKanoUploadAnswer } from '@/lib/kano-upload-parser';
 import {
@@ -48,6 +49,7 @@ export async function POST(
         }
 
         const writePolicy = parseWritePolicy(formData.get('writePolicy'));
+        const replaceExistingRespondents = formData.get('replaceExistingRespondents') === 'true';
         const requirements = await prisma.customerRequirement.findMany({
             where: { projectId },
             orderBy: { order: 'asc' },
@@ -123,6 +125,7 @@ export async function POST(
             writePolicy,
             requirements,
             answers,
+            replaceExistingRespondents,
         });
         const fileCount = uploadedFiles.length;
 
@@ -135,6 +138,9 @@ export async function POST(
             results,
         });
     } catch (error) {
+        if (error instanceof KanoUploadConflictError) {
+            return NextResponse.json({ error: error.message, code: 'KANO_RESPONSES_EXIST' }, { status: 409 });
+        }
         log.error('오프라인 응답지 업로드 실패', error, { projectId });
         return NextResponse.json(
             { error: '오프라인 응답지 업로드에 실패했습니다.' },

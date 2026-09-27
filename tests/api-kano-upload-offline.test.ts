@@ -33,6 +33,7 @@ vi.mock('../lib/kano-response-store', async () => {
 });
 
 const { POST } = await import('../app/api/projects/[id]/kano/upload-offline/route');
+const { KanoUploadConflictError } = await import('../lib/kano-response-store');
 
 const PROJECT_ID = 'proj_1';
 const USER = { userId: 'user_1', email: 'owner@example.test', name: null };
@@ -52,10 +53,11 @@ function htmlFile(fileName: string, html: string): File {
     return new File([html], fileName, { type: 'text/html' });
 }
 
-function uploadRequest(files: File[], writePolicy: 'append' | 'replace' = 'append'): NextRequest {
+function uploadRequest(files: File[], writePolicy: 'append' | 'replace' = 'append', replaceExistingRespondents = false): NextRequest {
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
     formData.append('writePolicy', writePolicy);
+    if (replaceExistingRespondents) formData.append('replaceExistingRespondents', 'true');
     return new NextRequest(`http://localhost/api/projects/${PROJECT_ID}/kano/upload-offline`, {
         method: 'POST',
         body: formData,
@@ -96,6 +98,7 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
             projectId: PROJECT_ID,
             invitedBy: USER.userId,
             writePolicy: 'append',
+            replaceExistingRespondents: false,
             requirements: REQUIREMENTS,
             answers: [
                 {
@@ -337,5 +340,24 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
             error: String(error),
             meta,
         })))).not.toContain('@');
+    });
+});
+
+
+it('오프라인 응답자별 교체 선택을 저장 계층에 전달한다', async () => {
+    const response = await POST(uploadRequest([fixtureFile('saved-complete.html')], 'append', true), params);
+    expect(response.status).toBe(200);
+    expect(persistKanoUploadAnswers).toHaveBeenCalledWith(expect.objectContaining({
+        writePolicy: 'append', replaceExistingRespondents: true,
+    }));
+});
+
+it('오프라인 응답 추가 충돌을 409로 알린다', async () => {
+    persistKanoUploadAnswers.mockRejectedValueOnce(new KanoUploadConflictError());
+    const response = await POST(uploadRequest([fixtureFile('saved-complete.html')]), params);
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+        error: '이미 저장된 응답이 있습니다. 같은 응답자의 데이터를 바꾸려면 응답 교체를 선택하세요.',
+        code: 'KANO_RESPONSES_EXIST',
     });
 });

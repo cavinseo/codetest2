@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import AttributeMentorWizard from './AttributeMentorWizard';
@@ -671,45 +672,16 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             </div>
 
             {pendingExcelFile && (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <h3 className="text-sm font-semibold text-emerald-100">엑셀 양식 업로드</h3>
-                            <p className="mt-1 text-xs text-emerald-200/70">
-                                {pendingExcelFile.name} 파일을 제품속성표로 반영할 방식을 선택하세요.
-                            </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => uploadExcelFile(pendingExcelFile, 'append')}
-                                disabled={isUploadingExcel}
-                                className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"
-                            >
-                                {isUploadingExcel ? '업로드 중...' : '기존 데이터에 추가'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => uploadExcelFile(pendingExcelFile, 'replace')}
-                                disabled={isUploadingExcel}
-                                className="px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-sm font-semibold text-white disabled:opacity-50"
-                            >
-                                기존 데이터 지우고 업로드
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setPendingExcelFile(null);
-                                    if (excelInputRef.current) excelInputRef.current.value = '';
-                                }}
-                                disabled={isUploadingExcel}
-                                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white disabled:opacity-50"
-                            >
-                                취소
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <UploadWritePolicyPrompt
+                    fileName={pendingExcelFile.name}
+                    targetLabel="제품속성표"
+                    isUploading={isUploadingExcel}
+                    onSelect={policy => uploadExcelFile(pendingExcelFile, policy)}
+                    onCancel={() => {
+                        setPendingExcelFile(null);
+                        if (excelInputRef.current) excelInputRef.current.value = '';
+                    }}
+                />
             )}
 
             {/* 리셋 확인 배너 */}

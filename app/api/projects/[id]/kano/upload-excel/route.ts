@@ -10,7 +10,7 @@ import {
     parseWorksheetMatrixSheet,
     type ParsedKanoUploadAnswer,
 } from '@/lib/kano-upload-parser';
-import { parseWritePolicy, persistKanoUploadAnswers } from '@/lib/kano-response-store';
+import { KanoUploadConflictError, parseWritePolicy, persistKanoUploadAnswers } from '@/lib/kano-response-store';
 
 const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
     [/^\s*1\s*$|마음에\s*든다|like/i, 1],
@@ -111,6 +111,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         const file = formData.get('file');
         const uploadFormat = String(formData.get('format') ?? 'template');
         const writePolicy = parseWritePolicy(formData.get('writePolicy'));
+        const replaceExistingRespondents = formData.get('replaceExistingRespondents') === 'true';
         // 다른 업로드 라우트에는 있던 크기·확장자 검사가 여기만 빠져 있었다.
         const upload = guardUploadedExcel(file);
         if (!upload.ok) {
@@ -147,6 +148,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             writePolicy,
             requirements,
             answers,
+            replaceExistingRespondents,
         });
 
         return NextResponse.json({
@@ -158,6 +160,9 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             sheetName,
         });
     } catch (error) {
+        if (error instanceof KanoUploadConflictError) {
+            return NextResponse.json({ error: error.message, code: 'KANO_RESPONSES_EXIST' }, { status: 409 });
+        }
         console.error('Kano Excel upload failed:', error);
         return NextResponse.json({ error: 'Kano 엑셀 업로드에 실패했습니다.' }, { status: 500 });
     }

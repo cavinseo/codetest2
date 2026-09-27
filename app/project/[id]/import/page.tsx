@@ -4,10 +4,10 @@ import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import ThemeToggle from '@/components/ThemeToggle';
+import UploadWritePolicyPrompt, { type UploadWritePolicy } from '@/components/project/UploadWritePolicyPrompt';
 
 type UploadMode = 'workbook' | 'worksheet';
 type UploadStatus = 'idle' | 'parsing' | 'success' | 'error';
-type WritePolicy = 'replace' | 'append';
 
 interface SheetPreview {
     name: string;
@@ -22,7 +22,7 @@ interface ImportResult {
     success: boolean;
     readOnly: boolean;
     applied?: boolean;
-    writePolicy?: WritePolicy;
+    writePolicy?: UploadWritePolicy;
     // 고객요구사항을 덮어쓸 때 캐스케이드로 함께 지워지는 데이터 안내
     cascadeWarning?: string;
     cascadeImpact?: { kanoResponses: number; benchmarks: number; qfdMatrices: number };
@@ -100,7 +100,7 @@ export default function ImportPage() {
     const [result, setResult] = useState<ImportResult | null>(null);
     const [uploadMode, setUploadMode] = useState<UploadMode>('workbook');
     const [sheetNames, setSheetNames] = useState('');
-    const [writePolicy, setWritePolicy] = useState<WritePolicy>('replace');
+    const [showUploadChoice, setShowUploadChoice] = useState(false);
 
     const availableSheetText = useMemo(() => {
         return result?.workbook.availableSheets.join(', ') || '';
@@ -111,6 +111,7 @@ export default function ImportPage() {
     }, [result]);
 
     const resetResult = () => {
+        setShowUploadChoice(false);
         setUploadStatus('idle');
         setErrorMessage('');
         setResult(null);
@@ -126,7 +127,7 @@ export default function ImportPage() {
         }
     };
 
-    const submitImport = async (action: 'preview' | 'apply', options: { confirmCascade?: boolean } = {}) => {
+    const submitImport = async (action: 'preview' | 'apply', options: { confirmCascade?: boolean; writePolicy?: UploadWritePolicy } = {}) => {
         if (!file) return;
         if (action === 'preview') {
             setIsUploading(true);
@@ -141,7 +142,7 @@ export default function ImportPage() {
             const formData = new FormData();
             formData.append('file', file);
             formData.append('action', action);
-            formData.append('writePolicy', writePolicy);
+            formData.append('writePolicy', options.writePolicy ?? 'append');
             if (uploadMode === 'worksheet' && sheetNames.trim()) {
                 formData.append('sheetNames', sheetNames);
             }
@@ -157,9 +158,9 @@ export default function ImportPage() {
 
             // 고객요구사항을 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다.
             // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
-            if (response.status === 409 && data.needsCascadeConfirm) {
+            if (response.status === 409 && data.needsCascadeConfirm && !options.confirmCascade) {
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await submitImport('apply', { confirmCascade: true });
+                    await submitImport('apply', { ...options, confirmCascade: true });
                     return;
                 }
                 setErrorMessage('반영을 취소했습니다. 기존 데이터는 그대로 유지됩니다.');
@@ -184,6 +185,7 @@ export default function ImportPage() {
         } finally {
             setIsUploading(false);
             setIsApplying(false);
+            setShowUploadChoice(false);
         }
     };
 
@@ -233,7 +235,7 @@ export default function ImportPage() {
                         <ul className="space-y-1 text-sm text-gray-300">
                             <li>전체 워크북을 한 번에 분석하거나, 지정한 워크시트만 분석할 수 있습니다.</li>
                             <li>분석 결과를 확인한 뒤 시스템 반영을 실행합니다.</li>
-                            <li>반영 방식은 기존 값 교체 또는 기존 값에 추가 중 선택할 수 있습니다.</li>
+                            <li>시스템 반영 전에 기존 데이터에 추가하거나 기존 데이터를 지우고 업로드할 수 있습니다.</li>
                         </ul>
                     </div>
 
@@ -287,6 +289,7 @@ export default function ImportPage() {
                                         <p className="text-sm text-gray-400">{formatFileSize(file.size)}</p>
                                     </div>
                                     <button
+                                        disabled={isUploading || isApplying}
                                         onClick={() => {
                                             setFile(null);
                                             resetResult();
@@ -300,6 +303,7 @@ export default function ImportPage() {
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     <button
                                         type="button"
+                                        disabled={isUploading || isApplying}
                                         onClick={() => {
                                             setUploadMode('workbook');
                                             resetResult();
@@ -314,6 +318,7 @@ export default function ImportPage() {
                                     </button>
                                     <button
                                         type="button"
+                                        disabled={isUploading || isApplying}
                                         onClick={() => {
                                             setUploadMode('worksheet');
                                             resetResult();
@@ -336,6 +341,7 @@ export default function ImportPage() {
                                         <input
                                             id="sheet-names"
                                             value={sheetNames}
+                                            disabled={isUploading || isApplying}
                                             onChange={(event) => {
                                                 setSheetNames(event.target.value);
                                                 resetResult();
@@ -348,34 +354,6 @@ export default function ImportPage() {
                                         )}
                                     </div>
                                 )}
-
-                                <div className="rounded-lg border border-gray-700 bg-gray-800/60 p-4">
-                                    <p className="mb-3 text-sm font-semibold text-white">시스템 반영 방식</p>
-                                    <div className="grid gap-3 sm:grid-cols-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setWritePolicy('replace')}
-                                            className={`rounded-lg border px-4 py-3 text-left transition-colors ${writePolicy === 'replace'
-                                                ? 'border-emerald-400 bg-emerald-500/15 text-white'
-                                                : 'border-gray-700 bg-gray-900/60 text-gray-300 hover:border-gray-500'
-                                                }`}
-                                        >
-                                            <span className="block font-semibold">기존 값 교체</span>
-                                            <span className="mt-1 block text-sm text-gray-400">선택한 워크시트에 해당하는 기존 데이터를 새 값으로 바꿉니다.</span>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setWritePolicy('append')}
-                                            className={`rounded-lg border px-4 py-3 text-left transition-colors ${writePolicy === 'append'
-                                                ? 'border-emerald-400 bg-emerald-500/15 text-white'
-                                                : 'border-gray-700 bg-gray-900/60 text-gray-300 hover:border-gray-500'
-                                                }`}
-                                        >
-                                            <span className="block font-semibold">기존 값에 추가</span>
-                                            <span className="mt-1 block text-sm text-gray-400">현재 프로젝트 데이터 뒤에 엑셀 값을 덧붙입니다.</span>
-                                        </button>
-                                    </div>
-                                </div>
 
                                 {uploadStatus === 'parsing' && (
                                     <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
@@ -391,7 +369,7 @@ export default function ImportPage() {
 
                                 <button
                                     onClick={() => submitImport('preview')}
-                                    disabled={isUploading || (uploadMode === 'worksheet' && !sheetNames.trim())}
+                                    disabled={isUploading || isApplying || (uploadMode === 'worksheet' && !sheetNames.trim())}
                                     className="w-full btn-primary py-3 text-base font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     {isUploading ? '분석 중...' : '엑셀 분석'}
@@ -471,12 +449,23 @@ export default function ImportPage() {
                                 ) : (
                                     <button
                                         type="button"
-                                        onClick={() => submitImport('apply')}
-                                        disabled={isApplying || !file || Boolean(result.formulaIssues?.length)}
+                                        onClick={() => setShowUploadChoice(true)}
+                                        disabled={isUploading || isApplying || !file || Boolean(result.formulaIssues?.length)}
                                         className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                         {isApplying ? '시스템 반영 중...' : '분석 결과를 시스템에 반영'}
                                     </button>
+                                )}
+                                {showUploadChoice && file && (
+                                    <div className="mt-4">
+                                        <UploadWritePolicyPrompt
+                                            fileName={file.name}
+                                            targetLabel={uploadMode === 'worksheet' ? sheetNames : '전체 워크북'}
+                                            isUploading={isApplying}
+                                            onSelect={writePolicy => submitImport('apply', { writePolicy })}
+                                            onCancel={() => setShowUploadChoice(false)}
+                                        />
+                                    </div>
                                 )}
                             </div>
 

@@ -15,6 +15,7 @@ export interface PersistKanoUploadInput {
     writePolicy: 'append' | 'replace';
     requirements: { id: string }[];
     answers: ParsedKanoUploadAnswer[];
+    replaceExistingRespondents?: boolean;
 }
 
 export interface PersistKanoUploadResult {
@@ -22,10 +23,16 @@ export interface PersistKanoUploadResult {
     importedCount: number;
 }
 
+export class KanoUploadConflictError extends Error {
+    constructor() {
+        super('이미 저장된 응답이 있습니다. 같은 응답자의 데이터를 바꾸려면 응답 교체를 선택하세요.');
+    }
+}
+
 export async function persistKanoUploadAnswers(
     input: PersistKanoUploadInput
 ): Promise<PersistKanoUploadResult> {
-    const { projectId, invitedBy, writePolicy, requirements, answers } = input;
+    const { projectId, invitedBy, writePolicy, requirements, answers, replaceExistingRespondents = false } = input;
     const respondentEmails = Array.from(new Set(answers.map((answer) => answer.respondentEmail)));
     const invitations = new Map<string, string>();
 
@@ -34,12 +41,16 @@ export async function persistKanoUploadAnswers(
             await tx.kanoResponse.deleteMany({ where: { projectId } });
             await tx.kanoSurveyInvitation.deleteMany({ where: { projectId } });
         } else {
-            await tx.kanoResponse.deleteMany({
-                where: {
-                    projectId,
-                    respondentEmail: { in: respondentEmails },
-                },
+            const existingResponses = await tx.kanoResponse.findMany({
+                where: { projectId, respondentEmail: { in: respondentEmails } },
+                select: { respondentEmail: true },
             });
+            if (existingResponses.length > 0) {
+                if (!replaceExistingRespondents) throw new KanoUploadConflictError();
+                await tx.kanoResponse.deleteMany({
+                    where: { projectId, respondentEmail: { in: respondentEmails } },
+                });
+            }
         }
 
         for (const email of respondentEmails) {

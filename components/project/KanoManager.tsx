@@ -8,6 +8,7 @@ import CategoryPieChart from '@/components/CategoryPieChart';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import KanoRespondentTable from '@/components/project/KanoRespondentTable';
 import HeaderToast from '@/components/HeaderToast';
+import UploadWritePolicyPrompt, { type UploadWritePolicy } from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
 import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
@@ -119,6 +120,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [isResettingInvitations, setIsResettingInvitations] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [excelFile, setExcelFile] = useState<File | null>(null);
+    const [pendingUpload, setPendingUpload] = useState<'excel' | 'offline' | null>(null);
     const [excelUploadFormat, setExcelUploadFormat] = useState<ExcelUploadFormat>('template');
     const [collectMode, setCollectMode] = useState<'file' | 'offline' | 'googleForms'>('file');
     const [offlineFiles, setOfflineFiles] = useState<File[]>([]);
@@ -367,17 +369,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     useEffect(() => { loadData(); }, [loadData]);
     useEffect(() => { if (initialView) setActiveTab(initialView); }, [initialView]);
 
-    const handleUploadExcelResponses = async () => {
+    const handleUploadExcelResponses = async (writePolicy: UploadWritePolicy, replaceExistingRespondents = false) => {
         if (!excelFile) {
             showToast('업로드할 엑셀 파일을 선택하세요.', 'error');
-            return;
-        }
-
-        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 응답/초대 데이터를 지우고 새롭게 업로드', '1');
-        if (uploadPolicy === null) return;
-        const shouldReplace = uploadPolicy.trim() === '2';
-        if (!shouldReplace && uploadPolicy.trim() !== '1') {
-            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
             return;
         }
 
@@ -387,7 +381,8 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             const formData = new FormData();
             formData.append('file', excelFile);
             formData.append('format', excelUploadFormat);
-            formData.append('writePolicy', shouldReplace ? 'replace' : 'append');
+            formData.append('writePolicy', writePolicy);
+            if (replaceExistingRespondents) formData.append('replaceExistingRespondents', 'true');
 
             const res = await fetch(`/api/projects/${projectId}/kano/upload-excel`, {
                 method: 'POST',
@@ -407,25 +402,19 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             showToast(message, 'error');
         } finally {
             setIsUploadingExcel(false);
+            setPendingUpload(null);
         }
     };
 
     const handleCollectModeChange = (mode: 'file' | 'offline' | 'googleForms') => {
         setCollectMode(mode);
+        setPendingUpload(null);
         setOfflineResults([]);
     };
 
-    const handleUploadOfflineResponses = async () => {
+    const handleUploadOfflineResponses = async (writePolicy: UploadWritePolicy, replaceExistingRespondents = false) => {
         if (offlineFiles.length === 0) {
             showToast('업로드할 HTML 응답지를 선택하세요.', 'error');
-            return;
-        }
-
-        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 응답/초대 데이터를 지우고 새롭게 업로드', '1');
-        if (uploadPolicy === null) return;
-        const shouldReplace = uploadPolicy.trim() === '2';
-        if (!shouldReplace && uploadPolicy.trim() !== '1') {
-            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
             return;
         }
 
@@ -436,7 +425,8 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             for (const file of offlineFiles) {
                 formData.append('files', file);
             }
-            formData.append('writePolicy', shouldReplace ? 'replace' : 'append');
+            formData.append('writePolicy', writePolicy);
+            if (replaceExistingRespondents) formData.append('replaceExistingRespondents', 'true');
 
             const res = await fetch(`/api/projects/${projectId}/kano/upload-offline`, {
                 method: 'POST',
@@ -459,6 +449,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             showToast(error.message || '오프라인 응답지 업로드에 실패했습니다.', 'error');
         } finally {
             setIsUploadingOffline(false);
+            setPendingUpload(null);
         }
     };
 
@@ -738,6 +729,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 <button
                                     type="button"
                                     onClick={() => handleCollectModeChange('file')}
+                                    disabled={isUploadingExcel || isUploadingOffline}
                                     className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${collectMode === 'file'
                                         ? 'bg-primary-600 text-white shadow-sm'
                                         : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
@@ -748,6 +740,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 <button
                                     type="button"
                                     onClick={() => handleCollectModeChange('offline')}
+                                    disabled={isUploadingExcel || isUploadingOffline}
                                     className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${collectMode === 'offline'
                                         ? 'bg-primary-600 text-white shadow-sm'
                                         : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
@@ -758,6 +751,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 <button
                                     type="button"
                                     onClick={() => handleCollectModeChange('googleForms')}
+                                    disabled={isUploadingExcel || isUploadingOffline}
                                     className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${collectMode === 'googleForms'
                                         ? 'bg-primary-600 text-white shadow-sm'
                                         : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
@@ -937,6 +931,30 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 </div>
                             )}
 
+                            {pendingUpload && (
+                                <UploadWritePolicyPrompt
+                                    title={pendingUpload === 'excel' ? '엑셀 양식 업로드' : 'HTML 응답지 업로드'}
+                                    fileName={pendingUpload === 'excel' ? excelFile?.name ?? '' : offlineFiles.map(file => file.name).join(', ')}
+                                    targetLabel="Kano 응답"
+                                    isUploading={isUploadingExcel || isUploadingOffline}
+                                    replaceDescription="기존 데이터 지우고 업로드를 선택하면 기존 응답과 초대 데이터가 삭제됩니다."
+                                    onSelect={policy => pendingUpload === 'excel'
+                                        ? handleUploadExcelResponses(policy) : handleUploadOfflineResponses(policy)}
+                                    onReplaceRespondents={() => pendingUpload === 'excel'
+                                        ? handleUploadExcelResponses('append', true) : handleUploadOfflineResponses('append', true)}
+                                    onCancel={() => {
+                                        if (pendingUpload === 'excel') {
+                                            setExcelFile(null);
+                                            if (excelInputRef.current) excelInputRef.current.value = '';
+                                        } else {
+                                            setOfflineFiles([]);
+                                            if (offlineInputRef.current) offlineInputRef.current.value = '';
+                                        }
+                                        setPendingUpload(null);
+                                    }}
+                                />
+                            )}
+
                             {collectMode === 'file' && (
                                 <div>
                                     <h3 className="text-white text-sm font-semibold">응답 파일로 업로드</h3>
@@ -944,6 +962,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                     <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
                                         <select
                                             value={excelUploadFormat}
+                                            disabled={isUploadingExcel || isUploadingOffline}
                                             onChange={(event) => setExcelUploadFormat(event.target.value as ExcelUploadFormat)}
                                             className="px-3 py-2 rounded-lg border border-amber-500/25 bg-black/20 text-amber-100 text-xs font-semibold outline-none focus:border-amber-500/50 lg:flex-shrink-0"
                                         >
@@ -965,12 +984,13 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                             ref={excelInputRef}
                                             type="file"
                                             accept=".xlsx,.xls"
-                                            onChange={(event) => setExcelFile(event.target.files?.[0] ?? null)}
+                                            disabled={isUploadingExcel || isUploadingOffline}
+                                            onChange={(event) => { setExcelFile(event.target.files?.[0] ?? null); setPendingUpload(null); }}
                                             className="flex-1 min-w-0 text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-200 hover:file:bg-amber-500/25"
                                         />
 
                                         <button
-                                            onClick={handleUploadExcelResponses}
+                                            onClick={() => setPendingUpload('excel')}
                                             disabled={isUploadingExcel || !excelFile}
                                             className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:hover:bg-amber-600 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
                                         >
@@ -1007,7 +1027,8 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                             type="file"
                                             multiple
                                             accept=".html,.htm"
-                                            onChange={(event) => setOfflineFiles(Array.from(event.target.files ?? []))}
+                                            disabled={isUploadingExcel || isUploadingOffline}
+                                            onChange={(event) => { setOfflineFiles(Array.from(event.target.files ?? [])); setPendingUpload(null); }}
                                             className="flex-1 min-w-0 text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-emerald-200 hover:file:bg-emerald-500/25"
                                         />
                                         {offlineFiles.length > 0 && (
@@ -1015,8 +1036,8 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                         )}
                                         <button
                                             type="button"
-                                            onClick={handleUploadOfflineResponses}
-                                            disabled={isUploadingOffline}
+                                            onClick={() => setPendingUpload('offline')}
+                                            disabled={isUploadingOffline || offlineFiles.length === 0}
                                             className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:hover:bg-emerald-600 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
                                         >
                                             {isUploadingOffline && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
