@@ -87,12 +87,12 @@ it('기존 단일 이미지를 목록으로 조회하며 전체 삭제 후 다�
 });
 
 it.each([
-    Array.from({ length: 4 }, () => ({ dataUrl: png, widthPx: 1, heightPx: 1 })),
-    [{ dataUrl: 'data:image/svg+xml;base64,PHN2Zz4=', widthPx: 1, heightPx: 1 }],
-    [{ dataUrl: png, widthPx: 0, heightPx: 1 }],
-    [{ dataUrl: png }],
-    [{ dataUrl: 'data:image/png;base64,' + 'a'.repeat(1_000_000), widthPx: 1, heightPx: 1 }],
-])('잘못된 관련이미지 목록과 3개 초과 요청을 서버에서 거절한다 %#', async relatedImages => {
+    { relatedImages: Array.from({ length: 4 }, () => ({ dataUrl: png, widthPx: 1, heightPx: 1 })) },
+    { relatedImages: [{ dataUrl: 'data:image/svg+xml;base64,PHN2Zz4=', widthPx: 1, heightPx: 1 }] },
+    { relatedImages: [{ dataUrl: png, widthPx: 0, heightPx: 1 }] },
+    { relatedImages: [{ dataUrl: png }] },
+    { relatedImages: [{ dataUrl: 'data:image/png;base64,' + 'a'.repeat(1_000_000), widthPx: 1, heightPx: 1 }] },
+])('잘못된 관련이미지 목록과 3개 초과 요청을 서버에서 거절한다 %#', async ({ relatedImages }) => {
     expect((await PATCH(request({ name: '프로젝트', relatedImages }), params)).status).toBe(400);
     expect(m.update).not.toHaveBeenCalled();
     expect(stored.productImageDataUrl).toBe(png);
