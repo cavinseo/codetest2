@@ -6,6 +6,7 @@
 // 남고 워크시트로 돌아가지 않는다 — 원본이 틀렸다면 그 워크시트에서 고치는 것이 맞다.
 import type { FinalReportBlock } from '@/lib/final-report-document';
 import type { BlockEdit } from '@/lib/final-report-edit';
+import { worksheetImageFileName } from '@/lib/worksheet-capture';
 
 interface Props {
     blocks: FinalReportBlock[];
@@ -124,6 +125,7 @@ function ImageBlockView({ block }: { block: Extract<FinalReportBlock, { kind: 'i
             <figcaption className="mt-1 text-xs text-slate-500">
                 {block.title} · {Math.round(block.widthMm)}×{Math.round(block.heightMm)}mm
                 {block.landscape ? ' · 가로 페이지' : ''}
+                <a href={block.pngDataUrl} download={worksheetImageFileName(block.title, block.pngDataUrl)} className="ml-3 text-blue-700 underline">그림 다운로드</a>
             </figcaption>
         </figure>
     );

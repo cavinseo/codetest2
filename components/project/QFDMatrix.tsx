@@ -767,7 +767,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
     }
 
     return (
-        <fieldset disabled={isSavingBenchmarks || isDeletingTech || isResetting || isAddingTechnical} className="relative min-w-0 space-y-6">
+        <fieldset data-worksheet-state={dataError ? 'error' : 'ready'} disabled={isSavingBenchmarks || isDeletingTech || isResetting || isAddingTechnical} className="relative min-w-0 space-y-6">
             <datalist id={`qfd-competitor-options-${projectId}`}>
                 {competitorNameOptions.map((option) => (
                     <option key={option} value={option} />
@@ -807,7 +807,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                             </div>
                         </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div data-capture-exclude className="flex flex-wrap items-center gap-2">
                         <button
                             type="button"
                             data-worksheet-save

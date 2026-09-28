@@ -9,6 +9,7 @@ import RequirementsTable from '@/components/project/RequirementsTable';
 import QFDMatrix from '@/components/project/QFDMatrix';
 import ThemeToggle from '@/components/ThemeToggle';
 import WorksheetComments from '@/components/project/WorksheetComments';
+import WorksheetImageExport from '@/components/project/WorksheetImageExport';
 import MentorWorksheetAnalysis from '@/components/project/MentorWorksheetAnalysis';
 import ProductOverviewFields from '@/components/project/ProductOverviewFields';
 import type { ProductOverview } from '@/lib/product-overview';
@@ -483,9 +484,9 @@ export default function ProjectDetailPage() {
     const renderTabContent = (tabId: string) => {
         if (tabComponents[tabId]) {
             return (
-                <div className="animate-fade-in">
-                    {tabComponents[tabId]}
-                </div>
+                <WorksheetImageExport key={tabId} title={tabs.find(tab => tab.id === tabId)?.name ?? tabId} worksheetId={tabId}>
+                    <fieldset disabled={!canEditOverview} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
+                </WorksheetImageExport>
             );
         }
 
@@ -932,7 +933,7 @@ export default function ProjectDetailPage() {
 
                 {!canEditOverview && <p className="mb-4 text-sm text-amber-300">읽기 전용입니다. 워크시트 내용은 수정할 수 없습니다.</p>}
                 {activeTab !== 'overview' && (canEditOverview || activeTab !== 'import') && (
-                    <fieldset disabled={!canEditOverview} className="min-w-0">{renderTabContent(activeTab)}</fieldset>
+                    renderTabContent(activeTab)
                 )}
                 <MentorWorksheetAnalysis projectId={projectId} worksheetId={activeTab} onDirtyChange={setMentorAnalysisDirty} />
                 {activeTab !== 'import' && <WorksheetComments key={`${projectId}-${activeTab}`} projectId={projectId} worksheetId={activeTab} />}

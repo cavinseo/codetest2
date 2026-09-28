@@ -6,23 +6,16 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
-import FitnessWrapper from '@/components/project/FitnessWrapper';
-import KanoSatisfactionGraph from '@/components/project/KanoSatisfactionGraph';
-import QFDMatrix from '@/components/project/QFDMatrix';
+import FinalReportCaptureStage from '@/components/project/FinalReportCaptureStage';
 import FinalReportPreview from '@/components/project/FinalReportPreview';
 import { buildWorksheetData, toKanoChartPoints, type WorksheetPayloads } from '@/lib/final-report-inputs';
-import { buildFinalReportModel, hasProductOverviewSource, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel, type FinalReportOverviewInput } from '@/lib/final-report-document';
+import { buildFinalReportModel, hasProductOverviewSource, replaceWorksheetImages, CAPTURED_WORKSHEET_TITLES, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel, type FinalReportOverviewInput } from '@/lib/final-report-document';
 import { applyBlockEdit, countEditedBlocks, withEditedBlocks, type BlockEdit } from '@/lib/final-report-edit';
 import { REPORT_MAX_BYTES, type ReportDraft } from '@/lib/final-report-payload';
 import { optimizeReportImage } from '@/lib/final-report-image';
-import { captureWorksheetNode } from '@/lib/worksheet-capture';
+import { captureWorksheetNode, waitForWorksheetReady } from '@/lib/worksheet-capture';
 
-const CAPTURE_WIDTH_PX = 1280;
-const CAPTURE_TARGETS: Array<{ id: CapturedWorksheetImage['worksheetId']; title: string }> = [
-    { id: 'fitness', title: '제품/서비스 속성 적합도' },
-    { id: 'kano-aggregation', title: 'Kano 2D 산점도' },
-    { id: 'qfd', title: '고객수요기반 기술스펙 관계도' },
-];
+const CAPTURE_TARGETS = Object.entries(CAPTURED_WORKSHEET_TITLES) as Array<[CapturedWorksheetImage['worksheetId'], string]>;
 const EMPTY_FREE_INPUT: FinalReportFreeInput = {
     productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null,
     marketDefinition: '', targetCustomer: '', finalSpecExplanation: '', improvedProductName: '', improvedProductDescription: '',
@@ -122,6 +115,7 @@ export default function FinalReportPage() {
     const allowNavigation = useRef(false);
     const dialog = useRef<HTMLDialogElement>(null);
     const busy = useRef(false);
+    const captureStage = useRef<HTMLDivElement>(null);
     const worksheetLoad = useRef(0);
     const { toast, showToast } = useToast();
 
@@ -286,7 +280,7 @@ export default function FinalReportPage() {
         } catch (error) { fail(error, '이미지를 처리하지 못했습니다.'); }
         finally { finish(); }
     }
-    async function handleBuildPreview() {
+    async function handleBuildPreview(imagesOnly = false) {
         if (!worksheets || !payloads || !report?.canEdit || worksheetsLoading || failedKeys.length || !begin('0/3 캡처 중...')) return;
         try {
             const latest = await requestReport(reportUrl);
@@ -294,18 +288,23 @@ export default function FinalReportPage() {
                 throw new Error('다른 화면에서 분석 또는 보고서가 변경되었습니다. 워크시트를 다시 불러온 뒤 미리보기를 만들어 주세요. 현재 교정 내용은 유지됩니다.');
             }
             const images: CapturedWorksheetImage[] = [];
-            for (const [index, target] of CAPTURE_TARGETS.entries()) {
+            for (const [index, [id, title]] of CAPTURE_TARGETS.entries()) {
                 setProgress(`${index}/3 캡처 중...`);
-                const node = document.querySelector<HTMLElement>(`[data-worksheet-id="${target.id}"]`);
-                if (!node) throw new Error(`${target.title} 화면을 찾지 못했습니다.`);
-                if (node.querySelector('.animate-spin')) throw new Error(`${target.title} 화면을 불러오는 중입니다. 값이 표시된 뒤 다시 만들어 주세요.`);
-                if (node.querySelector('[role="alert"]')) throw new Error(`${target.title} 화면을 불러오지 못했습니다. 워크시트를 다시 불러온 뒤 미리보기를 만들어 주세요.`);
-                if (target.id === 'qfd' && node.textContent?.includes('QFD 데이터를 불러오지 못했습니다.')) {
-                    throw new Error('QFD 화면을 불러오지 못했습니다. 워크시트를 다시 불러온 뒤 미리보기를 만들어 주세요.');
-                }
+                const node = captureStage.current?.querySelector<HTMLElement>(`[data-worksheet-id="${id}"]`);
+                if (!node) throw new Error(`${title} 화면을 찾지 못했습니다.`);
+                await waitForWorksheetReady(node, title);
                 const shot = await captureWorksheetNode(node, { pixelRatio: 1 });
                 const image = await optimizeReportImage(shot.pngDataUrl);
-                images.push({ worksheetId: target.id, title: target.title, pngDataUrl: image.dataUrl, widthPx: image.widthPx, heightPx: image.heightPx });
+                images.push({ worksheetId: id, title, pngDataUrl: image.dataUrl, widthPx: image.widthPx, heightPx: image.heightPx });
+            }
+            if (imagesOnly && draft) {
+                const nextDraft = replaceWorksheetImages(draft, images);
+                const nextModel = model ? replaceWorksheetImages(model, images) : nextDraft;
+                setDraft(nextDraft);
+                setModel(nextModel);
+                setHasLocalChanges(true);
+                showToast('워크시트 그림을 반영했습니다. 문구와 표는 유지됩니다. 초안을 저장해 주세요.');
+                return;
             }
             setProgress('문서 만드는 중...');
             const project = overviewSource;
@@ -470,6 +469,7 @@ export default function FinalReportPage() {
             {previewNeedsRefresh && <p role="status" className="text-sm text-amber-300">입력 항목이 변경되었습니다. 미리보기를 다시 만들어야 완료할 수 있습니다. 기존 교정 내용은 재생성 전까지 유지됩니다.</p>}
             <div className="flex flex-wrap items-center gap-3">
                 <button onClick={() => draft ? setConfirmation('rebuild') : void handleBuildPreview()} disabled={progress !== null || worksheetsLoading || !worksheets || failedKeys.length > 0} className="btn-secondary text-sm disabled:opacity-50">{draft ? '미리보기 다시 만들기' : '미리보기 만들기'}</button>
+                {draft && <button onClick={() => void handleBuildPreview(true)} disabled={progress !== null || worksheetsLoading || !worksheets || failedKeys.length > 0} className="btn-secondary text-sm disabled:opacity-50">워크시트 그림 반영</button>}
                 <button disabled={progress !== null || worksheetsLoading} onClick={() => void reloadSources()} className="btn-secondary text-sm disabled:opacity-50">워크시트 다시 불러오기</button>
                 {worksheetsLoading && <p role="status" className="text-sm text-gray-400">워크시트 불러오는 중 {loadedCount}/11</p>}
                 {failedKeys.length > 0 && !worksheetsLoading && <div role="alert" className="text-sm text-amber-300">
@@ -498,17 +498,8 @@ export default function FinalReportPage() {
             <dl className="space-y-3">{FREE_FIELDS.map(field => <div key={field.key}><dt className="text-sm font-semibold text-gray-300">{field.label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-400">{String(free[field.key] || '입력 없음')}</dd></div>)}</dl>
         </section>}
 
-        {editing && !worksheetsLoading && worksheets && <div className="space-y-6">
-            <p className="text-sm text-gray-400">아래 워크시트는 읽기 전용이며 문서의 그림으로 저장됩니다. 값이 표시된 뒤 미리보기를 만들어 주세요.</p>
-            <section className="card overflow-x-auto p-0"><h3 className="border-b border-white/[0.06] px-4 py-3 text-sm font-semibold text-white">[WS-4] 제품속성적합도</h3>
-                <div inert data-worksheet-id="fitness" style={{ width: CAPTURE_WIDTH_PX }} className="p-4"><FitnessWrapper key={captureRevision} projectId={projectId} /></div>
-            </section>
-            <section className="card overflow-x-auto p-0"><h3 className="border-b border-white/[0.06] px-4 py-3 text-sm font-semibold text-white">[WS-7] TIMKO/만족계수 그래프</h3>
-                <div inert data-worksheet-id="kano-aggregation" style={{ width: CAPTURE_WIDTH_PX }} className="p-4">{kanoPoints.length ? <KanoSatisfactionGraph analysis={kanoPoints} /> : <p className="text-sm text-gray-400">Kano 응답이 없어 산점도를 그릴 수 없습니다. (요구사항 {worksheets.requirements.length}개)</p>}</div>
-            </section>
-            <section className="card overflow-x-auto p-0"><h3 className="border-b border-white/[0.06] px-4 py-3 text-sm font-semibold text-white">[WS-9] QFD</h3>
-                <div inert data-worksheet-id="qfd" style={{ width: CAPTURE_WIDTH_PX }} className="p-4"><QFDMatrix key={captureRevision} projectId={projectId} /></div>
-            </section>
+        {editing && !worksheetsLoading && worksheets && <div ref={captureStage}>
+            <FinalReportCaptureStage projectId={projectId} kanoPoints={kanoPoints} requirementCount={worksheets.requirements.length} revision={captureRevision} disabled={progress !== null} />
         </div>}
 
         {confirmation && <dialog ref={dialog} onCancel={() => { setConfirmation(null); setPendingNavigation(null); }} className="w-full max-w-lg rounded-xl border border-white/10 bg-gray-900 p-6 text-white shadow-xl backdrop:bg-black/60" aria-labelledby="report-confirm-title">

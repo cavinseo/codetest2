@@ -90,6 +90,32 @@ export const CAPTURED_WORKSHEET_TITLES: Record<CapturedWorksheetImage['worksheet
     qfd: '고객수요기반 기술스펙 관계도',
 };
 
+function worksheetImageBlock(image: CapturedWorksheetImage): Extract<FinalReportBlock, { kind: 'image' }> {
+    const landscape = shouldUseLandscape(image.widthPx, image.heightPx);
+    return {
+        kind: 'image', title: image.title, pngDataUrl: image.pngDataUrl,
+        ...fitImageToBody(image.widthPx, image.heightPx, landscape ? A4_LANDSCAPE_BODY : A4_PORTRAIT_BODY),
+        landscape,
+    };
+}
+
+// 보고서의 교정 문구와 표를 유지하면서 지정된 그림 자리만 교체한다.
+export function replaceWorksheetImages(model: FinalReportModel, images: CapturedWorksheetImage[]): FinalReportModel {
+    const blocks = [...model.blocks];
+    for (const image of images) {
+        const title = CAPTURED_WORKSHEET_TITLES[image.worksheetId];
+        let index = blocks.findIndex(block => block.kind === 'image' && block.title === title);
+        if (index < 0) {
+            const heading = blocks.findIndex(block => block.kind === 'heading' && block.text === title);
+            const placeholder = blocks[heading + 1];
+            if (heading >= 0 && (placeholder?.kind === 'image' || (placeholder?.kind === 'paragraph' && placeholder.text === '그림을 캡처하지 못했습니다'))) index = heading + 1;
+        }
+        if (index < 0) throw new Error(`${title} 그림 위치를 찾지 못했습니다. 미리보기를 다시 만들어 주세요.`);
+        blocks[index] = worksheetImageBlock(image);
+    }
+    return { ...model, blocks };
+}
+
 export function finalReportFileName(projectName: string): string {
     return `결과보고서_${kanoSurveyFileNameStem(projectName)}.docx`;
 }
@@ -140,14 +166,7 @@ function createReportBuilder(images: CapturedWorksheetImage[]) {
             push({ kind: 'paragraph', text: '그림을 캡처하지 못했습니다' });
             return;
         }
-        const landscape = shouldUseLandscape(image.widthPx, image.heightPx);
-        push({
-            kind: 'image',
-            title: image.title,
-            pngDataUrl: image.pngDataUrl,
-            ...fitImageToBody(image.widthPx, image.heightPx, landscape ? A4_LANDSCAPE_BODY : A4_PORTRAIT_BODY),
-            landscape,
-        });
+        push(worksheetImageBlock(image));
     };
 
     return { blocks, push, heading, table, prose, capture };

@@ -496,7 +496,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                     <h2 className="text-xl font-display font-bold text-white">[WS-4] 제품 속성 적합도</h2>
                     <p className="text-sm text-gray-500 mt-0.5">셀 클릭으로 우선순위 입력 · 우클릭으로 초기화</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div data-capture-exclude className="flex items-center gap-2">
                     <button onClick={handleSave} disabled={isSaving} className="btn-primary text-sm flex items-center gap-1.5">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />

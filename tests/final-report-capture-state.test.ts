@@ -4,6 +4,7 @@ import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import FinalReportPage from '../app/project/[id]/report/page';
+import { CAPTURED_WORKSHEET_TITLES } from '../lib/final-report-document';
 
 const m = vi.hoisted(() => ({
     fitnessError: false,
@@ -30,7 +31,10 @@ vi.mock('../components/project/QFDMatrix', () => {
     return { default: MockQfd };
 });
 vi.mock('../components/project/KanoSatisfactionGraph', () => ({ default: () => createElement('div', null, 'Kano') }));
-vi.mock('../lib/worksheet-capture', () => ({ captureWorksheetNode: (...args: unknown[]) => m.capture(...args) }));
+vi.mock('../lib/worksheet-capture', async importOriginal => ({
+    ...await importOriginal<typeof import('../lib/worksheet-capture')>(),
+    captureWorksheetNode: (...args: unknown[]) => m.capture(...args),
+}));
 vi.mock('../lib/final-report-image', () => ({ optimizeReportImage: (...args: unknown[]) => m.optimize(...args) }));
 
 let container: HTMLDivElement;
@@ -51,7 +55,8 @@ beforeEach(() => {
     m.qfdMounts = 0;
     m.capture.mockReset().mockResolvedValue({ pngDataUrl: 'data:image/png;base64,AA==', widthPx: 1, heightPx: 1 });
     m.optimize.mockReset().mockResolvedValue({ dataUrl: 'data:image/png;base64,AA==', widthPx: 1, heightPx: 1 });
-    fetchMock.mockClear();
+    fetchMock.mockReset().mockImplementation(async (url: string) => json(url === '/api/projects/project/report' ? report
+        : url.endsWith('/overview') ? { project: { name: '프로젝트' } } : {}));
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -91,4 +96,38 @@ it('워크시트 다시 불러오기는 WS-4와 QFD 캡처 화면도 새로 조�
 
     expect(m.fitnessMounts).toBe(2);
     expect(m.qfdMounts).toBe(2);
+});
+
+it('그림 반영 후 초안 저장은 실제 캡처 세 장과 교정 내용 및 재생성 필요 상태를 보존한다', async () => {
+    const document = {
+        title: '교정한 보고서', fileName: '교정.docx', blocks: [
+            { kind: 'paragraph', text: '사용자가 교정한 분석 내용' },
+            ...Object.values(CAPTURED_WORKSHEET_TITLES).map(title => ({
+                kind: 'image', title, pngDataUrl: 'data:image/png;base64,old', widthMm: 100, heightMm: 100, landscape: false,
+            })),
+        ],
+    };
+    const free = { productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null,
+        marketDefinition: '보완한 시장', targetCustomer: '', finalSpecExplanation: '', improvedProductName: '', improvedProductDescription: '' };
+    let saved: any;
+    fetchMock.mockImplementation(async (url: string, options?: any) => {
+        if (url === '/api/projects/project/report') {
+            if (options?.method === 'PUT') saved = JSON.parse(options.body);
+            return json({ ...report, draft: { free, document, previewNeedsRefresh: true } });
+        }
+        return json(url.endsWith('/overview') ? { project: { name: '프로젝트' } } : {});
+    });
+    m.capture.mockImplementation(async (node: HTMLElement) => ({ pngDataUrl: `data:image/png;base64,${node.dataset.worksheetId}`, widthPx: 1280, heightPx: 800 }));
+    m.optimize.mockImplementation(async (dataUrl: string) => ({ dataUrl, widthPx: 1280, heightPx: 800 }));
+    await render();
+    await click('워크시트 그림 반영');
+    expect(m.capture).toHaveBeenCalledTimes(3);
+    await click('초안 저장');
+    expect(saved.draft.document.blocks[0]).toEqual(document.blocks[0]);
+    expect(saved.draft.document.blocks.slice(1).map((block: any) => block.pngDataUrl)).toEqual(
+        Object.keys(CAPTURED_WORKSHEET_TITLES).map(id => `data:image/png;base64,${id}`),
+    );
+    expect(saved.draft.previewNeedsRefresh).toBe(true);
+    expect(saved.draft.free).toEqual(free);
+    expect(container.querySelectorAll('figure a[download]')).toHaveLength(3);
 });

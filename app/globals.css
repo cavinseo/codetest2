@@ -549,6 +549,14 @@ body {
   border-color: rgba(99, 102, 241, 0.26) !important;
 }
 
+/* 그림을 만드는 동안 색상 전환과 커서 표시를 멈춘다. */
+.worksheet-image-capture,
+.worksheet-image-capture * {
+  transition: none !important;
+  animation: none !important;
+  caret-color: transparent !important;
+}
+
 .light .input {
   background-color: #ffffff !important;
   border-color: rgba(148, 163, 184, 0.45) !important;
