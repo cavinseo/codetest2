@@ -615,7 +615,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     <button
                         onClick={() => setShowMentor(true)}
                         className="btn-secondary text-sm flex items-center gap-1.5 border-accent-500/30 text-accent-300 hover:bg-accent-500/10"
-                        title="질문에 답하면 세분시장·고객·니즈 초안을 만들고, WS-2 기능과 적용기술을 연결해 줍니다."
+                        title="제품의 가치사슬·가치시스템을 분석하고, 문진을 통해 제품속성서 초안과 WS-2 기능·기술을 연결합니다."
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -972,6 +972,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 <AttributeMentorWizard
                     projectId={projectId}
                     specFunctions={specFunctions}
+                    analysisContext={{ productName, existingRows: rows.map(row => ({ ...row, techCapability })) }}
                     onApply={applyMentorResult}
                     onClose={() => setShowMentor(false)}
                     onNotify={showToast}
