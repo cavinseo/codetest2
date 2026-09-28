@@ -743,16 +743,16 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     </button>
                 </div>
             ) : (
-                <div className="card p-0 overflow-x-auto">
-                    <table className="w-full border-collapse text-sm table-fixed">
+                <div className="card p-0 overflow-x-auto" style={{ containerType: 'inline-size' }}>
+                    <table className="w-full min-w-[960px] border-collapse text-sm table-fixed">
                         <thead>
                             <tr className="bg-white/[0.03] border-b border-white/[0.06]">
                                 <th className="px-3 py-3 text-gray-500 font-medium text-center text-xs w-[44px]">No</th>
-                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[110px]">세분시장</th>
-                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[110px]">고객명</th>
-                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[150px]">고객 니즈</th>
-                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[150px]">제공혜택</th>
-                                <th className="px-3 py-3 text-left text-xs min-w-[170px]">
+                                <th style={{ width: 'calc((max(100cqw, 960px) - 116px) / 10)' }} className="px-3 py-3 text-gray-400 font-medium text-left text-xs">세분시장</th>
+                                <th style={{ width: 'calc((max(100cqw, 960px) - 116px) / 10)' }} className="px-3 py-3 text-gray-400 font-medium text-left text-xs">고객명</th>
+                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs">고객 니즈</th>
+                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs">제공혜택</th>
+                                <th style={{ width: 'calc((max(100cqw, 960px) - 116px) / 5)' }} className="px-3 py-3 text-left text-xs">
                                     <div className="text-cyan-400 font-semibold">제품속성</div>
                                     <div className="text-[10px] text-gray-600 font-normal mt-0.5">📥 스펙에서 가져오기</div>
                                 </th>
@@ -783,7 +783,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                                     className="w-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
                                                     placeholder="입력"
                                                 />
-                                                <div className="flex items-center justify-between gap-2 px-3 pb-2">
+                                                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2">
                                                     <span className="text-[10px] text-gray-600 whitespace-nowrap">
                                                         {marketSegmentRowSpan > 1 ? `${marketSegmentRowSpan}개 항목` : '1개 항목'}
                                                     </span>
@@ -817,7 +817,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                                 <datalist id={`customer_name_list_${row.id}`}>
                                                     {getUniqueValues('customerName').map((v, i) => <option key={i} value={v} />)}
                                                 </datalist>
-                                                <div className="flex items-center justify-between gap-2 px-3 pb-2">
+                                                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2">
                                                     <span className="text-[10px] text-gray-600 whitespace-nowrap">
                                                         {customerNameRowSpan > 1 ? `${customerNameRowSpan}개 니즈` : '1개 니즈'}
                                                     </span>
