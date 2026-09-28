@@ -12,6 +12,7 @@ import WorksheetComments from '@/components/project/WorksheetComments';
 import WorksheetImageExport from '@/components/project/WorksheetImageExport';
 import MentorWorksheetAnalysis from '@/components/project/MentorWorksheetAnalysis';
 import ProductOverviewFields from '@/components/project/ProductOverviewFields';
+import ProductOverviewDetailEditor from '@/components/project/ProductOverviewDetailEditor';
 import type { ProductOverview } from '@/lib/product-overview';
 import { HEADER_TOAST_SLOT_ID } from '@/components/HeaderToast';
 import KanoManager from '@/components/project/KanoManager';
@@ -763,11 +764,10 @@ export default function ProjectDetailPage() {
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
                                     <p className="text-xs text-gray-500 mb-2">상세 제품개요</p>
                                     {isOverviewEditing ? (
-                                        <textarea
+                                        <ProductOverviewDetailEditor
                                             value={overviewForm.detailedDescription}
-                                            onChange={(event) => setOverviewForm({ ...overviewForm, detailedDescription: event.target.value })}
-                                            rows={7}
-                                            className="w-full resize-y rounded-md border border-white/[0.08] bg-gray-950 px-3 py-2 text-sm leading-6 text-white outline-none focus:border-primary-500"
+                                            onChange={detailedDescription => setOverviewForm(current => ({ ...current, detailedDescription }))}
+                                            disabled={isOverviewSaving}
                                         />
                                     ) : (
                                         <p className="text-sm leading-6 text-white whitespace-pre-wrap">{project.detailedDescription || '입력된 상세 제품개요가 없습니다.'}</p>

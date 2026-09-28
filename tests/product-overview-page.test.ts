@@ -155,3 +155,64 @@ it('읽기 전용 사용자에게는 관련이미지 선택과 삭제 버튼이 
     expect(container.querySelector('input[type="file"]')).toBeNull();
     expect(container.textContent).not.toContain('관련이미지 1 삭제');
 });
+
+async function pressDetailEnter(textarea: HTMLTextAreaElement, options: KeyboardEventInit = {}) {
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...options });
+    await act(async () => { textarea.dispatchEvent(event); });
+    return event;
+}
+
+it('상세 제품개요의 글머리 적용·자동 이어쓰기·종료 후 저장하고 다시 열어도 내용을 보존한다', async () => {
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    await click('수정');
+    let textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')!;
+    await input(textarea, '고객 문제\n핵심 기능');
+    textarea.setSelectionRange(0, textarea.value.length);
+    await click('• 점');
+    expect(textarea.value).toBe('• 고객 문제\n• 핵심 기능');
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    await pressDetailEnter(textarea);
+    expect(textarea.value.endsWith('\n• ')).toBe(true);
+    await input(textarea, textarea.value + 'BM 검증');
+    await pressDetailEnter(textarea);
+    await pressDetailEnter(textarea);
+    expect(textarea.value.endsWith('BM 검증\n')).toBe(true);
+    await input(textarea, textarea.value + '추가 설명');
+    const expected = '• 고객 문제\n• 핵심 기능\n• BM 검증\n추가 설명';
+    await click('저장');
+    expect(savedBody().detailedDescription).toBe(expected);
+    expect(container.textContent).toContain(expected);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    await click('수정');
+    textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')!;
+    expect(textarea.value).toBe(expected);
+});
+
+it.each([{ isComposing: true }, { keyCode: 229 }, { shiftKey: true }, { ctrlKey: true }])('한글 조합 확정과 보조키 Enter를 가로채지 않는다 %j', async options => {
+    project.detailedDescription = '• 작성 중';
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    await click('수정');
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')!;
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    const event = await pressDetailEnter(textarea, options);
+    expect(event.defaultPrevented).toBe(false);
+    expect(textarea.value).toBe('• 작성 중');
+});
+
+it('여러 줄의 기호를 바꾸거나 제거한 뒤 취소하면 원래 상세 설명을 유지한다', async () => {
+    project.detailedDescription = '• 첫 항목\n- 두 번째 항목';
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    await click('수정');
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')!;
+    textarea.setSelectionRange(0, textarea.value.length);
+    await click('○ 동그라미');
+    expect(textarea.value).toBe('○ 첫 항목\n○ 두 번째 항목');
+    await click('글머리 제거');
+    expect(textarea.value).toBe('첫 항목\n두 번째 항목');
+    await click('취소');
+    await click('수정');
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')?.value).toBe(project.detailedDescription);
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
+});
