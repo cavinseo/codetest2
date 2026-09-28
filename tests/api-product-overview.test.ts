@@ -67,3 +67,33 @@ it('제품 정보 검증은 입력 객체를 변경하지 않는다', () => {
     expect(validateProductOverview(input).productName).toBe('제품');
     expect(input.productName).toBe('  제품  ');
 });
+
+it('관련이미지 3개를 저장·조회하고 첫 이미지는 기존 단일 이미지 필드에도 보존한다', async () => {
+    const relatedImages = [1, 2, 3].map(widthPx => ({ dataUrl: png, widthPx, heightPx: 1 }));
+    const response = await PATCH(request({ name: '프로젝트', relatedImages }), params);
+    expect(response.status).toBe(200);
+    expect((await response.json()).project).toMatchObject({ relatedImages, productImageDataUrl: png, productImageWidthPx: 1 });
+    expect((await (await GET(request(), params)).json()).project.relatedImages).toEqual(relatedImages);
+    expect(m.find.mock.calls[0][0].select.relatedImages).toBe(true);
+    await PATCH(request({ name: '이름만 변경' }), params);
+    expect(stored.relatedImages).toEqual(relatedImages);
+});
+
+it('기존 단일 이미지를 목록으로 조회하며 전체 삭제 후 다시 나타나지 않는다', async () => {
+    expect((await (await GET(request(), params)).json()).project.relatedImages).toEqual([{ dataUrl: png, widthPx: 1, heightPx: 1 }]);
+    await PATCH(request({ name: '프로젝트', relatedImages: [] }), params);
+    expect(stored).toMatchObject({ relatedImages: [], productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null });
+    expect((await (await GET(request(), params)).json()).project.relatedImages).toEqual([]);
+});
+
+it.each([
+    Array.from({ length: 4 }, () => ({ dataUrl: png, widthPx: 1, heightPx: 1 })),
+    [{ dataUrl: 'data:image/svg+xml;base64,PHN2Zz4=', widthPx: 1, heightPx: 1 }],
+    [{ dataUrl: png, widthPx: 0, heightPx: 1 }],
+    [{ dataUrl: png }],
+    [{ dataUrl: 'data:image/png;base64,' + 'a'.repeat(1_000_000), widthPx: 1, heightPx: 1 }],
+])('잘못된 관련이미지 목록과 3개 초과 요청을 서버에서 거절한다 %#', async relatedImages => {
+    expect((await PATCH(request({ name: '프로젝트', relatedImages }), params)).status).toBe(400);
+    expect(m.update).not.toHaveBeenCalled();
+    expect(stored.productImageDataUrl).toBe(png);
+});

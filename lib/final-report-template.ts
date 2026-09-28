@@ -13,7 +13,7 @@ const KANO_CATEGORY_NAMES: Record<string, string> = { A: '매력적', O: '일원
 
 // 삭제한 입력은 보존하고 신규 개요 필드가 없는 이전 프로젝트만 자유 입력을 사용한다.
 export function hasProductOverviewSource(overview: ProductOverview): boolean {
-    return ['productName', 'productImageDataUrl', 'productImageWidthPx', 'productImageHeightPx', 'marketDefinition', 'targetCustomer']
+    return ['productName', 'relatedImages', 'productImageDataUrl', 'productImageWidthPx', 'productImageHeightPx', 'marketDefinition', 'targetCustomer']
         .some(key => Object.hasOwn(overview, key));
 }
 
@@ -63,7 +63,10 @@ function appendProductOverview(writer: ReportWriter, overview: FinalReportOvervi
     writer.addParagraph(`제품명 · ${displayValue(overview.productName)}\n개요의 간단 설명 · ${displayValue(overview.description)}\n상세 제품설명 · ${displayValue(overview.detailedDescription)}`);
     // 구형 개요 응답에 필드 자체가 없을 때만 기존 보고서의 자유입력을 사용한다.
     const source = hasProductOverviewSource(overview) ? overview : freeInput;
-    if (source.productImageDataUrl) {
+    if ('relatedImages' in source && source.relatedImages) {
+        source.relatedImages.forEach((image, index) => writer.blocks.push({ kind: 'image', title: `관련이미지 ${index + 1}`, pngDataUrl: image.dataUrl,
+            landscape: false, ...fitImageToBody(image.widthPx, image.heightPx, A4_PORTRAIT_BODY) }));
+    } else if (source.productImageDataUrl) {
         writer.blocks.push({ kind: 'image', title: '제품/서비스 이미지', pngDataUrl: source.productImageDataUrl, landscape: false,
             ...(source.productImageWidthPx && source.productImageHeightPx
                 ? fitImageToBody(source.productImageWidthPx, source.productImageHeightPx, A4_PORTRAIT_BODY)

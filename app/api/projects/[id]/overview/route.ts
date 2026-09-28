@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { calculateWorksheetCompleteness } from '@/lib/worksheet-completeness';
-import { validateProductOverview } from '@/lib/product-overview';
+import { getProductOverviewImages, validateProductOverview } from '@/lib/product-overview';
 import {
     BusinessPlanFileValidationError,
     validateBusinessPlanFileStorageValue,
@@ -56,6 +56,7 @@ export async function GET(
                     description: true,
                     detailedDescription: true,
                     productName: true,
+                    relatedImages: true,
                     productImageDataUrl: true,
                     productImageWidthPx: true,
                     productImageHeightPx: true,
@@ -120,6 +121,7 @@ export async function GET(
         return NextResponse.json({
             project: {
                 ...project,
+                relatedImages: getProductOverviewImages(project),
                 role: accessResult.role,
                 createdAt: project.createdAt.toISOString(),
                 updatedAt: project.updatedAt.toISOString(),
@@ -146,7 +148,7 @@ export async function PATCH(
         const data = updateOverviewSchema.parse(body);
         let productDetails;
         try { productDetails = validateProductOverview(body); }
-        catch { return NextResponse.json({ error: '제품 정보나 이미지를 확인하세요. 이미지는 PNG/JPEG, 최적화 후 1MB 이하만 저장할 수 있습니다.' }, { status: 400 }); }
+        catch { return NextResponse.json({ error: '제품 정보나 이미지를 확인하세요. 관련이미지는 최대 3개, 각각 PNG/JPEG, 최적화 후 1MB 이하만 저장할 수 있습니다.' }, { status: 400 }); }
         const businessPlanFile = data.businessPlanFile === undefined
             ? undefined
             : validateBusinessPlanFileStorageValue(data.businessPlanFile);
@@ -169,6 +171,7 @@ export async function PATCH(
                 description: project.description,
                 detailedDescription: project.detailedDescription,
                 productName: project.productName,
+                relatedImages: getProductOverviewImages(project),
                 productImageDataUrl: project.productImageDataUrl,
                 productImageWidthPx: project.productImageWidthPx,
                 productImageHeightPx: project.productImageHeightPx,

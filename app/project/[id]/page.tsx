@@ -136,6 +136,7 @@ export default function ProjectDetailPage() {
                             detailedDescription: overviewData.project.detailedDescription || '',
                             businessPlanFile: overviewData.project.businessPlanFile || '',
                             productName: overviewData.project.productName,
+                            relatedImages: overviewData.project.relatedImages,
                             productImageDataUrl: overviewData.project.productImageDataUrl,
                             productImageWidthPx: overviewData.project.productImageWidthPx,
                             productImageHeightPx: overviewData.project.productImageHeightPx,
@@ -317,6 +318,7 @@ export default function ProjectDetailPage() {
             const payload = {
                 name: overviewForm.name,
                 productName: overviewForm.productName,
+                relatedImages: overviewForm.relatedImages,
                 productImageDataUrl: overviewForm.productImageDataUrl,
                 productImageWidthPx: overviewForm.productImageWidthPx,
                 productImageHeightPx: overviewForm.productImageHeightPx,
@@ -339,6 +341,7 @@ export default function ProjectDetailPage() {
             setProject({
                 ...project,
                 productName: data.project.productName,
+                relatedImages: data.project.relatedImages,
                 productImageDataUrl: data.project.productImageDataUrl,
                 productImageWidthPx: data.project.productImageWidthPx,
                 productImageHeightPx: data.project.productImageHeightPx,

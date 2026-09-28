@@ -41,3 +41,11 @@ it('기업명이 없을 때 프로젝트명을 기업명으로 대체하거나 �
     expect(text).toContain('적합도'); expect(text).toContain('미작성');
     expect(model.blocks.some(b => b.kind === 'dataTable' && b.rows.some(r => r.includes('아니요')))).toBe(false);
 });
+
+it('개요의 관련이미지 세 장을 순서대로 보고서에 넣고 기존 첫 이미지를 중복하지 않는다', () => {
+    const relatedImages = [1, 2, 3].map(index => ({ dataUrl: `image-${index}`, widthPx: 800, heightPx: 600 }));
+    const model = buildFinalReportModel({ ...overview, relatedImages, productImageDataUrl: 'image-1' }, empty, EMPTY_REPORT_FREE_INPUT, []);
+    expect(model.blocks.filter(block => block.kind === 'image')).toMatchObject(relatedImages.map((image, index) => ({ title: `관련이미지 ${index + 1}`, pngDataUrl: image.dataUrl })));
+    const cleared = buildFinalReportModel({ ...overview, relatedImages: [], productImageDataUrl: 'legacy-image' }, empty, EMPTY_REPORT_FREE_INPUT, []);
+    expect(cleared.blocks.some(block => block.kind === 'image')).toBe(false);
+});
