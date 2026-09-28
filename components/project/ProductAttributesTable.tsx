@@ -456,7 +456,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         return getCustomerNameSpan(rows, index);
     };
 
-    // 세분시장 안에서 값이 같은 고객 니즈/제공혜택은 한 칸으로 묶어 보여준다.
+    // 같은 세분시장의 고객니즈를 묶고, 제공혜택은 같은 니즈 안에서만 병합한다.
     const getCustomerNeedRowSpan = (index: number) => {
         return getCustomerNeedSpan(rows, index);
     };
@@ -851,7 +851,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                         </td>
                                     )}
 
-                                    {/* 제공혜택 - 같은 세분시장에서 값이 같으면 병합 */}
+                                    {/* 제공혜택 - 같은 세분시장과 고객니즈 안에서 값이 같으면 병합 */}
                                     {benefitRowSpan > 0 && (
                                         <td rowSpan={benefitRowSpan} className="p-0 align-top">
                                             <input

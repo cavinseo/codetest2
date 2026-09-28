@@ -189,8 +189,7 @@ export function getMarketSegmentSpan(rows: AttributeGroupingRowLike[], index: nu
     return count;
 }
 
-// 같은 세분시장 안에서 값이 연속으로 같으면 첫 행만 남기고 병합한다.
-// 고객명이 달라도 값이 같으면 하나로 표기한다.
+// 같은 세분시장 안에서 연속된 값을 병합하되, 제공혜택은 같은 고객니즈 안에서만 묶는다.
 function getSegmentScopedSpan(
     rows: AttributeSegmentValueRowLike[],
     index: number,
@@ -201,16 +200,22 @@ function getSegmentScopedSpan(
 
     const segment = current.marketSegment.trim();
     const value = current[field].trim();
-    if (!value) return 1;
+    const customerNeed = current.customerNeed.trim();
+    if (!value || (field === 'benefit' && !customerNeed)) return 1;
+
+    const matchesGroup = (row: AttributeSegmentValueRowLike) =>
+        row.marketSegment.trim() === segment &&
+        row[field].trim() === value &&
+        (field !== 'benefit' || row.customerNeed.trim() === customerNeed);
 
     const previous = rows[index - 1];
-    if (index > 0 && previous.marketSegment.trim() === segment && previous[field].trim() === value) {
+    if (previous && matchesGroup(previous)) {
         return 0;
     }
 
     let count = 1;
     for (let i = index + 1; i < rows.length; i++) {
-        if (rows[i].marketSegment.trim() !== segment || rows[i][field].trim() !== value) break;
+        if (!matchesGroup(rows[i])) break;
         count++;
     }
     return count;

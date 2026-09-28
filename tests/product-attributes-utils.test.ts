@@ -97,6 +97,27 @@ describe('product attribute technology linking', () => {
         expect(getBenefitSpan(rows, 1)).toBe(0);
     });
 
+    it('keeps identical benefits separate when adjacent customer needs differ', () => {
+        const rows = [
+            { marketSegment: 'PLC SI 시장', customerNeed: '외부 인력 도착 전 복구', benefit: '원격 해결률 향상' },
+            { marketSegment: 'PLC SI 시장', customerNeed: '전문인력 없이 고장 진단', benefit: '원격 해결률 향상' },
+            { marketSegment: 'PLC SI 시장', customerNeed: ' 전문인력 없이 고장 진단 ', benefit: ' 원격 해결률 향상 ' },
+            { marketSegment: 'PLC SI 시장', customerNeed: '외부 인력 도착 전 복구', benefit: '원격 해결률 향상' },
+        ];
+
+        expect(rows.map((_, index) => getBenefitSpan(rows, index))).toEqual([1, 2, 0, 1]);
+    });
+
+    it('keeps benefit inputs independent until their customer needs are entered', () => {
+        const rows = [
+            { marketSegment: 'PLC SI 시장', customerNeed: '', benefit: '원격 해결률 향상' },
+            { marketSegment: 'PLC SI 시장', customerNeed: ' ', benefit: '원격 해결률 향상' },
+            { marketSegment: 'PLC SI 시장', customerNeed: '고장 진단', benefit: '원격 해결률 향상' },
+        ];
+
+        expect(rows.map((_, index) => getBenefitSpan(rows, index))).toEqual([1, 1, 1]);
+    });
+
     it('does not merge the same value across different market segments', () => {
         const rows = [
             { marketSegment: '소규모 동호회', customerNeed: '명단 통합', benefit: '운영 시간 절감' },
