@@ -25,12 +25,13 @@ async function getAccess(request: NextRequest, id: string) {
     const access = await requireProjectAccess(request, id);
     if (access instanceof NextResponse) return access;
     const project = await prisma.project.findUnique({ where: { id }, select: {
-        owner: { select: { mentorAssignment: { select: { mentorId: true, mentor: { select: { name: true } } } } } },
+        owner: { select: { profile: { select: { companyName: true } }, mentorAssignment: { select: { mentorId: true, mentor: { select: { name: true } } } } } },
     } });
     if (!project) return json({ error: '프로젝트를 찾을 수 없습니다.' }, 404);
     const assignment = project.owner.mentorAssignment;
     const canEdit = canBeAssignedMentor(access) && assignment?.mentorId === access.user.userId;
-    return { access, canEdit, canReadDraft: canEdit || access.user.role === 'ADMIN', mentorName: assignment?.mentor.name ?? null };
+    return { access, canEdit, canReadDraft: canEdit || access.user.role === 'ADMIN', mentorName: assignment?.mentor.name ?? null,
+        companyName: project.owner.profile?.companyName ?? null };
 }
 
 function worksheetAnalysis(draft: ReportDraft | undefined, worksheetId: AnalysisWorksheetId) {
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest, props: Props) {
         }
         const report = await prisma.finalReport.findUnique({ where: { projectId: id } });
         const view = actor.canReadDraft && request.nextUrl.searchParams.get('view') !== 'published' ? 'draft' : 'published';
-        const common = { canEdit: actor.canEdit, mentorName: actor.mentorName, view,
+        const common = { canEdit: actor.canEdit, mentorName: actor.mentorName, companyName: actor.companyName, view,
             hasPublishedReport: report?.published != null, publishedAt: report?.publishedAt ?? null,
         };
         if (view === 'published') {

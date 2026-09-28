@@ -83,6 +83,9 @@ async function click(label: string) {
 
 it('WS-4 조회 실패 화면은 이미지로 캡처하지 않는다', async () => {
     m.fitnessError = true;
+    fetchMock.mockImplementation(async (url: string) => json(url === '/api/projects/project/report' ? report
+        : url.endsWith('/overview') ? { project: { name: '프로젝트' } }
+            : url.endsWith('/export') ? { fitnessMatrix: { marketsJson: '[]', matrixJson: '{}' } } : {}));
     await render();
     await click('미리보기 만들기');
 
@@ -96,6 +99,17 @@ it('워크시트 다시 불러오기는 WS-4와 QFD 캡처 화면도 새로 조�
 
     expect(m.fitnessMounts).toBe(2);
     expect(m.qfdMounts).toBe(2);
+});
+
+it('요구사항이 있어도 Kano 응답이 없으면 빈 그래프를 보고서 결과로 캡처하지 않는다', async () => {
+    fetchMock.mockImplementation(async (url: string) => json(url === '/api/projects/project/report' ? report
+        : url.endsWith('/overview') ? { project: { name: '프로젝트' } }
+            : url.endsWith('/kano/analysis') ? { requirements: [{ requirementId: 'req', responseCount: 0, better: 0, worse: 0, kanoWeight: 0, timkoCategory: '' }] } : {}));
+    await render();
+    await click('미리보기 만들기');
+    expect(m.capture).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-report-cover]')).not.toBeNull();
+    expect(container.textContent).toContain('Kano 응답이 없어 분석 결과 그림은 미작성 상태입니다.');
 });
 
 it('그림 반영 후 초안 저장은 실제 캡처 세 장과 교정 내용 및 재생성 필요 상태를 보존한다', async () => {

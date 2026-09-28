@@ -14,6 +14,7 @@ import { applyBlockEdit, countEditedBlocks, withEditedBlocks, type BlockEdit } f
 import { REPORT_MAX_BYTES, type ReportDraft } from '@/lib/final-report-payload';
 import { optimizeReportImage } from '@/lib/final-report-image';
 import { captureWorksheetNode, waitForWorksheetReady } from '@/lib/worksheet-capture';
+import { reportOutputDate, withReportOutputDate } from '@/lib/final-report-layout';
 
 const CAPTURE_TARGETS = Object.entries(CAPTURED_WORKSHEET_TITLES) as Array<[CapturedWorksheetImage['worksheetId'], string]>;
 const EMPTY_FREE_INPUT: FinalReportFreeInput = {
@@ -37,6 +38,7 @@ interface ReportMetadata {
 interface ReportResponse extends ReportMetadata {
     canEdit: boolean;
     mentorName: string | null;
+    companyName?: string | null;
     view: 'draft' | 'published';
     draft?: ReportDraft | null;
     document?: FinalReportModel | null;
@@ -281,21 +283,37 @@ export default function FinalReportPage() {
         finally { finish(); }
     }
     async function handleBuildPreview(imagesOnly = false) {
-        if (!worksheets || !payloads || !report?.canEdit || worksheetsLoading || failedKeys.length || !begin('0/3 캡처 중...')) return;
+        if (!worksheets || !payloads || !report?.canEdit || worksheetsLoading || failedKeys.length || !begin('보고서 원본 확인 중...')) return;
         try {
             const latest = await requestReport(reportUrl);
             if (!latest.canEdit || latest.version !== report.version) {
                 throw new Error('다른 화면에서 분석 또는 보고서가 변경되었습니다. 워크시트를 다시 불러온 뒤 미리보기를 만들어 주세요. 현재 교정 내용은 유지됩니다.');
             }
             const images: CapturedWorksheetImage[] = [];
-            for (const [index, [id, title]] of CAPTURE_TARGETS.entries()) {
-                setProgress(`${index}/3 캡처 중...`);
+            const template = !imagesOnly || draft?.blocks.some(block => block.kind === 'cover');
+            const targets = CAPTURE_TARGETS.filter(([id, title]) => template
+                ? imagesOnly ? draft?.blocks.some(block => block.kind === 'image' && block.title === title)
+                    : id === 'fitness' ? Boolean(worksheets.fitnessMatrix) : id === 'kano-aggregation' ? worksheets.kanoAggregation.some(row => row.responseCount > 0)
+                        : false
+                : true);
+            for (const [index, [id, title]] of targets.entries()) {
+                setProgress(`${index + 1}/${targets.length} 그림 만드는 중...`);
                 const node = captureStage.current?.querySelector<HTMLElement>(`[data-worksheet-id="${id}"]`);
                 if (!node) throw new Error(`${title} 화면을 찾지 못했습니다.`);
                 await waitForWorksheetReady(node, title);
-                const shot = await captureWorksheetNode(node, { pixelRatio: 1 });
-                const image = await optimizeReportImage(shot.pngDataUrl);
-                images.push({ worksheetId: id, title, pngDataUrl: image.dataUrl, widthPx: image.widthPx, heightPx: image.heightPx });
+                const chart = template && id === 'kano-aggregation' ? node.querySelector<SVGSVGElement>('.timko-chart') : null;
+                const captureNode = chart?.parentElement ?? node;
+                const originalStyle = captureNode.getAttribute('style');
+                try {
+                    // 그래프 바깥의 화면 여백이 함께 축소되어 글자가 작아지지 않게 한다.
+                    if (chart) captureNode.style.width = `${chart.getBoundingClientRect().width}px`;
+                    const shot = await captureWorksheetNode(captureNode, { pixelRatio: 1.5 });
+                    const image = await optimizeReportImage(shot.pngDataUrl);
+                    images.push({ worksheetId: id, title, pngDataUrl: image.dataUrl, widthPx: image.widthPx, heightPx: image.heightPx });
+                } finally {
+                    if (originalStyle === null) captureNode.removeAttribute('style');
+                    else captureNode.setAttribute('style', originalStyle);
+                }
             }
             if (imagesOnly && draft) {
                 const nextDraft = replaceWorksheetImages(draft, images);
@@ -311,7 +329,7 @@ export default function FinalReportPage() {
             const next = buildFinalReportModel({
                 ...project,
                 projectName: project?.name ?? '프로젝트', description: project?.description ?? null,
-                coachName: report.mentorName, generatedAt: new Date().toLocaleDateString('ko-KR'),
+                companyName: latest.companyName ?? null, coachName: latest.mentorName, generatedAt: reportOutputDate(),
             }, worksheets, free, images, worksheetAnalysis);
             setModel(next);
             setDraft(next);
@@ -394,7 +412,7 @@ export default function FinalReportPage() {
             const res = await fetch(`/api/projects/${projectId}/report/docx`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(shownDocument),
+                body: JSON.stringify(withReportOutputDate(shownDocument)),
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => null);

@@ -87,11 +87,15 @@ export interface WorksheetPayloads {
 export function buildWorksheetData(payloads: WorksheetPayloads): FinalReportWorksheetData {
     // 필드마다 기대 행 타입을 지정한다. 통째로 캐스팅해 버리면 절을 하나 빠뜨려도
     // 컴파일이 통과해 버리는데, 그러면 보고서에서 표 하나가 조용히 사라진다.
-    type Row<K extends keyof FinalReportWorksheetData> = FinalReportWorksheetData[K][number];
+    type Row<K extends keyof FinalReportWorksheetData> = NonNullable<FinalReportWorksheetData[K]> extends Array<infer T> ? T : never;
     const { improvementNeeds, improvementFeatures } = splitImprovementItems(
         pickArray<ImprovementRow>(payloads.improvements, 'items'),
     );
     return {
+        fitnessMatrix: (payloads.exportData as { fitnessMatrix?: FinalReportWorksheetData['fitnessMatrix'] } | null)?.fitnessMatrix ?? null,
+        technicalCharacteristics: pickArray<Row<'technicalCharacteristics'>>(payloads.exportData, 'technicalCharacteristics'),
+        qfdRelationships: pickArray<Row<'qfdRelationships'>>(payloads.exportData, 'qfdRelationships'),
+        qfdTechnicals: pickArray<Row<'qfdTechnicals'>>(payloads.qfdAnalysis, 'technicals'),
         salesEstimates: pickArray<Row<'salesEstimates'>>(payloads.sales, 'rows'),
         specFunctions: pickArray<Row<'specFunctions'>>(payloads.exportData, 'specFunctions'),
         productAttributes: pickArray<Row<'productAttributes'>>(payloads.exportData, 'productAttributes'),

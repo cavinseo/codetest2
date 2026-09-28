@@ -171,10 +171,11 @@ describe('buildWorksheetData', () => {
         expect(data.fundingPlans).not.toEqual(data.fundingSources);
     });
 
-    it('응답이 모두 비어도 14개 절이 빈 배열로 채워진다', () => {
+    it('빈 응답은 빈 배열과 미작성 적합도 행렬로 유지한다', () => {
         const empty = Object.fromEntries(Object.keys(payloads).map((key) => [key, null])) as unknown as WorksheetPayloads;
         const data = buildWorksheetData(empty);
-        expect(Object.values(data).every((value) => Array.isArray(value) && value.length === 0)).toBe(true);
-        expect(Object.keys(data)).toHaveLength(14);
+        expect(data.fitnessMatrix).toBeNull();
+        expect(Object.entries(data).filter(([key]) => key !== 'fitnessMatrix').every(([, value]) => Array.isArray(value) && value.length === 0)).toBe(true);
+        expect(Object.keys(data)).toHaveLength(18);
     });
 });

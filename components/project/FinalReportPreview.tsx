@@ -7,6 +7,7 @@
 import type { FinalReportBlock } from '@/lib/final-report-document';
 import type { BlockEdit } from '@/lib/final-report-edit';
 import { worksheetImageFileName } from '@/lib/worksheet-capture';
+import FinalReportPages from './FinalReportPages';
 
 interface Props {
     blocks: FinalReportBlock[];
@@ -147,6 +148,7 @@ function BlockView({ block, ...props }: { block: FinalReportBlock; blockIndex: n
 }
 
 export default function FinalReportPreview({ blocks, onEdit, readOnly = false, disabled = false }: Props) {
+    if (blocks.some(block => block.kind === 'cover')) return <FinalReportPages blocks={blocks} onEdit={onEdit} readOnly={readOnly} disabled={disabled} />;
     return (
         // 인쇄면을 흉내 낸 흰 바탕이다. 문서가 흰 종이에 찍히므로 여기서도 같은 대비로 본다.
         <div className="rounded-lg bg-white p-8 text-slate-900 shadow-inner">

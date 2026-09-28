@@ -57,14 +57,14 @@ function savedBody() {
     return JSON.parse(String(fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')![1].body));
 }
 
-it('프로젝트명만 고쳐 저장하면 제품 개요 null을 보존해 보고서 기존 입력을 계속 사용한다', async () => {
+it('프로젝트명만 고쳐 저장해도 개요 null을 보존하며 보고서는 개요의 미입력 상태를 따른다', async () => {
     await act(async () => root.render(createElement(ProjectDetailPage)));
     await click('수정');
     const name = [...container.querySelectorAll('input')].find(element => element.value === '기존 프로젝트')!;
     await input(name, '새 프로젝트명');
     await click('저장');
     expect(savedBody()).toMatchObject({ ...empty, name: '새 프로젝트명' });
-    expect(hasProductOverviewSource(savedBody())).toBe(false);
+    expect(hasProductOverviewSource(savedBody())).toBe(true);
 });
 
 it('제품 정보를 입력했다 직접 지우면 빈 문자열로 저장해 보고서의 명시적 삭제를 보존한다', async () => {
