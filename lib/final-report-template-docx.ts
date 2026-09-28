@@ -1,7 +1,7 @@
 // A4 미리보기의 줄·행 분할과 표지 배치를 같은 페이지 순서로 Word에 출력한다.
 import { AlignmentType, BorderStyle, Document, Footer, Header, HeightRule, ImageRun, LineRuleType, Packer, Paragraph, SectionType, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun, VerticalAlign, WidthType, type ISectionOptions } from 'docx';
 import type { FinalReportModel } from './final-report-document';
-import { layoutReportPages, withReportOutputDate, wrapReportText, REPORT_PAPER, type CoverBlock, type ReportLayoutItem } from './final-report-layout';
+import { layoutReportPages, reportCoverElements, withReportOutputDate, wrapReportText, REPORT_PAPER, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from './final-report-layout';
 
 const twip = (points: number) => Math.round(points * 20);
 const border = { style: BorderStyle.SINGLE, color: '929BA4', size: 4 };
@@ -52,54 +52,60 @@ function renderText(item: Extract<ReportLayoutItem, { kind: 'text' }>): Paragrap
 function coverChildren(cover: CoverBlock) {
     const children: Array<Paragraph | Table> = [];
     let cursor = REPORT_PAPER.top;
-    const line = (top: number, text: string, size: number, bold = false, font?: string) => {
-        if (top > cursor) children.push(gap(top - cursor));
-        const lines = wrapReportText(text, REPORT_PAPER.body, size);
-        children.push(paragraph(lines, size, size * 1.55, { bold, center: true, font }));
-        cursor = top + lines.length * size * 1.55;
-    };
-    line(96, 'KS-QFD 제품개발 및 개선프로그램 결과보고서', 11, true);
-    line(218, cover.title, 25, true, '바탕');
-    line(260, cover.projectName, 12);
-    line(302, `기업명: ${cover.companyName}`, 15, true);
-    children.push(gap(Math.max(.1, 339 - cursor)));
-    children.push(new Paragraph({ shading: { fill: '959595' }, spacing: { before: 0, after: 0, line: twip(10), lineRule: LineRuleType.EXACT }, children: [new TextRun({ text: ' ', size: 2 })] }));
-    cursor = 349;
-    line(442, `작성일: ${cover.outputDate}`, 13);
-    line(510, `코치명: ${cover.coachName}`, 13);
-    line(650, '케이랩스\nKS-QFD', 17, true);
+    for (const element of reportCoverElements(cover)) {
+        if (element.kind === 'divider') {
+            children.push(gap(Math.max(.1, element.top - cursor)));
+            children.push(new Paragraph({ shading: { fill: '959595' }, spacing: { before: 0, after: 0, line: twip(element.height), lineRule: LineRuleType.EXACT }, children: [new TextRun({ text: ' ', size: 2 })] }));
+            cursor = element.top + element.height;
+        } else {
+            if (element.top > cursor) children.push(gap(element.top - cursor));
+            const lines = wrapReportText(element.text, REPORT_PAPER.body, element.fontSize);
+            children.push(paragraph(lines, element.fontSize, element.fontSize * 1.55, { bold: element.bold, center: true, font: element.kind === 'title' ? '바탕' : undefined }));
+            cursor = element.top + lines.length * element.fontSize * 1.55;
+        }
+    }
     return children;
+}
+
+function renderImage(item: Extract<ReportLayoutItem, { kind: 'image' }>) {
+    return new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 0, line: twip(item.height), lineRule: LineRuleType.EXACT }, children: [new ImageRun({
+        type: item.block.pngDataUrl.startsWith('data:image/jpeg;') ? 'jpg' : 'png', data: item.block.pngDataUrl,
+        transformation: { width: item.width * 96 / 72, height: item.height * 96 / 72 },
+        altText: { title: item.block.title, description: item.block.title, name: item.block.title },
+    })] });
+}
+
+function renderPageContents(page: ReportPageLayout): Array<Paragraph | Table> {
+    if (page.cover) return coverChildren(page.cover);
+    const children: Array<Paragraph | Table> = [];
+    let cursor = REPORT_PAPER.top;
+    for (const item of page.items) {
+        if (item.top > cursor) children.push(gap(item.top - cursor));
+        if (item.kind === 'text') children.push(renderText(item));
+        else if (item.kind === 'table') children.push(renderTable(item));
+        else children.push(renderImage(item));
+        cursor = item.top + item.height;
+    }
+    return children;
+}
+
+function createPageSection(page: ReportPageLayout, index: number, projectName: string): ISectionOptions {
+    return {
+        properties: { type: SectionType.NEXT_PAGE, page: {
+            size: { width: twip(REPORT_PAPER.width), height: twip(REPORT_PAPER.height) },
+            margin: { top: twip(REPORT_PAPER.top), bottom: twip(REPORT_PAPER.height - REPORT_PAPER.bottom), left: twip(REPORT_PAPER.margin), right: twip(REPORT_PAPER.margin), header: twip(20), footer: twip(18) },
+        } },
+        headers: { default: new Header({ children: [new Paragraph({ shading: { fill: '888888' }, spacing: { before: 0, after: 0, line: twip(17), lineRule: LineRuleType.EXACT }, children: [new TextRun({ text: `  KS-QFD 활용 제품개선보고서    ${projectName}`, color: 'FFFFFF', size: 16 })] })] }) },
+        footers: { default: new Footer({ children: [paragraph([String(index + 1)], 8.5, 21, { color: '747474', center: true })] }) },
+        children: renderPageContents(page),
+    };
 }
 
 export async function renderTemplateReportDocx(input: FinalReportModel): Promise<Blob> {
     const model = withReportOutputDate(input);
     const pages = layoutReportPages(model.blocks);
-    const project = model.blocks.find((block): block is CoverBlock => block.kind === 'cover')?.projectName ?? '';
-    const sections: ISectionOptions[] = pages.map((page, index) => {
-        const children: Array<Paragraph | Table> = [];
-        let cursor = REPORT_PAPER.top;
-        if (page.cover) children.push(...coverChildren(page.cover));
-        else for (const item of page.items) {
-            if (item.top > cursor) children.push(gap(item.top - cursor));
-            if (item.kind === 'text') children.push(renderText(item));
-            else if (item.kind === 'table') children.push(renderTable(item));
-            else children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 0, line: twip(item.height), lineRule: LineRuleType.EXACT }, children: [new ImageRun({
-                type: item.block.pngDataUrl.startsWith('data:image/jpeg;') ? 'jpg' : 'png', data: item.block.pngDataUrl,
-                transformation: { width: item.width * 96 / 72, height: item.height * 96 / 72 },
-                altText: { title: item.block.title, description: item.block.title, name: item.block.title },
-            })] }));
-            cursor = item.top + item.height;
-        }
-        return {
-            properties: { type: SectionType.NEXT_PAGE, page: {
-                size: { width: twip(REPORT_PAPER.width), height: twip(REPORT_PAPER.height) },
-                margin: { top: twip(REPORT_PAPER.top), bottom: twip(REPORT_PAPER.height - REPORT_PAPER.bottom), left: twip(42), right: twip(42), header: twip(20), footer: twip(18) },
-            } },
-            headers: { default: new Header({ children: [new Paragraph({ shading: { fill: '888888' }, spacing: { before: 0, after: 0, line: twip(17), lineRule: LineRuleType.EXACT }, children: [new TextRun({ text: `  KS-QFD 활용 제품개선보고서    ${project}`, color: 'FFFFFF', size: 16 })] })] }) },
-            footers: { default: new Footer({ children: [paragraph([String(index + 1)], 8.5, 21, { color: '747474', center: true })] }) },
-            children,
-        };
-    });
+    const projectName = model.blocks.find((block): block is CoverBlock => block.kind === 'cover')?.projectName ?? '';
+    const sections = pages.map((page, index) => createPageSection(page, index, projectName));
     // 자동 삽입되는 구역 나눔의 빈 문단이 꽉 찬 표 뒤에 빈 페이지를 만들지 않게 한다.
     const doc = new Document({ title: model.title, styles: { default: { document: { run: { font: '맑은 고딕', size: 18 }, paragraph: { spacing: { before: 0, after: 0, line: twip(1), lineRule: LineRuleType.EXACT } } } } }, sections });
     return new Blob([await Packer.toBlob(doc)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });

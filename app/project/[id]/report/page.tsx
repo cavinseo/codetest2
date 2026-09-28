@@ -9,7 +9,7 @@ import { useToast } from '@/components/useToast';
 import FinalReportCaptureStage from '@/components/project/FinalReportCaptureStage';
 import FinalReportPreview from '@/components/project/FinalReportPreview';
 import { buildWorksheetData, toKanoChartPoints, type WorksheetPayloads } from '@/lib/final-report-inputs';
-import { buildFinalReportModel, hasProductOverviewSource, replaceWorksheetImages, CAPTURED_WORKSHEET_TITLES, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel, type FinalReportOverviewInput } from '@/lib/final-report-document';
+import { buildFinalReportModel, hasProductOverviewSource, replaceWorksheetImages, CAPTURED_WORKSHEET_TITLES, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel, type FinalReportOverviewInput, type FinalReportWorksheetData } from '@/lib/final-report-document';
 import { applyBlockEdit, countEditedBlocks, withEditedBlocks, type BlockEdit } from '@/lib/final-report-edit';
 import { REPORT_MAX_BYTES, type ReportDraft } from '@/lib/final-report-payload';
 import { optimizeReportImage } from '@/lib/final-report-image';
@@ -87,6 +87,37 @@ async function getWorksheetJson(url: string): Promise<unknown> {
         return null;
     } finally {
         clearTimeout(timer);
+    }
+}
+
+function reportCaptureTargets(imagesOnly: boolean, document: FinalReportModel | null, worksheets: FinalReportWorksheetData) {
+    const usesSampleTemplate = !imagesOnly || document?.blocks.some(block => block.kind === 'cover');
+    const targets = CAPTURE_TARGETS.filter(([worksheetId, title]) => {
+        if (!usesSampleTemplate) return true;
+        if (imagesOnly) return document?.blocks.some(block => block.kind === 'image' && block.title === title);
+        if (worksheetId === 'fitness') return Boolean(worksheets.fitnessMatrix);
+        if (worksheetId === 'kano-aggregation') return worksheets.kanoAggregation.some(row => row.responseCount > 0);
+        return false;
+    });
+    return { usesSampleTemplate, targets };
+}
+
+async function captureReportImage(stage: HTMLDivElement | null, worksheetId: CapturedWorksheetImage['worksheetId'], title: string, graphOnly: boolean): Promise<CapturedWorksheetImage> {
+    const node = stage?.querySelector<HTMLElement>(`[data-worksheet-id="${worksheetId}"]`);
+    if (!node) throw new Error(`${title} 화면을 찾지 못했습니다.`);
+    await waitForWorksheetReady(node, title);
+    const chart = graphOnly ? node.querySelector<SVGSVGElement>('.timko-chart') : null;
+    const captureNode = chart?.parentElement ?? node;
+    const originalStyle = captureNode.getAttribute('style');
+    try {
+        // 그래프 바깥의 화면 여백이 함께 축소되어 글자가 작아지지 않게 한다.
+        if (chart) captureNode.style.width = `${chart.getBoundingClientRect().width}px`;
+        const shot = await captureWorksheetNode(captureNode, { pixelRatio: 1.5 });
+        const image = await optimizeReportImage(shot.pngDataUrl);
+        return { worksheetId, title, pngDataUrl: image.dataUrl, widthPx: image.widthPx, heightPx: image.heightPx };
+    } finally {
+        if (originalStyle === null) captureNode.removeAttribute('style');
+        else captureNode.setAttribute('style', originalStyle);
     }
 }
 
@@ -290,30 +321,10 @@ export default function FinalReportPage() {
                 throw new Error('다른 화면에서 분석 또는 보고서가 변경되었습니다. 워크시트를 다시 불러온 뒤 미리보기를 만들어 주세요. 현재 교정 내용은 유지됩니다.');
             }
             const images: CapturedWorksheetImage[] = [];
-            const template = !imagesOnly || draft?.blocks.some(block => block.kind === 'cover');
-            const targets = CAPTURE_TARGETS.filter(([id, title]) => template
-                ? imagesOnly ? draft?.blocks.some(block => block.kind === 'image' && block.title === title)
-                    : id === 'fitness' ? Boolean(worksheets.fitnessMatrix) : id === 'kano-aggregation' ? worksheets.kanoAggregation.some(row => row.responseCount > 0)
-                        : false
-                : true);
+            const { usesSampleTemplate, targets } = reportCaptureTargets(imagesOnly, draft, worksheets);
             for (const [index, [id, title]] of targets.entries()) {
                 setProgress(`${index + 1}/${targets.length} 그림 만드는 중...`);
-                const node = captureStage.current?.querySelector<HTMLElement>(`[data-worksheet-id="${id}"]`);
-                if (!node) throw new Error(`${title} 화면을 찾지 못했습니다.`);
-                await waitForWorksheetReady(node, title);
-                const chart = template && id === 'kano-aggregation' ? node.querySelector<SVGSVGElement>('.timko-chart') : null;
-                const captureNode = chart?.parentElement ?? node;
-                const originalStyle = captureNode.getAttribute('style');
-                try {
-                    // 그래프 바깥의 화면 여백이 함께 축소되어 글자가 작아지지 않게 한다.
-                    if (chart) captureNode.style.width = `${chart.getBoundingClientRect().width}px`;
-                    const shot = await captureWorksheetNode(captureNode, { pixelRatio: 1.5 });
-                    const image = await optimizeReportImage(shot.pngDataUrl);
-                    images.push({ worksheetId: id, title, pngDataUrl: image.dataUrl, widthPx: image.widthPx, heightPx: image.heightPx });
-                } finally {
-                    if (originalStyle === null) captureNode.removeAttribute('style');
-                    else captureNode.setAttribute('style', originalStyle);
-                }
+                images.push(await captureReportImage(captureStage.current, id, title, Boolean(usesSampleTemplate && id === 'kano-aggregation')));
             }
             if (imagesOnly && draft) {
                 const nextDraft = replaceWorksheetImages(draft, images);

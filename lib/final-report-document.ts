@@ -126,11 +126,7 @@ export function finalReportFileName(projectName: string): string {
     return `결과보고서_${kanoSurveyFileNameStem(projectName)}.docx`;
 }
 
-// 삭제한 입력은 보존하고 신규 개요 필드가 없는 이전 프로젝트만 자유 입력을 사용한다.
-export function hasProductOverviewSource(overview: ProductOverview): boolean {
-    return ['productName', 'productImageDataUrl', 'productImageWidthPx', 'productImageHeightPx', 'marketDefinition', 'targetCustomer']
-        .some(key => Object.hasOwn(overview, key));
-}
+export { hasProductOverviewSource } from './final-report-template';
 
 export function buildFinalReportModel(
     overview: FinalReportOverviewInput,
