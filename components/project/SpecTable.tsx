@@ -99,6 +99,9 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=spec`;
     const [project, setProject] = useState<ProjectData | null>(null);
     const [rows, setRows] = useState<FlatSpecRow[]>([]);
+    const [isDetailColumnCollapsed, setIsDetailColumnCollapsed] = useState(false);
+    const hasDetailContent = rows.some(row => row.detail.trim() !== '');
+    const showDetailColumn = hasDetailContent || !isDetailColumnCollapsed;
     const [isLoading, setIsLoading] = useState(true);
     const [loadFailed, setLoadFailed] = useState(false);
     const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
@@ -134,6 +137,10 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const buildRowsFromSpecs = useCallback((loadedSpecs: SpecFunction[]) => {
         return buildFlatSpecRowsFromFunctions(loadedSpecs);
     }, []);
+
+    useEffect(() => {
+        if (hasDetailContent) setIsDetailColumnCollapsed(false);
+    }, [hasDetailContent]);
 
     // 데이터 로드
     useEffect(() => {
@@ -200,6 +207,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     };
 
     const addDetailToSub = (row: FlatSpecRow) => {
+        setIsDetailColumnCollapsed(false);
         insertRowAfter(row.id, {
             id: Math.random().toString(36).slice(2),
             core: row.core.trim(),
@@ -1149,6 +1157,17 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                         AI 에이전트
                     </button>
                 </div>
+                {activeMode === 'manual' && <button
+                    type="button"
+                    onClick={() => setIsDetailColumnCollapsed(collapsed => !collapsed)}
+                    disabled={hasDetailContent}
+                    aria-expanded={showDetailColumn}
+                    aria-controls={`spec-table-${projectId}`}
+                    title={hasDetailContent ? '세세부기술 내용이 있어 열을 표시합니다.' : '세세부기술이 모두 비어 있으면 열을 접을 수 있습니다.'}
+                    className="ml-auto rounded border border-gray-600 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {showDetailColumn ? '세세부기술 접기' : '세세부기술 펼치기'}
+                </button>}
             </div>
 
             {
@@ -1197,13 +1216,13 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                 <option key={option} value={option} />
                             ))}
                         </datalist>
-                        <table className="w-full border-collapse text-sm table-fixed">
+                        <table id={`spec-table-${projectId}`} aria-label="AS-IS 스펙표" className="w-full border-collapse text-sm table-fixed">
                             <thead>
                                 <tr className="bg-gray-800">
                                     <th className="border border-gray-700 p-2 text-gray-300 font-medium text-center w-[50px]">No</th>
                                     <th className="border border-gray-700 p-2 text-blue-400 font-medium text-center">핵심기술</th>
                                     <th className="border border-gray-700 p-2 text-purple-400 font-medium text-center">세부기술</th>
-                                    <th className="border border-gray-700 p-2 text-emerald-400 font-medium text-center">세세부기술</th>
+                                    {showDetailColumn && <th className="border border-gray-700 p-2 text-emerald-400 font-medium text-center">세세부기술</th>}
                                     <th className="border border-gray-700 p-2 text-amber-400 font-medium text-center">적용기술</th>
                                     <th className="border border-gray-700 p-2 text-gray-500 font-medium text-center w-[116px]"></th>
                                 </tr>
@@ -1211,7 +1230,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                             <tbody>
                                 {rows.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="border border-gray-700 p-8 text-center text-gray-500 bg-gray-800/20">
+                                        <td colSpan={showDetailColumn ? 6 : 5} className="border border-gray-700 p-8 text-center text-gray-500 bg-gray-800/20">
                                             데이터가 없습니다. 우상단의 &apos;행 추가&apos; 버튼을 눌러 입력을 시작하세요.
                                         </td>
                                     </tr>
@@ -1253,7 +1272,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                                 />
                                             </td>
                                             )}
-                                            <td className="border border-gray-700 p-0">
+                                            {showDetailColumn && <td className="border border-gray-700 p-0">
                                                 <input
                                                     type="text"
                                                     list={`detail-options-${projectId}`}
@@ -1262,7 +1281,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                                     className="w-full h-full p-2 bg-transparent text-emerald-100 outline-none focus:bg-gray-800 focus:ring-1 focus:ring-emerald-500/50 transition-colors"
                                                     placeholder="입력"
                                                 />
-                                            </td>
+                                            </td>}
                                             <td className="border border-gray-700 p-0">
                                                 <input
                                                     type="text"

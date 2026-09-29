@@ -88,7 +88,10 @@ function appendProductDiagnosis(writer: ReportWriter, worksheets: FinalReportWor
     writer.addPageBreak(); writer.addHeading('Ⅱ. 고객과 경쟁자를 고려한 제품/서비스 진단', 1);
     writer.addHeading('(AS-IS) 제품/서비스 스펙표 (WS-2)'); writer.addMentorAnalysis('WS-2', analysis.spec?.analysis);
     const specs = buildSpecRows(worksheets.specFunctions);
-    writer.addTable('WS-2 AS-IS 스펙표', ['No', '핵심기술', '세부기술', '세세부기술', '적용기술'], specs, [24, 73, 136, 57, 221]);
+    const hasDetailContent = specs.some(row => String(row[3] ?? '').trim() !== '');
+    writer.addTable('WS-2 AS-IS 스펙표', ['No', '핵심기술', '세부기술', ...(hasDetailContent ? ['세세부기술'] : []), '적용기술'],
+        hasDetailContent ? specs : specs.map(row => row.filter((_, column) => column !== 3)),
+        [24, 73, 136, ...(hasDetailContent ? [57] : []), 221]);
     writer.startWorksheetPage('제품속성표 (WS-3)', 'WS-3', analysis.attributes?.analysis);
     writer.addParagraph(`워크시트 제품명 · ${displayValue(worksheets.productAttributes.find(row => row.productName?.trim())?.productName)}`);
     writer.addTable('WS-3 제품속성서', ['No', '세분시장', '고객명', '고객 니즈', '제공혜택', '제품속성'],
