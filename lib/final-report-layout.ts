@@ -2,9 +2,10 @@
 import type { FinalReportBlock, FinalReportModel } from './final-report-document';
 
 export const REPORT_PAPER = { width: 595.28, height: 841.89, margin: 42, top: 53, bottom: 787, body: 511.28 };
+export const REPORT_CHAPTER_PADDING = { vertical: 6, horizontal: 10 };
 export type CoverBlock = Extract<FinalReportBlock, { kind: 'cover' }>;
 export type ReportLayoutItem =
-    | { kind: 'text'; blockIndex: number; lines: string[]; top: number; height: number; left: number; width: number; marker?: string; markerWidth: number; fontSize: number; lineHeight: number; bold: boolean; color: string; chapter: boolean; section: boolean }
+    | { kind: 'text'; blockIndex: number; lines: string[]; top: number; height: number; left: number; width: number; marker?: string; markerWidth: number; fontSize: number; lineHeight: number; bold: boolean; color: string; chapter: boolean }
     | { kind: 'table'; blockIndex: number; top: number; height: number; fontSize: number; lineHeight: number; widths: number[]; headers: string[][]; headerHeight: number; rows: Array<{ index: number; lines: string[][]; height: number }> }
     | { kind: 'image'; blockIndex: number; top: number; height: number; width: number; block: Extract<FinalReportBlock, { kind: 'image' }> };
 export interface ReportPageLayout { cover?: CoverBlock; items: ReportLayoutItem[] }
@@ -74,36 +75,52 @@ interface TextParagraph {
     chapter: boolean; section: boolean; marker?: string; markerWidth: number;
 }
 
+const millimetersToPoints = (millimeters: number) => millimeters * 72 / 25.4;
+const TEXT_TYPOGRAPHY = {
+    chapter: { fontSize: 16, left: 0, bold: true },
+    section: { fontSize: 14, left: millimetersToPoints(4), bold: true },
+    subheading: { fontSize: 12, left: millimetersToPoints(8), bold: true },
+    body: { fontSize: 11, left: millimetersToPoints(12), bold: false },
+    nestedBullet: { fontSize: 10, left: millimetersToPoints(16), bold: false },
+    caption: { fontSize: 9, left: 0, bold: false },
+};
+
+function textTypography(block: TextBlock) {
+    if (block.kind === 'heading') return block.level === 1 ? TEXT_TYPOGRAPHY.chapter : TEXT_TYPOGRAPHY.section;
+    if (block.tone === 'analysis') return TEXT_TYPOGRAPHY.subheading;
+    if (block.tone === 'caption') return TEXT_TYPOGRAPHY.caption;
+    return TEXT_TYPOGRAPHY.body;
+}
+
+function formatParagraphLine(line: string, paragraph: TextParagraph): TextParagraph {
+    if (/^\(\d+\)\s+/.test(line)) return { ...paragraph, ...TEXT_TYPOGRAPHY.subheading, text: line };
+    const listMatch = /^([ \t]*)([•○▪·*\-]|\d+[.)])[ \t]+(.*)$/.exec(line);
+    if (!listMatch) return { ...paragraph, text: line };
+    const [, leadingWhitespace, marker, text] = listMatch;
+    const typography = leadingWhitespace ? TEXT_TYPOGRAPHY.nestedBullet : TEXT_TYPOGRAPHY.body;
+    const markerWidth = Math.max(13, Array.from(marker).reduce((sum, character) => sum + characterWidth(character, typography.fontSize), 0) + 5);
+    return { ...paragraph, ...typography, text, marker, markerWidth, left: typography.left + markerWidth };
+}
+
 function formatReportParagraphs(block: TextBlock): TextParagraph[] {
-    const chapter = block.kind === 'heading' && block.level === 1;
-    const section = block.kind === 'heading' && block.level === 2;
     const tone = block.kind === 'paragraph' ? block.tone : undefined;
-    const mm = (value: number) => value * 72 / 25.4;
-    const base: TextParagraph = {
-        text: block.text, fontSize: chapter ? 16 : section ? 14 : tone === 'analysis' ? 12 : tone === 'caption' ? 9 : 11,
-        left: chapter || tone === 'caption' ? 0 : mm(section ? 4 : tone === 'analysis' ? 8 : 12),
-        bold: chapter || section || tone === 'analysis',
+    const paragraph: TextParagraph = {
+        text: block.text, ...textTypography(block),
         color: tone === 'notice' ? '986018' : tone === 'caption' ? '666666' : '1B1B1B',
-        chapter, section, markerWidth: 0,
+        chapter: block.kind === 'heading' && block.level === 1,
+        section: block.kind === 'heading' && block.level === 2,
+        markerWidth: 0,
     };
-    if (block.kind === 'heading' || tone) return [base];
-    return block.text.replaceAll('\r', '').split('\n').map(line => {
-        if (/^\(\d+\)\s+/.test(line)) return { ...base, text: line, fontSize: 12, left: mm(8), bold: true };
-        const list = /^([ \t]*)([•○▪·*\-]|\d+[.)])[ \t]+(.*)$/.exec(line);
-        if (!list) return { ...base, text: line };
-        const [, whitespace, marker, text] = list;
-        const fontSize = whitespace ? 10 : 11;
-        const markerWidth = Math.max(13, Array.from(marker).reduce((sum, character) => sum + characterWidth(character, fontSize), 0) + 5);
-        return { ...base, text, fontSize, marker, markerWidth, left: mm(whitespace ? 16 : 12) + markerWidth };
-    });
+    if (block.kind === 'heading' || tone) return [paragraph];
+    return block.text.replaceAll('\r', '').split('\n').map(line => formatParagraphLine(line, paragraph));
 }
 
 function appendTextParagraph(cursor: PageCursor, paragraph: TextParagraph, blockIndex: number, gapAfter: number) {
-    const { chapter, section, fontSize, left, markerWidth } = paragraph;
+    const { chapter, fontSize, left, markerWidth } = paragraph;
     const lineHeight = fontSize * 1.6;
     const width = REPORT_PAPER.body - left;
-    const lines = wrapReportText(paragraph.text, width - (chapter ? 20 : 0), fontSize);
-    const padding = chapter ? 12 : 0;
+    const lines = wrapReportText(paragraph.text, width - (chapter ? REPORT_CHAPTER_PADDING.horizontal * 2 : 0), fontSize);
+    const padding = chapter ? REPORT_CHAPTER_PADDING.vertical * 2 : 0;
     const height = lines.length * lineHeight + padding;
     if (paragraph.bold && cursor.top + Math.min(height + 65, 140) > REPORT_PAPER.bottom) startNextPage(cursor);
     let lineOffset = 0;
@@ -113,7 +130,7 @@ function appendTextParagraph(cursor: PageCursor, paragraph: TextParagraph, block
         const itemHeight = lineCount * lineHeight + padding;
         cursor.currentPage.items.push({ kind: 'text', blockIndex, lines: lines.slice(lineOffset, lineOffset + lineCount), top: cursor.top, height: itemHeight, left, width,
             marker: lineOffset === 0 ? paragraph.marker : undefined, markerWidth, fontSize, lineHeight,
-            bold: paragraph.bold, color: paragraph.color, chapter, section });
+            bold: paragraph.bold, color: paragraph.color, chapter });
         cursor.top += itemHeight;
         lineOffset += lineCount;
         if (lineOffset < lines.length) startNextPage(cursor);
@@ -124,9 +141,14 @@ function appendTextParagraph(cursor: PageCursor, paragraph: TextParagraph, block
 function appendTextLayout(cursor: PageCursor, block: TextBlock, blockIndex: number) {
     const paragraphs = formatReportParagraphs(block);
     paragraphs.forEach((paragraph, index) => {
-        const last = index === paragraphs.length - 1;
-        const gap = paragraph.chapter ? 15 : paragraph.section ? 12 : paragraph.bold ? 6 : last ? 8 : paragraph.marker ? 4 : 0;
-        appendTextParagraph(cursor, paragraph, blockIndex, gap);
+        const isLastParagraph = index === paragraphs.length - 1;
+        let gapAfter = 0;
+        if (paragraph.chapter) gapAfter = 15;
+        else if (paragraph.section) gapAfter = 12;
+        else if (paragraph.bold) gapAfter = 6;
+        else if (isLastParagraph) gapAfter = 8;
+        else if (paragraph.marker) gapAfter = 4;
+        appendTextParagraph(cursor, paragraph, blockIndex, gapAfter);
     });
 }
 

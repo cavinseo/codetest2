@@ -4,7 +4,7 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import type { FinalReportBlock } from '@/lib/final-report-document';
 import type { BlockEdit } from '@/lib/final-report-edit';
 import { worksheetImageFileName } from '@/lib/worksheet-capture';
-import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_PAPER, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
+import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTER_PADDING, REPORT_PAPER, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
 
 interface Props { blocks: FinalReportBlock[]; onEdit?: (edit: BlockEdit) => void; readOnly?: boolean; disabled?: boolean }
 interface EditTarget { label: string; value: string; edit: BlockEdit; ariaLabel?: string }
@@ -34,7 +34,16 @@ function EditableReportValue({ text, target, onRequestEdit }: { text: string; ta
 }
 
 function ReportText({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'text' }>; block: FinalReportBlock; onRequestEdit?: RequestEdit }) {
-    const styles: CSSProperties = { ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + item.left), width: pt(item.width), height: pt(item.height), fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight), fontWeight: item.bold ? 700 : 400, color: `#${item.color}`, background: item.chapter ? '#e1e1e1' : 'transparent', padding: item.chapter ? '6pt 10pt' : 0, boxSizing: 'border-box', whiteSpace: 'pre' };
+    const styles: CSSProperties = {
+        ...pagePosition(item.top),
+        left: pt(REPORT_PAPER.margin + item.left),
+        width: pt(item.width), height: pt(item.height),
+        fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight),
+        fontWeight: item.bold ? 700 : 400, color: `#${item.color}`,
+        background: item.chapter ? '#e1e1e1' : 'transparent',
+        padding: item.chapter ? `${pt(REPORT_CHAPTER_PADDING.vertical)} ${pt(REPORT_CHAPTER_PADDING.horizontal)}` : 0,
+        boxSizing: 'border-box', whiteSpace: 'pre',
+    };
     const target: EditTarget | undefined = block.kind === 'heading' || block.kind === 'paragraph' ? {
         label: '보고서 문구 교정', value: block.text, edit: { kind: 'text', blockIndex: item.blockIndex, text: block.text },
         ariaLabel: `${block.kind === 'heading' ? '제목' : '문단'} ${item.blockIndex + 1} 교정`,
