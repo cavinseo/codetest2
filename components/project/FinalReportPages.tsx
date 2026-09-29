@@ -34,13 +34,13 @@ function EditableReportValue({ text, target, onRequestEdit }: { text: string; ta
 }
 
 function ReportText({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'text' }>; block: FinalReportBlock; onRequestEdit?: RequestEdit }) {
-    const styles: CSSProperties = { ...pagePosition(item.top), height: pt(item.height), fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight), fontWeight: item.bold ? 700 : 400, color: `#${item.color}`, background: item.chapter ? '#e1e1e1' : 'transparent', padding: item.chapter ? '6pt 10pt' : item.section ? '0 0 0 17pt' : 0, boxSizing: 'border-box', whiteSpace: 'pre' };
+    const styles: CSSProperties = { ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + item.left), width: pt(item.width), height: pt(item.height), fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight), fontWeight: item.bold ? 700 : 400, color: `#${item.color}`, background: item.chapter ? '#e1e1e1' : 'transparent', padding: item.chapter ? '6pt 10pt' : 0, boxSizing: 'border-box', whiteSpace: 'pre' };
     const target: EditTarget | undefined = block.kind === 'heading' || block.kind === 'paragraph' ? {
         label: '보고서 문구 교정', value: block.text, edit: { kind: 'text', blockIndex: item.blockIndex, text: block.text },
         ariaLabel: `${block.kind === 'heading' ? '제목' : '문단'} ${item.blockIndex + 1} 교정`,
     } : undefined;
     return <div style={styles} data-report-block={item.blockIndex}>
-        {item.section && <span aria-hidden style={{ position: 'absolute', top: '4pt', left: 0, width: '9pt', height: '9pt', borderRadius: '2pt', background: '#949494' }} />}
+        {item.marker && <span style={{ position: 'absolute', top: 0, left: pt(-item.markerWidth) }}>{item.marker}</span>}
         <EditableReportValue text={item.lines.join('\n')} target={target} onRequestEdit={onRequestEdit} />
     </div>;
 }

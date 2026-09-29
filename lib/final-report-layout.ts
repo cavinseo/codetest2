@@ -4,7 +4,7 @@ import type { FinalReportBlock, FinalReportModel } from './final-report-document
 export const REPORT_PAPER = { width: 595.28, height: 841.89, margin: 42, top: 53, bottom: 787, body: 511.28 };
 export type CoverBlock = Extract<FinalReportBlock, { kind: 'cover' }>;
 export type ReportLayoutItem =
-    | { kind: 'text'; blockIndex: number; lines: string[]; top: number; height: number; fontSize: number; lineHeight: number; bold: boolean; color: string; chapter: boolean; section: boolean }
+    | { kind: 'text'; blockIndex: number; lines: string[]; top: number; height: number; left: number; width: number; marker?: string; markerWidth: number; fontSize: number; lineHeight: number; bold: boolean; color: string; chapter: boolean; section: boolean }
     | { kind: 'table'; blockIndex: number; top: number; height: number; fontSize: number; lineHeight: number; widths: number[]; headers: string[][]; headerHeight: number; rows: Array<{ index: number; lines: string[][]; height: number }> }
     | { kind: 'image'; blockIndex: number; top: number; height: number; width: number; block: Extract<FinalReportBlock, { kind: 'image' }> };
 export interface ReportPageLayout { cover?: CoverBlock; items: ReportLayoutItem[] }
@@ -69,28 +69,65 @@ function startNextPage(cursor: PageCursor) {
     cursor.top = REPORT_PAPER.top;
 }
 
-function appendTextLayout(cursor: PageCursor, block: TextBlock, blockIndex: number) {
+interface TextParagraph {
+    text: string; fontSize: number; left: number; bold: boolean; color: string;
+    chapter: boolean; section: boolean; marker?: string; markerWidth: number;
+}
+
+function formatReportParagraphs(block: TextBlock): TextParagraph[] {
     const chapter = block.kind === 'heading' && block.level === 1;
     const section = block.kind === 'heading' && block.level === 2;
     const tone = block.kind === 'paragraph' ? block.tone : undefined;
-    const fontSize = chapter ? 12.5 : section ? 11.5 : tone === 'caption' ? 7.5 : tone ? 8.5 : 9.2;
-    const lineHeight = fontSize * 1.55;
-    const inset = chapter ? 20 : section ? 17 : 0;
-    const lines = wrapReportText(block.text, REPORT_PAPER.body - inset, fontSize);
+    const mm = (value: number) => value * 72 / 25.4;
+    const base: TextParagraph = {
+        text: block.text, fontSize: chapter ? 16 : section ? 14 : tone === 'analysis' ? 12 : tone === 'caption' ? 9 : 11,
+        left: chapter || tone === 'caption' ? 0 : mm(section ? 4 : tone === 'analysis' ? 8 : 12),
+        bold: chapter || section || tone === 'analysis',
+        color: tone === 'notice' ? '986018' : tone === 'caption' ? '666666' : '1B1B1B',
+        chapter, section, markerWidth: 0,
+    };
+    if (block.kind === 'heading' || tone) return [base];
+    return block.text.replaceAll('\r', '').split('\n').map(line => {
+        if (/^\(\d+\)\s+/.test(line)) return { ...base, text: line, fontSize: 12, left: mm(8), bold: true };
+        const list = /^([ \t]*)([•○▪·*\-]|\d+[.)])[ \t]+(.*)$/.exec(line);
+        if (!list) return { ...base, text: line };
+        const [, whitespace, marker, text] = list;
+        const fontSize = whitespace ? 10 : 11;
+        const markerWidth = Math.max(13, Array.from(marker).reduce((sum, character) => sum + characterWidth(character, fontSize), 0) + 5);
+        return { ...base, text, fontSize, marker, markerWidth, left: mm(whitespace ? 16 : 12) + markerWidth };
+    });
+}
+
+function appendTextParagraph(cursor: PageCursor, paragraph: TextParagraph, blockIndex: number, gapAfter: number) {
+    const { chapter, section, fontSize, left, markerWidth } = paragraph;
+    const lineHeight = fontSize * 1.6;
+    const width = REPORT_PAPER.body - left;
+    const lines = wrapReportText(paragraph.text, width - (chapter ? 20 : 0), fontSize);
     const padding = chapter ? 12 : 0;
     const height = lines.length * lineHeight + padding;
-    if ((chapter || section || tone === 'analysis') && cursor.top + Math.min(height + 65, 140) > REPORT_PAPER.bottom) startNextPage(cursor);
+    if (paragraph.bold && cursor.top + Math.min(height + 65, 140) > REPORT_PAPER.bottom) startNextPage(cursor);
     let lineOffset = 0;
     while (lineOffset < lines.length) {
         const lineCount = Math.min(lines.length - lineOffset, Math.floor((REPORT_PAPER.bottom - cursor.top - padding) / lineHeight));
         if (lineCount < 1) { startNextPage(cursor); continue; }
         const itemHeight = lineCount * lineHeight + padding;
-        cursor.currentPage.items.push({ kind: 'text', blockIndex, lines: lines.slice(lineOffset, lineOffset + lineCount), top: cursor.top, height: itemHeight, fontSize, lineHeight,
-            bold: chapter || section || tone === 'analysis', color: tone === 'analysis' ? '3C5470' : tone === 'notice' ? '986018' : tone === 'caption' ? '666666' : '1B1B1B', chapter, section });
-        cursor.top += itemHeight + (chapter ? 15 : section ? 12 : tone === 'analysis' ? 3 : 8);
+        cursor.currentPage.items.push({ kind: 'text', blockIndex, lines: lines.slice(lineOffset, lineOffset + lineCount), top: cursor.top, height: itemHeight, left, width,
+            marker: lineOffset === 0 ? paragraph.marker : undefined, markerWidth, fontSize, lineHeight,
+            bold: paragraph.bold, color: paragraph.color, chapter, section });
+        cursor.top += itemHeight;
         lineOffset += lineCount;
         if (lineOffset < lines.length) startNextPage(cursor);
     }
+    cursor.top += gapAfter;
+}
+
+function appendTextLayout(cursor: PageCursor, block: TextBlock, blockIndex: number) {
+    const paragraphs = formatReportParagraphs(block);
+    paragraphs.forEach((paragraph, index) => {
+        const last = index === paragraphs.length - 1;
+        const gap = paragraph.chapter ? 15 : paragraph.section ? 12 : paragraph.bold ? 6 : last ? 8 : paragraph.marker ? 4 : 0;
+        appendTextParagraph(cursor, paragraph, blockIndex, gap);
+    });
 }
 
 function appendImageLayout(cursor: PageCursor, block: ImageBlock, blockIndex: number) {

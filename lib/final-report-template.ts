@@ -60,7 +60,9 @@ function appendProductOverview(writer: ReportWriter, overview: FinalReportOvervi
     writer.addHeading('Ⅰ. (As-Is) 제품/서비스 정의', 1);
     writer.addHeading('제품(서비스)명 및 제품설명');
     writer.addParagraph(`프로젝트명 · ${overview.projectName}`);
-    writer.addParagraph(`제품명 · ${displayValue(overview.productName)}\n개요의 간단 설명 · ${displayValue(overview.description)}\n상세 제품설명 · ${displayValue(overview.detailedDescription)}`);
+    writer.addParagraph(`제품명 · ${displayValue(overview.productName)}\n개요의 간단 설명 · ${displayValue(overview.description)}`);
+    writer.addParagraph('상세 제품설명', 'analysis');
+    writer.addParagraph(displayValue(overview.detailedDescription));
     // 구형 개요 응답에 필드 자체가 없을 때만 기존 보고서의 자유입력을 사용한다.
     const source = hasProductOverviewSource(overview) ? overview : freeInput;
     if ('relatedImages' in source && source.relatedImages) {

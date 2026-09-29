@@ -2,6 +2,7 @@
 import { expect, it } from 'vitest';
 import { buildFinalReportModel, type FinalReportWorksheetData } from '../lib/final-report-document';
 import { EMPTY_REPORT_FREE_INPUT } from '../lib/final-report-payload';
+import { layoutReportPages } from '../lib/final-report-layout';
 
 const empty: FinalReportWorksheetData = {
     salesEstimates: [], specFunctions: [], productAttributes: [], requirements: [], kanoAggregation: [],
@@ -9,6 +10,16 @@ const empty: FinalReportWorksheetData = {
     improvementDirections: [], assets: [], fundingPlans: [], fundingSources: [],
 };
 const overview = { projectName: '분석 장비', companyName: '실제 회사', description: '요약', detailedDescription: '상세 제품 설명', coachName: '배정 멘토', generatedAt: '2026.09.29' };
+
+it('상세 제품설명의 첫 글머리도 제목과 분리하여 원문 전체에 단계 서식을 적용한다', () => {
+    const detailedDescription = '• 첫 기능\n  - 세부 내용\n• 다음 기능';
+    const model = buildFinalReportModel({ ...overview, detailedDescription }, empty, EMPTY_REPORT_FREE_INPUT, []);
+    const index = model.blocks.findIndex(block => block.kind === 'paragraph' && block.text === detailedDescription);
+    expect(index).toBeGreaterThan(-1);
+    expect(model.blocks[index - 1]).toMatchObject({ text: '상세 제품설명', tone: 'analysis' });
+    const lines = layoutReportPages(model.blocks).flatMap(page => page.items).filter(item => item.kind === 'text').filter(item => item.blockIndex === index);
+    expect(lines.map(item => item.fontSize)).toEqual([11, 10, 11]);
+});
 
 it('표지에 프로젝트명과 회사명을 구분하고 담당 멘토 및 출력일을 넣는다', () => {
     const model = buildFinalReportModel(overview, empty, EMPTY_REPORT_FREE_INPUT, []);

@@ -1,5 +1,5 @@
 // A4 미리보기의 줄·행 분할과 표지 배치를 같은 페이지 순서로 Word에 출력한다.
-import { AlignmentType, BorderStyle, Document, Footer, Header, HeightRule, ImageRun, LineRuleType, Packer, Paragraph, SectionType, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun, VerticalAlign, WidthType, type ISectionOptions } from 'docx';
+import { AlignmentType, BorderStyle, Document, Footer, Header, HeightRule, ImageRun, LineRuleType, Packer, Paragraph, SectionType, ShadingType, Table, TableCell, TableLayoutType, TableRow, Tab, TabStopType, TextRun, VerticalAlign, WidthType, type ISectionOptions } from 'docx';
 import type { FinalReportModel } from './final-report-document';
 import { layoutReportPages, reportCoverElements, withReportOutputDate, wrapReportText, REPORT_PAPER, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from './final-report-layout';
 
@@ -7,11 +7,13 @@ const twip = (points: number) => Math.round(points * 20);
 const border = { style: BorderStyle.SINGLE, color: '929BA4', size: 4 };
 const none = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
 
-function paragraph(lines: string[], fontSize: number, lineHeight: number, options: { bold?: boolean; color?: string; center?: boolean; font?: string } = {}) {
+function paragraph(lines: string[], fontSize: number, lineHeight: number, options: { bold?: boolean; color?: string; center?: boolean; font?: string; left?: number; marker?: string; markerWidth?: number } = {}) {
     return new Paragraph({
         alignment: options.center ? AlignmentType.CENTER : AlignmentType.LEFT,
+        ...(options.left !== undefined ? { indent: { left: twip(options.left), ...(options.marker ? { hanging: twip(options.markerWidth ?? 0) } : {}) } } : {}),
+        ...(options.marker ? { tabStops: [{ type: TabStopType.LEFT, position: twip(options.left ?? 0) }] } : {}),
         spacing: { before: 0, after: 0, line: twip(lineHeight), lineRule: LineRuleType.EXACT },
-        children: lines.map((text, index) => new TextRun({ text, ...(index ? { break: 1 } : {}), size: fontSize * 2, font: options.font ?? '맑은 고딕', bold: options.bold, color: options.color ?? '1B1B1B' })),
+        children: lines.map((text, index) => new TextRun({ children: !index && options.marker ? [options.marker, new Tab(), text] : [text], ...(index ? { break: 1 } : {}), size: fontSize * 2, font: options.font ?? '맑은 고딕', bold: options.bold, color: options.color ?? '1B1B1B' })),
     });
 }
 
@@ -46,7 +48,7 @@ function renderText(item: Extract<ReportLayoutItem, { kind: 'text' }>): Paragrap
             children: [paragraph(item.lines, item.fontSize, item.lineHeight, { bold: true })],
         })] })],
     });
-    return paragraph(item.section ? item.lines.map((line, i) => `${i ? '　 ' : '▪  '}${line}`) : item.lines, item.fontSize, item.lineHeight, { bold: item.bold, color: item.color });
+    return paragraph(item.lines, item.fontSize, item.lineHeight, { bold: item.bold, color: item.color, left: item.left, marker: item.marker, markerWidth: item.markerWidth });
 }
 
 function coverChildren(cover: CoverBlock) {
