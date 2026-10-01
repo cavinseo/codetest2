@@ -31,13 +31,37 @@ export async function GET(
             orderBy: { order: 'asc' },
         });
 
-        return NextResponse.json({ specFunctions: projectSpecs });
+        return NextResponse.json({ specFunctions: projectSpecs, specDetailCollapsed: project.specDetailCollapsed });
     } catch (error: unknown) {
         log.error('스펙 조회 실패', error);
         return NextResponse.json(
             { error: '스펙 조회 실패' },
             { status: 500 }
         );
+    }
+}
+
+// PATCH: 세세부기술 열의 접기 상태만 변경한다.
+export async function PATCH(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const { id: projectId } = await params;
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
+        if (accessResult instanceof NextResponse) return accessResult;
+        const { specDetailCollapsed } = await request.json();
+        if (typeof specDetailCollapsed !== 'boolean') {
+            return NextResponse.json({ error: '접기 상태가 올바르지 않습니다.' }, { status: 400 });
+        }
+        const project = await prisma.project.update({
+            where: { id: projectId },
+            data: { specDetailCollapsed },
+            select: { specDetailCollapsed: true },
+        });
+        return NextResponse.json(project);
+    } catch (error: unknown) {
+        return toErrorResponse(error, { log, message: '세세부기술 열 상태를 저장하지 못했습니다.' });
     }
 }
 

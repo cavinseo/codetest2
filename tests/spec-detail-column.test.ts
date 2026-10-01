@@ -12,6 +12,7 @@ let container: HTMLDivElement;
 let root: Root;
 let specs: SpecFunctionLike[];
 const savedPayloads: unknown[] = [];
+const collapsedByProject = new Map<string, boolean>();
 const button = (label: string) => [...container.querySelectorAll('button')].find(item => item.textContent?.trim() === label)!;
 const detailInputs = () => container.querySelectorAll<HTMLInputElement>('input[list="detail-options-project"]');
 async function click(label: string) { await act(async () => { button(label).click(); }); }
@@ -23,18 +24,40 @@ beforeEach(() => {
         { id: 'sub', level: 'SUB', parentId: 'core', name: '원인 분석', technology: 'PLC 로그', order: 1 },
     ];
     savedPayloads.length = 0;
+    collapsedByProject.clear();
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'PATCH') {
+            const collapsed = JSON.parse(String(init.body)).specDetailCollapsed;
+            collapsedByProject.set(String(url).split('/').at(-2)!, collapsed);
+            return new Response(JSON.stringify({ specDetailCollapsed: collapsed }));
+        }
         if (init?.method === 'POST') {
             savedPayloads.push(JSON.parse(String(init.body)));
             return new Response(JSON.stringify({ success: true }));
         }
-        return new Response(JSON.stringify(String(url).endsWith('/spec') ? { specFunctions: specs }
+        return new Response(JSON.stringify(String(url).endsWith('/spec') ? { specFunctions: specs, specDetailCollapsed: collapsedByProject.get(String(url).split('/').at(-2)!) ?? false }
             : { projects: [{ id: 'project', name: 'AI PLC 관리 장비', role: 'OWNER' }] }));
     }));
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
+});
+
+it('접기와 펼치기 선택을 저장하여 다시 열어도 유지한다', async () => {
+    await mount();
+    await click('세세부기술 접기');
+    expect(collapsedByProject.get('project')).toBe(true);
+    await act(async () => { root.unmount(); });
+    root = createRoot(container);
+    await mount();
+    expect(button('세세부기술 펼치기')).toBeTruthy();
+    await click('세세부기술 펼치기');
+    expect(collapsedByProject.get('project')).toBe(false);
+    await act(async () => { root.unmount(); });
+    root = createRoot(container);
+    await mount();
+    expect(button('세세부기술 접기')).toBeTruthy();
 });
 
 afterEach(async () => {
@@ -59,9 +82,13 @@ it('빈 열을 접고 펼쳐도 적용기술과 저장 내용이 같고 접기 �
     expect(button('세세부기술 접기').getAttribute('aria-expanded')).toBe('true');
 });
 
-it('접은 상태에서 세세부기술을 추가하면 입력 열을 펼치고 새 내용을 저장한다', async () => {
+it('접힌 동안은 세세부기술을 추가하지 않고 펼친 뒤 새 내용을 저장한다', async () => {
     await mount();
     await click('세세부기술 접기');
+    expect(button('+D').disabled).toBe(true);
+    await click('+D');
+    expect(detailInputs()).toHaveLength(0);
+    await click('세세부기술 펼치기');
     await click('+D');
     expect(detailInputs()).toHaveLength(2);
     await act(async () => {

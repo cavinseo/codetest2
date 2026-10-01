@@ -98,6 +98,7 @@ export function buildWorksheetData(payloads: WorksheetPayloads): FinalReportWork
         qfdTechnicals: pickArray<Row<'qfdTechnicals'>>(payloads.qfdAnalysis, 'technicals'),
         salesEstimates: pickArray<Row<'salesEstimates'>>(payloads.sales, 'rows'),
         specFunctions: pickArray<Row<'specFunctions'>>(payloads.exportData, 'specFunctions'),
+        specDetailCollapsed: (payloads.exportData as { specDetailCollapsed?: boolean } | null)?.specDetailCollapsed === true,
         productAttributes: pickArray<Row<'productAttributes'>>(payloads.exportData, 'productAttributes'),
         requirements: pickArray<Row<'requirements'>>(payloads.exportData, 'customerRequirements'),
         kanoAggregation: pickArray<Row<'kanoAggregation'>>(payloads.kanoAnalysis, 'requirements'),

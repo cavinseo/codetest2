@@ -100,6 +100,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const [project, setProject] = useState<ProjectData | null>(null);
     const [rows, setRows] = useState<FlatSpecRow[]>([]);
     const [isDetailColumnCollapsed, setIsDetailColumnCollapsed] = useState(false);
+    const [isSavingDetailVisibility, setIsSavingDetailVisibility] = useState(false);
     const hasDetailContent = rows.some(row => row.detail.trim() !== '');
     const showDetailColumn = hasDetailContent || !isDetailColumnCollapsed;
     const [isLoading, setIsLoading] = useState(true);
@@ -138,10 +139,6 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         return buildFlatSpecRowsFromFunctions(loadedSpecs);
     }, []);
 
-    useEffect(() => {
-        if (hasDetailContent) setIsDetailColumnCollapsed(false);
-    }, [hasDetailContent]);
-
     // 데이터 로드
     useEffect(() => {
         let active = true;
@@ -166,6 +163,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                     if (!Array.isArray(specData.specFunctions)) throw new Error('스펙 응답 형식 오류');
                     const loadedSpecs: SpecFunction[] = specData.specFunctions;
                     setRows(buildRowsFromSpecs(loadedSpecs));
+                    setIsDetailColumnCollapsed(specData.specDetailCollapsed === true);
                     setLoadedProjectId(projectId);
                 } else throw new Error('스펙 조회 실패');
             } catch (error) {
@@ -178,6 +176,26 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         loadData();
         return () => { active = false; };
     }, [buildRowsFromSpecs, projectId, loadAttempt]);
+
+    const updateDetailVisibility = async (collapsed: boolean) => {
+        const previous = isDetailColumnCollapsed;
+        setIsDetailColumnCollapsed(collapsed);
+        if (project?.role === 'VIEWER') return;
+        setIsSavingDetailVisibility(true);
+        try {
+            const response = await fetch(`/api/projects/${projectId}/spec`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ specDetailCollapsed: collapsed }),
+            });
+            if (!response.ok) throw new Error('세세부기술 열 상태 저장 실패');
+        } catch {
+            setIsDetailColumnCollapsed(previous);
+            showToast('세세부기술 열 상태를 저장하지 못했습니다.', 'error');
+        } finally {
+            setIsSavingDetailVisibility(false);
+        }
+    };
 
     const addRow = () => {
         setRows([...rows, { id: Math.random().toString(36).slice(2), core: '', sub: '', detail: '', technology: '' }]);
@@ -207,7 +225,6 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     };
 
     const addDetailToSub = (row: FlatSpecRow) => {
-        setIsDetailColumnCollapsed(false);
         insertRowAfter(row.id, {
             id: Math.random().toString(36).slice(2),
             core: row.core.trim(),
@@ -1159,8 +1176,8 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                 </div>
                 {activeMode === 'manual' && <button
                     type="button"
-                    onClick={() => setIsDetailColumnCollapsed(collapsed => !collapsed)}
-                    disabled={hasDetailContent}
+                    onClick={() => void updateDetailVisibility(!isDetailColumnCollapsed)}
+                    disabled={hasDetailContent || isSavingDetailVisibility}
                     aria-expanded={showDetailColumn}
                     aria-controls={`spec-table-${projectId}`}
                     title={hasDetailContent ? '세세부기술 내용이 있어 열을 표시합니다.' : '세세부기술이 모두 비어 있으면 열을 접을 수 있습니다.'}
@@ -1306,7 +1323,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                                     <button
                                                         type="button"
                                                         onClick={() => addDetailToSub(row)}
-                                                        disabled={!row.core.trim() || !row.sub.trim()}
+                                                        disabled={!row.core.trim() || !row.sub.trim() || isDetailColumnCollapsed || isSavingDetailVisibility}
                                                         className="w-9 py-2 text-xs text-emerald-300 hover:bg-emerald-500/10 disabled:text-gray-700 disabled:hover:bg-transparent transition-colors"
                                                         title="이 세부기능에 세세부기능 추가"
                                                     >

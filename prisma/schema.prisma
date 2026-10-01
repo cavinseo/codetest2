@@ -106,6 +106,7 @@ model Project {
   targetCustomer           String?
   // AI 에이전트 연결 방식: "rule" | "local" | "personal"
   aiMode                   String                    @default("rule")
+  specDetailCollapsed      Boolean                   @default(false)
   qfdTechnicalInitialized  Boolean                   @default(false)
   attributeFitnesses       AttributeFitness[]
   benchmarks               Benchmark[]

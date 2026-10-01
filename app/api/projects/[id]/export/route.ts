@@ -44,6 +44,7 @@ export async function GET(
                 detailedDescription: project.detailedDescription,
             },
             specFunctions: project.specFunctions,
+            specDetailCollapsed: project.specDetailCollapsed,
             productAttributes: project.productAttributes,
             attributeFitnesses: project.attributeFitnesses,
             customerRequirements: project.requirements,
