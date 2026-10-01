@@ -42,6 +42,12 @@ describe('checkUploadedExcel', () => {
         expect(checkUploadedExcel(fileOf('payload.zip', 100))?.error).toContain('.xlsx');
         expect(checkUploadedExcel(fileOf('noext', 100))?.status).toBe(400);
     });
+
+    it('Google Forms 응답 업로드에서만 CSV를 허용한다', () => {
+        expect(checkUploadedExcel(fileOf('responses.csv', 100))?.status).toBe(400);
+        expect(checkUploadedExcel(fileOf('responses.CSV', 100), { allowCsv: true })).toBeNull();
+        expect(checkUploadedExcel(fileOf('payload.zip', 100), { allowCsv: true })?.status).toBe(400);
+    });
 });
 
 describe('guardUploadedExcel', () => {

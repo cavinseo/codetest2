@@ -113,7 +113,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         const writePolicy = parseWritePolicy(formData.get('writePolicy'));
         const replaceExistingRespondents = formData.get('replaceExistingRespondents') === 'true';
         // 다른 업로드 라우트에는 있던 크기·확장자 검사가 여기만 빠져 있었다.
-        const upload = guardUploadedExcel(file);
+        const upload = guardUploadedExcel(file, { allowCsv: uploadFormat === 'googleForms' });
         if (!upload.ok) {
             return NextResponse.json({ error: upload.failure.error }, { status: upload.failure.status });
         }

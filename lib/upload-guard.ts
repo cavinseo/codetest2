@@ -21,16 +21,16 @@ export type UploadGuardResult =
  */
 export function guardUploadedExcel(
     value: unknown,
-    options: { maxBytes?: number } = {}
+    options: { maxBytes?: number; allowCsv?: boolean } = {}
 ): UploadGuardResult {
     const failure = checkUploadedExcel(value, options);
     if (failure) return { ok: false, failure };
     return { ok: true, file: value as File };
 }
 
-function hasSupportedExtension(fileName: string): boolean {
+function hasSupportedExtension(fileName: string, allowCsv = false): boolean {
     const lower = fileName.trim().toLowerCase();
-    return lower.endsWith('.xlsx') || lower.endsWith('.xls');
+    return lower.endsWith('.xlsx') || lower.endsWith('.xls') || (allowCsv && lower.endsWith('.csv'));
 }
 
 /**
@@ -39,7 +39,7 @@ function hasSupportedExtension(fileName: string): boolean {
  */
 export function checkUploadedExcel(
     value: unknown,
-    options: { maxBytes?: number } = {}
+    options: { maxBytes?: number; allowCsv?: boolean } = {}
 ): UploadGuardFailure | null {
     const maxBytes = options.maxBytes ?? MAX_UPLOAD_BYTES;
 
@@ -55,8 +55,8 @@ export function checkUploadedExcel(
             status: 413,
         };
     }
-    if (!hasSupportedExtension(value.name)) {
-        return { error: '.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', status: 400 };
+    if (!hasSupportedExtension(value.name, options.allowCsv)) {
+        return { error: options.allowCsv ? '.xlsx, .xls 또는 .csv 파일만 업로드할 수 있습니다.' : '.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', status: 400 };
     }
     return null;
 }

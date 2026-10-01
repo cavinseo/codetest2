@@ -51,6 +51,13 @@ async function openKano(offline = false) {
     await selectFile(offline ? 'input[accept=".html,.htm"]' : 'input[accept=".xlsx,.xls"]', offline ? 'response.html' : 'upload.xlsx');
     await click('업로드');
 }
+async function openGoogleFormsUpload() {
+    await mount(KanoManager);
+    const googleTab = [...container.querySelectorAll('button')].find(item => item.textContent?.includes('Google Forms 연동'))!;
+    await act(async () => { googleTab.click(); });
+    await selectFile('input[accept=".xlsx,.xls,.csv"]', 'responses.csv');
+    await click('업로드');
+}
 beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.stubGlobal('fetch', fetchMock);
@@ -83,8 +90,25 @@ const screens = [
     { name: 'WS-5', open: async () => { await mount(RequirementsTable); await selectFile(); }, endpoint: '/import' },
     { name: 'Kano 엑셀', open: () => openKano(), endpoint: '/kano/upload-excel' },
     { name: 'Kano HTML', open: () => openKano(true), endpoint: '/kano/upload-offline' },
+    { name: 'Kano Google Forms', open: openGoogleFormsUpload, endpoint: '/kano/upload-excel' },
     { name: '전체 워크북', open: openWorkbook, endpoint: '/import' },
 ];
+
+it('Google Forms 결과 업로드는 자동으로 Google Forms 형식을 지정한다', async () => {
+    await openGoogleFormsUpload();
+    await click('기존 데이터에 추가');
+    expect((writes()[0][1].body as FormData).get('format')).toBe('googleForms');
+});
+
+it('응답 업로드 방식을 바꾸면 앞 탭에서 선택한 파일을 넘기지 않는다', async () => {
+    await mount(KanoManager);
+    await selectFile();
+    const googleTab = [...container.querySelectorAll('button')].find(item => item.textContent?.includes('Google Forms 연동'))!;
+    await act(async () => { googleTab.click(); });
+
+    expect(container.querySelector<HTMLInputElement>('input[accept=".xlsx,.xls,.csv"]')).not.toBeNull();
+    expect(button('업로드').disabled).toBe(true);
+});
 
 it('Google Forms 탭에서 Kano 설문지 Apps Script 파일을 받을 수 있다', async () => {
     await mount(KanoManager);

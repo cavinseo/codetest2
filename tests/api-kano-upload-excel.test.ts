@@ -68,6 +68,18 @@ function uploadRequest(
     });
 }
 
+function googleFormsCsvRequest(format = 'googleForms'): NextRequest {
+    const csv = '\uFEFF타임스탬프,이메일 주소,[1-1] 빠른 주문,[1-2] 빠른 주문,[2-1] 안전한 보관,[2-2] 안전한 보관\n2026-10-02,respondent@example.test,마음에 든다,마음에 안든다,당연하다,하는수 없다';
+    const formData = new FormData();
+    formData.append('file', new File([csv], 'Google Forms responses.csv', { type: 'text/csv' }));
+    formData.append('format', format);
+    formData.append('writePolicy', 'append');
+    return new NextRequest(`http://localhost/api/projects/${PROJECT_ID}/kano/upload-excel`, {
+        method: 'POST',
+        body: formData,
+    });
+}
+
 beforeEach(() => {
     requireProjectAccess.mockResolvedValue({ user: USER, role: 'OWNER' });
     findManyRequirement.mockResolvedValue(REQUIREMENTS);
@@ -80,6 +92,24 @@ afterEach(() => {
 });
 
 describe('POST /api/projects/[id]/kano/upload-excel', () => {
+    it('Google Forms에서 내려받은 CSV 응답을 질문 순서대로 저장한다', async () => {
+        const response = await POST(googleFormsCsvRequest(), params);
+
+        expect(response.status).toBe(200);
+        expect(tx.kanoResponse.createMany).toHaveBeenCalledWith({
+            data: [
+                expect.objectContaining({ requirementId: 'requirement_1', positiveAnswer: 1, negativeAnswer: 5 }),
+                expect.objectContaining({ requirementId: 'requirement_2', positiveAnswer: 2, negativeAnswer: 4 }),
+            ],
+        });
+    });
+
+    it('전용 Excel 양식 경로에서는 CSV를 받지 않는다', async () => {
+        const response = await POST(googleFormsCsvRequest('template'), params);
+
+        expect(response.status).toBe(400);
+        expect(tx.kanoResponse.createMany).not.toHaveBeenCalled();
+    });
     it('요구사항이 없으면 기존 400 오류를 반환한다', async () => {
         findManyRequirement.mockResolvedValue([]);
 

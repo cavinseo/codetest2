@@ -380,7 +380,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         try {
             const formData = new FormData();
             formData.append('file', excelFile);
-            formData.append('format', excelUploadFormat);
+            formData.append('format', collectMode === 'googleForms' ? 'googleForms' : excelUploadFormat);
             formData.append('writePolicy', writePolicy);
             if (replaceExistingRespondents) formData.append('replaceExistingRespondents', 'true');
 
@@ -407,8 +407,11 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     };
 
     const handleCollectModeChange = (mode: 'file' | 'offline' | 'googleForms') => {
+        if (mode === collectMode) return;
         setCollectMode(mode);
         setPendingUpload(null);
+        setExcelFile(null);
+        if (excelInputRef.current) excelInputRef.current.value = '';
         setOfflineResults([]);
     };
 
@@ -921,7 +924,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
 
                             {pendingUpload && (
                                 <UploadWritePolicyPrompt
-                                    title={pendingUpload === 'excel' ? '엑셀 양식 업로드' : 'HTML 응답지 업로드'}
+                                    title={pendingUpload === 'excel' ? (collectMode === 'googleForms' ? 'Google Forms 설문결과 업로드' : '엑셀 양식 업로드') : 'HTML 응답지 업로드'}
                                     fileName={pendingUpload === 'excel' ? excelFile?.name ?? '' : offlineFiles.map(file => file.name).join(', ')}
                                     targetLabel="Kano 응답"
                                     isUploading={isUploadingExcel || isUploadingOffline}
@@ -943,12 +946,16 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 />
                             )}
 
-                            {collectMode === 'file' && (
+                            {(collectMode === 'file' || collectMode === 'googleForms') && (
                                 <div>
-                                    <h3 className="text-white text-sm font-semibold">응답 파일로 업로드</h3>
-                                    <p className="text-sm text-gray-500 mt-1 mb-4">여러 명의 답변을 파일 하나에 정리해 한 번에 등록합니다</p>
+                                    <h3 className="text-white text-sm font-semibold">{collectMode === 'googleForms' ? 'Google Forms 설문결과 업로드' : '응답 파일로 업로드'}</h3>
+                                    <p className="text-sm text-gray-500 mt-1 mb-4">
+                                        {collectMode === 'googleForms'
+                                            ? 'Google Forms의 응답 CSV 또는 연결된 Google Sheets에서 내려받은 Excel 파일을 올려 주세요.'
+                                            : '여러 명의 답변을 파일 하나에 정리해 한 번에 등록합니다'}
+                                    </p>
                                     <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
-                                        <select
+                                        {collectMode === 'file' && <select
                                             value={excelUploadFormat}
                                             disabled={isUploadingExcel || isUploadingOffline}
                                             onChange={(event) => setExcelUploadFormat(event.target.value as ExcelUploadFormat)}
@@ -956,9 +963,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                         >
                                             <option value="template">전용 양식</option>
                                             <option value="googleForms">Google Forms 형식</option>
-                                        </select>
+                                        </select>}
 
-                                        <a
+                                        {collectMode === 'file' && <a
                                             href={`${kanoUploadTemplateUrl}?format=${excelUploadFormat}`}
                                             className="px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
                                         >
@@ -966,12 +973,12 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
                                             </svg>
                                             양식 받기
-                                        </a>
+                                        </a>}
 
                                         <input
                                             ref={excelInputRef}
                                             type="file"
-                                            accept=".xlsx,.xls"
+                                            accept={collectMode === 'googleForms' ? '.xlsx,.xls,.csv' : '.xlsx,.xls'}
                                             disabled={isUploadingExcel || isUploadingOffline}
                                             onChange={(event) => { setExcelFile(event.target.files?.[0] ?? null); setPendingUpload(null); }}
                                             className="flex-1 min-w-0 text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-200 hover:file:bg-amber-500/25"
