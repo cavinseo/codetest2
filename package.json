@@ -25,6 +25,7 @@
         "html-to-image": "^1.11.13",
         "next": "^15.1.6",
         "nodemailer": "^8.0.1",
+        "pdf-lib": "^1.17.1",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
         "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",

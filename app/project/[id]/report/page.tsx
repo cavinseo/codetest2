@@ -8,6 +8,7 @@ import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import FinalReportCaptureStage from '@/components/project/FinalReportCaptureStage';
 import FinalReportPreview from '@/components/project/FinalReportPreview';
+import FinalReportPages from '@/components/project/FinalReportPages';
 import { buildWorksheetData, toKanoChartPoints, type WorksheetPayloads } from '@/lib/final-report-inputs';
 import { buildFinalReportModel, hasProductOverviewSource, replaceWorksheetImages, CAPTURED_WORKSHEET_TITLES, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel, type FinalReportOverviewInput, type FinalReportWorksheetData } from '@/lib/final-report-document';
 import { applyBlockEdit, countEditedBlocks, withEditedBlocks, type BlockEdit } from '@/lib/final-report-edit';
@@ -149,6 +150,8 @@ export default function FinalReportPage() {
     const dialog = useRef<HTMLDialogElement>(null);
     const busy = useRef(false);
     const captureStage = useRef<HTMLDivElement>(null);
+    const reportPreview = useRef<HTMLDivElement>(null);
+    const legacyPdfPreview = useRef<HTMLDivElement>(null);
     const worksheetLoad = useRef(0);
     const { toast, showToast } = useToast();
 
@@ -443,6 +446,26 @@ export default function FinalReportPage() {
         finally { finish(); }
     }
 
+    async function handlePdfDownload() {
+        if (!shownDocument || !begin('PDF 문서 만드는 중...')) return;
+        try {
+            const source = shownDocument.blocks.some(block => block.kind === 'cover') ? reportPreview.current : legacyPdfPreview.current;
+            if (!source) throw new Error('PDF로 저장할 보고서 페이지가 없습니다.');
+            const { createFinalReportPdf } = await import('@/lib/final-report-pdf');
+            const blob = await createFinalReportPdf(source);
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = shownDocument.fileName?.replace(/\.docx$/i, '.pdf') || '결과보고서.pdf';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+            showToast('결과보고서를 내려받았습니다.');
+        } catch (error) { fail(error, 'PDF 문서를 만들지 못했습니다.'); }
+        finally { finish(); }
+    }
+
     if (!report) return <div className="space-y-4 p-12">
         {initialError ? <p role="alert" className="text-red-400">{initialError}</p> : <p className="text-gray-400">결과보고서와 열람 권한을 확인하고 있습니다.</p>}
         <Link href={`/project/${projectId}`} className="btn-secondary inline-block text-sm">프로젝트로</Link>
@@ -465,6 +488,7 @@ export default function FinalReportPage() {
                     <button disabled={progress !== null || !draft || previewNeedsRefresh} onClick={() => setConfirmation('publish')} className="btn-primary text-sm disabled:opacity-50">완료</button>
                 </>}
                 <button disabled={progress !== null || !shownDocument} onClick={() => void handleDownload()} className="btn-secondary text-sm disabled:opacity-50">Word 내려받기</button>
+                <button disabled={progress !== null || !shownDocument} onClick={() => void handlePdfDownload()} className="btn-secondary text-sm disabled:opacity-50">PDF 내려받기</button>
             </div>
         </div>
 
@@ -514,7 +538,10 @@ export default function FinalReportPage() {
                 </div>
                 {editing && <button onClick={() => { setDraft(model); setHasLocalChanges(true); }} disabled={progress !== null || editedCount === 0} className="btn-secondary text-sm disabled:opacity-40">미리보기 기준으로 되돌리기</button>}
             </div>
-            <FinalReportPreview blocks={shownDocument.blocks} onEdit={editing ? handleEdit : undefined} readOnly={!editing} disabled={progress !== null} />
+            <div ref={reportPreview}><FinalReportPreview blocks={shownDocument.blocks} onEdit={editing ? handleEdit : undefined} readOnly={!editing} disabled={progress !== null} /></div>
+            {!shownDocument.blocks.some(block => block.kind === 'cover') && <div ref={legacyPdfPreview} aria-hidden="true" style={{ position: 'absolute', left: '-10000px', top: 0, width: '820px', pointerEvents: 'none' }}>
+                <FinalReportPages blocks={shownDocument.blocks} readOnly />
+            </div>}
         </section>}
 
         {!report.canEdit && activeView === 'draft' && <section className="card space-y-3">
@@ -533,7 +560,7 @@ export default function FinalReportPage() {
 
         {confirmation && <dialog ref={dialog} onCancel={() => { setConfirmation(null); setPendingNavigation(null); }} className="w-full max-w-lg rounded-xl border border-white/10 bg-gray-900 p-6 text-white shadow-xl backdrop:bg-black/60" aria-labelledby="report-confirm-title">
             <h2 id="report-confirm-title" className="text-lg font-semibold">{confirmation === 'leave' ? '저장하지 않고 이동하시겠습니까?' : confirmation === 'publish' ? '결과보고서를 완료하시겠습니까?' : '미리보기를 다시 만드시겠습니까?'}</h2>
-            <p className="mt-3 text-sm text-gray-300">{confirmation === 'leave' ? '아직 저장하지 않은 입력과 교정 내용이 사라집니다. 저장된 초안과 기존 완료본은 유지됩니다. 계속 작성하려면 취소해 주세요.' : confirmation === 'publish' ? report.hasPublishedReport ? '현재 문서를 저장하고 기존 완료본을 교체합니다. 멘티에게 새 완료본이 공개됩니다.' : '현재 문서를 저장하고 완료본으로 공개합니다. 멘티가 열람하고 Word 파일을 내려받을 수 있습니다.' : '최신 워크시트와 위 입력 항목으로 문서를 다시 만듭니다. 현재 미리보기에서 직접 교정한 내용은 교체됩니다. 기존 공개본은 그대로 유지됩니다.'}</p>
+            <p className="mt-3 text-sm text-gray-300">{confirmation === 'leave' ? '아직 저장하지 않은 입력과 교정 내용이 사라집니다. 저장된 초안과 기존 완료본은 유지됩니다. 계속 작성하려면 취소해 주세요.' : confirmation === 'publish' ? report.hasPublishedReport ? '현재 문서를 저장하고 기존 완료본을 교체합니다. 멘티에게 새 완료본이 공개됩니다.' : '현재 문서를 저장하고 완료본으로 공개합니다. 멘티가 열람하고 Word 또는 PDF 파일을 내려받을 수 있습니다.' : '최신 워크시트와 위 입력 항목으로 문서를 다시 만듭니다. 현재 미리보기에서 직접 교정한 내용은 교체됩니다. 기존 공개본은 그대로 유지됩니다.'}</p>
             <div className="mt-6 flex justify-end gap-2">
                 <button autoFocus onClick={() => { setConfirmation(null); setPendingNavigation(null); }} className="btn-secondary text-sm">취소</button>
                 <button onClick={() => {
