@@ -89,7 +89,6 @@ describe('Google Forms 라우트 비활성화', () => {
     it.each([
         ['create-form', () => createForm(postRequest('create-form', { projectName: '프로젝트' }), { params })],
         ['form-responses', () => importFormResponses(postRequest('form-responses', { formId: 'form_1' }), { params })],
-        ['form-script', () => downloadFormScript(getRequest(), { params })],
     ])('%s 라우트는 503과 고정 안내문을 반환한다', async (_name, callRoute) => {
         const response = await callRoute();
 
@@ -104,6 +103,34 @@ describe('Google Forms 라우트 비활성화', () => {
         expect(createManyResponses).not.toHaveBeenCalled();
         expect(createKanoForm).not.toHaveBeenCalled();
         expect(getFormResponses).not.toHaveBeenCalled();
+        expect(buildKanoGoogleFormScript).not.toHaveBeenCalled();
+    });
+
+    it('저장된 Kano 질문으로 Apps Script 파일을 내려받는다', async () => {
+        const response = await downloadFormScript(getRequest(), { params });
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get('Content-Type')).toContain('text/plain');
+        expect(response.headers.get('Content-Disposition')).toContain('attachment');
+        await expect(response.text()).resolves.toBe('function createForm() {}');
+        expect(buildKanoGoogleFormScript).toHaveBeenCalledWith([{
+            category: '기능',
+            subcategory: null,
+            requirement: '빠른 처리',
+            kanoPositiveQ: '빠르면 어떻습니까?',
+            kanoNegativeQ: '느리면 어떻습니까?',
+        }], '프로젝트');
+        expect(isGoogleConfigured).not.toHaveBeenCalled();
+        expect(getGoogleToken).not.toHaveBeenCalled();
+    });
+
+    it('Kano 요구사항이 없으면 스크립트를 생성하지 않는다', async () => {
+        findProject.mockResolvedValueOnce({ name: '프로젝트', requirements: [] });
+
+        const response = await downloadFormScript(getRequest(), { params });
+
+        expect(response.status).toBe(400);
+        await expect(response.json()).resolves.toEqual({ error: '먼저 고객요구사항을 등록하세요.' });
         expect(buildKanoGoogleFormScript).not.toHaveBeenCalled();
     });
 

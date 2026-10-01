@@ -86,6 +86,16 @@ const screens = [
     { name: '전체 워크북', open: openWorkbook, endpoint: '/import' },
 ];
 
+it('Google Forms 탭에서 Kano 설문지 Apps Script 파일을 받을 수 있다', async () => {
+    await mount(KanoManager);
+    const googleTab = [...container.querySelectorAll('button')].find(item => item.textContent?.includes('Google Forms 연동'))!;
+    await act(async () => { googleTab.click(); });
+
+    const scriptLink = container.querySelector<HTMLAnchorElement>('a[href="/api/projects/project/kano/form-script"]');
+    expect(scriptLink).not.toBeNull();
+    expect(scriptLink?.textContent).toContain('Kano 설문지 Apps Script 받기');
+});
+
 for (const screen of screens) {
     it.each([['기존 데이터에 추가', 'append'], ['기존 데이터 지우고 업로드', 'replace']])(`${screen.name}에서 %s 선택을 서버에 전달한다`, async (label, policy) => {
         await screen.open();

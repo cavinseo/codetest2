@@ -759,7 +759,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 >
                                     <span className="flex items-center gap-2">
                                         Google Forms 연동
-                                        <span className="text-[10px] bg-white/[0.08] text-gray-300 border border-white/[0.10] px-1.5 py-0.5 rounded-full">개발 중</span>
+                                        <span className="text-[10px] bg-white/[0.08] text-gray-300 border border-white/[0.10] px-1.5 py-0.5 rounded-full">자동 연동 개발 중</span>
                                     </span>
                                 </button>
                             </div>
@@ -768,14 +768,28 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 <div className="space-y-4">
                                     <div>
                                         <h3 className="text-white text-sm font-semibold">Google Forms 연동</h3>
-                                        <p className="text-sm text-gray-500 mt-1">개발 중입니다. 준비되면 이 자리에서 바로 쓸 수 있습니다</p>
+                                        <p className="text-sm text-gray-500 mt-1">저장된 Kano 질문으로 Google Forms 설문지를 만들 수 있는 Apps Script를 받으세요.</p>
+                                    </div>
+                                    <div className="rounded-xl border border-blue-500/25 bg-blue-500/[0.07] p-4">
+                                        <h4 className="text-sm font-semibold text-blue-200">Kano 설문지 Google Forms 스크립트</h4>
+                                        <p className="mt-2 text-xs leading-5 text-gray-400">
+                                            질문을 저장한 뒤 파일을 내려받아 Google Apps Script에 붙여넣고 createKanoForm()을 실행하세요.
+                                            생성된 설문지의 응답 시트는 Google Forms 형식으로 업로드할 수 있습니다.
+                                        </p>
+                                        <a href={kanoFormScriptUrl} className="btn-secondary mt-3 inline-flex items-center gap-1.5 text-xs">
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
+                                            </svg>
+                                            Kano 설문지 Apps Script 받기
+                                        </a>
                                     </div>
                                     {!GOOGLE_FORMS_INTEGRATION_ENABLED && (
                                         <p className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-gray-400">
                                             {GOOGLE_FORMS_DISABLED_MESSAGE}
                                         </p>
                                     )}
-                                    {/* 3단계 진행 흐름 */}
+                                    {/* 자동 연동 3단계 진행 흐름 */}
+                                    <h4 className="text-xs font-semibold text-gray-400">자동 연동</h4>
                                     <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 ${GOOGLE_FORMS_INTEGRATION_ENABLED ? '' : 'opacity-60 grayscale'}`}>
                                         {/* 1단계: 미리보기 */}
                                         <div className="p-4 bg-white/[0.03] border border-white/[0.08] rounded-xl flex flex-col">
@@ -871,32 +885,6 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                                 {GOOGLE_FORMS_INTEGRATION_ENABLED && isImporting ? '가져오는 중...' : GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId ? '응답 가져오기' : '대기 중'}
                                             </button>
                                         </div>
-                                    </div>
-
-                                    {/* 보조 수단: Apps Script 직접 실행 */}
-                                    <div className="pt-3 border-t border-white/[0.06]">
-                                        {GOOGLE_FORMS_INTEGRATION_ENABLED ? (
-                                            <a
-                                                href={kanoFormScriptUrl}
-                                                className="text-xs text-gray-500 hover:text-gray-300 transition-colors inline-flex items-center gap-1.5"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
-                                                </svg>
-                                                Apps Script 파일 받기 (Google 연동 없이 수동 생성)
-                                            </a>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                disabled
-                                                className="text-xs text-gray-600 inline-flex items-center gap-1.5 cursor-not-allowed"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
-                                                </svg>
-                                                Apps Script 파일 받기 (Google 연동 없이 수동 생성)
-                                            </button>
-                                        )}
                                     </div>
 
                                     {/* 생성된 폼 URL */}
