@@ -8,6 +8,7 @@ import WorksheetLoadError from './WorksheetLoadError';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import {
     groupRequirementsByCategory,
+    getRequirementGroupSpans,
     sortRequirementsByWorksheetOrder,
 } from '@/lib/requirements-table-utils';
 
@@ -348,6 +349,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
     // 편집·추가·저장 시 그룹별로 정리한 행 순서를 표시한다.
     const sorted = sortRequirementsByWorksheetOrder(requirements);
+    const groupSpans = getRequirementGroupSpans(sorted, editingId);
 
     const groupedCategories = [...new Set(sorted.map(r => r.category))];
 
@@ -512,8 +514,9 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
                         {(() => {
                             let no = 1;
-                            return sorted.map(req => {
+                            return sorted.map((req, index) => {
                                 const isEditing = editingId === req.id;
+                                const { primary, secondary } = groupSpans[index];
 
                                 return (
                                     <tr
@@ -541,7 +544,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                         </td>
 
                                         {/* 1차 그룹 */}
-                                        <td className="px-2 py-1.5">
+                                        {primary > 0 && <td data-group-level="primary" rowSpan={primary} className="px-2 py-1.5 align-top">
                                             {isEditing ? (
                                                 <>
                                                     <input
@@ -561,10 +564,10 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                     {req.category || <span className="text-gray-700">—</span>}
                                                 </span>
                                             )}
-                                        </td>
+                                        </td>}
 
                                         {/* 2차 그룹 */}
-                                        <td className="px-2 py-1.5">
+                                        {secondary > 0 && <td data-group-level="secondary" rowSpan={secondary} className="px-2 py-1.5 align-top">
                                             {isEditing ? (
                                                 <>
                                                     <input
@@ -585,7 +588,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                     {req.subcategory || <span className="text-gray-700">—</span>}
                                                 </span>
                                             )}
-                                        </td>
+                                        </td>}
 
                                         {/* 삭제 */}
                                         <td className="px-2 py-2 text-center">

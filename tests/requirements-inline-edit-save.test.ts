@@ -73,7 +73,7 @@ async function fill(selector: string, value: string) {
 
 const displayedRequirements = () => [...container.querySelectorAll('tbody tr')].map(row => row.children[1].textContent);
 
-it('미분류 항목을 분류한 뒤에도 모든 행의 1·2차 그룹이 보이고 저장값이 유지된다', async () => {
+it('미분류 항목을 분류한 뒤에도 그룹값은 유지하고 중복 그룹명은 한 번만 표시한다', async () => {
     savedRequirements = [
         { id: 'req_1', category: '미분류', subcategory: '', requirement: '첫째', order: 0 },
         { id: 'req_2', category: '미분류', subcategory: '', requirement: '둘째', order: 1 },
@@ -86,12 +86,13 @@ it('미분류 항목을 분류한 뒤에도 모든 행의 1·2차 그룹이 보�
     await fill('input[list="subcat_autocomplete"]', '새 2차');
     await act(async () => { buttonByText('저장').click(); });
 
-    const rows = [...container.querySelectorAll('tbody tr')];
-    expect(rows.map(row => [row.children[1].textContent, row.children[2].textContent?.trim(), row.children[3].textContent?.trim()])).toEqual([
-        ['첫째', '새 1차', '새 2차'],
-        ['둘째', '미분류', '—'],
-        ['셋째', '미분류', '기존 2차'],
-        ['넷째', '미분류', '기존 2차'],
+    const visibleGroups = () => [...container.querySelectorAll('tbody tr')].map(row =>
+        [...row.querySelectorAll<HTMLTableCellElement>('td[data-group-level]')].map(cell => [cell.dataset.groupLevel, cell.textContent?.trim(), cell.rowSpan]));
+    expect(visibleGroups()).toEqual([
+        [['primary', '새 1차', 1], ['secondary', '새 2차', 1]],
+        [['primary', '미분류', 3], ['secondary', '—', 1]],
+        [['secondary', '기존 2차', 2]],
+        [],
     ]);
     expect(savedRequirements.map(row => [row.id, row.category, row.subcategory])).toEqual([
         ['req_1', '새 1차', '새 2차'],
@@ -102,12 +103,46 @@ it('미분류 항목을 분류한 뒤에도 모든 행의 1·2차 그룹이 보�
     await act(async () => { root.unmount(); });
     root = createRoot(container);
     await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
-    expect([...container.querySelectorAll('tbody tr')].map(row => [row.children[2].textContent?.trim(), row.children[3].textContent?.trim()])).toEqual([
-        ['새 1차', '새 2차'],
-        ['미분류', '—'],
-        ['미분류', '기존 2차'],
-        ['미분류', '기존 2차'],
+    expect(visibleGroups()).toEqual([
+        [['primary', '새 1차', 1], ['secondary', '새 2차', 1]],
+        [['primary', '미분류', 3], ['secondary', '—', 1]],
+        [['secondary', '기존 2차', 2]],
+        [],
     ]);
+});
+
+it('2번 항목을 기존 그룹으로 옮겨도 편집칸과 다른 그룹을 유지한다', async () => {
+    savedRequirements = [
+        { id: 'req_1', category: '최소인력 운용', subcategory: '무인 공장', requirement: '첫째', order: 0 },
+        { id: 'req_2', category: '미분류', subcategory: '', requirement: '둘째', order: 1 },
+        { id: 'req_3', category: '예방정비', subcategory: '', requirement: '셋째', order: 2 },
+        { id: 'req_4', category: '미분류', subcategory: '', requirement: '넷째', order: 3 },
+        { id: 'req_5', category: '미분류', subcategory: '', requirement: '다섯째', order: 4 },
+    ];
+    await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
+    await act(async () => { container.querySelectorAll<HTMLButtonElement>('button[title="수정"]')[1].click(); });
+    await fill('input[list="cat_autocomplete"]', '최소인력 운용');
+    await fill('input[list="subcat_autocomplete"]', '무인 공장');
+    await act(async () => { buttonByText('저장').click(); });
+    expect(savedRequirements.map(row => [row.id, row.category, row.subcategory])).toEqual([
+        ['req_1', '최소인력 운용', '무인 공장'],
+        ['req_2', '최소인력 운용', '무인 공장'],
+        ['req_3', '예방정비', ''],
+        ['req_4', '미분류', ''],
+        ['req_5', '미분류', ''],
+    ]);
+    const rows = [...container.querySelectorAll('tbody tr')];
+    expect(rows[0].querySelector<HTMLTableCellElement>('td[data-group-level="primary"]')?.rowSpan).toBe(2);
+    expect(rows[0].querySelector<HTMLTableCellElement>('td[data-group-level="secondary"]')?.rowSpan).toBe(2);
+    expect(rows[1].querySelectorAll('td[data-group-level]')).toHaveLength(0);
+    expect(rows[3].querySelector<HTMLTableCellElement>('td[data-group-level="primary"]')?.rowSpan).toBe(2);
+    await act(async () => { rows[1].querySelector<HTMLButtonElement>('button[title="수정"]')!.click(); });
+    expect(container.querySelector<HTMLTableCellElement>('tbody tr:first-child td[data-group-level="primary"]')?.rowSpan).toBe(1);
+    expect(container.querySelector<HTMLTableCellElement>('tbody tr:nth-child(2) td[data-group-level="primary"]')?.rowSpan).toBe(1);
+    expect(container.querySelector<HTMLInputElement>('input[list="cat_autocomplete"]')?.value).toBe('최소인력 운용');
+    expect(container.querySelector<HTMLInputElement>('input[list="subcat_autocomplete"]')?.value).toBe('무인 공장');
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="취소"]')!.click(); });
+    expect(container.querySelector<HTMLTableCellElement>('tbody tr:first-child td[data-group-level="primary"]')?.rowSpan).toBe(2);
 });
 
 it('편집 중 저장하면 새 그룹으로 묶고 저장한 순서를 다시 불러와도 유지한다', async () => {
