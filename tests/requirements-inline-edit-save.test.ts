@@ -73,6 +73,43 @@ async function fill(selector: string, value: string) {
 
 const displayedRequirements = () => [...container.querySelectorAll('tbody tr')].map(row => row.children[1].textContent);
 
+it('미분류 항목을 분류한 뒤에도 모든 행의 1·2차 그룹이 보이고 저장값이 유지된다', async () => {
+    savedRequirements = [
+        { id: 'req_1', category: '미분류', subcategory: '', requirement: '첫째', order: 0 },
+        { id: 'req_2', category: '미분류', subcategory: '', requirement: '둘째', order: 1 },
+        { id: 'req_3', category: '미분류', subcategory: '기존 2차', requirement: '셋째', order: 2 },
+        { id: 'req_4', category: '미분류', subcategory: '기존 2차', requirement: '넷째', order: 3 },
+    ];
+    await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
+    await act(async () => { container.querySelectorAll<HTMLButtonElement>('button[title="수정"]')[0].click(); });
+    await fill('input[list="cat_autocomplete"]', '새 1차');
+    await fill('input[list="subcat_autocomplete"]', '새 2차');
+    await act(async () => { buttonByText('저장').click(); });
+
+    const rows = [...container.querySelectorAll('tbody tr')];
+    expect(rows.map(row => [row.children[1].textContent, row.children[2].textContent?.trim(), row.children[3].textContent?.trim()])).toEqual([
+        ['첫째', '새 1차', '새 2차'],
+        ['둘째', '미분류', '—'],
+        ['셋째', '미분류', '기존 2차'],
+        ['넷째', '미분류', '기존 2차'],
+    ]);
+    expect(savedRequirements.map(row => [row.id, row.category, row.subcategory])).toEqual([
+        ['req_1', '새 1차', '새 2차'],
+        ['req_2', '미분류', ''],
+        ['req_3', '미분류', '기존 2차'],
+        ['req_4', '미분류', '기존 2차'],
+    ]);
+    await act(async () => { root.unmount(); });
+    root = createRoot(container);
+    await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
+    expect([...container.querySelectorAll('tbody tr')].map(row => [row.children[2].textContent?.trim(), row.children[3].textContent?.trim()])).toEqual([
+        ['새 1차', '새 2차'],
+        ['미분류', '—'],
+        ['미분류', '기존 2차'],
+        ['미분류', '기존 2차'],
+    ]);
+});
+
 it('편집 중 저장하면 새 그룹으로 묶고 저장한 순서를 다시 불러와도 유지한다', async () => {
     await mountMixedGroups();
     await act(async () => { container.querySelectorAll<HTMLButtonElement>('button[title="수정"]')[2].click(); });

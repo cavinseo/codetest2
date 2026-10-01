@@ -32,17 +32,3 @@ export function groupRequirementsByCategory<T extends RequirementGroupingRowLike
         .flatMap(secondaryGroups => [...secondaryGroups.values()].flat())
         .map((row, order) => ({ ...row, order }));
 }
-
-export function shouldShowPrimaryGroup(rows: RequirementGroupingRowLike[], index: number): boolean {
-    const row = rows[index];
-    const previous = rows[index - 1];
-    return !previous || normalizeGroupValue(previous.category) !== normalizeGroupValue(row.category);
-}
-
-export function shouldShowSecondaryGroup(rows: RequirementGroupingRowLike[], index: number): boolean {
-    const row = rows[index];
-    const previous = rows[index - 1];
-    return !previous
-        || normalizeGroupValue(previous.category) !== normalizeGroupValue(row.category)
-        || normalizeGroupValue(previous.subcategory) !== normalizeGroupValue(row.subcategory);
-}

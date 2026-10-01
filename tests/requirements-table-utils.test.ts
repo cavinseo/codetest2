@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
     groupRequirementsByCategory,
-    shouldShowPrimaryGroup,
-    shouldShowSecondaryGroup,
     sortRequirementsByWorksheetOrder,
 } from '../lib/requirements-table-utils';
 
@@ -58,51 +56,5 @@ describe('requirements table view helpers', () => {
             '두 번째 항목',
             '세 번째 항목',
         ]);
-    });
-
-    it('shows repeated group labels only once for consecutive duplicate groups', () => {
-        const rows = [
-            { category: '편의성', subcategory: '주문', order: 0 },
-            { category: '편의성', subcategory: '주문', order: 1 },
-            { category: '편의성', subcategory: '결제', order: 2 },
-            { category: '안전성', subcategory: '결제', order: 3 },
-        ];
-
-        expect(rows.map((_, index) => shouldShowPrimaryGroup(rows, index))).toEqual([true, false, false, true]);
-        expect(rows.map((_, index) => shouldShowSecondaryGroup(rows, index))).toEqual([true, false, true, true]);
-    });
-
-    it('shows the secondary group again when the primary group changes', () => {
-        const rows = [
-            { category: 'primary one', subcategory: 'focus work', order: 0 },
-            { category: 'primary two', subcategory: 'focus work', order: 1 },
-            { category: 'primary two', subcategory: 'different work', order: 2 },
-        ];
-
-        expect(rows.map((_, index) => shouldShowSecondaryGroup(rows, index))).toEqual([true, true, true]);
-    });
-
-    // 엑셀 업로드 시 2차 분류 칸이 비면 importer 가 subcategory 를 null 로 저장한다.
-    it('handles null and undefined group values coming from an excel import', () => {
-        const rows = [
-            { category: '미분류', subcategory: null, order: 0 },
-            { category: '미분류', subcategory: null, order: 1 },
-            { category: '미분류', subcategory: '2차 그룹', order: 2 },
-            { category: '미분류', subcategory: undefined, order: 3 },
-        ];
-
-        expect(rows.map((_, index) => shouldShowPrimaryGroup(rows, index))).toEqual([true, false, false, false]);
-        expect(rows.map((_, index) => shouldShowSecondaryGroup(rows, index))).toEqual([true, false, true, true]);
-    });
-
-    it('treats consecutive secondary groups with surrounding spaces as the same label', () => {
-        const rows = [
-            { category: '1차 그룹', subcategory: '2차 그룹', order: 0 },
-            { category: '1차 그룹 ', subcategory: ' 2차 그룹 ', order: 1 },
-            { category: '1차 그룹', subcategory: '다른 2차 그룹', order: 2 },
-        ];
-
-        expect(rows.map((_, index) => shouldShowPrimaryGroup(rows, index))).toEqual([true, false, false]);
-        expect(rows.map((_, index) => shouldShowSecondaryGroup(rows, index))).toEqual([true, false, true]);
     });
 });

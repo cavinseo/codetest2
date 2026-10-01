@@ -8,8 +8,6 @@ import WorksheetLoadError from './WorksheetLoadError';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import {
     groupRequirementsByCategory,
-    shouldShowPrimaryGroup,
-    shouldShowSecondaryGroup,
     sortRequirementsByWorksheetOrder,
 } from '@/lib/requirements-table-utils';
 
@@ -514,10 +512,8 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
                         {(() => {
                             let no = 1;
-                            return sorted.map((req, idx) => {
+                            return sorted.map(req => {
                                 const isEditing = editingId === req.id;
-                                const showCategory = shouldShowPrimaryGroup(sorted, idx);
-                                const showSubcategory = shouldShowSecondaryGroup(sorted, idx);
 
                                 return (
                                     <tr
@@ -562,7 +558,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                 </>
                                             ) : (
                                                 <span className="text-red-300 text-xs font-medium">
-                                                    {showCategory ? (req.category || <span className="text-gray-700">—</span>) : ''}
+                                                    {req.category || <span className="text-gray-700">—</span>}
                                                 </span>
                                             )}
                                         </td>
@@ -586,7 +582,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                 </>
                                             ) : (
                                                 <span className="text-blue-300/80 text-xs">
-                                                    {showSubcategory ? (req.subcategory || <span className="text-gray-700">—</span>) : ''}
+                                                    {req.subcategory || <span className="text-gray-700">—</span>}
                                                 </span>
                                             )}
                                         </td>
