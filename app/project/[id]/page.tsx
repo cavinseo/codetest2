@@ -71,9 +71,13 @@ interface WorksheetCompleteness {
 }
 
 export default function ProjectDetailPage() {
+    return <ProjectDetailWorkspace initialTab="overview" />;
+}
+
+export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
     const params = useParams();
     const projectId = params.id as string;
-    const [activeTab, setActiveTab] = useState('overview');
+    const [activeTab, setActiveTab] = useState(initialTab);
     const mentorAnalysisDirty = useRef(false);
     const setMentorAnalysisDirty = useCallback((dirty: boolean) => { mentorAnalysisDirty.current = dirty; }, []);
     const qfdDirty = useRef(false);

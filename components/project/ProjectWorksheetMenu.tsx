@@ -9,7 +9,7 @@ import { WORKSHEET_LINKS } from '@/lib/worksheet-pages';
 interface ProjectWorksheetMenuProps {
     projectId: string;
 }
-const HIDDEN_SEGMENTS = new Set(['', 'import', 'settings']);
+const HIDDEN_SEGMENTS = new Set(['', 'import', 'settings', 'kano']);
 
 export default function ProjectWorksheetMenu({ projectId }: ProjectWorksheetMenuProps) {
     const pathname = usePathname();
