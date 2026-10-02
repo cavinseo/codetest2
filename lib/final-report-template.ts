@@ -21,9 +21,9 @@ function createReportWriter(blocks: FinalReportBlock[], images: CapturedWorkshee
     const addHeading = (text: string, level: 1 | 2 = 2) => blocks.push({ kind: 'heading', text, level });
     const addParagraph = (text: string, tone?: 'analysis' | 'notice' | 'caption') => blocks.push({ kind: 'paragraph', text, ...(tone ? { tone } : {}) });
     const addPageBreak = () => blocks.push({ kind: 'pageBreak' });
-    const addTable = (title: string, headers: string[], rows: ReportCell[][], columnWidths?: number[]) => {
+    const addTable = (title: string, headers: string[], rows: ReportCell[][], columnWidths?: number[], mergeColumns?: number[]) => {
         if (!rows.length) { addParagraph(`${title}의 저장 내용이 없습니다. 미작성 상태입니다.`, 'notice'); return; }
-        blocks.push({ kind: 'dataTable', title, headers, rows: rows.map(row => row.map(cell => String(cell ?? ''))), ...(columnWidths ? { columnWidths } : {}) });
+        blocks.push({ kind: 'dataTable', title, headers, rows: rows.map(row => row.map(cell => String(cell ?? ''))), ...(columnWidths ? { columnWidths } : {}), ...(mergeColumns ? { mergeColumns } : {}) });
     };
     const addMentorAnalysis = (ws: string, text?: string, hasInput = true) => {
         addParagraph(`${ws} 멘토 분석(보고)`, 'analysis');
@@ -91,11 +91,11 @@ function appendProductDiagnosis(writer: ReportWriter, worksheets: FinalReportWor
     const showDetailColumn = specs.some(row => String(row[3] ?? '').trim() !== '') || !worksheets.specDetailCollapsed;
     writer.addTable('WS-2 AS-IS 스펙표', ['No', '핵심기술', '세부기술', ...(showDetailColumn ? ['세세부기술'] : []), '적용기술'],
         showDetailColumn ? specs : specs.map(row => row.filter((_, column) => column !== 3)),
-        [24, 73, 136, ...(showDetailColumn ? [57] : []), 221]);
+        [24, 73, 136, ...(showDetailColumn ? [57] : []), 221], [1, 2]);
     writer.startWorksheetPage('제품속성표 (WS-3)', 'WS-3', analysis.attributes?.analysis);
     writer.addParagraph(`워크시트 제품명 · ${displayValue(worksheets.productAttributes.find(row => row.productName?.trim())?.productName)}`);
     writer.addTable('WS-3 제품속성서', ['No', '세분시장', '고객명', '고객 니즈', '제공혜택', '제품속성'],
-        worksheets.productAttributes.map((row, index) => [index + 1, row.marketSegment, row.customerName, row.customerNeed, row.benefit, row.attribute]), [24, 53, 46, 139, 131, 118]);
+        worksheets.productAttributes.map((row, index) => [index + 1, row.marketSegment, row.customerName, row.customerNeed, row.benefit, row.attribute]), [24, 53, 46, 139, 131, 118], [1, 2, 3, 4]);
     const capabilities = Array.from(new Set(worksheets.productAttributes.map(row => row.techCapability).filter((text): text is string => Boolean(text?.trim()))));
     if (capabilities.length) { writer.addHeading('공통 기술 역량 (WS-3)'); writer.addTable('WS-3 기술 역량', ['기술 역량'], capabilities.map(text => [text])); }
 
@@ -153,7 +153,7 @@ function appendQfdMatrix(writer: ReportWriter, worksheets: FinalReportWorksheetD
 function appendQfdAnalysis(writer: ReportWriter, worksheets: FinalReportWorksheetData) {
     writer.addPageBreak(); writer.addHeading('Ⅲ. QFD를 통한 제품(서비스)스펙 도출', 1);
     writer.addHeading('고객요구사항(요구품질) (WS-5)'); writer.addMentorAnalysis('WS-5', undefined, false);
-    writer.addTable('WS-5 고객요구사항', ['No', '항목', '1차 그룹', '2차 그룹'], worksheets.requirements.map((row, index) => [index + 1, row.requirement, row.category, row.subcategory]), [24, 279, 108, 100]);
+    writer.addTable('WS-5 고객요구사항', ['No', '항목', '1차 그룹', '2차 그룹'], worksheets.requirements.map((row, index) => [index + 1, row.requirement, row.category, row.subcategory]), [24, 279, 108, 100], [2, 3]);
     appendKanoResults(writer, worksheets);
 
     writer.startWorksheetPage('Competitive Assessment · 경쟁적 우위요인 평가 (WS-9)', 'WS-9', undefined, false);
@@ -162,7 +162,7 @@ function appendQfdAnalysis(writer: ReportWriter, worksheets: FinalReportWorkshee
     writer.startWorksheetPage('개선포인트점수 기반 고객니즈 우선순위 (WS-11)', 'WS-11', undefined, false);
     writer.addTable('WS-11 고객니즈 우선순위', ['No', '고객니즈', '수준향상율', '개발향상비중'], worksheets.improvementNeeds.map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]), [24, 313, 82, 92]);
     writer.startWorksheetPage('Engineering Metrics · 기술요구사항 도출 (WS-10)', 'WS-10', undefined, false);
-    writer.addTable('WS-10 기능기술체계도', ['No', '고객의 소리', '핵심기능', '세부기능', '기술적 특성'], worksheets.techTree.map((row, index) => [index + 1, row.customerVoice, row.coreSpec, row.subSpec, row.techCharacteristic]), [24, 128, 70, 108, 181]);
+    writer.addTable('WS-10 기능기술체계도', ['No', '고객의 소리', '핵심기능', '세부기능', '기술적 특성'], worksheets.techTree.map((row, index) => [index + 1, row.customerVoice, row.coreSpec, row.subSpec, row.techCharacteristic]), [24, 128, 70, 108, 181], [1, 2, 3]);
     appendQfdMatrix(writer, worksheets);
     writer.startWorksheetPage('개선포인트 기반 개선 기능/성능 List (WS-11)', 'WS-11', undefined, false);
     writer.addTable('WS-11 개선 기능/성능', ['No', '고객니즈', '추가 기능', '성능향상'], worksheets.improvementFeatures.map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]), [24, 263, 112, 112]);
@@ -173,7 +173,7 @@ function appendTargetProduct(writer: ReportWriter, worksheets: FinalReportWorksh
     writer.addHeading('최종 목표 스펙 (WS-12)');
     const specAnalysis = analysis['target-spec'];
     writer.addMentorAnalysis('WS-12', specAnalysis ? specAnalysis.items.map(item => `${item.label}\n${displayValue(item.explanation)}`).join('\n\n') : freeInput.finalSpecExplanation);
-    writer.addTable('WS-12 최종 제품/서비스 제공 스펙', ['스펙분류', '세부항목', '기술적 특성', '단위', '목표값', '개선여부'], worksheets.targetSpecs.map(row => [row.category, row.subCategory, row.specItem, row.unit, row.targetValue, row.note]), [85, 105, 151, 45, 65, 60]);
+    writer.addTable('WS-12 최종 제품/서비스 제공 스펙', ['스펙분류', '세부항목', '기술적 특성', '단위', '목표값', '개선여부'], worksheets.targetSpecs.map(row => [row.category, row.subCategory, row.specItem, row.unit, row.targetValue, row.note]), [85, 105, 151, 45, 65, 60], [0, 1]);
     writer.addHeading('개선 제품(서비스)명 및 개선 제품설명 (WS-13)');
     const roadmap = analysis['tech-roadmap'];
     writer.addMentorAnalysis('WS-13', [roadmap?.productName ?? freeInput.improvedProductName, roadmap?.description ?? freeInput.improvedProductDescription].filter(Boolean).join('\n'));
@@ -184,16 +184,16 @@ function appendTargetProduct(writer: ReportWriter, worksheets: FinalReportWorksh
 function appendAssetAndFundingPlans(writer: ReportWriter, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
     writer.addPageBreak(); writer.addHeading('Ⅴ. 자산 및 자금계획', 1);
     writer.addHeading('핵심자산 및 보완자산 (WS-15)'); writer.addMentorAnalysis('WS-15', [analysis.assets?.core, analysis.assets?.complementary].filter(Boolean).join('\n\n'));
-    writer.addTable('WS-15 핵심자산 및 보완자산', ['구분', '필요 항목', '핵심자산·해결방안'], worksheets.assets.filter(row => row.type === 'CORE' || row.type === 'COMPLEMENTARY').map(row => [row.type === 'CORE' ? '핵심자산' : '보완자산', row.category, row.content]), [75, 170, 266]);
+    writer.addTable('WS-15 핵심자산 및 보완자산', ['구분', '필요 항목', '핵심자산·해결방안'], worksheets.assets.filter(row => row.type === 'CORE' || row.type === 'COMPLEMENTARY').map(row => [row.type === 'CORE' ? '핵심자산' : '보완자산', row.category, row.content]), [75, 170, 266], [0, 1]);
     writer.addHeading('자금소요계획 (WS-16)'); writer.addMentorAnalysis('WS-16', analysis['funding-plan']?.analysis);
-    writer.addTable('WS-16 자금소요계획', ['구분', '항목', '1차년도(원)', '2차년도(원)', '3차년도(원)'], worksheets.fundingPlans.map(row => [row.category, row.item, displayAmount(row.year1), displayAmount(row.year2), displayAmount(row.year3)]), [59, 140, 112, 100, 100]);
+    writer.addTable('WS-16 자금소요계획', ['구분', '항목', '1차년도(원)', '2차년도(원)', '3차년도(원)'], worksheets.fundingPlans.map(row => [row.category, row.item, displayAmount(row.year1), displayAmount(row.year2), displayAmount(row.year3)]), [59, 140, 112, 100, 100], [0]);
     writer.addParagraph('1차년도 매출액은 WS-1의 향후 1년 목표매출 합계와 연동됩니다. 저장된 0과 미입력을 구분하여 표시합니다.', 'caption');
     writer.startWorksheetPage('자금조달계획 (WS-17)', 'WS-17', analysis['funding-source']?.analysis);
     writer.addTable('WS-17 자금조달계획', ['구분', '1차년도 출처·금액(원)', '2차년도 출처·금액(원)', '3차년도 출처·금액(원)'], worksheets.fundingSources.map(row => [row.category, ...[row.year1, row.year2, row.year3].map(raw => {
         if (!raw?.trim()) return '미입력';
         const parsed = parseSourceYear(raw);
         return `${displayValue(parsed.source)}\n${parsed.amount === '' ? '미입력' : formatMoney(parsed.amount)}`;
-    })]), [151, 120, 120, 120]);
+    })]), [151, 120, 120, 120], [0]);
 }
 
 export function buildReportTemplate(overview: FinalReportOverviewInput, worksheets: FinalReportWorksheetData, freeInput: FinalReportFreeInput, images: CapturedWorksheetImage[], analysis: WorksheetAnalysis): FinalReportBlock[] {

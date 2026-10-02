@@ -2,6 +2,7 @@
 import { expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { layoutReportPages, reportOutputDate, withReportOutputDate, REPORT_PAPER } from '../lib/final-report-layout';
+import { getTableMergeSpans } from '../lib/final-report-table-merge';
 import { renderFinalReportDocx } from '../lib/final-report-docx';
 import { reportDocumentSchema } from '../lib/final-report-payload';
 import type { FinalReportBlock, FinalReportModel } from '../lib/final-report-document';
@@ -40,9 +41,49 @@ it('긴 표는 머리글을 반복하고 행과 본문을 빠짐없이 분할한
     }
 });
 
+it('그룹 열의 연속 중복값만 페이지 안에서 병합하고 상위 그룹 경계를 지킨다', () => {
+    const block: FinalReportBlock = { kind: 'dataTable', headers: ['No', '항목', '1차 그룹', '2차 그룹'], mergeColumns: [2, 3], rows: [
+        ['1', '첫째', '가', '공통'], ['2', '둘째', '가', '공통'], ['3', '셋째', '나', '공통'],
+        ['4', '넷째', '나', '공통'], ['5', '다섯째', '나', ''], ['6', '여섯째', '나', ''],
+    ] };
+    const table = layoutReportPages([block])[0].items.find(item => item.kind === 'table');
+    expect(table?.kind).toBe('table');
+    if (!table || table.kind !== 'table') return;
+    expect(getTableMergeSpans(table, block)).toEqual([
+        [1, 1, 2, 2], [1, 1, 0, 0], [1, 1, 4, 2], [1, 1, 0, 0],
+        [1, 1, 0, 1], [1, 1, 0, 1],
+    ]);
+});
+
+it('여러 페이지에 걸친 그룹은 각 페이지의 표 안에서만 병합한다', () => {
+    const block: FinalReportBlock = { kind: 'dataTable', headers: ['No', '1차 그룹'], mergeColumns: [1], rows:
+        Array.from({ length: 45 }, (_, index) => [String(index + 1), '같은 그룹']) };
+    const tables = layoutReportPages([block]).flatMap(page => page.items).filter(item => item.kind === 'table');
+    expect(tables.length).toBeGreaterThan(1);
+    for (const table of tables) {
+        const spans = getTableMergeSpans(table, block);
+        expect(spans[0][1]).toBe(table.rows.length);
+        expect(spans.slice(1).every(row => row[1] === 0)).toBe(true);
+    }
+});
+
+it('Word 병합 셀은 한 번만 표시하고 수직·수평 가운데 정렬한다', async () => {
+    const table: FinalReportBlock = { kind: 'dataTable', headers: ['항목', '1차 그룹'], mergeColumns: [1], rows: [
+        ['첫째', '공통'], ['둘째', '공통'], ['셋째', '다름'],
+    ] };
+    const zip = await JSZip.loadAsync(await (await renderFinalReportDocx(model([cover, table]))).arrayBuffer());
+    const xml = await zip.file('word/document.xml')!.async('string');
+    expect(xml.match(/<w:vMerge w:val="restart"\/>/g)).toHaveLength(1);
+    expect(xml.match(/<w:vMerge w:val="continue"\/>/g)).toHaveLength(1);
+    expect(xml.match(/공통/g)).toHaveLength(1);
+    expect(xml).toContain('<w:vAlign w:val="center"/>');
+});
+
 it('표 열 너비의 개수와 형식을 저장 시 검증한다', () => {
     const table: FinalReportBlock = { kind: 'dataTable', title: 'WS-2', headers: ['A', 'B'], rows: [['가', '나']], columnWidths: [1, 2] };
     expect(reportDocumentSchema.safeParse(model([cover, { kind: 'pageBreak' }, table])).success).toBe(true);
+    expect(reportDocumentSchema.safeParse(model([{ ...table, mergeColumns: [1] }])).success).toBe(true);
+    expect(reportDocumentSchema.safeParse(model([{ ...table, mergeColumns: [2] }])).success).toBe(false);
     expect(reportDocumentSchema.safeParse(model([{ ...table, columnWidths: [1] }])).success).toBe(false);
     expect(reportDocumentSchema.safeParse(model([{ ...table, columnWidths: [0, 2] }])).success).toBe(false);
 });

@@ -61,6 +61,21 @@ it('미리보기는 실제 글자 크기·왼쪽 위치와 원래 블록의 교�
     expect(elements[5].textContent).toContain('원인 후보와 조치 방법을 제공한다.');
 });
 
+it('미리보기는 중복 그룹 칸을 세로 병합해 가운데 한 번만 표시한다', () => {
+    const table: FinalReportBlock = { kind: 'dataTable', headers: ['No', '항목', '1차 그룹'], mergeColumns: [2], rows: [
+        ['1', '첫째', '공통'], ['2', '둘째', '공통'], ['3', '셋째', '다름'],
+    ] };
+    const html = renderToStaticMarkup(React.createElement(FinalReportPages, { blocks: [table] }));
+    const document = new DOMParser().parseFromString(html, 'text/html');
+    const rows = [...document.querySelectorAll('tbody tr')];
+    const merged = rows[0].querySelector<HTMLTableCellElement>('td[rowspan]');
+    expect(merged?.rowSpan).toBe(2);
+    expect(merged?.textContent).toBe('공통');
+    expect(merged?.style.verticalAlign).toBe('middle');
+    expect(merged?.style.textAlign).toBe('center');
+    expect(rows[1].querySelectorAll('td')).toHaveLength(2);
+});
+
 it('Word에 미리보기와 같은 단계 및 글머리 내어쓰기·탭 위치를 기록한다', async () => {
     const blob = await renderFinalReportDocx({ title: '보고서', fileName: '보고서.docx', blocks });
     const zip = await JSZip.loadAsync(Buffer.from(await blob.arrayBuffer()));

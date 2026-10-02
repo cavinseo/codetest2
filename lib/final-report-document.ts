@@ -74,7 +74,7 @@ export type FinalReportBlock =
     | { kind: 'heading'; text: string; level: 1 | 2 }
     | { kind: 'paragraph'; text: string; tone?: 'analysis' | 'notice' | 'caption' }
     | { kind: 'keyValueTable'; rows: Array<{ label: string; value: string }> }
-    | { kind: 'dataTable'; headers: string[]; rows: string[][]; columnWidths?: number[]; title?: string }
+    | { kind: 'dataTable'; headers: string[]; rows: string[][]; columnWidths?: number[]; mergeColumns?: number[]; title?: string }
     | { kind: 'image'; title: string; pngDataUrl: string; widthMm: number; heightMm: number; landscape: boolean };
 
 export interface FinalReportModel {

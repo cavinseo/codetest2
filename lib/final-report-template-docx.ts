@@ -1,6 +1,7 @@
 // A4 미리보기의 줄·행 분할과 표지 배치를 같은 페이지 순서로 Word에 출력한다.
-import { AlignmentType, BorderStyle, Document, Footer, Header, HeightRule, ImageRun, LineRuleType, Packer, Paragraph, SectionType, ShadingType, Table, TableCell, TableLayoutType, TableRow, Tab, TabStopType, TextRun, VerticalAlign, WidthType, type ISectionOptions } from 'docx';
+import { AlignmentType, BorderStyle, Document, Footer, Header, HeightRule, ImageRun, LineRuleType, Packer, Paragraph, SectionType, ShadingType, Table, TableCell, TableLayoutType, TableRow, Tab, TabStopType, TextRun, VerticalAlign, VerticalMergeType, WidthType, type ISectionOptions } from 'docx';
 import type { FinalReportModel } from './final-report-document';
+import { getTableMergeSpans } from './final-report-table-merge';
 import { layoutReportPages, reportCoverElements, withReportOutputDate, wrapReportText, REPORT_CHAPTER_PADDING, REPORT_PAPER, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from './final-report-layout';
 
 const pointsToTwips = (points: number) => Math.round(points * 20);
@@ -47,21 +48,27 @@ function gap(height: number): Paragraph {
     return createWordParagraph([''], 1, Math.max(.1, height));
 }
 
-function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>) {
-    const row = (cells: string[][], height: number, header: boolean) => new TableRow({
+function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: FinalReportModel['blocks'][number]) {
+    const mergeSpans = getTableMergeSpans(item, block);
+    const row = (cells: string[][], height: number, header: boolean, rowIndex = -1) => new TableRow({
         tableHeader: header, cantSplit: true, height: { value: pointsToTwips(height), rule: HeightRule.EXACT },
-        children: cells.map((lines, index) => new TableCell({
+        children: cells.map((lines, index) => {
+            const span = rowIndex < 0 ? 1 : mergeSpans[rowIndex][index];
+            const original = block.kind === 'dataTable' && rowIndex >= 0 ? block.rows[item.rows[rowIndex].index][index] : '';
+            const displayedLines = span > 1 && !lines.join('').trim() && original ? [original] : lines;
+            return new TableCell({
             width: { size: pointsToTwips(item.widths[index]), type: WidthType.DXA },
             margins: { top: pointsToTwips(6), bottom: pointsToTwips(6), left: pointsToTwips(3), right: pointsToTwips(3) },
-            verticalAlign: VerticalAlign.TOP,
+            verticalAlign: span === 1 ? VerticalAlign.TOP : VerticalAlign.CENTER,
+            ...(span > 1 ? { verticalMerge: VerticalMergeType.RESTART } : span === 0 ? { verticalMerge: VerticalMergeType.CONTINUE } : {}),
             shading: { type: ShadingType.CLEAR, fill: header ? 'E7ECF1' : 'FFFFFF' },
-            children: [createWordParagraph(lines.length ? lines : [''], item.fontSize, item.lineHeight, { bold: header })],
-        })),
+            children: [createWordParagraph(span === 0 ? [''] : displayedLines.length ? displayedLines : [''], item.fontSize, item.lineHeight, { bold: header, center: span > 1 })],
+        }); }),
     });
     return new Table({
         width: { size: pointsToTwips(REPORT_PAPER.body), type: WidthType.DXA }, layout: TableLayoutType.FIXED,
         columnWidths: item.widths.map(pointsToTwips), borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
-        rows: [...(item.headers.length ? [row(item.headers, item.headerHeight, true)] : []), ...item.rows.map(r => row(r.lines, r.height, false))],
+        rows: [...(item.headers.length ? [row(item.headers, item.headerHeight, true)] : []), ...item.rows.map((r, index) => row(r.lines, r.height, false, index))],
     });
 }
 
@@ -103,21 +110,21 @@ function renderImage(item: Extract<ReportLayoutItem, { kind: 'image' }>) {
     })] });
 }
 
-function renderPageContents(page: ReportPageLayout): Array<Paragraph | Table> {
+function renderPageContents(page: ReportPageLayout, blocks: FinalReportModel['blocks']): Array<Paragraph | Table> {
     if (page.cover) return coverChildren(page.cover);
     const children: Array<Paragraph | Table> = [];
     let cursor = REPORT_PAPER.top;
     for (const item of page.items) {
         if (item.top > cursor) children.push(gap(item.top - cursor));
         if (item.kind === 'text') children.push(renderText(item));
-        else if (item.kind === 'table') children.push(renderTable(item));
+        else if (item.kind === 'table') children.push(renderTable(item, blocks[item.blockIndex]));
         else children.push(renderImage(item));
         cursor = item.top + item.height;
     }
     return children;
 }
 
-function createPageSection(page: ReportPageLayout, index: number, projectName: string): ISectionOptions {
+function createPageSection(page: ReportPageLayout, index: number, projectName: string, blocks: FinalReportModel['blocks']): ISectionOptions {
     return {
         properties: { type: SectionType.NEXT_PAGE, page: {
             size: { width: pointsToTwips(REPORT_PAPER.width), height: pointsToTwips(REPORT_PAPER.height) },
@@ -125,7 +132,7 @@ function createPageSection(page: ReportPageLayout, index: number, projectName: s
         } },
         headers: { default: new Header({ children: [new Paragraph({ shading: { fill: '888888' }, spacing: { before: 0, after: 0, line: pointsToTwips(17), lineRule: LineRuleType.EXACT }, children: [new TextRun({ text: `  KS-QFD 활용 제품개선보고서    ${projectName}`, color: 'FFFFFF', size: 16 })] })] }) },
         footers: { default: new Footer({ children: [createWordParagraph([String(index + 1)], 8.5, 21, { color: '747474', center: true })] }) },
-        children: renderPageContents(page),
+        children: renderPageContents(page, blocks),
     };
 }
 
@@ -133,7 +140,7 @@ export async function renderTemplateReportDocx(input: FinalReportModel): Promise
     const model = withReportOutputDate(input);
     const pages = layoutReportPages(model.blocks);
     const projectName = model.blocks.find((block): block is CoverBlock => block.kind === 'cover')?.projectName ?? '';
-    const sections = pages.map((page, index) => createPageSection(page, index, projectName));
+    const sections = pages.map((page, index) => createPageSection(page, index, projectName, model.blocks));
     // 자동 삽입되는 구역 나눔의 빈 문단이 꽉 찬 표 뒤에 빈 페이지를 만들지 않게 한다.
     const doc = new Document({ title: model.title, styles: { default: { document: { run: { font: '맑은 고딕', size: 18 }, paragraph: { spacing: { before: 0, after: 0, line: pointsToTwips(1), lineRule: LineRuleType.EXACT } } } } }, sections });
     return new Blob([await Packer.toBlob(doc)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });

@@ -34,6 +34,7 @@ const blockSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('keyValueTable'), rows: z.array(z.object({ label: text, value: text }).strict()).min(1).max(5000) }).strict(),
     z.object({ kind: z.literal('dataTable'), headers: z.array(text).min(1).max(100), rows: z.array(z.array(text).max(100)).max(5000),
         title: text.optional(), columnWidths: z.array(z.number().finite().positive().max(10000)).min(1).max(100).optional(),
+        mergeColumns: z.array(z.number().int().min(0).max(99)).max(100).optional(),
     }).strict(),
     z.object({ kind: z.literal('image'), title: text, pngDataUrl: image,
         widthMm: z.number().finite().positive().max(1000), heightMm: z.number().finite().positive().max(1000), landscape: z.boolean(),
@@ -54,6 +55,9 @@ export const reportDocumentSchema = z.object({
         if (block.kind === 'dataTable') tableCells += block.headers.length * (block.rows.length + 1);
         if (block.kind === 'dataTable' && block.columnWidths && block.columnWidths.length !== block.headers.length) {
             context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'columnWidths'], message: '표의 열 너비 개수가 일치하지 않습니다.' });
+        }
+        if (block.kind === 'dataTable' && block.mergeColumns?.some(column => column >= block.headers.length)) {
+            context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'mergeColumns'], message: '병합할 열이 표 범위를 벗어났습니다.' });
         }
     });
     if (tableCells > REPORT_MAX_TABLE_CELLS) {

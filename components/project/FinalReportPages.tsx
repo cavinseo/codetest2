@@ -5,6 +5,7 @@ import type { FinalReportBlock } from '@/lib/final-report-document';
 import type { BlockEdit } from '@/lib/final-report-edit';
 import { worksheetImageFileName } from '@/lib/worksheet-capture';
 import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTER_PADDING, REPORT_PAPER, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
+import { getTableMergeSpans } from '@/lib/final-report-table-merge';
 
 interface Props { blocks: FinalReportBlock[]; onEdit?: (edit: BlockEdit) => void; readOnly?: boolean; disabled?: boolean }
 interface EditTarget { label: string; value: string; edit: BlockEdit; ariaLabel?: string }
@@ -67,6 +68,7 @@ function tableCellEditTarget(block: TableBlock, blockIndex: number, row: number,
 
 function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'table' }>; block: TableBlock; onRequestEdit?: RequestEdit }) {
     const cellStyle: CSSProperties = { border: '.4pt solid #929ba4', padding: '6pt 3pt', verticalAlign: 'top', fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight), whiteSpace: 'pre', fontWeight: 400, boxSizing: 'border-box', color: '#1b1b1b' };
+    const mergeSpans = getTableMergeSpans(item, block);
     return <table data-report-block={item.blockIndex} style={{ ...pagePosition(item.top), tableLayout: 'fixed', borderCollapse: 'collapse', color: '#1b1b1b' }}>
         <colgroup>{item.widths.map((width, i) => <col key={i} style={{ width: pt(width) }} />)}</colgroup>
         {!!item.headers.length && <thead><tr style={{ height: pt(item.headerHeight) }}>{item.headers.map((lines, col) => <th key={col} style={{ ...cellStyle, background: '#e7ecf1', fontWeight: 700, textAlign: 'left' }}>
@@ -74,8 +76,8 @@ function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayou
                 label: '표 머리글 교정', value: block.headers[col], ariaLabel: `머리글 ${col + 1} 교정`, edit: { kind: 'tableHeader', blockIndex: item.blockIndex, col, value: block.headers[col] },
             } : undefined} />
         </th>)}</tr></thead>}
-        <tbody>{item.rows.map((row, index) => <tr key={index} style={{ height: pt(row.height) }}>{row.lines.map((lines, col) => <td key={col} style={cellStyle}>
-            <EditableReportValue text={lines.join('\n') || '\u00a0'} target={tableCellEditTarget(block, item.blockIndex, row.index, col)} onRequestEdit={onRequestEdit} />
+        <tbody>{item.rows.map((row, index) => <tr key={index} style={{ height: pt(row.height) }}>{row.lines.map((lines, col) => mergeSpans[index][col] === 0 ? null : <td key={col} rowSpan={mergeSpans[index][col] > 1 ? mergeSpans[index][col] : undefined} style={mergeSpans[index][col] > 1 ? { ...cellStyle, verticalAlign: 'middle', textAlign: 'center' } : cellStyle}>
+            <EditableReportValue text={lines.join('\n') || (mergeSpans[index][col] > 1 && block.kind === 'dataTable' ? block.rows[row.index][col] : '') || '\u00a0'} target={tableCellEditTarget(block, item.blockIndex, row.index, col)} onRequestEdit={onRequestEdit} />
         </td>)}</tr>)}</tbody>
     </table>;
 }
