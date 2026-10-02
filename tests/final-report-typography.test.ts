@@ -106,7 +106,7 @@ it('번호·여러 글머리와 탭으로 들여쓴 하위 항목을 구분하�
     expect(items[4].left - items[4].markerWidth).toBeCloseTo(mm(16));
 });
 
-it('표는 약 다섯 칸 오른쪽에, 워크시트는 기존 자리에 배치하고 표의 첫 행·첫 열을 가운데 정렬한다', async () => {
+it('표와 워크시트를 같은 선에서 약 다섯 칸 오른쪽에 배치하고 표의 첫 행·첫 열을 가운데 정렬한다', async () => {
     const table: FinalReportBlock = { kind: 'dataTable', headers: ['구분', '설명'], rows: [['첫 항목', '설명 내용'], ['둘째 항목', '다른 설명']] };
     const image: FinalReportBlock = { kind: 'image', title: '워크시트', pngDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', widthMm: 220, heightMm: 40, landscape: false };
     const reportBlocks: FinalReportBlock[] = [cover, { kind: 'heading', level: 2, text: '제품속성표' }, table, image];
@@ -120,7 +120,7 @@ it('표는 약 다섯 칸 오른쪽에, 워크시트는 기존 자리에 배치�
     const htmlTable = dom.querySelector<HTMLTableElement>('table')!;
     const htmlFigure = dom.querySelector<HTMLElement>('figure')!;
     expect(parseFloat(htmlTable.style.left)).toBeCloseTo(REPORT_PAPER.margin + section.left + 18.7);
-    expect(parseFloat(htmlFigure.style.left)).toBeCloseTo(REPORT_PAPER.margin + section.left);
+    expect(parseFloat(htmlFigure.style.left)).toBeCloseTo(REPORT_PAPER.margin + section.left + 18.7);
     expect(parseFloat(htmlTable.style.left) + laidTable.widths.reduce((sum, width) => sum + width, 0)).toBeLessThan(REPORT_PAPER.width - REPORT_PAPER.margin);
     expect([...htmlTable.querySelectorAll('th')].every(cell => cell.style.textAlign === 'center')).toBe(true);
     expect([...htmlTable.querySelectorAll('tbody tr')].every(row => row.querySelector('td')?.style.textAlign === 'center')).toBe(true);
@@ -137,6 +137,6 @@ it('표는 약 다섯 칸 오른쪽에, 워크시트는 기존 자리에 배치�
     expect(wordRows[1].getElementsByTagName('w:tc')[1].getElementsByTagName('w:jc')[0].getAttribute('w:val')).toBe('left');
     const wordImage = [...xml.getElementsByTagName('w:p')].find(paragraph => paragraph.getElementsByTagName('w:drawing').length)!;
     const imageIndent = wordImage.getElementsByTagName('w:ind')[0];
-    expect(imageIndent.getAttribute('w:left')).toBe(String(Math.round(section.left * 20)));
-    expect(imageIndent.getAttribute('w:right')).toBe(String(Math.round((section.width - laidImage.width) * 20)));
+    expect(imageIndent.getAttribute('w:left')).toBe(String(Math.round((section.left + 18.7) * 20)));
+    expect(imageIndent.getAttribute('w:right')).toBe(String(Math.round((REPORT_PAPER.body - section.left - 18.7 - laidImage.width) * 20)));
 });

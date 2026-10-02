@@ -104,7 +104,7 @@ function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayou
 
 function PageItem({ item, blocks, onRequestEdit }: { item: ReportLayoutItem; blocks: FinalReportBlock[]; onRequestEdit?: RequestEdit }) {
     const block = blocks[item.blockIndex];
-    if (item.kind === 'image') return <figure style={{ ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + REPORT_VISUAL_LEFT), width: pt(REPORT_VISUAL_WIDTH), margin: 0, textAlign: 'center' }}>
+    if (item.kind === 'image') return <figure style={{ ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + REPORT_TABLE_LEFT), width: pt(REPORT_VISUAL_WIDTH), margin: 0, textAlign: 'center' }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- 저장된 워크시트 그림을 출력 치수로 표시한다. */}
         <img src={item.block.pngDataUrl} alt={item.block.title} style={{ width: pt(item.width), height: pt(item.height), maxWidth: 'none', display: 'inline-block' }} />
     </figure>;

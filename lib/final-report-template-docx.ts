@@ -125,7 +125,7 @@ function coverChildren(cover: CoverBlock) {
 
 function renderImage(item: Extract<ReportLayoutItem, { kind: 'image' }>) {
     return new Paragraph({ alignment: AlignmentType.CENTER,
-        indent: { left: pointsToTwips(REPORT_VISUAL_LEFT), right: pointsToTwips(REPORT_PAPER.body - REPORT_VISUAL_LEFT - REPORT_VISUAL_WIDTH) },
+        indent: { left: pointsToTwips(REPORT_TABLE_LEFT), right: pointsToTwips(REPORT_PAPER.body - REPORT_TABLE_LEFT - REPORT_VISUAL_WIDTH) },
         spacing: { before: 0, after: 0, line: pointsToTwips(item.height), lineRule: LineRuleType.EXACT }, children: [new ImageRun({
         type: item.block.pngDataUrl.startsWith('data:image/jpeg;') ? 'jpg' : 'png', data: item.block.pngDataUrl,
         transformation: { width: item.width * 96 / 72, height: item.height * 96 / 72 },
