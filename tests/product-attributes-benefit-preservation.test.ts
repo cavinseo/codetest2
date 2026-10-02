@@ -97,3 +97,35 @@ it('추가한 니즈의 혜택을 다시 수정해 저장해도 아래 행의 �
     expect(savedRows.find(row => row.id === newId)?.benefit).toBe('새 니즈 전용 혜택');
     expect(input('attr_2', 'bn')?.value).toBe(originalRows[1].benefit);
 });
+
+it('같은 고객 니즈에 여러 제품속성을 추가하고 저장 후 다시 불러온다', async () => {
+    await mount();
+    const addAttribute = () => container.querySelector<HTMLButtonElement>('tbody tr:first-child button[title="같은 고객 니즈에 제품속성 추가"]')!;
+
+    await act(async () => { addAttribute().click(); });
+    await act(async () => { addAttribute().click(); });
+
+    const attributeInputs = [...container.querySelectorAll<HTMLInputElement>('tbody input[list^="attribute_list_"]')];
+    expect(attributeInputs).toHaveLength(4);
+    await fill(attributeInputs[1], '고장 이력 분석');
+    await fill(attributeInputs[2], '원격 진단 알림');
+    expect(input('attr_2', 'bn')?.value).toBe(originalRows[1].benefit);
+
+    await save();
+    expect(savedRows.map(row => row.attribute)).toEqual([
+        '설비별 기본 설정', '고장 이력 분석', '원격 진단 알림', '태그 자동 매핑',
+    ]);
+    for (const row of savedRows.slice(1, 3)) {
+        expect(row.marketSegment).toBe(originalRows[0].marketSegment);
+        expect(row.customerName).toBe(originalRows[0].customerName);
+        expect(row.customerNeed).toBe(originalRows[0].customerNeed);
+        expect(row.benefit).toBe(originalRows[0].benefit);
+    }
+
+    await act(async () => { root.unmount(); });
+    root = createRoot(container);
+    await mount();
+    expect([...container.querySelectorAll<HTMLInputElement>('tbody input[list^="attribute_list_"]')].map(element => element.value))
+        .toEqual(savedRows.map(row => row.attribute));
+    expect(input('attr_2', 'bn')?.value).toBe(originalRows[1].benefit);
+});

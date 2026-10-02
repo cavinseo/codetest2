@@ -323,6 +323,31 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         setRows(nextRows.map((r, order) => ({ ...r, order })));
     };
 
+    const addAttributeItem = (row: ProductAttributeRow) => {
+        setRows(currentRows => {
+            const targetIndex = currentRows.findIndex(item => item.id === row.id);
+            if (targetIndex === -1) return currentRows;
+            const sameContext = (item: ProductAttributeRow) =>
+                item.marketSegment === row.marketSegment &&
+                item.customerName === row.customerName &&
+                item.customerNeed === row.customerNeed &&
+                item.benefit === row.benefit;
+            let insertIndex = targetIndex + 1;
+            while (insertIndex < currentRows.length && sameContext(currentRows[insertIndex])) insertIndex++;
+            const newRow = createRow(insertIndex, {
+                marketSegment: row.marketSegment,
+                customerName: row.customerName,
+                customerNeed: row.customerNeed,
+                benefit: row.benefit,
+            });
+            return [
+                ...currentRows.slice(0, insertIndex),
+                newRow,
+                ...currentRows.slice(insertIndex),
+            ].map((item, order) => ({ ...item, order }));
+        });
+    };
+
     const updateRow = (id: string, field: keyof ProductAttributeRow, value: string) => {
         setRows(rows.map(r => r.id === id ? { ...r, [field]: value } : r));
     };
@@ -896,9 +921,10 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                     {/* 삭제 */}
                                     <td className="px-2 py-2 text-center">
                                         <button
-                                            onClick={() => addSegmentItem(row)}
-                                            className="p-1.5 rounded-lg text-transparent group-hover:text-primary-400 hover:bg-primary-500/10 transition-all"
-                                            title="같은 세분시장 항목 추가"
+                                            onClick={() => addAttributeItem(row)}
+                                            className="p-1.5 rounded-lg text-cyan-500 hover:text-cyan-300 hover:bg-cyan-500/10 transition-all"
+                                            title="같은 고객 니즈에 제품속성 추가"
+                                            aria-label="같은 고객 니즈에 제품속성 추가"
                                         >
                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
