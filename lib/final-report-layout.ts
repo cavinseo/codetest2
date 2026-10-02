@@ -6,6 +6,7 @@ export const REPORT_PAPER = { width: 595.28, height: 841.89, margin: 42, top: 53
 export const REPORT_CHAPTER_PADDING = { vertical: 6, horizontal: 10 };
 export const REPORT_VISUAL_LEFT = 4 * 72 / 25.4;
 export const REPORT_VISUAL_WIDTH = (REPORT_PAPER.body - REPORT_VISUAL_LEFT) * .95;
+export const REPORT_TABLE_LEFT = REPORT_VISUAL_LEFT + 18.7;
 export type CoverBlock = Extract<FinalReportBlock, { kind: 'cover' }>;
 export type ReportLayoutItem =
     | { kind: 'text'; blockIndex: number; lines: string[]; richLines?: ReportTextRun[][]; code?: boolean; quote?: boolean; top: number; height: number; left: number; width: number; marker?: string; markerWidth: number; fontSize: number; lineHeight: number; bold: boolean; color: string; chapter: boolean }

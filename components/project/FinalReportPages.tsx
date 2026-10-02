@@ -4,7 +4,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import type { FinalReportBlock } from '@/lib/final-report-document';
 import type { BlockEdit } from '@/lib/final-report-edit';
 import { worksheetImageFileName } from '@/lib/worksheet-capture';
-import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTER_PADDING, REPORT_PAPER, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
+import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTER_PADDING, REPORT_PAPER, REPORT_TABLE_LEFT, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
 import { getTableMergeSpans } from '@/lib/final-report-table-merge';
 import type { ReportTextRun } from '@/lib/final-report-markdown';
 
@@ -89,7 +89,7 @@ function tableCellEditTarget(block: TableBlock | Extract<FinalReportBlock, { kin
 function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'table' }>; block: TableBlock | Extract<FinalReportBlock, { kind: 'paragraph' }>; onRequestEdit?: RequestEdit }) {
     const cellStyle: CSSProperties = { border: '.4pt solid #929ba4', padding: '6pt 3pt', verticalAlign: 'top', fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight), whiteSpace: 'pre', fontWeight: 400, boxSizing: 'border-box', color: '#1b1b1b' };
     const mergeSpans = getTableMergeSpans(item, block);
-    return <table data-report-block={item.blockIndex} style={{ ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + REPORT_VISUAL_LEFT), width: pt(item.widths.reduce((sum, width) => sum + width, 0)), tableLayout: 'fixed', borderCollapse: 'collapse', color: '#1b1b1b' }}>
+    return <table data-report-block={item.blockIndex} style={{ ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + REPORT_TABLE_LEFT), width: pt(item.widths.reduce((sum, width) => sum + width, 0)), tableLayout: 'fixed', borderCollapse: 'collapse', color: '#1b1b1b' }}>
         <colgroup>{item.widths.map((width, i) => <col key={i} style={{ width: pt(width) }} />)}</colgroup>
         {!!item.headers.length && <thead><tr style={{ height: pt(item.headerHeight) }}>{item.headers.map((lines, col) => <th key={col} style={{ ...cellStyle, background: '#e7ecf1', fontWeight: 700, textAlign: 'center', verticalAlign: 'middle' }}>
             <EditableReportValue text={lines.join('\n')} richLines={item.richHeaders?.[col]} onRequestEdit={onRequestEdit} target={block.kind === 'dataTable' ? {

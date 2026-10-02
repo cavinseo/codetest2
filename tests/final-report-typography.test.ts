@@ -106,7 +106,7 @@ it('번호·여러 글머리와 탭으로 들여쓴 하위 항목을 구분하�
     expect(items[4].left - items[4].markerWidth).toBeCloseTo(mm(16));
 });
 
-it('표·워크시트는 2단계 제목 폭의 95% 안에 배치하고 표의 첫 행·첫 열은 가운데 정렬한다', async () => {
+it('표는 약 다섯 칸 오른쪽에, 워크시트는 기존 자리에 배치하고 표의 첫 행·첫 열을 가운데 정렬한다', async () => {
     const table: FinalReportBlock = { kind: 'dataTable', headers: ['구분', '설명'], rows: [['첫 항목', '설명 내용'], ['둘째 항목', '다른 설명']] };
     const image: FinalReportBlock = { kind: 'image', title: '워크시트', pngDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', widthMm: 220, heightMm: 40, landscape: false };
     const reportBlocks: FinalReportBlock[] = [cover, { kind: 'heading', level: 2, text: '제품속성표' }, table, image];
@@ -119,15 +119,16 @@ it('표·워크시트는 2단계 제목 폭의 95% 안에 배치하고 표의 �
     const dom = new DOMParser().parseFromString(renderToStaticMarkup(React.createElement(FinalReportPages, { blocks: reportBlocks, readOnly: true })), 'text/html');
     const htmlTable = dom.querySelector<HTMLTableElement>('table')!;
     const htmlFigure = dom.querySelector<HTMLElement>('figure')!;
-    expect(parseFloat(htmlTable.style.left)).toBeCloseTo(REPORT_PAPER.margin + section.left);
+    expect(parseFloat(htmlTable.style.left)).toBeCloseTo(REPORT_PAPER.margin + section.left + 18.7);
     expect(parseFloat(htmlFigure.style.left)).toBeCloseTo(REPORT_PAPER.margin + section.left);
+    expect(parseFloat(htmlTable.style.left) + laidTable.widths.reduce((sum, width) => sum + width, 0)).toBeLessThan(REPORT_PAPER.width - REPORT_PAPER.margin);
     expect([...htmlTable.querySelectorAll('th')].every(cell => cell.style.textAlign === 'center')).toBe(true);
     expect([...htmlTable.querySelectorAll('tbody tr')].every(row => row.querySelector('td')?.style.textAlign === 'center')).toBe(true);
     expect(htmlTable.querySelector('tbody tr td:nth-child(2)')?.getAttribute('style')).not.toContain('text-align:center');
     const zip = await JSZip.loadAsync(Buffer.from(await (await renderFinalReportDocx({ title: '보고서', fileName: '보고서.docx', blocks: reportBlocks })).arrayBuffer()));
     const xml = new DOMParser().parseFromString(await zip.file('word/document.xml')!.async('string'), 'text/xml');
     const wordTable = [...xml.getElementsByTagName('w:tbl')].find(node => node.textContent?.includes('첫 항목'))!;
-    expect(wordTable.getElementsByTagName('w:tblInd')[0].getAttribute('w:w')).toBe(String(Math.round(section.left * 20)));
+    expect(wordTable.getElementsByTagName('w:tblInd')[0].getAttribute('w:w')).toBe(String(Math.round((section.left + 18.7) * 20)));
     expect(Number(wordTable.getElementsByTagName('w:tblW')[0].getAttribute('w:w'))).toBeCloseTo(laidTable.widths.reduce((sum, width) => sum + width, 0) * 20, 0);
     const wordRows = [...wordTable.getElementsByTagName('w:tr')];
     expect(wordRows[0].getElementsByTagName('w:jc')).toHaveLength(2);

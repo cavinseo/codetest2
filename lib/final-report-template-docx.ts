@@ -2,7 +2,7 @@
 import { AlignmentType, BorderStyle, Document, ExternalHyperlink, Footer, Header, HeightRule, ImageRun, LineRuleType, Packer, Paragraph, SectionType, ShadingType, Table, TableCell, TableLayoutType, TableRow, Tab, TabStopType, TextRun, VerticalAlign, VerticalMergeType, WidthType, type ISectionOptions } from 'docx';
 import type { FinalReportModel } from './final-report-document';
 import { getTableMergeSpans } from './final-report-table-merge';
-import { layoutReportPages, reportCoverElements, withReportOutputDate, wrapReportText, REPORT_CHAPTER_PADDING, REPORT_PAPER, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from './final-report-layout';
+import { layoutReportPages, reportCoverElements, withReportOutputDate, wrapReportText, REPORT_CHAPTER_PADDING, REPORT_PAPER, REPORT_TABLE_LEFT, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from './final-report-layout';
 import type { ReportTextRun } from './final-report-markdown';
 
 const pointsToTwips = (points: number) => Math.round(points * 20);
@@ -87,7 +87,7 @@ function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: 
     });
     return new Table({
         width: { size: pointsToTwips(item.widths.reduce((sum, width) => sum + width, 0)), type: WidthType.DXA },
-        indent: { size: pointsToTwips(REPORT_VISUAL_LEFT), type: WidthType.DXA }, layout: TableLayoutType.FIXED,
+        indent: { size: pointsToTwips(REPORT_TABLE_LEFT), type: WidthType.DXA }, layout: TableLayoutType.FIXED,
         columnWidths: item.widths.map(pointsToTwips), borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
         rows: [...(item.headers.length ? [row(item.headers, item.headerHeight, true)] : []), ...item.rows.map((r, index) => row(r.lines, r.height, false, index))],
     });
