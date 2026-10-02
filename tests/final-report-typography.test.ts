@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import JSZip from 'jszip';
 import { expect, it, vi } from 'vitest';
 import FinalReportPages from '../components/project/FinalReportPages';
-import { layoutReportPages, REPORT_PAPER } from '../lib/final-report-layout';
+import { layoutReportPages, REPORT_PAPER, type ReportLayoutItem } from '../lib/final-report-layout';
 import { renderFinalReportDocx } from '../lib/final-report-docx';
 import type { FinalReportBlock } from '../lib/final-report-document';
 
@@ -111,9 +111,9 @@ it('표·워크시트는 2단계 제목 폭의 95% 안에 배치하고 표의 �
     const image: FinalReportBlock = { kind: 'image', title: '워크시트', pngDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', widthMm: 220, heightMm: 40, landscape: false };
     const reportBlocks: FinalReportBlock[] = [cover, { kind: 'heading', level: 2, text: '제품속성표' }, table, image];
     const items = layoutReportPages(reportBlocks).flatMap(page => page.items);
-    const section = items.find(item => item.kind === 'text' && item.fontSize === 14)!;
-    const laidTable = items.find(item => item.kind === 'table')!;
-    const laidImage = items.find(item => item.kind === 'image')!;
+    const section = items.find((item): item is Extract<ReportLayoutItem, { kind: 'text' }> => item.kind === 'text' && item.fontSize === 14)!;
+    const laidTable = items.find((item): item is Extract<ReportLayoutItem, { kind: 'table' }> => item.kind === 'table')!;
+    const laidImage = items.find((item): item is Extract<ReportLayoutItem, { kind: 'image' }> => item.kind === 'image')!;
     expect(laidTable.widths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(section.width * .95 - 1, 5);
     expect(laidImage.width).toBeCloseTo(section.width * .95, 0);
     const dom = new DOMParser().parseFromString(renderToStaticMarkup(React.createElement(FinalReportPages, { blocks: reportBlocks, readOnly: true })), 'text/html');
