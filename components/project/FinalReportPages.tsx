@@ -1,11 +1,12 @@
 'use client';
 // 샘플과 같은 표지와 A4 페이지를 표시하고 원본 보고서 블록의 교정을 연결한다.
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import type { FinalReportBlock } from '@/lib/final-report-document';
 import type { BlockEdit } from '@/lib/final-report-edit';
 import { worksheetImageFileName } from '@/lib/worksheet-capture';
 import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTER_PADDING, REPORT_PAPER, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
 import { getTableMergeSpans } from '@/lib/final-report-table-merge';
+import type { ReportTextRun } from '@/lib/final-report-markdown';
 
 interface Props { blocks: FinalReportBlock[]; onEdit?: (edit: BlockEdit) => void; readOnly?: boolean; disabled?: boolean }
 interface EditTarget { label: string; value: string; edit: BlockEdit; ariaLabel?: string }
@@ -29,9 +30,29 @@ function Cover({ block }: { block: CoverBlock }) {
     })}</div>;
 }
 
-function EditableReportValue({ text, target, onRequestEdit }: { text: string; target?: EditTarget; onRequestEdit?: RequestEdit }) {
-    if (!target || !onRequestEdit) return text;
-    return <button type="button" style={EDIT_BUTTON_STYLE} aria-label={target.ariaLabel} onClick={() => onRequestEdit(target)}>{text}</button>;
+function RichTextLines({ lines, links }: { lines: ReportTextRun[][]; links: boolean }) {
+    return <>{lines.map((line, index) => <span key={index}>{index > 0 ? '\n' : ''}{line.map((run, runIndex) => {
+        let text: ReactNode = run.text;
+        if (run.code) text = <code style={{ fontFamily: 'Consolas, monospace', fontSize: 'inherit', background: '#f1f3f5' }}>{text}</code>;
+        if (run.bold) text = <strong>{text}</strong>;
+        if (run.italic) text = <em>{text}</em>;
+        if (run.strike) text = <del>{text}</del>;
+        if (run.href) text = links ? <a href={run.href} style={{ color: '#1d4ed8', textDecoration: 'underline' }}>{text}</a> : <span style={{ color: '#1d4ed8', textDecoration: 'underline' }}>{text}</span>;
+        return <span key={runIndex}>{text}</span>;
+    })}</span>)}</>;
+}
+
+function EditableReportValue({ text, richLines, target, onRequestEdit }: { text: string; richLines?: ReportTextRun[][]; target?: EditTarget; onRequestEdit?: RequestEdit }) {
+    const editable = Boolean(target && onRequestEdit);
+    const content = richLines ? <RichTextLines lines={richLines} links={!editable} /> : text;
+    if (!target || !onRequestEdit) return content;
+    return <button type="button" style={EDIT_BUTTON_STYLE} aria-label={target.ariaLabel} onClick={() => onRequestEdit(target)}>{content}</button>;
+}
+
+function textEditTarget(block: FinalReportBlock, blockIndex: number): EditTarget | undefined {
+    if (block.kind !== 'heading' && block.kind !== 'paragraph') return;
+    return { label: '보고서 문구 교정', value: block.text, edit: { kind: 'text', blockIndex, text: block.text },
+        ariaLabel: `${block.kind === 'heading' ? '제목' : '문단'} ${blockIndex + 1} 교정` };
 }
 
 function ReportText({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'text' }>; block: FinalReportBlock; onRequestEdit?: RequestEdit }) {
@@ -41,21 +62,20 @@ function ReportText({ item, block, onRequestEdit }: { item: Extract<ReportLayout
         width: pt(item.width), height: pt(item.height),
         fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight),
         fontWeight: item.bold ? 700 : 400, color: `#${item.color}`,
-        background: item.chapter ? '#e1e1e1' : 'transparent',
+        background: item.chapter ? '#e1e1e1' : item.code ? '#f1f3f5' : 'transparent',
+        ...(item.quote ? { boxShadow: '-3pt 0 0 #94a3b8' } : {}),
         padding: item.chapter ? `${pt(REPORT_CHAPTER_PADDING.vertical)} ${pt(REPORT_CHAPTER_PADDING.horizontal)}` : 0,
         boxSizing: 'border-box', whiteSpace: 'pre',
     };
-    const target: EditTarget | undefined = block.kind === 'heading' || block.kind === 'paragraph' ? {
-        label: '보고서 문구 교정', value: block.text, edit: { kind: 'text', blockIndex: item.blockIndex, text: block.text },
-        ariaLabel: `${block.kind === 'heading' ? '제목' : '문단'} ${item.blockIndex + 1} 교정`,
-    } : undefined;
-    return <div style={styles} data-report-block={item.blockIndex}>
+    const target = textEditTarget(block, item.blockIndex);
+    return <div style={styles} data-report-block={item.blockIndex} data-report-code={item.code || undefined}>
         {item.marker && <span style={{ position: 'absolute', top: 0, left: pt(-item.markerWidth) }}>{item.marker}</span>}
-        <EditableReportValue text={item.lines.join('\n')} target={target} onRequestEdit={onRequestEdit} />
+        <EditableReportValue text={item.lines.join('\n')} richLines={item.richLines} target={target} onRequestEdit={onRequestEdit} />
     </div>;
 }
 
-function tableCellEditTarget(block: TableBlock, blockIndex: number, row: number, column: number): EditTarget | undefined {
+function tableCellEditTarget(block: TableBlock | Extract<FinalReportBlock, { kind: 'paragraph' }>, blockIndex: number, row: number, column: number): EditTarget | undefined {
+    if (block.kind === 'paragraph') return textEditTarget(block, blockIndex);
     if (block.kind === 'dataTable') {
         const value = block.rows[row][column];
         return { label: '표 내용 교정', value, ariaLabel: `${row + 1}행 ${column + 1}열 교정`, edit: { kind: 'tableCell', blockIndex, row, col: column, value } };
@@ -66,18 +86,18 @@ function tableCellEditTarget(block: TableBlock, blockIndex: number, row: number,
     }
 }
 
-function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'table' }>; block: TableBlock; onRequestEdit?: RequestEdit }) {
+function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'table' }>; block: TableBlock | Extract<FinalReportBlock, { kind: 'paragraph' }>; onRequestEdit?: RequestEdit }) {
     const cellStyle: CSSProperties = { border: '.4pt solid #929ba4', padding: '6pt 3pt', verticalAlign: 'top', fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight), whiteSpace: 'pre', fontWeight: 400, boxSizing: 'border-box', color: '#1b1b1b' };
     const mergeSpans = getTableMergeSpans(item, block);
     return <table data-report-block={item.blockIndex} style={{ ...pagePosition(item.top), tableLayout: 'fixed', borderCollapse: 'collapse', color: '#1b1b1b' }}>
         <colgroup>{item.widths.map((width, i) => <col key={i} style={{ width: pt(width) }} />)}</colgroup>
         {!!item.headers.length && <thead><tr style={{ height: pt(item.headerHeight) }}>{item.headers.map((lines, col) => <th key={col} style={{ ...cellStyle, background: '#e7ecf1', fontWeight: 700, textAlign: 'left' }}>
-            <EditableReportValue text={lines.join('\n')} onRequestEdit={onRequestEdit} target={block.kind === 'dataTable' ? {
+            <EditableReportValue text={lines.join('\n')} richLines={item.richHeaders?.[col]} onRequestEdit={onRequestEdit} target={block.kind === 'dataTable' ? {
                 label: '표 머리글 교정', value: block.headers[col], ariaLabel: `머리글 ${col + 1} 교정`, edit: { kind: 'tableHeader', blockIndex: item.blockIndex, col, value: block.headers[col] },
-            } : undefined} />
+            } : textEditTarget(block, item.blockIndex)} />
         </th>)}</tr></thead>}
         <tbody>{item.rows.map((row, index) => <tr key={index} style={{ height: pt(row.height) }}>{row.lines.map((lines, col) => mergeSpans[index][col] === 0 ? null : <td key={col} rowSpan={mergeSpans[index][col] > 1 ? mergeSpans[index][col] : undefined} style={mergeSpans[index][col] > 1 ? { ...cellStyle, verticalAlign: 'middle', textAlign: 'center' } : cellStyle}>
-            <EditableReportValue text={lines.join('\n') || (mergeSpans[index][col] > 1 && block.kind === 'dataTable' ? block.rows[row.index][col] : '') || '\u00a0'} target={tableCellEditTarget(block, item.blockIndex, row.index, col)} onRequestEdit={onRequestEdit} />
+            <EditableReportValue text={lines.join('\n') || (mergeSpans[index][col] > 1 && block.kind === 'dataTable' ? block.rows[row.index][col] : '') || '\u00a0'} richLines={row.richLines?.[col]} target={tableCellEditTarget(block, item.blockIndex, row.index, col)} onRequestEdit={onRequestEdit} />
         </td>)}</tr>)}</tbody>
     </table>;
 }
@@ -89,7 +109,7 @@ function PageItem({ item, blocks, onRequestEdit }: { item: ReportLayoutItem; blo
         <img src={item.block.pngDataUrl} alt={item.block.title} style={{ width: pt(item.width), height: pt(item.height), maxWidth: 'none', display: 'inline-block' }} />
     </figure>;
     if (item.kind === 'text') return <ReportText item={item} block={block} onRequestEdit={onRequestEdit} />;
-    return <ReportTable item={item} block={block as TableBlock} onRequestEdit={onRequestEdit} />;
+    return <ReportTable item={item} block={block as TableBlock | Extract<FinalReportBlock, { kind: 'paragraph' }>} onRequestEdit={onRequestEdit} />;
 }
 
 function ReportPaper({ page, pageNumber, projectName, blocks, onRequestEdit }: { page: ReportPageLayout; pageNumber: number; projectName?: string; blocks: FinalReportBlock[]; onRequestEdit?: RequestEdit }) {

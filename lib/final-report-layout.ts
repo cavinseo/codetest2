@@ -1,12 +1,13 @@
 // 미리보기와 Word가 함께 사용하는 A4 페이지 배치와 긴 표 분할을 계산한다.
 import type { FinalReportBlock, FinalReportModel } from './final-report-document';
+import { parseReportMarkdown, reportRunsText, type ReportMarkdownBlock, type ReportTextRun } from './final-report-markdown';
 
 export const REPORT_PAPER = { width: 595.28, height: 841.89, margin: 42, top: 53, bottom: 787, body: 511.28 };
 export const REPORT_CHAPTER_PADDING = { vertical: 6, horizontal: 10 };
 export type CoverBlock = Extract<FinalReportBlock, { kind: 'cover' }>;
 export type ReportLayoutItem =
-    | { kind: 'text'; blockIndex: number; lines: string[]; top: number; height: number; left: number; width: number; marker?: string; markerWidth: number; fontSize: number; lineHeight: number; bold: boolean; color: string; chapter: boolean }
-    | { kind: 'table'; blockIndex: number; top: number; height: number; fontSize: number; lineHeight: number; widths: number[]; headers: string[][]; headerHeight: number; rows: Array<{ index: number; lines: string[][]; height: number }> }
+    | { kind: 'text'; blockIndex: number; lines: string[]; richLines?: ReportTextRun[][]; code?: boolean; quote?: boolean; top: number; height: number; left: number; width: number; marker?: string; markerWidth: number; fontSize: number; lineHeight: number; bold: boolean; color: string; chapter: boolean }
+    | { kind: 'table'; blockIndex: number; top: number; height: number; fontSize: number; lineHeight: number; widths: number[]; headers: string[][]; richHeaders?: ReportTextRun[][][]; headerHeight: number; rows: Array<{ index: number; lines: string[][]; richLines?: ReportTextRun[][][]; height: number }> }
     | { kind: 'image'; blockIndex: number; top: number; height: number; width: number; block: Extract<FinalReportBlock, { kind: 'image' }> };
 export interface ReportPageLayout { cover?: CoverBlock; items: ReportLayoutItem[] }
 
@@ -64,6 +65,23 @@ export function wrapReportText(text: string, width: number, fontSize: number): s
     return lines;
 }
 
+function wrapReportRuns(runs: ReportTextRun[], width: number, fontSize: number): ReportTextRun[][] {
+    const lines: ReportTextRun[][] = [[]];
+    let lineWidth = 0;
+    for (const run of runs) {
+        let fragment = '';
+        const flush = () => { if (fragment) lines[lines.length - 1].push({ ...run, text: fragment }); fragment = ''; };
+        for (const character of run.text.replaceAll('\r', '').replaceAll('\t', '    ')) {
+            if (character === '\n') { flush(); lines.push([]); lineWidth = 0; continue; }
+            const nextWidth = characterWidth(character, fontSize) * (run.bold ? 1.08 : 1);
+            if (lineWidth && lineWidth + nextWidth > width) { flush(); lines.push([]); lineWidth = 0; }
+            fragment += character; lineWidth += nextWidth;
+        }
+        flush();
+    }
+    return lines;
+}
+
 function startNextPage(cursor: PageCursor) {
     if (cursor.currentPage.cover || cursor.currentPage.items.length) cursor.pages.push(cursor.currentPage);
     cursor.currentPage = { items: [] };
@@ -73,6 +91,7 @@ function startNextPage(cursor: PageCursor) {
 interface TextParagraph {
     text: string; fontSize: number; left: number; bold: boolean; color: string;
     chapter: boolean; section: boolean; marker?: string; markerWidth: number;
+    runs?: ReportTextRun[]; code?: boolean; quote?: boolean;
 }
 
 const millimetersToPoints = (millimeters: number) => millimeters * 72 / 25.4;
@@ -119,7 +138,9 @@ function appendTextParagraph(cursor: PageCursor, paragraph: TextParagraph, block
     const { chapter, fontSize, left, markerWidth } = paragraph;
     const lineHeight = fontSize * 1.6;
     const width = REPORT_PAPER.body - left;
-    const lines = wrapReportText(paragraph.text, width - (chapter ? REPORT_CHAPTER_PADDING.horizontal * 2 : 0), fontSize);
+    const textWidth = width - (chapter ? REPORT_CHAPTER_PADDING.horizontal * 2 : 0);
+    const richLines = paragraph.runs ? wrapReportRuns(paragraph.runs, textWidth, fontSize) : undefined;
+    const lines = richLines ? richLines.map(reportRunsText) : wrapReportText(paragraph.text, textWidth, fontSize);
     const padding = chapter ? REPORT_CHAPTER_PADDING.vertical * 2 : 0;
     const height = lines.length * lineHeight + padding;
     if (paragraph.bold && cursor.top + Math.min(height + 65, 140) > REPORT_PAPER.bottom) startNextPage(cursor);
@@ -129,6 +150,7 @@ function appendTextParagraph(cursor: PageCursor, paragraph: TextParagraph, block
         if (lineCount < 1) { startNextPage(cursor); continue; }
         const itemHeight = lineCount * lineHeight + padding;
         cursor.currentPage.items.push({ kind: 'text', blockIndex, lines: lines.slice(lineOffset, lineOffset + lineCount), top: cursor.top, height: itemHeight, left, width,
+            ...(richLines ? { richLines: richLines.slice(lineOffset, lineOffset + lineCount), code: paragraph.code, quote: paragraph.quote } : {}),
             marker: lineOffset === 0 ? paragraph.marker : undefined, markerWidth, fontSize, lineHeight,
             bold: paragraph.bold, color: paragraph.color, chapter });
         cursor.top += itemHeight;
@@ -139,6 +161,8 @@ function appendTextParagraph(cursor: PageCursor, paragraph: TextParagraph, block
 }
 
 function appendTextLayout(cursor: PageCursor, block: TextBlock, blockIndex: number) {
+    const rich = block.kind === 'paragraph' && !block.tone ? parseReportMarkdown(block.text) : null;
+    if (rich) { appendMarkdownLayout(cursor, rich, blockIndex); return; }
     const paragraphs = formatReportParagraphs(block);
     paragraphs.forEach((paragraph, index) => {
         const isLastParagraph = index === paragraphs.length - 1;
@@ -152,6 +176,24 @@ function appendTextLayout(cursor: PageCursor, block: TextBlock, blockIndex: numb
     });
 }
 
+function appendMarkdownLayout(cursor: PageCursor, blocks: ReportMarkdownBlock[], blockIndex: number) {
+    for (const block of blocks) {
+        if (block.kind === 'table') {
+            appendTableLayout(cursor, { kind: 'dataTable', headers: block.headers.map(reportRunsText), rows: block.rows.map(row => row.map(reportRunsText)), columnWidths: Array(block.columns).fill(1) }, blockIndex, block);
+            continue;
+        }
+        const fontSize = block.headingLevel ? [16, 14, 12, 11, 11, 10][block.headingLevel - 1] : block.code || block.depth ? 10 : 11;
+        const markerWidth = block.marker ? Math.max(13, Array.from(block.marker).reduce((sum, character) => sum + characterWidth(character, fontSize), 0) + 5) : 0;
+        const paragraph: TextParagraph = {
+            text: reportRunsText(block.runs), runs: block.runs, fontSize,
+            left: millimetersToPoints(12 + block.depth * 4) + markerWidth + (block.quote ? 8 : 0),
+            bold: Boolean(block.headingLevel), color: block.quote ? '555555' : '1B1B1B',
+            chapter: false, section: false, marker: block.marker, markerWidth, code: block.code, quote: block.quote,
+        };
+        appendTextParagraph(cursor, paragraph, blockIndex, block.marker ? 4 : 8);
+    }
+}
+
 function appendImageLayout(cursor: PageCursor, block: ImageBlock, blockIndex: number) {
     const scale = Math.min(1, REPORT_PAPER.body / (block.widthMm * 72 / 25.4), 590 / (block.heightMm * 72 / 25.4));
     const width = block.widthMm * 72 / 25.4 * scale, height = block.heightMm * 72 / 25.4 * scale;
@@ -163,7 +205,7 @@ function appendImageLayout(cursor: PageCursor, block: ImageBlock, blockIndex: nu
 // 셀의 위아래 여백 12pt와 브라우저에서 반올림되는 테두리 1pt를 함께 계산한다.
 const TABLE_CELL_INSET = 13;
 
-function prepareTableLayout(block: TableBlock) {
+function prepareTableLayout(block: TableBlock, rich?: Extract<ReportMarkdownBlock, { kind: 'table' }>) {
     const keyValue = block.kind === 'keyValueTable';
     const headers = keyValue ? [] : block.headers;
     const sourceRows = keyValue ? block.rows.map(row => [row.label, row.value]) : block.rows;
@@ -172,14 +214,26 @@ function prepareTableLayout(block: TableBlock) {
     const widths = widthRatios.map(ratio => ratio / totalRatio * REPORT_PAPER.body);
     const fontSize = headers.length > 9 ? 8 : 8.5, lineHeight = fontSize * 1.55;
     const wrapCells = (cells: string[]) => cells.map((cell, column) => wrapReportText(cell, Math.max(fontSize, widths[column] - 6), fontSize));
-    const headerLines = wrapCells(headers);
+    const wrapRichCells = (cells: ReportTextRun[][]) => cells.map((cell, column) => wrapReportRuns(cell, Math.max(fontSize, widths[column] - 6), fontSize));
+    const richHeaders = rich ? wrapRichCells(rich.headers) : undefined;
+    const headerLines = richHeaders ? richHeaders.map(lines => lines.map(reportRunsText)) : wrapCells(headers);
     const headerHeight = headerLines.length ? Math.max(...headerLines.map(lines => lines.length)) * lineHeight + TABLE_CELL_INSET : 0;
-    const rows = sourceRows.map((row, index) => ({ index, lines: wrapCells(row) }));
-    return { widths, fontSize, lineHeight, headerLines, headerHeight, rows };
+    const rows = sourceRows.map((row, index) => {
+        const richLines = rich ? wrapRichCells(rich.rows[index]) : undefined;
+        return { index, lines: richLines ? richLines.map(lines => lines.map(reportRunsText)) : wrapCells(row), ...(richLines ? { richLines } : {}) };
+    });
+    return { widths, fontSize, lineHeight, headerLines, richHeaders, headerHeight, rows };
 }
 
-function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: number) {
-    const { widths, fontSize, lineHeight, headerLines, headerHeight, rows } = prepareTableLayout(block);
+function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: number, rich?: Extract<ReportMarkdownBlock, { kind: 'table' }>) {
+    const prepared = prepareTableLayout(block, rich);
+    const { widths, fontSize, lineHeight, rows } = prepared;
+    let { headerLines, richHeaders, headerHeight } = prepared;
+    // 한 페이지보다 긴 Markdown 머리글은 반복 영역 대신 분할 가능한 첫 행으로 배치한다.
+    if (rich && headerHeight + lineHeight + TABLE_CELL_INSET + 1 > REPORT_PAPER.bottom - REPORT_PAPER.top) {
+        rows.unshift({ index: -1, lines: headerLines, richLines: richHeaders?.map(cell => cell.map(line => line.map(run => ({ ...run, bold: true })))) });
+        headerLines = []; richHeaders = []; headerHeight = 0;
+    }
     let pendingTable: TableLayoutItem | null = null;
     const finishTable = () => {
         if (!pendingTable) return;
@@ -187,13 +241,17 @@ function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: nu
         cursor.top = pendingTable.top + pendingTable.height + 14;
         pendingTable = null;
     };
+    if (!rows.length && headerLines.length) {
+        if (cursor.top + headerHeight + 1 > REPORT_PAPER.bottom) startNextPage(cursor);
+        pendingTable = { kind: 'table', blockIndex, top: cursor.top, height: headerHeight + 1, fontSize, lineHeight, widths, headers: headerLines, richHeaders, headerHeight, rows: [] };
+    }
     for (const row of rows) {
         let lineOffset = 0;
         const maxLines = Math.max(...row.lines.map(lines => lines.length), 1);
         while (lineOffset < maxLines) {
             if (!pendingTable) {
                 if (cursor.top + headerHeight + lineHeight + TABLE_CELL_INSET + 1 > REPORT_PAPER.bottom) startNextPage(cursor);
-                pendingTable = { kind: 'table', blockIndex, top: cursor.top, height: headerHeight + 1, fontSize, lineHeight, widths, headers: headerLines, headerHeight, rows: [] };
+                pendingTable = { kind: 'table', blockIndex, top: cursor.top, height: headerHeight + 1, fontSize, lineHeight, widths, headers: headerLines, richHeaders, headerHeight, rows: [] };
             }
             const availableHeight = REPORT_PAPER.bottom - pendingTable.top - pendingTable.height;
             const remainingHeight = (maxLines - lineOffset) * lineHeight + TABLE_CELL_INSET;
@@ -201,7 +259,8 @@ function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: nu
             const lineCount = Math.min(maxLines - lineOffset, Math.floor((availableHeight - TABLE_CELL_INSET) / lineHeight));
             if (lineCount < 1) { finishTable(); startNextPage(cursor); continue; }
             const height = lineCount * lineHeight + TABLE_CELL_INSET;
-            pendingTable.rows.push({ index: row.index, lines: row.lines.map(lines => lines.slice(lineOffset, lineOffset + lineCount)), height });
+            pendingTable.rows.push({ index: row.index, lines: row.lines.map(lines => lines.slice(lineOffset, lineOffset + lineCount)),
+                ...(row.richLines ? { richLines: row.richLines.map(lines => lines.slice(lineOffset, lineOffset + lineCount)) } : {}), height });
             pendingTable.height += height;
             lineOffset += lineCount;
             if (lineOffset < maxLines) { finishTable(); startNextPage(cursor); }
