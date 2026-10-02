@@ -176,6 +176,46 @@ export function resolveRelatedTechnology(
     return '';
 }
 
+export function getAppliedTechnologiesForAttributes(
+    specs: AttributeSpecFunctionLike[],
+    attributes: string[]
+): string[] {
+    const technologies = new Set<string>();
+    const sortedSpecs = [...specs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    for (const attribute of attributes) {
+        const selectedSpecs = sortedSpecs.filter(spec => spec.name.trim() === attribute.trim());
+        for (const selected of selectedSpecs) {
+            const relevantSpecs = selected.technology?.trim()
+                ? [selected]
+                : sortedSpecs.filter(spec => {
+                    let parentId = spec.parentId;
+                    while (parentId) {
+                        if (parentId === selected.id) return true;
+                        parentId = sortedSpecs.find(parent => parent.id === parentId)?.parentId;
+                    }
+                    return false;
+                });
+            for (const spec of relevantSpecs) {
+                const technology = spec.technology?.trim();
+                if (technology) technologies.add(technology);
+            }
+        }
+    }
+
+    return [...technologies];
+}
+
+export function getAdditionalTechnologies(saved: string, automatic: string[]): string {
+    const automaticSet = new Set(automatic);
+    return saved.split(/\r?\n/).filter(line => !automaticSet.has(line.trim())).join('\n').trim();
+}
+
+export function combineTechnologies(automatic: string[], additional: string): string {
+    const additionalLines = getAdditionalTechnologies(additional, automatic);
+    return [automatic.join('\n'), additionalLines].filter(Boolean).join('\n');
+}
+
 export function getMarketSegmentSpan(rows: AttributeGroupingRowLike[], index: number): number {
     const segment = rows[index]?.marketSegment.trim();
     if (!segment) return 1;

@@ -7,6 +7,7 @@ import {
     getCustomerNameSpan,
     getCustomerNeedSpan,
     getMarketSegmentSpan,
+    getAppliedTechnologiesForAttributes,
     resolveRelatedTechnology,
 } from '../lib/product-attributes-utils';
 
@@ -65,6 +66,20 @@ describe('product attribute technology linking', () => {
         ];
 
         expect(resolveRelatedTechnology(specs, '안전 결제 처리')).toBe('PG/에스크로, 분할 지급 자동화');
+    });
+
+    it('선택된 제품속성에 연결된 실제 적용기술만 중복 없이 모은다', () => {
+        const specs = [
+            { id: 'core', level: 'CORE' as const, name: '관리', order: 0 },
+            { id: 'sub', level: 'SUB' as const, parentId: 'core', name: '진단', order: 1 },
+            { id: 'detail-1', level: 'DETAIL' as const, parentId: 'sub', name: '원인 분석', technology: 'AI 분석', order: 2 },
+            { id: 'detail-2', level: 'DETAIL' as const, parentId: 'sub', name: '원격 진단', technology: '통신 기술', order: 3 },
+            { id: 'detail-3', level: 'DETAIL' as const, parentId: 'sub', name: '이력 조회', technology: 'AI 분석', order: 4 },
+            { id: 'detail-4', level: 'DETAIL' as const, parentId: 'sub', name: '기술 미입력', technology: null, order: 5 },
+        ];
+
+        expect(getAppliedTechnologiesForAttributes(specs, ['진단', '원인 분석', '기술 미입력']))
+            .toEqual(['AI 분석', '통신 기술']);
     });
 
     it('groups a customer across multiple needs within the same market segment', () => {

@@ -14,6 +14,7 @@ const originalRows = [
 let container: HTMLDivElement;
 let root: Root;
 let savedRows: typeof originalRows;
+let specFunctions: Array<{ id: string; level: 'DETAIL'; name: string; technology: string; order: number }>;
 
 async function mount() {
     await act(async () => { root.render(createElement(ProductAttributesTable, { projectId: 'fixture-project' })); });
@@ -46,6 +47,7 @@ async function save() {
 
 beforeEach(() => {
     savedRows = originalRows.map(row => ({ ...row }));
+    specFunctions = [];
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
         if (init?.method === 'POST') {
@@ -53,7 +55,7 @@ beforeEach(() => {
             return new Response(JSON.stringify({ attributes: savedRows }));
         }
         const data = String(url).endsWith('/attributes') ? { attributes: savedRows }
-            : String(url).endsWith('/spec') ? { specFunctions: [] }
+            : String(url).endsWith('/spec') ? { specFunctions }
                 : { projects: [{ id: 'fixture-project', name: 'AI PLC 관리 장비' }] };
         return new Response(JSON.stringify(data));
     }));
@@ -128,4 +130,50 @@ it('같은 고객 니즈에 여러 제품속성을 추가하고 저장 후 다�
     expect([...container.querySelectorAll<HTMLInputElement>('tbody input[list^="attribute_list_"]')].map(element => element.value))
         .toEqual(savedRows.map(row => row.attribute));
     expect(input('attr_2', 'bn')?.value).toBe(originalRows[1].benefit);
+});
+
+it('세분시장 항목 추가는 기존 행 뒤에 빈 항목을 만들고 다른 니즈를 보존한다', async () => {
+    await mount();
+    await act(async () => {
+        container.querySelector<HTMLButtonElement>('button[title="같은 세분시장 항목 추가"]')!.click();
+    });
+
+    await save();
+    expect(savedRows).toHaveLength(3);
+    expect(savedRows[1]).toMatchObject({
+        marketSegment: originalRows[0].marketSegment,
+        customerName: '', customerNeed: '', benefit: '', attribute: '', order: 1,
+    });
+    expect(savedRows[2]).toMatchObject({ ...originalRows[1], order: 2 });
+});
+
+it('선택된 제품속성의 적용기술을 자동 표시하고 작성자 추가 내용은 유지한다', async () => {
+    specFunctions = [
+        { id: 'spec-1', level: 'DETAIL', name: '설비별 기본 설정', technology: 'PLC 기술', order: 0 },
+        { id: 'spec-2', level: 'DETAIL', name: '태그 자동 매핑', technology: '진단 엔진', order: 1 },
+    ];
+    savedRows = savedRows.map(row => ({ ...row, techCapability: 'PLC 기술\n작성자 추가 기술' }));
+    await mount();
+
+    const automatic = () => container.querySelector<HTMLElement>('[aria-label="WS-2 적용기술 자동 입력"]')!.textContent!;
+    const manual = () => container.querySelector<HTMLTextAreaElement>('textarea[aria-label="추가 기술역량"]')!;
+    expect(automatic()).toContain('PLC 기술');
+    expect(automatic()).toContain('진단 엔진');
+    expect(manual().value).toBe('작성자 추가 기술');
+
+    await fill(container.querySelector<HTMLInputElement>('input[list="attribute_list_attr_1"]'), '새 제품속성');
+    expect(automatic()).not.toContain('PLC 기술');
+    expect(automatic()).toContain('진단 엔진');
+    await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(manual(), '작성자 추가 기술\n현장 경험');
+        manual().dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await save();
+    expect(savedRows[0].techCapability).toBe('진단 엔진\n작성자 추가 기술\n현장 경험');
+
+    await act(async () => { root.unmount(); });
+    root = createRoot(container);
+    await mount();
+    expect(automatic()).toContain('진단 엔진');
+    expect(manual().value).toBe('작성자 추가 기술\n현장 경험');
 });
