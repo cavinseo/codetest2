@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { optimizeReportImage } from '@/lib/final-report-image';
 import { getProductOverviewImages, relatedImagesPatch, PRODUCT_IMAGE_MAX_LENGTH, RELATED_IMAGE_MAX_COUNT, type ProductOverview } from '@/lib/product-overview';
+import ProductOverviewContent from './ProductOverviewContent';
 
 interface Props {
     value: ProductOverview;
@@ -17,8 +18,10 @@ export default function ProductOverviewFields({ value, editing = false, disabled
     const generation = useRef(0);
     const reading = useRef(false);
     const [isReading, setIsReading] = useState(false);
+    const [marketPreview, setMarketPreview] = useState(false);
     const images = getProductOverviewImages(value);
     useEffect(() => () => { generation.current += 1; onBusy?.(false); }, [onBusy]);
+    useEffect(() => { if (!editing) setMarketPreview(false); }, [editing]);
     async function selectImages(files: File[]) {
         if (!files.length || reading.current) return;
         if (images.length + files.length > RELATED_IMAGE_MAX_COUNT) {
@@ -53,7 +56,24 @@ export default function ProductOverviewFields({ value, editing = false, disabled
         {([
             ['productName', '제품(서비스) 명'], ['marketDefinition', '시장정의'], ['targetCustomer', '목표 고객'],
         ] as const).map(([key, label]) => <div key={key} className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
-            {editing ? <label className="block text-sm text-gray-300">{label}
+            {key === 'marketDefinition' ? <>
+                {editing ? <>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <p id="market-definition-help" className="text-xs text-gray-500">Markdown(MD)·HTML로 입력할 수 있습니다.</p>
+                        <button type="button" disabled={disabled} className="btn-secondary text-xs" aria-label={`시장정의 ${marketPreview ? '편집으로 돌아가기' : '미리보기'}`} aria-expanded={marketPreview} onClick={() => setMarketPreview(!marketPreview)}>
+                            {marketPreview ? '편집으로 돌아가기' : '미리보기'}
+                        </button>
+                    </div>
+                    {marketPreview ? <>
+                        <p className="mb-2 text-sm text-gray-300">{label}</p>
+                        <div role="region" aria-label="시장정의 미리보기" className="min-h-24 rounded-md border border-white/[0.08] p-3">
+                            <ProductOverviewContent value={value[key]} emptyMessage="미리볼 내용이 없습니다." />
+                        </div>
+                    </> : <label className="block text-sm text-gray-300">{label}
+                        <textarea rows={5} maxLength={20_000} aria-label={label} aria-describedby="market-definition-help" className="input mt-2 w-full" value={value[key] ?? ''} disabled={disabled} onChange={event => onChange?.({ [key]: event.target.value })} />
+                    </label>}
+                </> : <><p className="text-xs text-gray-500 mb-2">{label}</p><ProductOverviewContent value={value[key]} /></>}
+            </> : editing ? <label className="block text-sm text-gray-300">{label}
                 <textarea rows={key === 'productName' ? 1 : 3} maxLength={key === 'productName' ? 300 : 20_000} className="input mt-2 w-full" value={value[key] ?? ''} disabled={disabled} onChange={event => onChange?.({ [key]: event.target.value })} />
             </label> : <><p className="text-xs text-gray-500 mb-2">{label}</p><p className="text-sm text-white whitespace-pre-wrap">{value[key] || '입력된 내용이 없습니다.'}</p></>}
         </div>)}

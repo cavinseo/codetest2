@@ -13,6 +13,7 @@ import WorksheetImageExport from '@/components/project/WorksheetImageExport';
 import MentorWorksheetAnalysis from '@/components/project/MentorWorksheetAnalysis';
 import ProductOverviewFields from '@/components/project/ProductOverviewFields';
 import ProductOverviewDetailEditor from '@/components/project/ProductOverviewDetailEditor';
+import ProductOverviewContent from '@/components/project/ProductOverviewContent';
 import type { ProductOverview } from '@/lib/product-overview';
 import { HEADER_TOAST_SLOT_ID } from '@/components/HeaderToast';
 import KanoManager from '@/components/project/KanoManager';
@@ -774,7 +775,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                                             disabled={isOverviewSaving}
                                         />
                                     ) : (
-                                        <p className="text-sm leading-6 text-white whitespace-pre-wrap">{project.detailedDescription || '입력된 상세 제품개요가 없습니다.'}</p>
+                                        <ProductOverviewContent value={project.detailedDescription} emptyMessage="입력된 상세 제품개요가 없습니다." />
                                     )}
                                 </div>
                             </div>

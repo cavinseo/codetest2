@@ -216,3 +216,81 @@ it('여러 줄의 기호를 바꾸거나 제거한 뒤 취소하면 원래 상�
     expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')?.value).toBe(project.detailedDescription);
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
 });
+
+it('상세 제품개요와 시장정의에 Markdown·HTML을 입력해 미리보고 원문을 저장·재편집한다', async () => {
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    await click('수정');
+    const detail = '# 제품 소개\n\n**핵심 기능**\n\n- 첫째\n- 둘째\n\n<p>HTML <em>설명</em></p>';
+    const market = '## 시장 분석\n\n| 구분 | 규모 |\n| --- | --- |\n| 국내 | 100 |\n\n<p><strong>성장 시장</strong></p>';
+    const detailInput = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')!;
+    const marketInput = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="시장정의"]')!;
+    expect(marketInput.maxLength).toBe(20_000);
+    await input(detailInput, detail);
+    await input(marketInput, market);
+    for (const label of ['상세 제품개요', '시장정의']) {
+        const previewButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${label} 미리보기"]`);
+        expect(previewButton).not.toBeNull();
+        await act(async () => previewButton!.click());
+    }
+    const detailPreview = container.querySelector('[role="region"][aria-label="상세 제품개요 미리보기"]');
+    expect(detailPreview?.querySelector('h1')?.textContent).toBe('제품 소개');
+    expect(detailPreview?.querySelector('strong')?.textContent).toBe('핵심 기능');
+    expect(detailPreview?.querySelectorAll('li')).toHaveLength(2);
+    expect(detailPreview?.querySelector('em')?.textContent).toBe('설명');
+    const marketPreview = container.querySelector('[role="region"][aria-label="시장정의 미리보기"]');
+    expect(marketPreview?.querySelector('h2')?.textContent).toBe('시장 분석');
+    expect(marketPreview?.querySelector('td')?.textContent).toBe('국내');
+    expect(marketPreview?.querySelector('strong')?.textContent).toBe('성장 시장');
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="상세 제품개요 편집으로 돌아가기"]')!.click());
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')?.value).toBe(detail);
+    await click('저장');
+    expect(savedBody()).toMatchObject({ detailedDescription: detail, marketDefinition: market });
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    expect([...container.querySelectorAll('h1')].map(heading => heading.textContent)).toContain('제품 소개');
+    expect(container.querySelector('td')?.textContent).toBe('국내');
+    await click('수정');
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')?.value).toBe(detail);
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="시장정의"]')?.value).toBe(market);
+});
+
+it('읽기 전용 개요에서 HTML 서식을 표시하며 실행 코드·위험한 링크·스타일을 제거한다', async () => {
+    project.role = 'VIEWER';
+    project.detailedDescription = '<h2>제품 서식</h2><script>alert(1)</script><iframe src="https://example.test"></iframe><p style="position:fixed" onclick="alert(1)"><strong>안전한 설명</strong></p><img src="https://example.test/photo.png" onerror="alert(1)"><a href="javascript:alert(1)">위험 링크</a>';
+    project.marketDefinition = '<h3>시장 서식</h3><style>body { display: none }</style><table><tr><td>시장 규모</td></tr></table><a href="https://example.test/market">자료</a>';
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    expect([...container.querySelectorAll('h2')].map(heading => heading.textContent)).toContain('제품 서식');
+    expect([...container.querySelectorAll('h3')].map(heading => heading.textContent)).toContain('시장 서식');
+    expect(container.querySelector('strong')?.textContent).toBe('안전한 설명');
+    expect(container.querySelector('td')?.textContent).toBe('시장 규모');
+    expect(container.querySelector('script, iframe, style, [onclick], [onerror], [style*="position"]')).toBeNull();
+    expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
+    expect(container.querySelector('a[href="https://example.test/market"]')).not.toBeNull();
+    expect(container.querySelector('textarea')).toBeNull();
+});
+
+it('Markdown 코드블록 안의 HTML은 실행하지 않고 원문으로 표시한다', async () => {
+    project.detailedDescription = '```html\n<strong>코드 예시</strong>\n```';
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    expect(container.querySelector('pre code')?.textContent).toBe('<strong>코드 예시</strong>\n');
+    expect(container.querySelector('pre strong')).toBeNull();
+});
+
+it('두 항목의 미리보기에서 취소하면 기존 원문을 보존하고 편집 상태로 다시 연다', async () => {
+    project.detailedDescription = '• 기존 상세\n둘째 줄';
+    project.marketDefinition = '기존 시장\n둘째 줄';
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    expect(container.textContent).toContain(project.detailedDescription);
+    expect(container.textContent).toContain(project.marketDefinition);
+    await click('수정');
+    for (const label of ['상세 제품개요', '시장정의']) {
+        await input(container.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${label}"]`)!, '# 임시 수정');
+        await act(async () => container.querySelector<HTMLButtonElement>(`button[aria-label="${label} 미리보기"]`)!.click());
+    }
+    await click('취소');
+    await click('수정');
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')?.value).toBe(project.detailedDescription);
+    expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="시장정의"]')?.value).toBe(project.marketDefinition);
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
+});

@@ -97,3 +97,18 @@ it.each([
     expect(m.update).not.toHaveBeenCalled();
     expect(stored.productImageDataUrl).toBe(png);
 });
+
+it('Markdown 들여쓰기와 HTML을 변환하지 않고 저장·조회한다', async () => {
+    const richText = {
+        detailedDescription: '    <code>들여쓴 코드</code>\n\n# 제품\n\n<strong>특징</strong>\n',
+        marketDefinition: '    시장 코드\n\n## 시장\n\n<table><tr><td>규모</td></tr></table>\n',
+    };
+    const saved = await PATCH(request({ name: '프로젝트', ...richText }), params);
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).project).toMatchObject(richText);
+    expect((await (await GET(request(), params)).json()).project).toMatchObject(richText);
+});
+it('서식 입력칸을 공백만 남겨 지우면 기존 빈 값 규칙으로 저장한다', async () => {
+    await PATCH(request({ name: '프로젝트', detailedDescription: ' \n ', marketDefinition: ' \n ' }), params);
+    expect(stored).toMatchObject({ detailedDescription: null, marketDefinition: '' });
+});

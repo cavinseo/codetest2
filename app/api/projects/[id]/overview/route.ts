@@ -159,7 +159,7 @@ export async function PATCH(
                 ...productDetails,
                 name: data.name.trim(),
                 description: data.description?.trim() || null,
-                detailedDescription: data.detailedDescription?.trim() || null,
+                detailedDescription: data.detailedDescription?.trim() ? data.detailedDescription : null,
                 ...(businessPlanFile !== undefined ? { businessPlanFile } : {}),
             },
         });
