@@ -4,7 +4,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import type { FinalReportBlock } from '@/lib/final-report-document';
 import type { BlockEdit } from '@/lib/final-report-edit';
 import { worksheetImageFileName } from '@/lib/worksheet-capture';
-import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTER_PADDING, REPORT_PAPER, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
+import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTER_PADDING, REPORT_PAPER, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
 import { getTableMergeSpans } from '@/lib/final-report-table-merge';
 import type { ReportTextRun } from '@/lib/final-report-markdown';
 
@@ -89,14 +89,14 @@ function tableCellEditTarget(block: TableBlock | Extract<FinalReportBlock, { kin
 function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'table' }>; block: TableBlock | Extract<FinalReportBlock, { kind: 'paragraph' }>; onRequestEdit?: RequestEdit }) {
     const cellStyle: CSSProperties = { border: '.4pt solid #929ba4', padding: '6pt 3pt', verticalAlign: 'top', fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight), whiteSpace: 'pre', fontWeight: 400, boxSizing: 'border-box', color: '#1b1b1b' };
     const mergeSpans = getTableMergeSpans(item, block);
-    return <table data-report-block={item.blockIndex} style={{ ...pagePosition(item.top), tableLayout: 'fixed', borderCollapse: 'collapse', color: '#1b1b1b' }}>
+    return <table data-report-block={item.blockIndex} style={{ ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + REPORT_VISUAL_LEFT), width: pt(item.widths.reduce((sum, width) => sum + width, 0)), tableLayout: 'fixed', borderCollapse: 'collapse', color: '#1b1b1b' }}>
         <colgroup>{item.widths.map((width, i) => <col key={i} style={{ width: pt(width) }} />)}</colgroup>
-        {!!item.headers.length && <thead><tr style={{ height: pt(item.headerHeight) }}>{item.headers.map((lines, col) => <th key={col} style={{ ...cellStyle, background: '#e7ecf1', fontWeight: 700, textAlign: 'left' }}>
+        {!!item.headers.length && <thead><tr style={{ height: pt(item.headerHeight) }}>{item.headers.map((lines, col) => <th key={col} style={{ ...cellStyle, background: '#e7ecf1', fontWeight: 700, textAlign: 'center', verticalAlign: 'middle' }}>
             <EditableReportValue text={lines.join('\n')} richLines={item.richHeaders?.[col]} onRequestEdit={onRequestEdit} target={block.kind === 'dataTable' ? {
                 label: '표 머리글 교정', value: block.headers[col], ariaLabel: `머리글 ${col + 1} 교정`, edit: { kind: 'tableHeader', blockIndex: item.blockIndex, col, value: block.headers[col] },
             } : textEditTarget(block, item.blockIndex)} />
         </th>)}</tr></thead>}
-        <tbody>{item.rows.map((row, index) => <tr key={index} style={{ height: pt(row.height) }}>{row.lines.map((lines, col) => mergeSpans[index][col] === 0 ? null : <td key={col} rowSpan={mergeSpans[index][col] > 1 ? mergeSpans[index][col] : undefined} style={mergeSpans[index][col] > 1 ? { ...cellStyle, verticalAlign: 'middle', textAlign: 'center' } : cellStyle}>
+        <tbody>{item.rows.map((row, index) => <tr key={index} style={{ height: pt(row.height) }}>{row.lines.map((lines, col) => mergeSpans[index][col] === 0 ? null : <td key={col} rowSpan={mergeSpans[index][col] > 1 ? mergeSpans[index][col] : undefined} style={col === 0 || mergeSpans[index][col] > 1 ? { ...cellStyle, verticalAlign: 'middle', textAlign: 'center' } : cellStyle}>
             <EditableReportValue text={lines.join('\n') || (mergeSpans[index][col] > 1 && block.kind === 'dataTable' ? block.rows[row.index][col] : '') || '\u00a0'} richLines={row.richLines?.[col]} target={tableCellEditTarget(block, item.blockIndex, row.index, col)} onRequestEdit={onRequestEdit} />
         </td>)}</tr>)}</tbody>
     </table>;
@@ -104,7 +104,7 @@ function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayou
 
 function PageItem({ item, blocks, onRequestEdit }: { item: ReportLayoutItem; blocks: FinalReportBlock[]; onRequestEdit?: RequestEdit }) {
     const block = blocks[item.blockIndex];
-    if (item.kind === 'image') return <figure style={{ ...pagePosition(item.top), margin: 0, textAlign: 'center' }}>
+    if (item.kind === 'image') return <figure style={{ ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + REPORT_VISUAL_LEFT), width: pt(REPORT_VISUAL_WIDTH), margin: 0, textAlign: 'center' }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- 저장된 워크시트 그림을 출력 치수로 표시한다. */}
         <img src={item.block.pngDataUrl} alt={item.block.title} style={{ width: pt(item.width), height: pt(item.height), maxWidth: 'none', display: 'inline-block' }} />
     </figure>;

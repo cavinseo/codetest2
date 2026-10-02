@@ -2,7 +2,7 @@
 import { AlignmentType, BorderStyle, Document, ExternalHyperlink, Footer, Header, HeightRule, ImageRun, LineRuleType, Packer, Paragraph, SectionType, ShadingType, Table, TableCell, TableLayoutType, TableRow, Tab, TabStopType, TextRun, VerticalAlign, VerticalMergeType, WidthType, type ISectionOptions } from 'docx';
 import type { FinalReportModel } from './final-report-document';
 import { getTableMergeSpans } from './final-report-table-merge';
-import { layoutReportPages, reportCoverElements, withReportOutputDate, wrapReportText, REPORT_CHAPTER_PADDING, REPORT_PAPER, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from './final-report-layout';
+import { layoutReportPages, reportCoverElements, withReportOutputDate, wrapReportText, REPORT_CHAPTER_PADDING, REPORT_PAPER, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from './final-report-layout';
 import type { ReportTextRun } from './final-report-markdown';
 
 const pointsToTwips = (points: number) => Math.round(points * 20);
@@ -79,14 +79,15 @@ function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: 
             return new TableCell({
             width: { size: pointsToTwips(item.widths[index]), type: WidthType.DXA },
             margins: { top: pointsToTwips(6), bottom: pointsToTwips(6), left: pointsToTwips(3), right: pointsToTwips(3) },
-            verticalAlign: span === 1 ? VerticalAlign.TOP : VerticalAlign.CENTER,
+            verticalAlign: header || index === 0 || span > 1 ? VerticalAlign.CENTER : VerticalAlign.TOP,
             ...(span > 1 ? { verticalMerge: VerticalMergeType.RESTART } : span === 0 ? { verticalMerge: VerticalMergeType.CONTINUE } : {}),
             shading: { type: ShadingType.CLEAR, fill: header ? 'E7ECF1' : 'FFFFFF' },
-            children: [createWordParagraph(span === 0 ? [''] : displayedLines.length ? displayedLines : [''], item.fontSize, item.lineHeight, { bold: header, center: span > 1 }, header ? item.richHeaders?.[index] : item.rows[rowIndex].richLines?.[index])],
+            children: [createWordParagraph(span === 0 ? [''] : displayedLines.length ? displayedLines : [''], item.fontSize, item.lineHeight, { bold: header, center: header || index === 0 || span > 1 }, header ? item.richHeaders?.[index] : item.rows[rowIndex].richLines?.[index])],
         }); }),
     });
     return new Table({
-        width: { size: pointsToTwips(REPORT_PAPER.body), type: WidthType.DXA }, layout: TableLayoutType.FIXED,
+        width: { size: pointsToTwips(item.widths.reduce((sum, width) => sum + width, 0)), type: WidthType.DXA },
+        indent: { size: pointsToTwips(REPORT_VISUAL_LEFT), type: WidthType.DXA }, layout: TableLayoutType.FIXED,
         columnWidths: item.widths.map(pointsToTwips), borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
         rows: [...(item.headers.length ? [row(item.headers, item.headerHeight, true)] : []), ...item.rows.map((r, index) => row(r.lines, r.height, false, index))],
     });
@@ -123,7 +124,9 @@ function coverChildren(cover: CoverBlock) {
 }
 
 function renderImage(item: Extract<ReportLayoutItem, { kind: 'image' }>) {
-    return new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 0, line: pointsToTwips(item.height), lineRule: LineRuleType.EXACT }, children: [new ImageRun({
+    return new Paragraph({ alignment: AlignmentType.CENTER,
+        indent: { left: pointsToTwips(REPORT_VISUAL_LEFT), right: pointsToTwips(REPORT_PAPER.body - REPORT_VISUAL_LEFT - REPORT_VISUAL_WIDTH) },
+        spacing: { before: 0, after: 0, line: pointsToTwips(item.height), lineRule: LineRuleType.EXACT }, children: [new ImageRun({
         type: item.block.pngDataUrl.startsWith('data:image/jpeg;') ? 'jpg' : 'png', data: item.block.pngDataUrl,
         transformation: { width: item.width * 96 / 72, height: item.height * 96 / 72 },
         altText: { title: item.block.title, description: item.block.title, name: item.block.title },

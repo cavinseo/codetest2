@@ -4,6 +4,8 @@ import { parseReportMarkdown, reportRunsText, type ReportMarkdownBlock, type Rep
 
 export const REPORT_PAPER = { width: 595.28, height: 841.89, margin: 42, top: 53, bottom: 787, body: 511.28 };
 export const REPORT_CHAPTER_PADDING = { vertical: 6, horizontal: 10 };
+export const REPORT_VISUAL_LEFT = 4 * 72 / 25.4;
+export const REPORT_VISUAL_WIDTH = (REPORT_PAPER.body - REPORT_VISUAL_LEFT) * .95;
 export type CoverBlock = Extract<FinalReportBlock, { kind: 'cover' }>;
 export type ReportLayoutItem =
     | { kind: 'text'; blockIndex: number; lines: string[]; richLines?: ReportTextRun[][]; code?: boolean; quote?: boolean; top: number; height: number; left: number; width: number; marker?: string; markerWidth: number; fontSize: number; lineHeight: number; bold: boolean; color: string; chapter: boolean }
@@ -97,7 +99,7 @@ interface TextParagraph {
 const millimetersToPoints = (millimeters: number) => millimeters * 72 / 25.4;
 const TEXT_TYPOGRAPHY = {
     chapter: { fontSize: 16, left: 0, bold: true },
-    section: { fontSize: 14, left: millimetersToPoints(4), bold: true },
+    section: { fontSize: 14, left: REPORT_VISUAL_LEFT, bold: true },
     subheading: { fontSize: 12, left: millimetersToPoints(8), bold: true },
     body: { fontSize: 11, left: millimetersToPoints(12), bold: false },
     nestedBullet: { fontSize: 10, left: millimetersToPoints(16), bold: false },
@@ -195,7 +197,7 @@ function appendMarkdownLayout(cursor: PageCursor, blocks: ReportMarkdownBlock[],
 }
 
 function appendImageLayout(cursor: PageCursor, block: ImageBlock, blockIndex: number) {
-    const scale = Math.min(1, REPORT_PAPER.body / (block.widthMm * 72 / 25.4), 590 / (block.heightMm * 72 / 25.4));
+    const scale = Math.min(1, REPORT_VISUAL_WIDTH / (block.widthMm * 72 / 25.4), 590 / (block.heightMm * 72 / 25.4));
     const width = block.widthMm * 72 / 25.4 * scale, height = block.heightMm * 72 / 25.4 * scale;
     if (cursor.top + height > REPORT_PAPER.bottom) startNextPage(cursor);
     cursor.currentPage.items.push({ kind: 'image', blockIndex, top: cursor.top, height, width, block });
@@ -211,7 +213,7 @@ function prepareTableLayout(block: TableBlock, rich?: Extract<ReportMarkdownBloc
     const sourceRows = keyValue ? block.rows.map(row => [row.label, row.value]) : block.rows;
     const widthRatios = keyValue ? [30, 70] : block.columnWidths ?? block.headers.map(() => 1);
     const totalRatio = widthRatios.reduce((sum, value) => sum + value, 0);
-    const widths = widthRatios.map(ratio => ratio / totalRatio * REPORT_PAPER.body);
+    const widths = widthRatios.map(ratio => ratio / totalRatio * (REPORT_VISUAL_WIDTH - 1));
     const fontSize = headers.length > 9 ? 8 : 8.5, lineHeight = fontSize * 1.55;
     const wrapCells = (cells: string[]) => cells.map((cell, column) => wrapReportText(cell, Math.max(fontSize, widths[column] - 6), fontSize));
     const wrapRichCells = (cells: ReportTextRun[][]) => cells.map((cell, column) => wrapReportRuns(cell, Math.max(fontSize, widths[column] - 6), fontSize));
