@@ -316,7 +316,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
             const data = await res.json();
             if (!isCurrentSnapshot(snapshot)) return;
             if (!res.ok) throw new Error(data.error || '세부기능을 추가하지 못했습니다.');
-            setTechnicalChars(items => [...items, data.technicalCharacteristic]);
+            setTechnicalChars(items => data.technicalCharacteristics ?? [...items, data.technicalCharacteristic]);
             setCollapsedTechnicalGroups({ ...effectiveCollapsedTechnicalGroups, [data.technicalCharacteristic.groupIndex]: false });
             setShowAddTechModal(false);
             setNewTech({ name: '', unit: '', targetValue: '' });
@@ -346,7 +346,8 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
             const data = await res.json();
             if (!isCurrentSnapshot(snapshot)) return;
             if (!res.ok) throw new Error(data.error || '세부기능을 저장하지 못했습니다.');
-            setTechnicalChars(items => items.map(item => item.id === tech.id ? data.technicalCharacteristic : item));
+            setTechnicalChars(items => data.technicalCharacteristics ?? items.map(item => item.id === tech.id ? data.technicalCharacteristic : item));
+            setCollapsedTechnicalGroups({ ...effectiveCollapsedTechnicalGroups, [data.technicalCharacteristic.groupIndex]: false });
             void refreshAnalysis();
             showToast('세부기능을 저장했습니다.');
         } catch (error) {

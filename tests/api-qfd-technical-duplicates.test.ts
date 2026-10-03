@@ -6,6 +6,8 @@ const existing = [
     { id: 't1', name: '처리  속도', groupIndex: 0, columnOrder: 0, unit: 'ms', targetValue: '100' },
     { id: 't2', name: '백업 주기', groupIndex: 1, columnOrder: 1, unit: 'h', targetValue: '1' },
 ];
+let stored = [...existing];
+const findTree = vi.fn();
 const findMany = vi.fn();
 const findFirst = vi.fn();
 const create = vi.fn();
@@ -16,6 +18,7 @@ const requireProjectAccess = vi.fn();
 vi.mock('../lib/prisma', () => ({
     prisma: { $transaction: async (fn: (tx: unknown) => unknown) => fn({
         $queryRaw: lock, technicalCharacteristic: { findMany, findFirst, create, update },
+        techTreeEntry: { findMany: findTree },
         project: { update: updateProject },
     }) },
 }));
@@ -31,11 +34,16 @@ function call(method: 'POST' | 'PATCH', body: object) {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    stored = existing.map(row => ({ ...row }));
+    findTree.mockResolvedValue([]);
     requireProjectAccess.mockResolvedValue({ role: 'OWNER' });
-    findMany.mockImplementation(async ({ where }) => existing.filter(row => row.id !== where.NOT?.id));
-    findFirst.mockImplementation(async ({ where }) => existing.find(row => row.id === where.id || row.name === where.name) ?? null);
-    create.mockImplementation(async ({ data }) => data);
-    update.mockImplementation(async ({ where, data }) => ({ ...existing.find(row => row.id === where.id), ...data }));
+    findMany.mockImplementation(async ({ where }) => stored.filter(row => row.id !== where.NOT?.id));
+    findFirst.mockImplementation(async ({ where }) => stored.find(row => row.id === where.id || row.name === where.name) ?? null);
+    create.mockImplementation(async ({ data }) => { stored.push(data); return data; });
+    update.mockImplementation(async ({ where, data }) => {
+        stored = stored.map(row => row.id === where.id ? { ...row, ...data } : row);
+        return stored.find(row => row.id === where.id);
+    });
 });
 
 describe('기술특성 중복 방지', () => {
@@ -72,5 +80,21 @@ describe('기술특성 중복 방지', () => {
         expect((await call('POST', { name: '새 기능' })).status).toBe(403);
         expect(update).not.toHaveBeenCalled();
         expect(create).not.toHaveBeenCalled();
+    });
+
+    it('추가할 때 선택한 그룹이 달라도 WS-10 소속 핵심스펙으로 배치한다', async () => {
+        findTree.mockResolvedValue([{ coreSpec: '처리', subSpec: '처리 속도' }, { coreSpec: '보관', subSpec: '백업 주기' }, { coreSpec: '보관', subSpec: '신규 기능' }]);
+        const res = await call('POST', { name: '신규 기능', groupIndex: 0 });
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.technicalCharacteristic).toMatchObject({ name: '신규 기능', groupIndex: 1 });
+        expect(data.technicalCharacteristics).toHaveLength(3);
+    });
+
+    it('다른 핵심스펙의 기능으로 변경해도 ID·단위·목표값은 유지한다', async () => {
+        findTree.mockResolvedValue([{ coreSpec: '처리', subSpec: '처리 속도' }, { coreSpec: '처리', subSpec: '신규 기능' }]);
+        const res = await call('PATCH', { id: 't2', name: '신규 기능', unit: 'h', targetValue: '1' });
+        expect(res.status).toBe(200);
+        expect((await res.json()).technicalCharacteristic).toMatchObject({ id: 't2', groupIndex: 0, unit: 'h', targetValue: '1' });
     });
 });

@@ -91,7 +91,9 @@ function fixture() {
                         }
                         if (method === 'POST' || method === 'PATCH') {
                             const tech = (payload as { technicalCharacteristic: typeof technicalRows[number] }).technicalCharacteristic;
-                            if (tech) technicalRows = [...technicalRows.filter(item => item.id !== tech.id), tech];
+                            const all = (payload as { technicalCharacteristics?: typeof technicalRows }).technicalCharacteristics;
+                            if (all) technicalRows = all;
+                            else if (tech) technicalRows = [...technicalRows.filter(item => item.id !== tech.id), tech];
                         }
                     }
                     resolve(json(payload));
@@ -645,17 +647,39 @@ describe('WS-9 그룹 구성', () => {
         expect(getCount).toBe(1);
     });
 
-    it('선택한 그룹에 세부기능을 추가하고 핵심기능 제목을 갱신한다', async () => {
+    it('다른 핵심스펙의 기능을 추가하면 서버가 정한 소속 그룹에 표시한다', async () => {
         await mount();
         await click(button('그룹 1 세부기능 추가'));
         await enterTechnicalName('가용성');
         await click(button('추가'));
         const request = server.pending('qfd/technical', 'POST')[0];
         expect(request.body.groupIndex).toBe(0);
-        await finish(request, 'success', { technicalCharacteristic: { id: 't3', name: '가용성', groupIndex: 0, columnOrder: 2 } });
+        const added = { id: 't3', name: '가용성', groupIndex: 1, columnOrder: 2 };
+        await finish(request, 'success', { technicalCharacteristic: added, technicalCharacteristics: [
+            ...technicals.map((tech, index) => ({ ...tech, groupIndex: 0, columnOrder: index })), added,
+        ] });
         const header = button('그룹 1 세부기능 추가').closest('th')!;
-        expect(header.colSpan).toBe(3);
-        expect(header.textContent).toContain('성능 · 안정성');
+        expect(header.colSpan).toBe(2);
+        expect(header.textContent).toContain('성능');
+        expect(header.textContent).not.toContain('안정성');
+        const addedHeader = button('그룹 2 세부기능 추가').closest('th')!;
+        expect(addedHeader.colSpan).toBe(1);
+        expect(addedHeader.textContent).toContain('안정성');
+    });
+
+    it('소속 핵심스펙이 달라지는 이름 변경에도 관계 점수와 입력값을 유지한다', async () => {
+        await mount();
+        await selectValue(cell(), 'STRONG');
+        await drainSaves();
+        await selectValue(container.querySelector<HTMLSelectElement>('thead select')!, '가용성');
+        const changed = { ...technicals[0], name: '가용성', groupIndex: 1, columnOrder: 2 };
+        await finish(server.pending('qfd/technical', 'PATCH')[0], 'success', {
+            technicalCharacteristic: changed, technicalCharacteristics: [{ ...technicals[1], groupIndex: 0, columnOrder: 1 }, changed],
+        });
+        expect(button('그룹 2 세부기능 추가').closest('th')?.textContent).toContain('안정성');
+        expect(cell(0, 1).value).toBe('STRONG');
+        expect(server.saved.get('r1:t1')?.strength).toBe('STRONG');
+        expect(container.querySelector<HTMLInputElement>('[aria-label="가용성 측정단위"]')?.value).toBe('ms');
     });
 
     it('그룹 추가를 취소하면 빈 열과 그룹이 생기지 않는다', async () => {

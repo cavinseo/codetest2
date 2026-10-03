@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { isProjectWriteRole, requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
-import { dedupeNonBlank, findMissingTechnicalCharNames, normalizeTechnicalName } from '@/lib/qfd-technical-sync';
+import { normalizeTechnicalName } from '@/lib/qfd-technical-sync';
+import { assignTechnicalCoreGroups } from '@/lib/qfd-technical-groups';
+import { synchronizeTechnicalCoreGroups, technicalOrderBy as orderBy } from '@/lib/qfd-technical-group-store';
 
 const log = createLogger('api/qfd/technical');
 const techSchema = z.object({
@@ -19,7 +20,6 @@ const techDeleteSchema = z.union([
     z.object({ id: z.string().min(1) }).strict(),
     z.object({ groupIndex: z.number().int().nonnegative(), ids: z.array(z.string().min(1)).min(1) }).strict(),
 ]);
-const orderBy = [{ groupIndex: 'asc' }, { columnOrder: 'asc' }, { id: 'asc' }] satisfies Prisma.TechnicalCharacteristicOrderByWithRelationInput[];
 type Context = { params: Promise<{ id: string }> };
 
 function failure(error: unknown) {
@@ -30,7 +30,7 @@ function failure(error: unknown) {
     return NextResponse.json({ error: '세부기능 처리에 실패했습니다.' }, { status: 500 });
 }
 
-// 최초 한 번만 WS-10을 가져온다. 이후에는 사용자가 삭제한 세부기능을 다시 만들지 않는다.
+// 최초에는 기능을 채우고 이후 조회에서는 기존 기능의 핵심스펙 그룹만 갱신한다.
 export async function GET(request: NextRequest, props: Context) {
     try {
         const { id: projectId } = await props.params;
@@ -40,22 +40,14 @@ export async function GET(request: NextRequest, props: Context) {
         const technicalCharacteristics = canWrite ? await prisma.$transaction(async (tx) => {
             await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
             const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { qfdTechnicalInitialized: true } });
-            const existing = await tx.technicalCharacteristic.findMany({ where: { projectId }, orderBy });
-            if (project.qfdTechnicalInitialized) return existing;
-            const entries = await tx.techTreeEntry.findMany({ where: { projectId }, select: { subSpec: true }, orderBy: [{ order: 'asc' }, { id: 'asc' }] });
-            const missing = findMissingTechnicalCharNames(dedupeNonBlank(entries.map(e => e.subSpec)), existing.map(t => t.name));
-            const firstGroup = existing.length ? Math.max(...existing.map(t => t.groupIndex)) + 1 : 0;
-            if (missing.length) {
-                await tx.technicalCharacteristic.createMany({
-                    data: missing.map((name, index) => ({
-                        id: generateId('tech'), projectId, name,
-                        groupIndex: firstGroup + Math.floor(index / 3), columnOrder: index,
-                    })),
-                });
-            }
-            await tx.project.update({ where: { id: projectId }, data: { qfdTechnicalInitialized: true } });
-            return missing.length ? tx.technicalCharacteristic.findMany({ where: { projectId }, orderBy }) : existing;
-        }) : await prisma.technicalCharacteristic.findMany({ where: { projectId }, orderBy });
+            const entries = await tx.techTreeEntry.findMany({ where: { projectId }, select: { subSpec: true, coreSpec: true }, orderBy: [{ order: 'asc' }, { id: 'asc' }] });
+            const rows = await synchronizeTechnicalCoreGroups(tx, projectId, entries, !project.qfdTechnicalInitialized);
+            if (!project.qfdTechnicalInitialized) await tx.project.update({ where: { id: projectId }, data: { qfdTechnicalInitialized: true } });
+            return rows;
+        }, { timeout: 30000 }) : assignTechnicalCoreGroups(
+            await prisma.technicalCharacteristic.findMany({ where: { projectId }, orderBy }),
+            await prisma.techTreeEntry.findMany({ where: { projectId }, select: { subSpec: true, coreSpec: true }, orderBy: [{ order: 'asc' }, { id: 'asc' }] })
+        );
         return NextResponse.json({ technicalCharacteristics: technicalCharacteristics.filter(t => t.name.trim()), canWrite });
     } catch (error) { return failure(error); }
 }
@@ -76,16 +68,19 @@ export async function POST(request: NextRequest, props: Context) {
             if (groupIndex !== undefined && !existing.some(t => t.groupIndex === groupIndex && t.name.trim())) {
                 return NextResponse.json({ error: '그룹이 삭제되었습니다. 다시 불러온 뒤 추가해 주세요.' }, { status: 409 });
             }
-            const technicalCharacteristic = await tx.technicalCharacteristic.create({
+            const created = await tx.technicalCharacteristic.create({
                 data: {
                     id: generateId('tech'), projectId, ...data,
                     groupIndex: groupIndex ?? (existing.length ? Math.max(...existing.map(t => t.groupIndex)) + 1 : 0),
                     columnOrder: existing.length ? Math.max(...existing.map(t => t.columnOrder)) + 1 : 0,
                 },
             });
+            const entries = await tx.techTreeEntry.findMany({ where: { projectId }, select: { subSpec: true, coreSpec: true }, orderBy: [{ order: 'asc' }, { id: 'asc' }] });
+            const technicalCharacteristics = await synchronizeTechnicalCoreGroups(tx, projectId, entries, false);
+            const technicalCharacteristic = technicalCharacteristics.find(tech => tech.id === created.id)!;
             await tx.project.update({ where: { id: projectId }, data: { qfdTechnicalInitialized: true } });
-            return NextResponse.json({ success: true, technicalCharacteristic });
-        });
+            return NextResponse.json({ success: true, technicalCharacteristic, technicalCharacteristics });
+        }, { timeout: 30000 });
     } catch (error) { return failure(error); }
 }
 
@@ -104,10 +99,13 @@ export async function PATCH(request: NextRequest, props: Context) {
             if (others.some(t => normalizeTechnicalName(t.name) === data.name)) {
                 return NextResponse.json({ error: '이미 추가된 세부기능입니다.' }, { status: 409 });
             }
-            const technicalCharacteristic = await tx.technicalCharacteristic.update({ where: { id }, data });
+            await tx.technicalCharacteristic.update({ where: { id }, data });
+            const entries = await tx.techTreeEntry.findMany({ where: { projectId }, select: { subSpec: true, coreSpec: true }, orderBy: [{ order: 'asc' }, { id: 'asc' }] });
+            const technicalCharacteristics = await synchronizeTechnicalCoreGroups(tx, projectId, entries, false);
+            const technicalCharacteristic = technicalCharacteristics.find(tech => tech.id === id)!;
             await tx.project.update({ where: { id: projectId }, data: { qfdTechnicalInitialized: true } });
-            return NextResponse.json({ success: true, technicalCharacteristic });
-        });
+            return NextResponse.json({ success: true, technicalCharacteristic, technicalCharacteristics });
+        }, { timeout: 30000 });
     } catch (error) { return failure(error); }
 }
 

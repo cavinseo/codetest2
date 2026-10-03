@@ -6,6 +6,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { buildTargetSpecAdditionsFromTechTree } from '@/lib/worksheet-links';
+import { synchronizeTechnicalCoreGroups } from '@/lib/qfd-technical-group-store';
 
 const log = createLogger('api/tech-tree');
 
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
     try {
         const entries = await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
             await tx.techTreeEntry.deleteMany({ where: { projectId } });
             if (parsed.data.entries.length) {
                 await tx.techTreeEntry.createMany({
@@ -58,8 +60,11 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
                     await tx.targetSpec.createMany({ data: additions.map((row) => ({ ...row, projectId })) });
                 }
             }
-            return tx.techTreeEntry.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
-        });
+            const savedEntries = await tx.techTreeEntry.findMany({ where: { projectId }, orderBy: [{ order: 'asc' }, { id: 'asc' }] });
+            await synchronizeTechnicalCoreGroups(tx, projectId, savedEntries, true);
+            await tx.project.update({ where: { id: projectId }, data: { qfdTechnicalInitialized: true } });
+            return savedEntries;
+        }, { timeout: 30000 });
         return NextResponse.json({ entries });
     } catch (error) {
         return toErrorResponse(error, { log, message: '기능기술체계 데이터를 저장하지 못했습니다.', context: { projectId } });

@@ -19,11 +19,12 @@ const tx = Object.fromEntries(
         findMany: vi.fn(async () => []),
     }])
 ) as Record<ModelName, { deleteMany: ReturnType<typeof vi.fn>; createMany: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> }>;
+const workflowTx = { ...tx, $queryRaw: vi.fn(), project: { update: vi.fn() }, technicalCharacteristic: { findMany: vi.fn(async () => []) } };
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
         ...tx,
-        $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+        $transaction: vi.fn(async (fn: (client: typeof workflowTx) => unknown) => fn(workflowTx)),
     },
 }));
 

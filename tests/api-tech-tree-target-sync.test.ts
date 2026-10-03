@@ -10,8 +10,13 @@ const db = vi.hoisted(() => {
         createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
             state[name] = [...(state[name] || []), ...data.map((row, index) => ({ id: `${name}-${(state[name] || []).length + index}`, ...row }))];
         }),
+        update: vi.fn(async ({ where, data }) => {
+            const row = state[name].find(row => row.id === where.id)!;
+            Object.assign(row, data);
+            return row;
+        }),
     });
-    return { state, techTreeEntry: model('techTreeEntry'), targetSpec: model('targetSpec'), specFunction: model('specFunction'), improvementItem: model('improvementItem'), technicalCharacteristic: model('technicalCharacteristic') };
+    return { state, $queryRaw: vi.fn(), project: { update: vi.fn() }, techTreeEntry: model('techTreeEntry'), targetSpec: model('targetSpec'), specFunction: model('specFunction'), improvementItem: model('improvementItem'), technicalCharacteristic: model('technicalCharacteristic') };
 });
 vi.mock('../lib/prisma', () => ({ prisma: {
     techTreeEntry: db.techTreeEntry, targetSpec: db.targetSpec, specFunction: db.specFunction,
@@ -61,4 +66,36 @@ it('WS-2에서 선택한 항목과 빈 저장은 WS-12에 신규 항목을 만�
     expect(db.targetSpec.createMany).not.toHaveBeenCalled();
     expect((await techTree.POST(post([]), params)).status).toBe(200);
     expect(db.targetSpec.createMany).not.toHaveBeenCalled();
+});
+
+it('WS-10 저장은 기존 WS-9 항목을 재사용해 핵심별로 이동하고 없는 기능만 추가한다', async () => {
+    db.state.technicalCharacteristic = [
+        { id: 'a', projectId: 'project', name: '기능 A', groupIndex: 0, columnOrder: 0, unit: 'ms', targetValue: '100' },
+        { id: 'b', projectId: 'project', name: '기능 B', groupIndex: 0, columnOrder: 1, unit: 'h', targetValue: '1' },
+    ];
+    const entries = [
+        { coreSpec: '핵심 A', subSpec: '기능 A', order: 0 },
+        { coreSpec: '핵심 B', subSpec: '기능 B', order: 1 },
+        { coreSpec: '핵심 A', subSpec: '신규 기능', order: 2 },
+        { coreSpec: '핵심 A', subSpec: '기능  A', order: 3 },
+    ];
+    expect((await techTree.POST(post(entries), params)).status).toBe(200);
+    expect(db.state.technicalCharacteristic).toHaveLength(3);
+    expect(db.state.technicalCharacteristic.find(row => row.id === 'a')).toMatchObject({ groupIndex: 0, unit: 'ms', targetValue: '100' });
+    expect(db.state.technicalCharacteristic.find(row => row.id === 'b')).toMatchObject({ groupIndex: 1, unit: 'h', targetValue: '1' });
+    expect(db.state.technicalCharacteristic.find(row => row.name === '신규 기능')).toMatchObject({ groupIndex: 0 });
+    const ids = db.state.technicalCharacteristic.map(row => row.id);
+    expect((await techTree.POST(post(entries), params)).status).toBe(200);
+    expect(db.state.technicalCharacteristic.map(row => row.id)).toEqual(ids);
+    expect(db.technicalCharacteristic.deleteMany).not.toHaveBeenCalled();
+    expect(db.$queryRaw).toHaveBeenCalled();
+});
+
+it('핵심스펙 변경과 빈 WS-10 저장에도 WS-9 입력값을 삭제하지 않는다', async () => {
+    db.state.technicalCharacteristic = [{ id: 'keep', projectId: 'project', name: '기존 기능', groupIndex: 7, columnOrder: 9, unit: 'ms', targetValue: '100' }];
+    expect((await techTree.POST(post([{ coreSpec: '다른 핵심', subSpec: '기존 기능', order: 0 }]), params)).status).toBe(200);
+    expect(db.state.technicalCharacteristic[0]).toMatchObject({ id: 'keep', groupIndex: 0, unit: 'ms', targetValue: '100' });
+    expect((await techTree.POST(post([]), params)).status).toBe(200);
+    expect(db.state.technicalCharacteristic).toHaveLength(1);
+    expect(db.technicalCharacteristic.deleteMany).not.toHaveBeenCalled();
 });
