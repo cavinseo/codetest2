@@ -2,9 +2,11 @@
 // 현재 워크시트의 표와 그래프를 밝은 배경의 PNG 그림으로 내려받는다.
 import { useRef, useState, type ReactNode } from 'react';
 import { captureWorksheetNode, downloadWorksheetImage, waitForWorksheetReady } from '@/lib/worksheet-capture';
+import WorksheetExcelDownload from './WorksheetExcelDownload';
 
 interface Props {
     title: string;
+    projectId?: string;
     worksheetId: string;
     children: ReactNode;
     readOnly?: boolean;
@@ -12,7 +14,7 @@ interface Props {
     disabled?: boolean;
 }
 
-export default function WorksheetImageExport({ title, worksheetId, children, readOnly = false, captureWidth, disabled = false }: Props) {
+export default function WorksheetImageExport({ title, projectId, worksheetId, children, readOnly = false, captureWidth, disabled = false }: Props) {
     const content = useRef<HTMLDivElement>(null);
     const capturing = useRef(false);
     const [busy, setBusy] = useState(false);
@@ -42,6 +44,7 @@ export default function WorksheetImageExport({ title, worksheetId, children, rea
             <button type="button" onClick={() => void download()} disabled={busy || disabled} className="btn-secondary text-sm disabled:opacity-50" aria-label={`${title} 그림 다운로드`}>
                 {busy ? '그림 만드는 중...' : '그림 다운로드'}
             </button>
+            {projectId && <WorksheetExcelDownload projectId={projectId} worksheetId={worksheetId} disabled={busy || disabled} />}
             {error && <p role="alert" className="w-full text-sm text-red-500">{error}</p>}
         </div>
         <div className="overflow-x-auto">

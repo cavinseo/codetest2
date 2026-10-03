@@ -9,6 +9,6 @@ export default function WorksheetPageExport({ projectId, children }: { projectId
     const pathname = usePathname();
     const worksheet = WORKSHEET_LINKS.find(item => pathname === `/project/${projectId}/${item.href}`);
     return worksheet
-        ? <WorksheetImageExport key={pathname} title={worksheet.label} worksheetId={worksheet.href}>{children}</WorksheetImageExport>
+        ? <WorksheetImageExport key={pathname} title={worksheet.label} projectId={worksheet.href === 'kano' ? undefined : projectId} worksheetId={worksheet.href}>{children}</WorksheetImageExport>
         : children;
 }

@@ -10,6 +10,7 @@ import QFDMatrix from '@/components/project/QFDMatrix';
 import ThemeToggle from '@/components/ThemeToggle';
 import WorksheetComments from '@/components/project/WorksheetComments';
 import WorksheetImageExport from '@/components/project/WorksheetImageExport';
+import WorksheetExcelDownload from '@/components/project/WorksheetExcelDownload';
 import MentorWorksheetAnalysis from '@/components/project/MentorWorksheetAnalysis';
 import ProductOverviewFields from '@/components/project/ProductOverviewFields';
 import ProductOverviewDetailEditor from '@/components/project/ProductOverviewDetailEditor';
@@ -528,7 +529,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
     const renderTabContent = (tabId: string) => {
         if (tabComponents[tabId]) {
             return (
-                <WorksheetImageExport key={tabId} title={tabs.find(tab => tab.id === tabId)?.name ?? tabId} worksheetId={tabId}>
+                <WorksheetImageExport key={tabId} title={tabs.find(tab => tab.id === tabId)?.name ?? tabId} projectId={projectId} worksheetId={tabId}>
                     <fieldset disabled={!canEditOverview} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
                 </WorksheetImageExport>
             );
@@ -616,6 +617,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                             <Link href={`/project/${projectId}/report`} className="btn-secondary text-sm">
                                 결과보고서
                             </Link>
+                            <WorksheetExcelDownload projectId={projectId} />
                             {['OWNER', 'ADMIN'].includes(project.role) && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 팀원 초대
                             </Link>}
