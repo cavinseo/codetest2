@@ -5,12 +5,7 @@ import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import { buildQfdSpecFooterRows } from '@/lib/qfd-footer-rows';
-import {
-    parseCollapsedGroups,
-    qfdCollapsedGroupsStorageKey,
-    serializeCollapsedGroups,
-    toggleGroupVisibility,
-} from '@/lib/qfd-technical-header';
+import { toggleGroupVisibility } from '@/lib/qfd-technical-header';
 import { dedupeNonBlank } from '@/lib/qfd-technical-sync';
 import { buildTechnicalGroups } from '@/lib/qfd-technical-groups';
 import { useQfdRelationshipAutosave, type Relationship } from './useQfdRelationshipAutosave';
@@ -149,7 +144,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
     const [newCompetitorName, setNewCompetitorName] = useState('');
     const [extraCompetitors, setExtraCompetitors] = useState<string[]>([]);
     const [isAddingCompetitor, setIsAddingCompetitor] = useState(false);
-    const [collapsedTechnicalGroups, setCollapsedTechnicalGroups] = useState<Record<number, boolean>>({});
+    const [collapsedTechnicalGroups, setCollapsedTechnicalGroups] = useState<Record<number, boolean> | null>(null);
     const [removingCompetitor, setRemovingCompetitor] = useState<string | null>(null);
     const [techFieldDrafts, setTechFieldDrafts] = useState<Record<string, string>>({});
     const [deletingTech, setDeletingTech] = useState<DisplayTechnical | null>(null);
@@ -244,6 +239,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
         setRequirements([]);
         setTechnicalChars([]);
         setTechTreeEntries([]);
+        setCollapsedTechnicalGroups(null);
         setBenchmarksData([]);
         setTechnicalBenchmarks([]);
         setPendingBenchmarks({});
@@ -315,7 +311,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
             if (!isCurrentSnapshot(snapshot)) return;
             if (!res.ok) throw new Error(data.error || '세부기능을 추가하지 못했습니다.');
             setTechnicalChars(items => [...items, data.technicalCharacteristic]);
-            updateCollapsedTechnicalGroups({ ...collapsedTechnicalGroups, [data.technicalCharacteristic.groupIndex]: false });
+            setCollapsedTechnicalGroups({ ...effectiveCollapsedTechnicalGroups, [data.technicalCharacteristic.groupIndex]: false });
             setShowAddTechModal(false);
             setNewTech({ name: '', unit: '', targetValue: '' });
             void refreshAnalysis();
@@ -718,33 +714,28 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
         [techTreeEntries]
     );
     const technicalGroups = useMemo(() => buildTechnicalGroups(technicalChars, techTreeEntries), [technicalChars, techTreeEntries]);
-    const visibleTechnicalColumns = useMemo<VisibleTechnicalColumn[]>(
-        () => technicalGroups.filter(group => !collapsedTechnicalGroups[group.groupIndex])
-            .flatMap(group => group.technicals.map(tech => ({ tech }))),
+    // 화면 진입 시에는 모든 그룹을 접고, 버튼을 누른 뒤에는 사용자가 선택한 상태를 따른다.
+    const effectiveCollapsedTechnicalGroups = useMemo(
+        () => collapsedTechnicalGroups ?? Object.fromEntries(technicalGroups.map(group => [group.groupIndex, true])),
         [collapsedTechnicalGroups, technicalGroups]
+    );
+    const visibleTechnicalColumns = useMemo<VisibleTechnicalColumn[]>(
+        () => technicalGroups.filter(group => !effectiveCollapsedTechnicalGroups[group.groupIndex])
+            .flatMap(group => group.technicals.map(tech => ({ tech }))),
+        [effectiveCollapsedTechnicalGroups, technicalGroups]
     );
     const visibleTechnicalGroups = useMemo(
-        () => technicalGroups.filter((group) => !collapsedTechnicalGroups[group.groupIndex]),
-        [collapsedTechnicalGroups, technicalGroups]
+        () => technicalGroups.filter((group) => !effectiveCollapsedTechnicalGroups[group.groupIndex]),
+        [effectiveCollapsedTechnicalGroups, technicalGroups]
     );
     const hiddenTechnicalGroups = useMemo(
-        () => technicalGroups.filter((group) => collapsedTechnicalGroups[group.groupIndex]),
-        [collapsedTechnicalGroups, technicalGroups]
+        () => technicalGroups.filter((group) => effectiveCollapsedTechnicalGroups[group.groupIndex]),
+        [effectiveCollapsedTechnicalGroups, technicalGroups]
     );
-
-    // 접힘 상태를 프로젝트별로 브라우저에 남긴다 — 다른 화면에 다녀와도 그대로 있어야 한다.
-    // 저장은 상태를 바꾸는 순간에 함께 해서, 마운트 직후의 빈 상태가 저장값을 덮어쓰는 일을 막는다.
-    const collapsedGroupsStorageKey = qfdCollapsedGroupsStorageKey(projectId);
-    useEffect(() => {
-        setCollapsedTechnicalGroups(parseCollapsedGroups(window.localStorage.getItem(collapsedGroupsStorageKey)));
-    }, [collapsedGroupsStorageKey]);
-    const updateCollapsedTechnicalGroups = (next: Record<number, boolean>) => {
-        setCollapsedTechnicalGroups(next);
-        window.localStorage.setItem(collapsedGroupsStorageKey, serializeCollapsedGroups(next));
-    };
+    const shouldExpandTechnicalGroups = collapsedTechnicalGroups === null || hiddenTechnicalGroups.length > 0;
 
     const collapseAllTechnicalGroups = () => {
-        updateCollapsedTechnicalGroups(
+        setCollapsedTechnicalGroups(
             technicalGroups.reduce<Record<number, boolean>>((items, group) => {
                 items[group.groupIndex] = true;
                 return items;
@@ -752,10 +743,10 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
         );
     };
     const expandAllTechnicalGroups = () => {
-        updateCollapsedTechnicalGroups({});
+        setCollapsedTechnicalGroups({});
     };
     const toggleTechnicalGroup = (groupIndex: number) => {
-        updateCollapsedTechnicalGroups(toggleGroupVisibility(collapsedTechnicalGroups, groupIndex));
+        setCollapsedTechnicalGroups(toggleGroupVisibility(effectiveCollapsedTechnicalGroups, groupIndex));
     };
 
     if (loadedProjectId !== projectId) {
@@ -948,11 +939,12 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                         {/* 개별로 숨긴 그룹을 되살리는 길은 이 버튼뿐이라, 하나라도 숨겨져 있으면 "펼치기"를 우선한다. */}
                         <button
                             type="button"
-                            onClick={hiddenTechnicalGroups.length > 0 ? expandAllTechnicalGroups : collapseAllTechnicalGroups}
-                            title={hiddenTechnicalGroups.length > 0 ? '기술특성 전체 펼치기' : '기술특성 전체 접기'}
+                            onClick={shouldExpandTechnicalGroups ? expandAllTechnicalGroups : collapseAllTechnicalGroups}
+                            title={shouldExpandTechnicalGroups ? '기술특성 전체 펼치기' : '기술특성 전체 접기'}
+                            aria-expanded={!shouldExpandTechnicalGroups}
                             className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-3 py-1.5 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
                         >
-                            접기/펼치기
+                            {shouldExpandTechnicalGroups ? '기술상태펼치기' : '기술상태 접기'}
                         </button>
                         <div className="hidden items-center gap-3 md:flex">
                         {RELATIONSHIP_OPTIONS.slice(1).map((option) => (

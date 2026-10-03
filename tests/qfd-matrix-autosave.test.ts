@@ -129,8 +129,10 @@ let container: HTMLDivElement;
 let root: Root;
 let server: ReturnType<typeof fixture>;
 
-async function mount(onDirtyChange?: (dirty: boolean) => void) {
+async function mount(onDirtyChange?: (dirty: boolean) => void, expandTechnicals = true) {
     await act(async () => { root.render(createElement(QFDMatrix, { projectId: 'fixture-project', onDirtyChange })); });
+    const expandButton = [...container.querySelectorAll('button')].find((item) => item.textContent?.trim() === '기술상태펼치기');
+    if (expandTechnicals && expandButton) await click(expandButton);
 }
 
 function cell(row = 0, column = 0) {
@@ -204,6 +206,43 @@ afterEach(async () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     expect(unexpectedErrors, '예상한 fixture 오류 외에 React나 런타임 오류가 없어야 합니다.').toEqual([]);
+});
+
+describe('WS-9 기술특성 접기와 펼치기', () => {
+    it('처음에는 기술특성을 접고 버튼을 누르면 펼치기와 접기 문구를 전환한다', async () => {
+        await mount(undefined, false);
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).toBeNull();
+        expect(button('기술상태펼치기').getAttribute('aria-expanded')).toBe('false');
+
+        await click(button('기술상태펼치기'));
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).not.toBeNull();
+        expect(button('기술상태 접기').getAttribute('aria-expanded')).toBe('true');
+
+        await click(button('기술상태 접기'));
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).toBeNull();
+        expect(button('기술상태펼치기').getAttribute('aria-expanded')).toBe('false');
+        expect(server.requests.every((request) => request.method === 'GET')).toBe(true);
+    });
+
+    it('예전에 펼침 상태를 저장했어도 다시 들어오면 접힌 상태로 시작한다', async () => {
+        localStorage.setItem('qfd-collapsed-groups:fixture-project', '[]');
+        await mount(undefined, false);
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).toBeNull();
+        await click(button('기술상태펼치기'));
+        await act(async () => { root.unmount(); });
+        root = createRoot(container);
+
+        await mount(undefined, false);
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).toBeNull();
+        expect(button('기술상태펼치기').getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('같은 화면에서 데이터를 새로 조회해도 사용자가 펼친 상태를 유지한다', async () => {
+        await mount();
+        await click(button('새로고침'));
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).not.toBeNull();
+        expect(button('기술상태 접기').getAttribute('aria-expanded')).toBe('true');
+    });
 });
 
 describe('QFD 관계 강도 자동 저장', () => {
