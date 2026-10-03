@@ -325,7 +325,36 @@ it('읽기 전용 사용자는 추가 시장 자료의 내용을 읽을 수 있�
     project = { ...project, role: 'VIEWER', additionalMarketData: '<script>실행하지 않는 자료</script>\n두 번째 줄' };
     await act(async () => root.render(createElement(ProjectDetailPage)));
     const box = container.querySelector('section[aria-labelledby="additional-market-data-title"]')!;
-    expect(box.textContent).toContain(project.additionalMarketData);
+    expect(box.textContent).toContain('두 번째 줄');
+    expect(box.textContent).not.toContain('실행하지 않는 자료');
     expect(box.querySelector('textarea,script')).toBeNull();
     expect([...container.querySelectorAll('button')].some(button => button.textContent?.trim() === '수정')).toBe(false);
+});
+
+it('추가 시장 자료의 Markdown·HTML 제목·목록·표를 미리보고 원문을 저장·재편집한다', async () => {
+    const source = '# 시장 전망\n\n- 성장하는 시장\n- 신규 고객\n\n| 구분 | 규모 |\n| --- | --- |\n| 국내 | **120억원** |\n\n<h3>참고 자료</h3><p>HTML <em>출처</em></p>';
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    await click('수정');
+    const box = () => container.querySelector('section[aria-labelledby="additional-market-data-title"]')!;
+    await input(box().querySelector('textarea')!, source);
+    const preview = box().querySelector<HTMLButtonElement>('button[aria-label="추가 시장 자료 미리보기"]');
+    expect(preview).not.toBeNull();
+    await act(async () => preview!.click());
+    expect(box().querySelector('h1')?.textContent).toBe('시장 전망');
+    expect(box().querySelectorAll('li')).toHaveLength(2);
+    expect(box().querySelector('table td strong')?.textContent).toBe('120억원');
+    expect(box().querySelector('em')?.textContent).toBe('출처');
+    await click('저장');
+    expect(savedBody().additionalMarketData).toBe(source);
+    expect(box().querySelector('table td strong')?.textContent).toBe('120억원');
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    expect(box().querySelector('h1')?.textContent).toBe('시장 전망');
+    await click('수정');
+    expect(box().querySelector('textarea')?.value).toBe(source);
+    expect(box().querySelector('textarea')?.maxLength).toBe(20_000);
+    await input(box().querySelector('textarea')!, '# 취소할 수정');
+    await click('취소');
+    expect(box().querySelector('h1')?.textContent).toBe('시장 전망');
 });

@@ -4,7 +4,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import type { FinalReportBlock } from '@/lib/final-report-document';
 import type { BlockEdit } from '@/lib/final-report-edit';
 import { worksheetImageFileName } from '@/lib/worksheet-capture';
-import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTER_PADDING, REPORT_PAPER, REPORT_TABLE_LEFT, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
+import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTER_PADDING, REPORT_BOX, REPORT_PAPER, REPORT_TABLE_LEFT, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
 import { getTableMergeSpans } from '@/lib/final-report-table-merge';
 import type { ReportTextRun } from '@/lib/final-report-markdown';
 import { normalizeReportNameLabels } from '@/lib/final-report-labels';
@@ -56,10 +56,10 @@ function textEditTarget(block: FinalReportBlock, blockIndex: number): EditTarget
         ariaLabel: `${block.kind === 'heading' ? '제목' : '문단'} ${blockIndex + 1} 교정` };
 }
 
-function ReportText({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'text' }>; block: FinalReportBlock; onRequestEdit?: RequestEdit }) {
+function ReportText({ item, block, onRequestEdit, originLeft = REPORT_PAPER.margin }: { item: Extract<ReportLayoutItem, { kind: 'text' }>; block: FinalReportBlock; onRequestEdit?: RequestEdit; originLeft?: number }) {
     const styles: CSSProperties = {
         ...pagePosition(item.top),
-        left: pt(REPORT_PAPER.margin + item.left),
+        left: pt(originLeft + item.left),
         width: pt(item.width), height: pt(item.height),
         fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight),
         fontWeight: item.bold ? 700 : 400, color: `#${item.color}`,
@@ -88,10 +88,10 @@ function tableCellEditTarget(block: TableBlock | Extract<FinalReportBlock, { kin
     }
 }
 
-function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'table' }>; block: TableBlock | Extract<FinalReportBlock, { kind: 'paragraph' }>; onRequestEdit?: RequestEdit }) {
+function ReportTable({ item, block, onRequestEdit, left = REPORT_PAPER.margin + REPORT_TABLE_LEFT }: { item: Extract<ReportLayoutItem, { kind: 'table' }>; block: TableBlock | Extract<FinalReportBlock, { kind: 'paragraph' }>; onRequestEdit?: RequestEdit; left?: number }) {
     const cellStyle: CSSProperties = { border: '.4pt solid #929ba4', padding: '6pt 3pt', verticalAlign: 'top', fontSize: pt(item.fontSize), lineHeight: pt(item.lineHeight), whiteSpace: 'pre', fontWeight: 400, boxSizing: 'border-box', color: '#1b1b1b' };
     const mergeSpans = getTableMergeSpans(item, block);
-    return <table data-report-block={item.blockIndex} style={{ ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + REPORT_TABLE_LEFT), width: pt(item.widths.reduce((sum, width) => sum + width, 0)), tableLayout: 'fixed', borderCollapse: 'collapse', color: '#1b1b1b' }}>
+    return <table data-report-block={item.blockIndex} style={{ ...pagePosition(item.top), left: pt(left), width: pt(item.widths.reduce((sum, width) => sum + width, 0)), tableLayout: 'fixed', borderCollapse: 'collapse', color: '#1b1b1b' }}>
         <colgroup>{item.widths.map((width, i) => <col key={i} style={{ width: pt(width) }} />)}</colgroup>
         {!!item.headers.length && <thead><tr style={{ height: pt(item.headerHeight) }}>{item.headers.map((lines, col) => <th key={col} style={{ ...cellStyle, background: '#e7ecf1', fontWeight: 700, textAlign: 'center', verticalAlign: 'middle' }}>
             <EditableReportValue text={lines.join('\n')} richLines={item.richHeaders?.[col]} onRequestEdit={onRequestEdit} target={block.kind === 'dataTable' ? {
@@ -104,8 +104,23 @@ function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayou
     </table>;
 }
 
+function ReportBox({ item, block, onRequestEdit }: { item: Extract<ReportLayoutItem, { kind: 'box' }>; block: Extract<TableBlock, { kind: 'dataTable' }>; onRequestEdit?: RequestEdit }) {
+    const paragraph: FinalReportBlock = { kind: 'paragraph', text: block.rows[0][0] };
+    const editBody: RequestEdit | undefined = onRequestEdit ? () => onRequestEdit({ label: '추가 시장 자료 교정', value: paragraph.text,
+        edit: { kind: 'tableCell', blockIndex: item.blockIndex, row: 0, col: 0, value: paragraph.text } }) : undefined;
+    return <section data-report-box data-report-block={item.blockIndex} aria-label={item.title} style={{ ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + REPORT_TABLE_LEFT), width: pt(item.width), height: pt(item.height), outline: '.4pt solid #929ba4' }}>
+        <div style={{ height: pt(REPORT_BOX.headerHeight), padding: '6pt 3pt', boxSizing: 'border-box', background: '#e7ecf1', borderBottom: '.4pt solid #929ba4', fontSize: '9pt', lineHeight: '14pt', fontWeight: 700, textAlign: 'center' }}>
+            <EditableReportValue text={item.title} onRequestEdit={onRequestEdit} target={{ label: '표 머리글 교정', value: item.title, edit: { kind: 'tableHeader', blockIndex: item.blockIndex, col: 0, value: item.title } }} />
+        </div>
+        {item.items.map((child, index) => child.kind === 'text'
+            ? <ReportText key={index} item={child} block={paragraph} onRequestEdit={editBody} originLeft={REPORT_BOX.padding} />
+            : child.kind === 'table' ? <ReportTable key={index} item={child} block={paragraph} onRequestEdit={editBody} left={REPORT_BOX.padding} /> : null)}
+    </section>;
+}
+
 function PageItem({ item, blocks, onRequestEdit }: { item: ReportLayoutItem; blocks: FinalReportBlock[]; onRequestEdit?: RequestEdit }) {
     const block = blocks[item.blockIndex];
+    if (item.kind === 'box') return <ReportBox item={item} block={block as Extract<TableBlock, { kind: 'dataTable' }>} onRequestEdit={onRequestEdit} />;
     if (item.kind === 'image') return <figure style={{ ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + REPORT_TABLE_LEFT), width: pt(REPORT_VISUAL_WIDTH), margin: 0, textAlign: 'center' }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- 저장된 워크시트 그림을 출력 치수로 표시한다. */}
         <img src={item.block.pngDataUrl} alt={item.block.title} style={{ width: pt(item.width), height: pt(item.height), maxWidth: 'none', display: 'block', margin: '0 auto' }} />

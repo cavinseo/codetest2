@@ -2,7 +2,7 @@
 import { AlignmentType, BorderStyle, Document, ExternalHyperlink, Footer, Header, HeightRule, ImageRun, LineRuleType, Packer, Paragraph, SectionType, ShadingType, Table, TableCell, TableLayoutType, TableRow, Tab, TabStopType, TextRun, VerticalAlign, VerticalMergeType, WidthType, type ISectionOptions } from 'docx';
 import type { FinalReportModel } from './final-report-document';
 import { getTableMergeSpans } from './final-report-table-merge';
-import { layoutReportPages, reportCoverElements, withReportOutputDate, wrapReportText, REPORT_CHAPTER_PADDING, REPORT_PAPER, REPORT_TABLE_LEFT, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from './final-report-layout';
+import { layoutReportPages, reportCoverElements, withReportOutputDate, wrapReportText, REPORT_CHAPTER_PADDING, REPORT_BOX, REPORT_PAPER, REPORT_TABLE_LEFT, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from './final-report-layout';
 import type { ReportTextRun } from './final-report-markdown';
 
 const pointsToTwips = (points: number) => Math.round(points * 20);
@@ -68,7 +68,7 @@ function gap(height: number): Paragraph {
     return createWordParagraph([''], 1, Math.max(.1, height));
 }
 
-function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: FinalReportModel['blocks'][number]) {
+function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: FinalReportModel['blocks'][number], indent = REPORT_TABLE_LEFT) {
     const mergeSpans = getTableMergeSpans(item, block);
     const row = (cells: string[][], height: number, header: boolean, rowIndex = -1) => new TableRow({
         tableHeader: header, cantSplit: true, height: { value: pointsToTwips(height), rule: HeightRule.ATLEAST },
@@ -86,7 +86,7 @@ function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: 
     });
     return new Table({
         width: { size: pointsToTwips(item.widths.reduce((sum, width) => sum + width, 0)), type: WidthType.DXA },
-        indent: { size: pointsToTwips(REPORT_TABLE_LEFT), type: WidthType.DXA }, layout: TableLayoutType.FIXED,
+        indent: { size: pointsToTwips(indent), type: WidthType.DXA }, layout: TableLayoutType.FIXED,
         columnWidths: item.widths.map(pointsToTwips), borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
         rows: [...(item.headers.length ? [row(item.headers, item.headerHeight, true)] : []), ...item.rows.map((r, index) => row(r.lines, r.height, false, index))],
     });
@@ -132,13 +132,42 @@ function renderImage(item: Extract<ReportLayoutItem, { kind: 'image' }>) {
     })] });
 }
 
+function renderBox(item: Extract<ReportLayoutItem, { kind: 'box' }>) {
+    const { padding, headerHeight } = REPORT_BOX;
+    const children: Array<Paragraph | Table> = [];
+    let cursor = headerHeight + padding;
+    for (const child of item.items) {
+        if (child.top > cursor) children.push(gap(child.top - cursor));
+        if (child.kind === 'text') children.push(renderText(child));
+        else if (child.kind === 'table') children.push(renderTable(child, { kind: 'paragraph', text: '' }, 0));
+        cursor = child.top + child.height;
+    }
+    // Word의 중첩 표 뒤에는 문단이 필요하므로 배치에서도 예약한 1pt만 사용한다.
+    children.push(gap(1));
+    return new Table({
+        width: { size: pointsToTwips(item.width), type: WidthType.DXA },
+        indent: { size: pointsToTwips(REPORT_TABLE_LEFT), type: WidthType.DXA }, layout: TableLayoutType.FIXED,
+        columnWidths: [pointsToTwips(item.width)], borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
+        rows: [
+            new TableRow({ tableHeader: true, cantSplit: true, height: { value: pointsToTwips(headerHeight), rule: HeightRule.ATLEAST }, children: [new TableCell({
+                margins: { top: pointsToTwips(6), bottom: pointsToTwips(6), left: pointsToTwips(3), right: pointsToTwips(3) }, shading: { fill: 'E7ECF1' },
+                children: [createWordParagraph([item.title], 9, 14, { bold: true, center: true })],
+            })] }),
+            new TableRow({ cantSplit: true, height: { value: pointsToTwips(item.height - headerHeight), rule: HeightRule.ATLEAST }, children: [new TableCell({
+                margins: { top: pointsToTwips(padding), bottom: pointsToTwips(padding), left: pointsToTwips(padding), right: pointsToTwips(padding) }, children,
+            })] }),
+        ],
+    });
+}
+
 function renderPageContents(page: ReportPageLayout, blocks: FinalReportModel['blocks']): Array<Paragraph | Table> {
     if (page.cover) return coverChildren(page.cover);
     const children: Array<Paragraph | Table> = [];
     let cursor = REPORT_PAPER.top;
     for (const item of page.items) {
         if (item.top > cursor) children.push(gap(item.top - cursor));
-        if (item.kind === 'text') children.push(renderText(item));
+        if (item.kind === 'box') children.push(renderBox(item));
+        else if (item.kind === 'text') children.push(renderText(item));
         else if (item.kind === 'table') children.push(renderTable(item, blocks[item.blockIndex]));
         else children.push(renderImage(item));
         cursor = item.top + item.height;

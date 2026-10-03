@@ -9,17 +9,19 @@ export const REPORT_VISUAL_LEFT = 4 * 72 / 25.4;
 export const REPORT_VISUAL_WIDTH = (REPORT_PAPER.body - REPORT_VISUAL_LEFT) * .95;
 export const REPORT_TABLE_LEFT = REPORT_VISUAL_LEFT + 18.7;
 export type CoverBlock = Extract<FinalReportBlock, { kind: 'cover' }>;
-export type ReportLayoutItem =
+export const REPORT_BOX = { padding: 8, headerHeight: 28 };
+type ReportLeafLayoutItem =
     | { kind: 'text'; blockIndex: number; lines: string[]; richLines?: ReportTextRun[][]; code?: boolean; quote?: boolean; top: number; height: number; left: number; width: number; marker?: string; markerWidth: number; fontSize: number; lineHeight: number; bold: boolean; color: string; chapter: boolean }
     | { kind: 'table'; blockIndex: number; top: number; height: number; fontSize: number; lineHeight: number; widths: number[]; headers: string[][]; richHeaders?: ReportTextRun[][][]; headerHeight: number; mergeSpans?: number[][]; rows: Array<{ index: number; lines: string[][]; richLines?: ReportTextRun[][][]; height: number }> }
     | { kind: 'image'; blockIndex: number; top: number; height: number; width: number; block: Extract<FinalReportBlock, { kind: 'image' }> };
+export type ReportLayoutItem = ReportLeafLayoutItem | { kind: 'box'; blockIndex: number; title: string; top: number; height: number; width: number; items: ReportLeafLayoutItem[] };
 export interface ReportPageLayout { cover?: CoverBlock; items: ReportLayoutItem[] }
 
 type TextBlock = Extract<FinalReportBlock, { kind: 'heading' | 'paragraph' }>;
 type TableBlock = Extract<FinalReportBlock, { kind: 'dataTable' | 'keyValueTable' }>;
 type ImageBlock = Extract<FinalReportBlock, { kind: 'image' }>;
 type TableLayoutItem = Extract<ReportLayoutItem, { kind: 'table' }>;
-interface PageCursor { pages: ReportPageLayout[]; currentPage: ReportPageLayout; top: number }
+interface PageCursor { pages: ReportPageLayout[]; currentPage: ReportPageLayout; top: number; bounds: { top: number; bottom: number; body: number; tableWidth: number; paragraphIndentMm: number } }
 
 export type ReportCoverElement =
     | { kind: 'text' | 'title'; top: number; text: string; fontSize: number; bold: boolean }
@@ -89,7 +91,7 @@ function wrapReportRuns(runs: ReportTextRun[], width: number, fontSize: number):
 function startNextPage(cursor: PageCursor) {
     if (cursor.currentPage.cover || cursor.currentPage.items.length) cursor.pages.push(cursor.currentPage);
     cursor.currentPage = { items: [] };
-    cursor.top = REPORT_PAPER.top;
+    cursor.top = cursor.bounds.top;
 }
 
 interface TextParagraph {
@@ -141,16 +143,16 @@ function formatReportParagraphs(block: TextBlock): TextParagraph[] {
 function appendTextParagraph(cursor: PageCursor, paragraph: TextParagraph, blockIndex: number, gapAfter: number) {
     const { chapter, fontSize, left, markerWidth } = paragraph;
     const lineHeight = fontSize * 1.6;
-    const width = REPORT_PAPER.body - left;
+    const width = cursor.bounds.body - left;
     const textWidth = width - (chapter ? REPORT_CHAPTER_PADDING.horizontal * 2 : 0);
     const richLines = paragraph.runs ? wrapReportRuns(paragraph.runs, textWidth, fontSize) : undefined;
     const lines = richLines ? richLines.map(reportRunsText) : wrapReportText(paragraph.text, textWidth, fontSize);
     const padding = chapter ? REPORT_CHAPTER_PADDING.vertical * 2 : 0;
     const height = lines.length * lineHeight + padding;
-    if (paragraph.bold && cursor.top + Math.min(height + 65, 140) > REPORT_PAPER.bottom) startNextPage(cursor);
+    if (paragraph.bold && cursor.top + Math.min(height + 65, 140) > cursor.bounds.bottom) startNextPage(cursor);
     let lineOffset = 0;
     while (lineOffset < lines.length) {
-        const lineCount = Math.min(lines.length - lineOffset, Math.floor((REPORT_PAPER.bottom - cursor.top - padding) / lineHeight));
+        const lineCount = Math.min(lines.length - lineOffset, Math.floor((cursor.bounds.bottom - cursor.top - padding) / lineHeight));
         if (lineCount < 1) { startNextPage(cursor); continue; }
         const itemHeight = lineCount * lineHeight + padding;
         cursor.currentPage.items.push({ kind: 'text', blockIndex, lines: lines.slice(lineOffset, lineOffset + lineCount), top: cursor.top, height: itemHeight, left, width,
@@ -190,7 +192,7 @@ function appendMarkdownLayout(cursor: PageCursor, blocks: ReportMarkdownBlock[],
         const markerWidth = block.marker ? Math.max(13, Array.from(block.marker).reduce((sum, character) => sum + characterWidth(character, fontSize), 0) + 5) : 0;
         const paragraph: TextParagraph = {
             text: reportRunsText(block.runs), runs: block.runs, fontSize,
-            left: millimetersToPoints(12 + block.depth * 4) + markerWidth + (block.quote ? 8 : 0),
+            left: millimetersToPoints(cursor.bounds.paragraphIndentMm + block.depth * 4) + markerWidth + (block.quote ? 8 : 0),
             bold: Boolean(block.headingLevel), color: block.quote ? '555555' : '1B1B1B',
             chapter: false, section: false, marker: block.marker, markerWidth, code: block.code, quote: block.quote,
         };
@@ -201,7 +203,7 @@ function appendMarkdownLayout(cursor: PageCursor, blocks: ReportMarkdownBlock[],
 function appendImageLayout(cursor: PageCursor, block: ImageBlock, blockIndex: number) {
     const scale = Math.min(1, REPORT_VISUAL_WIDTH / (block.widthMm * 72 / 25.4), 590 / (block.heightMm * 72 / 25.4));
     const width = block.widthMm * 72 / 25.4 * scale, height = block.heightMm * 72 / 25.4 * scale;
-    if (cursor.top + height > REPORT_PAPER.bottom) startNextPage(cursor);
+    if (cursor.top + height > cursor.bounds.bottom) startNextPage(cursor);
     cursor.currentPage.items.push({ kind: 'image', blockIndex, top: cursor.top, height, width, block });
     cursor.top += height + 15;
 }
@@ -209,13 +211,13 @@ function appendImageLayout(cursor: PageCursor, block: ImageBlock, blockIndex: nu
 // 셀의 위아래 여백 12pt와 브라우저에서 반올림되는 테두리 1pt를 함께 계산한다.
 const TABLE_CELL_INSET = 13;
 
-function prepareTableLayout(block: TableBlock, rich?: Extract<ReportMarkdownBlock, { kind: 'table' }>) {
+function prepareTableLayout(block: TableBlock, width: number, rich?: Extract<ReportMarkdownBlock, { kind: 'table' }>) {
     const keyValue = block.kind === 'keyValueTable';
     const headers = keyValue ? [] : block.headers;
     const sourceRows = keyValue ? block.rows.map(row => [row.label, row.value]) : block.rows;
     const widthRatios = keyValue ? [30, 70] : block.columnWidths ?? block.headers.map(() => 1);
     const totalRatio = widthRatios.reduce((sum, value) => sum + value, 0);
-    const widths = widthRatios.map(ratio => ratio / totalRatio * (REPORT_VISUAL_WIDTH - 1));
+    const widths = widthRatios.map(ratio => ratio / totalRatio * width);
     const fontSize = headers.length > 9 ? 8 : 8.5, lineHeight = fontSize * 1.55;
     const wrapCells = (cells: string[], bold = false) => cells.map((cell, column) => wrapReportText(cell, Math.max(fontSize, widths[column] - 8), fontSize * (bold ? 1.08 : 1)));
     const wrapRichCells = (cells: ReportTextRun[][]) => cells.map((cell, column) => wrapReportRuns(cell, Math.max(fontSize, widths[column] - 8), fontSize));
@@ -248,11 +250,11 @@ function layoutMergedTableRows(rows: TableLayoutItem['rows'], block: TableBlock,
 }
 
 function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: number, rich?: Extract<ReportMarkdownBlock, { kind: 'table' }>) {
-    const prepared = prepareTableLayout(block, rich);
+    const prepared = prepareTableLayout(block, cursor.bounds.tableWidth, rich);
     const { widths, fontSize, lineHeight, rows } = prepared;
     let { headerLines, richHeaders, headerHeight } = prepared;
     // 한 페이지보다 긴 머리글도 일반 행처럼 나눠 표시한다.
-    if (headerHeight + lineHeight + TABLE_CELL_INSET + 1 > REPORT_PAPER.bottom - REPORT_PAPER.top) {
+    if (headerHeight + lineHeight + TABLE_CELL_INSET + 1 > cursor.bounds.bottom - cursor.bounds.top) {
         rows.unshift({ index: -1, lines: headerLines, richLines: richHeaders?.map(cell => cell.map(line => line.map(run => ({ ...run, bold: true })))) });
         headerLines = []; richHeaders = []; headerHeight = 0;
     }
@@ -260,7 +262,7 @@ function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: nu
     const wrappedRows = new Map(rows.map(row => [row.index, row]));
     const globalSpans = getGroupedCellSpans(sourceRows, block.kind === 'dataTable' ? block.mergeColumns ?? [] : []);
     const mergeCells = sourceRows.map((row, index) => row.map((_, column) => globalSpans[index][column] !== 1 &&
-        wrappedRows.get(index)!.lines[column].length * lineHeight + TABLE_CELL_INSET <= REPORT_PAPER.bottom - REPORT_PAPER.top - headerHeight - 1));
+        wrappedRows.get(index)!.lines[column].length * lineHeight + TABLE_CELL_INSET <= cursor.bounds.bottom - cursor.bounds.top - headerHeight - 1));
     let pendingTable: TableLayoutItem | null = null;
     let pendingRows: TableLayoutItem['rows'] = [];
     const finishTable = () => {
@@ -273,7 +275,7 @@ function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: nu
     };
     const newTable = (): TableLayoutItem => ({ kind: 'table', blockIndex, top: cursor.top, height: headerHeight + 1, fontSize, lineHeight, widths, headers: headerLines, richHeaders, headerHeight, rows: [] });
     if (!rows.length && headerLines.length) {
-        if (cursor.top + headerHeight + 1 > REPORT_PAPER.bottom) startNextPage(cursor);
+        if (cursor.top + headerHeight + 1 > cursor.bounds.bottom) startNextPage(cursor);
         pendingTable = newTable();
     }
     for (const row of rows) {
@@ -282,7 +284,7 @@ function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: nu
         const maxLines = Math.max(...row.lines.map((lines, column) => merged[column] ? 0 : lines.length), 1);
         while (lineOffset < maxLines) {
             if (!pendingTable) {
-                if (cursor.top + headerHeight + lineHeight + TABLE_CELL_INSET + 1 > REPORT_PAPER.bottom) startNextPage(cursor);
+                if (cursor.top + headerHeight + lineHeight + TABLE_CELL_INSET + 1 > cursor.bounds.bottom) startNextPage(cursor);
                 pendingTable = newTable();
             }
             const fragment = (count: number) => ({ index: row.index, lines: row.lines.map((lines, column) => merged[column] ? lines : lines.slice(lineOffset, lineOffset + count)),
@@ -292,7 +294,7 @@ function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: nu
             while (low < high) {
                 const count = Math.ceil((low + high) / 2);
                 const fitted = layoutMergedTableRows([...pendingRows, fragment(count)], block, mergeCells, lineHeight);
-                if (pendingTable.top + headerHeight + 1 + fitted.height <= REPORT_PAPER.bottom) low = count;
+                if (pendingTable.top + headerHeight + 1 + fitted.height <= cursor.bounds.bottom) low = count;
                 else high = count - 1;
             }
             if (!low) { finishTable(); startNextPage(cursor); continue; }
@@ -306,8 +308,36 @@ function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: nu
     finishTable();
 }
 
+function appendMarketReferenceBox(cursor: PageCursor, block: Extract<TableBlock, { kind: 'dataTable' }>, blockIndex: number): boolean {
+    const source = block.rows[0][0];
+    const rich = parseReportMarkdown(source, /^\s*(?:[-+*]|\d+[.)])\s/m.test(source));
+    if (!rich) return false;
+    if (!rich.length) return true;
+    const { padding, headerHeight } = REPORT_BOX;
+    if (cursor.top + headerHeight + padding * 2 + 65 > cursor.bounds.bottom) startNextPage(cursor);
+    const width = cursor.bounds.tableWidth + 1;
+    const firstContentTop = cursor.top + headerHeight + padding;
+    const inner: PageCursor = {
+        pages: [], currentPage: { items: [] }, top: firstContentTop,
+        bounds: { top: cursor.bounds.top + headerHeight + padding, bottom: cursor.bounds.bottom - padding - 1,
+            body: width - padding * 2, tableWidth: width - padding * 2 - 1, paragraphIndentMm: 0 },
+    };
+    appendMarkdownLayout(inner, rich, blockIndex);
+    startNextPage(inner);
+    inner.pages.forEach((page, index) => {
+        if (index || page.items[0].top < firstContentTop) startNextPage(cursor);
+        const top = cursor.top;
+        const items = page.items.filter((item): item is ReportLeafLayoutItem => item.kind !== 'box').map(item => ({ ...item, top: item.top - top }));
+        const last = items.at(-1)!;
+        const height = last.top + last.height + padding + 1;
+        cursor.currentPage.items.push({ kind: 'box', blockIndex, title: block.headers[0], top, height, width, items });
+        cursor.top += height + 14;
+    });
+    return true;
+}
+
 export function layoutReportPages(blocks: FinalReportBlock[]): ReportPageLayout[] {
-    const cursor: PageCursor = { pages: [], currentPage: { items: [] }, top: REPORT_PAPER.top };
+    const cursor: PageCursor = { pages: [], currentPage: { items: [] }, top: REPORT_PAPER.top, bounds: { top: REPORT_PAPER.top, bottom: REPORT_PAPER.bottom, body: REPORT_PAPER.body, tableWidth: REPORT_VISUAL_WIDTH - 1, paragraphIndentMm: 12 } };
     blocks.forEach((block, blockIndex) => {
         if (block.kind === 'pageBreak') {
             const next = blocks[blockIndex + 1];
@@ -320,6 +350,7 @@ export function layoutReportPages(blocks: FinalReportBlock[]): ReportPageLayout[
             startNextPage(cursor);
         } else if (block.kind === 'heading' || block.kind === 'paragraph') appendTextLayout(cursor, block, blockIndex);
         else if (block.kind === 'image') appendImageLayout(cursor, block, blockIndex);
+        else if (block.kind === 'dataTable' && block.title === '추가 시장 자료' && block.headers.length === 1 && block.rows.length === 1 && appendMarketReferenceBox(cursor, block, blockIndex)) return;
         else appendTableLayout(cursor, block, blockIndex);
     });
     startNextPage(cursor);

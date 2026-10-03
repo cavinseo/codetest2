@@ -50,12 +50,12 @@ function tableRows(node: Element): Element[] {
 }
 
 // 일반 문장과 기존 글머리만 있는 본문은 기존 배치를 유지해 빈 줄·기호·들여쓰기를 보존한다.
-export function parseReportMarkdown(source: string): ReportMarkdownBlock[] | null {
+export function parseReportMarkdown(source: string, force = false): ReportMarkdownBlock[] | null {
     const text = source.startsWith('시장정의 · ') && source.includes('\n목표고객 · ')
         ? source.replace(/^시장정의 · /, '시장정의\n\n').replace(/\n목표고객 · /, '\n\n목표고객 · ')
         : source;
     const parsed = processor.parse(text);
-    if (!hasRichSyntax(parsed)) return null;
+    if (!force && !hasRichSyntax(parsed)) return null;
     const tree = processor.runSync(parsed) as Root;
     const blocks: ReportMarkdownBlock[] = [];
     interface Context { depth: number; listDepth: number; quote?: boolean }

@@ -822,14 +822,13 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                                 <section aria-labelledby="additional-market-data-title" className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
                                     <h3 id="additional-market-data-title" className="mb-2 text-sm font-semibold text-gray-300">추가 시장 자료</h3>
                                     {isOverviewEditing ? (
-                                        <textarea aria-label="추가 시장 자료" rows={6} maxLength={20_000}
+                                        <ProductOverviewDetailEditor label="추가 시장 자료" maxLength={20_000}
                                             value={overviewForm.additionalMarketData ?? ''}
-                                            onChange={event => setOverviewForm(current => ({ ...current, additionalMarketData: event.target.value }))}
+                                            onChange={additionalMarketData => setOverviewForm(current => ({ ...current, additionalMarketData }))}
                                             disabled={isOverviewSaving}
-                                            placeholder="시장 규모, 동향, 참고 자료와 출처 등을 입력하세요."
-                                            className="input w-full resize-y" />
+                                        />
                                     ) : (
-                                        <p className="whitespace-pre-wrap break-words text-sm leading-6 text-white">{project.additionalMarketData || '입력된 추가 시장 자료가 없습니다.'}</p>
+                                        <ProductOverviewContent value={project.additionalMarketData} emptyMessage="입력된 추가 시장 자료가 없습니다." />
                                     )}
                                 </section>
                             </div>
