@@ -39,7 +39,7 @@ beforeEach(() => {
 
 const relatedWorksheets = [
     { Component: AssetsTable, endpoint: 'assets', data: { assets: [{ id: 'saved', type: 'CORE', content: '기존 자료', order: 0 }] } },
-    { Component: FundingTable, endpoint: 'funding', data: { plans: [{ id: 'saved', category: '인건비', item: '기존 자료', year1: 10, year2: 20, year3: 30, order: 0 }], sources: [] } },
+    { Component: FundingTable, endpoint: 'funding', data: { plans: [{ id: 'saved', category: '인건비', item: '기존 자료', year1: 10, year2: 20, year3: 30, order: 0 }], sources: [], canWrite: true } },
     { Component: RequirementsTable, endpoint: 'requirements', data: { requirements: [{ id: 'saved', category: '기능', subcategory: '', requirement: '기존 자료', order: 0 }] } },
     { Component: SpecTable, endpoint: 'spec', data: { specFunctions: [{ id: 'saved', level: 'CORE', name: '기존 자료', order: 0 }] } },
     { Component: ImprovementsTable, endpoint: 'improvements', data: { items: [{ id: 'saved', type: 'need', content: '기존 자료', improvementRate: '1', devProportion: '10', order: 0 }] } },

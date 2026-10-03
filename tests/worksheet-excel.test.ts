@@ -149,3 +149,16 @@ it('개별 워크시트는 해당 양식만 출력하고 빈 프로젝트도 모
     expect(resolveWorksheetExcelId('kano/analysis')).toBe('kano-aggregation');
     expect(resolveWorksheetExcelId('unknown')).toBeUndefined();
 });
+
+it('WS-17 같은 구분의 여러 세부행과 3개년 출처·금액을 모두 출력하고 합산한다', async () => {
+    const project = worksheetExcelProject();
+    project.fundingSources.push({ ...project.fundingSources[0], id: 'source-2', order: 1, year1: JSON.stringify({ source: '추가 지원사업', amount: '300.5' }), year2: '후속 지원:200', year3: '500' });
+    const sheet = (await load('funding-source', project)).worksheets[0];
+    expect(sheet.getCell('C9').value).toBe('추가 지원사업');
+    expect(sheet.getCell('D9').value).toBe(300.5);
+    expect(sheet.getCell('F9').value).toBe(200);
+    expect(sheet.getCell('H9').value).toBe(500);
+    expect(result(sheet.getCell('D10'))).toBe(1500.5);
+    expect(result(sheet.getCell('F10'))).toBe(200);
+    expect(result(sheet.getCell('H10'))).toBe(500);
+});

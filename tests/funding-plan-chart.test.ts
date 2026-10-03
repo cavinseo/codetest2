@@ -25,7 +25,7 @@ beforeEach(() => {
     ];
     fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
         if (init?.method === 'POST') plans = JSON.parse(String(init.body)).plans;
-        return new Response(JSON.stringify({ plans, sources }), { status: 200 });
+        return new Response(JSON.stringify({ plans, sources, canWrite: true }), { status: 200 });
     });
     vi.stubGlobal('fetch', fetchMock);
 });

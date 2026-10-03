@@ -81,13 +81,15 @@ describe('자금계획 GET 의 기본행 자동 채움', () => {
         expect(fundingSourceCreateMany).not.toHaveBeenCalled();
     });
 
-    it.each(['OWNER', 'EDITOR', 'ADMIN'])('%s 는 기존대로 기본행을 채운다', async (role) => {
+    it.each(['OWNER', 'EDITOR', 'ADMIN'])('%s 는 자금소요 기본행만 채우고 삭제된 자금조달 세부행은 복원하지 않는다', async (role) => {
         grantRole(role);
 
         const response = await getFunding(getRequest('funding'), { params });
 
         expect(response.status).toBe(200);
         expect(transaction).toHaveBeenCalledTimes(1);
+        expect(fundingSourceCreateMany).not.toHaveBeenCalled();
+        expect(await response.json()).toMatchObject({ sources: [], canWrite: true });
     });
 });
 

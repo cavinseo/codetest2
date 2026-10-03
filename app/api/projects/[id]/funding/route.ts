@@ -15,15 +15,6 @@ const INITIAL_FUNDING_PLANS = [
     { category: '소요자금', item: '소요자금 합계', order: 6 },
 ];
 
-const INITIAL_FUNDING_SOURCES = [
-    { category: '정부자금', order: 0 },
-    { category: '엔젤투자금', order: 1 },
-    { category: '연구개발 지원금(R&D)', order: 2 },
-    { category: '민간투자주도형 기술창업지원(TIPS)', order: 3 },
-    { category: '벤처캐피털(VC)', order: 4 },
-    { category: '기타', order: 5 },
-];
-
 // GET: 자금소요 및 조달 계획
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
@@ -31,7 +22,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     if (accessResult instanceof NextResponse) return accessResult;
     try {
         let plans = await prisma.fundingPlan.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
-        let sources = await prisma.fundingSource.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
+        const sources = await prisma.fundingSource.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
         const salesEstimates = await prisma.salesEstimate.findMany({ where: { projectId } });
 
         // 기본행 자동 채움은 조회 도중의 쓰기라, 쓰기 권한을 따로 확인해야 한다.
@@ -41,18 +32,16 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
         const canCreateDefaults = isProjectWriteRole(accessResult.role);
         const createMissingDefaults = canCreateDefaults ? [
             ...(plans.length === 0 ? [prisma.fundingPlan.createMany({ data: INITIAL_FUNDING_PLANS.map(p => ({ ...p, projectId })) })] : []),
-            ...(sources.length === 0 ? [prisma.fundingSource.createMany({ data: INITIAL_FUNDING_SOURCES.map(s => ({ ...s, projectId })) })] : []),
         ] : [];
 
         if (createMissingDefaults.length > 0) {
             await prisma.$transaction(createMissingDefaults);
             plans = await prisma.fundingPlan.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
-            sources = await prisma.fundingSource.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
         }
 
         plans = buildFundingPlansWithSales({ plans, salesEstimates }) as typeof plans;
 
-        return NextResponse.json({ plans, sources });
+        return NextResponse.json({ plans, sources, canWrite: isProjectWriteRole(accessResult.role) });
     } catch (error) {
         console.error('Funding GET error:', error);
         return NextResponse.json({ error: '자금계획 데이터를 불러오지 못했습니다.' }, { status: 500 });
