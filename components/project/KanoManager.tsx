@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import KanoSurveyPreview from '@/components/KanoSurveyPreview';
+import KanoOfflineFormPreview from '@/components/KanoOfflineFormPreview';
 import Kano2DChart from '@/components/Kano2DChart';
 import CategoryPieChart from '@/components/CategoryPieChart';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
@@ -111,6 +112,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [inviteSummary, setInviteSummary] = useState<BulkInviteSummary | null>(null);
     const bulkFileInputRef = useRef<HTMLInputElement | null>(null);
     const [showPreview, setShowPreview] = useState(false);
+    const [showOfflinePreview, setShowOfflinePreview] = useState(false);
     const [googleConfigured, setGoogleConfigured] = useState(false);
     const [isCreatingForm, setIsCreatingForm] = useState(false);
     const [createdFormUrl, setCreatedFormUrl] = useState('');
@@ -1003,7 +1005,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                     <div className="flex flex-wrap gap-2 mb-4">
                                         <button
                                             type="button"
-                                            onClick={() => setShowPreview(true)}
+                                            onClick={() => setShowOfflinePreview(true)}
                                             className="btn-secondary text-sm"
                                         >
                                             양식 확인
@@ -1391,6 +1393,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             )}
 
             {/* 설문 미리보기 모달 */}
+            {showOfflinePreview && (
+                <KanoOfflineFormPreview key={projectId} projectId={projectId} onClose={() => setShowOfflinePreview(false)} />
+            )}
             {showPreview && (
                 <KanoSurveyPreview
                     projectName={projectName}

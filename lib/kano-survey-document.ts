@@ -4,6 +4,7 @@
 // 한다. 양식이 바뀌면 이 파일만 고치면 되고, 실DB 도 Word 도 없이 테스트할 수 있다.
 import { getKanoTopic } from './utils/korean-utils';
 import { getKanoAnswerLabel } from './kano-response-display';
+import { buildKanoSurveyIntroduction } from './kano-survey-introduction';
 
 export interface KanoSurveyRequirement {
     requirement: string;
@@ -36,15 +37,8 @@ export const KANO_SURVEY_GUIDE =
     + '긍정과 부정으로 작성되어 있습니다. 각 항목을 읽고 긍정과 부정의 질문 모두 해당되는 항목에 '
     + '표시하여 주시기 바랍니다.';
 
-// 「　」 는 회사가 배포 전에 손으로 채우는 빈칸이다. 프로젝트명 등을 자동으로 넣지 않는다 —
-// 틀린 값이 인쇄물에 박히는 것보다 빈칸이 낫다.
-export const KANO_SURVEY_INTRODUCTION =
-    '(제품/서비스 소개) 안녕하세요. 「　　　　　　　」 기술을 활용하여 다양한 「　　　　」제품을 '
-    + '개발하고 있는 「　　　　」 대표 「　　　　」입니다. 본 설문은 자사에서 제공하는 「　　　　」에 '
-    + '대하여, 소비자의 의견을 수렴하여 좀 더 나은 서비스를 만드는데 필요한 기초 자료를 얻는 것에 '
-    + '목적이 있습니다. 귀하께서 응답하시는 내용은 정답이 없으며, 오직 제품 레벨 업을 위한 용도로만 '
-    + '사용할 것을 약속드립니다. 바쁘신 가운데 시간을 내어 주셔서 대단히 감사합니다. '
-    + '/(필요시 이미지 자료 첨부가능)';
+// 입력하지 않은 항목은 기존 양식의 빈칸을 유지한다.
+export const KANO_SURVEY_INTRODUCTION = buildKanoSurveyIntroduction();
 
 export const KANO_SURVEY_QUESTION_HEADER = '질 문 문 항';
 

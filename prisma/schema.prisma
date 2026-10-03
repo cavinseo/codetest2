@@ -108,6 +108,7 @@ model Project {
   aiMode                   String                    @default("rule")
   specDetailCollapsed      Boolean                   @default(false)
   qfdTechnicalInitialized  Boolean                   @default(false)
+  kanoSurveyIntroduction   Json?
   attributeFitnesses       AttributeFitness[]
   benchmarks               Benchmark[]
   requirements             CustomerRequirement[]

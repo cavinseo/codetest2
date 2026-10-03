@@ -74,6 +74,8 @@ function executeBrowserScript(
     const listeners = new Map<string, () => void>();
     const emailInput = { value: '' };
     const payloadElement = { textContent: payloadMatch[1] };
+    const introductionElement = { textContent: '' };
+    const introductionInput = { value: '', setAttribute: vi.fn(), addEventListener: vi.fn() };
     const saveButton = {
         addEventListener: (event: string, listener: () => void) => listeners.set(event, listener),
     };
@@ -83,9 +85,12 @@ function executeBrowserScript(
             if (id === KANO_OFFLINE_PAYLOAD_ID) return payloadElement;
             if (id === 'kano-respondent-email') return emailInput;
             if (id === 'kano-save') return saveButton;
+            if (id === 'kano-save-form') return { addEventListener: vi.fn() };
+            if (id.startsWith('kano-intro-')) return introductionInput;
             return null;
         },
         querySelector(selector: string) {
+            if (selector === '.introduction') return introductionElement;
             const name = selector.match(/name="([^"]+)"/)?.[1];
             const value = selector.match(/value="([^"]+)"/)?.[1];
             return radios.find((radio) => (
@@ -210,7 +215,7 @@ describe('buildKanoOfflineFormHtml 정적 계약', () => {
                 { name: expectedQuestions[index].name, value: '5', label: '마음에 안든다' },
             ]);
         });
-        expect(html.match(/<\/label><label/g)).toHaveLength(16);
+        expect(html.match(/<\/span><\/label><label class="answer"/g)).toHaveLength(16);
         expect(html.match(/<\/section>\n<section/g)).toHaveLength(1);
     });
 
