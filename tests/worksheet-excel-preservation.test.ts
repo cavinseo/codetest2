@@ -1,17 +1,17 @@
-// 리팩토링 전 엑셀의 데이터·수식·서식·병합·인쇄 설정이 그대로 유지되는지 검증한다.
+// WS-14를 제외한 엑셀의 데이터·수식·서식·병합·인쇄 설정이 그대로 유지되는지 검증한다.
 import { createHash } from 'node:crypto';
 import ExcelJS from 'exceljs';
 import { expect, it } from 'vitest';
 import { buildWorksheetExcel } from '../lib/worksheet-excel';
 import { worksheetExcelProject } from './fixtures/worksheet-excel-project';
 
-// 230af1a의 출력 기준이며 파일 생성시각 대신 워크시트 내용과 서식만 비교한다.
+// f1b4584 출력에서 WS-14만 제외한 기준이며, 나머지 시트의 내용과 서식이 동일함을 비교 검증했다.
 const baselineHashes = {
-    complete: '2f264891c544ada57b147529268b7de3657f107f1c231d81c0de8f6f525909f0',
-    empty: 'bf517c42c5185593e6ae9a60d671b859ff6a5f8e20ac968ec4c22ea67db25a79',
-    collapsed: 'e87f5de2739815c3b3e0c13a687aa53fea30052c2dd4a37ac91b20962d9fdfb9',
-    expanded: '31247cc19feb59c525876752a3b4066aa79d8e99dd95ef7cb713d13506e4c8ce',
-    long: '8b504aa6a56ec3ca0500f1a336d373e8fc06548869a792d41f7b3b103629ad75',
+    complete: 'dee4cf42638f76c3be89fed4818790928e22a2605f91a69a5d61a7140c22d074',
+    empty: '41456aa3b61665345c7241c30d33ae6c7f3da9d06ed7e36f08f289754e0c6c60',
+    collapsed: 'f1bbcb1ef1df1114d19f19d944b788b434a6d7fd9b0b64e391944c83cdc04dfb',
+    expanded: '3f638a6b45c7fabdb3c88bd92177e3f0c5fea143bb8ac3932bdbf2b01332e526',
+    long: '92bf7b0ede39d9fbed43dcf2dfefe1425103bbf9495247895b1f414e0be19a17',
 };
 
 function projectForScenario(scenario: keyof typeof baselineHashes) {

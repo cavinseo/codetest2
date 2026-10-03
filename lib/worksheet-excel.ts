@@ -11,7 +11,7 @@ export type WorksheetExcelProject = Prisma.ProjectGetPayload<{ include: {
     specFunctions: true; productAttributes: true; attributeFitnesses: true; requirements: true;
     technicalCharacteristics: true; qfdMatrices: true; kanoResponses: true; techCorrelations: true;
     benchmarks: true; technicalBenchmarks: true; techTreeEntries: true; improvementItems: true;
-    targetSpecs: true; techRoadmaps: true; devPlans: true; salesEstimates: true; assetItems: true;
+    targetSpecs: true; techRoadmaps: true; salesEstimates: true; assetItems: true;
     fundingPlans: true; fundingSources: true; fitnessMatrix: true;
 } }>;
 

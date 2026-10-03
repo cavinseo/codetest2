@@ -14,7 +14,6 @@ export interface WorksheetCompletenessCounts {
     improvementItems: number;
     targetSpecs: number;
     techRoadmaps: number;
-    devPlans: number;
     assetItems: number;
     fundingPlans: number;
     fundingSources: number;
@@ -187,15 +186,6 @@ const WORKSHEET_RULES: WorksheetRule[] = [
         expectedUnits: 1,
         getCompletedUnits: ({ counts }) => counts.techRoadmaps,
         nextStep: '향후 목표고객과 기술 로드맵을 정리하세요.',
-    },
-    {
-        key: 'devPlan',
-        title: '개발계획',
-        required: false,
-        worksheetKey: 'dev-plan',
-        expectedUnits: 1,
-        getCompletedUnits: ({ counts }) => counts.devPlans,
-        nextStep: '개발 단계, 담당자, 일정을 입력하세요.',
     },
     {
         key: 'assets',

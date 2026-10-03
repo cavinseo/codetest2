@@ -195,11 +195,6 @@ function writeTechRoadmapSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcel
     addTable(sheet, '향후목표고객LIST', ['순위', '고객혜택 제공을 위한 제품/서비스개선 방향(차별화)', '개선기능 및 성능향상', '개선을 위한 구현가능성', '목표 고객', 'Q1', 'Q2', 'Q3', 'Q4', '담당자'], sortByOrder(project.techRoadmaps).map((row, index) => [index + 1, row.category, row.techItem, row.currentLevel, row.targetLevel ?? row.owner, row.q1, row.q2, row.q3, row.q4, row.owner]));
 }
 
-function writeDevPlanSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
-    const { project } = context;
-    addTable(sheet, '개발계획서', ['단계', '개발 과제', '상세 내용', '시작일', '종료일', '담당자', '진행상태'], sortByOrder(project.devPlans).map(row => [row.phase, row.task, row.description, row.startDate, row.endDate, row.owner, row.status]));
-}
-
 function writeAssetsSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
     const { project } = context;
     addTable(sheet, '핵심자산 도출표', ['핵심자산', '필요 항목'], sortByOrder(project.assetItems).filter(row => row.type === 'CORE').map(row => [row.content, row.category]));
@@ -245,7 +240,6 @@ export function writeWorksheetContents(sheet: ExcelJS.Worksheet, worksheetId: Wo
         case 'improvements': return writeImprovementsSheet(sheet, context);
         case 'target-spec': return writeTargetSpecSheet(sheet, context);
         case 'tech-roadmap': return writeTechRoadmapSheet(sheet, context);
-        case 'dev-plan': return writeDevPlanSheet(sheet, context);
         case 'assets': return writeAssetsSheet(sheet, context);
         case 'funding-plan': return writeFundingPlanSheet(sheet, context);
         case 'funding-source': return writeFundingSourceSheet(sheet, context);

@@ -7,7 +7,7 @@ const m = vi.hoisted(() => ({ access: vi.fn(), update: vi.fn(), find: vi.fn(), c
 vi.mock('../lib/authorization', () => ({ requireProjectAccess: m.access }));
 vi.mock('../lib/prisma', () => ({ prisma: {
     project: { findUnique: m.find, update: m.update },
-    ...Object.fromEntries(['salesEstimate', 'specFunction', 'productAttribute', 'attributeFitness', 'customerRequirement', 'kanoResponse', 'technicalCharacteristic', 'qFDMatrix', 'techTreeEntry', 'improvementItem', 'targetSpec', 'techRoadmap', 'devPlan', 'assetItem', 'fundingPlan', 'fundingSource'].map(key => [key, { count: m.count }])),
+    ...Object.fromEntries(['salesEstimate', 'specFunction', 'productAttribute', 'attributeFitness', 'customerRequirement', 'kanoResponse', 'technicalCharacteristic', 'qFDMatrix', 'techTreeEntry', 'improvementItem', 'targetSpec', 'techRoadmap', 'assetItem', 'fundingPlan', 'fundingSource'].map(key => [key, { count: m.count }])),
     fitnessMatrix: { findUnique: m.fitness },
 } }));
 import { GET, PATCH } from '../app/api/projects/[id]/overview/route';

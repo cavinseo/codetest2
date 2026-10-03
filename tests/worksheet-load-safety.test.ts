@@ -3,7 +3,6 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import DevPlanTable from '../components/project/DevPlanTable';
 import TechRoadmapTable from '../components/project/TechRoadmapTable';
 import TargetSpecTable from '../components/project/TargetSpecTable';
 import AssetsTable from '../components/project/AssetsTable';
@@ -18,7 +17,6 @@ import FitnessWrapper from '../components/project/FitnessWrapper';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
 const worksheets = [
-    { Component: DevPlanTable, endpoint: 'dev-plan', row: { id: 'saved', task: '기존 개발 계획', order: 0 } },
     { Component: TechRoadmapTable, endpoint: 'tech-roadmap', row: { id: 'saved', techItem: '기존 기술', order: 0 } },
     { Component: TargetSpecTable, endpoint: 'target-spec', row: { id: 'saved', specItem: '기존 사양', order: 0 } },
 ];

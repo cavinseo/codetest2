@@ -40,7 +40,6 @@ export async function GET(
                 improvementItems: true,
                 targetSpecs: true,
                 techRoadmaps: true,
-                devPlans: true,
                 salesEstimates: true,
                 assetItems: true,
                 fundingPlans: true,

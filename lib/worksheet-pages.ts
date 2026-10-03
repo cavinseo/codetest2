@@ -12,7 +12,6 @@ export const WORKSHEET_LINKS = [
     { href: 'improvements', label: 'WS-11 개선포인트도출' },
     { href: 'target-spec', label: 'WS-12 최종목표스펙도출' },
     { href: 'tech-roadmap', label: 'WS-13 향후목표고객LIST' },
-    { href: 'dev-plan', label: 'WS-14 개발계획서' },
     { href: 'assets', label: 'WS-15 핵심자산 및 보완자산 도출표' },
     { href: 'funding-plan', label: 'WS-16 자금소요계획표' },
     { href: 'funding-source', label: 'WS-17 자금조달계획표' },

@@ -24,7 +24,6 @@ describe('worksheet completeness', () => {
             improvementItems: 0,
             targetSpecs: 0,
             techRoadmaps: 0,
-            devPlans: 0,
             assetItems: 0,
             fundingPlans: 0,
             fundingSources: 0,
@@ -38,6 +37,7 @@ describe('worksheet completeness', () => {
         expect(result.percent).toBe(7);
         expect(result.status).toBe('IN_PROGRESS');
         expect(result.nextAction?.worksheetKey).toBe('sales');
+        expect(result.items.some(item => item.worksheetKey === 'dev-plan')).toBe(false);
         expect(result.blockers.map((item) => item.worksheetKey)).toContain('requirements');
     });
 
@@ -57,7 +57,6 @@ describe('worksheet completeness', () => {
                 improvementItems: 3,
                 targetSpecs: 3,
                 techRoadmaps: 2,
-                devPlans: 2,
                 assetItems: 2,
                 fundingPlans: 2,
                 fundingSources: 1,

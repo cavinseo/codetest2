@@ -36,12 +36,13 @@ it('전체 파일과 독립 페이지의 워크시트 별칭도 지원한다', a
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(Buffer.from(await response.arrayBuffer()) as never);
         if (names) expect(workbook.worksheets.map(sheet => sheet.name)).toEqual(names);
-        else expect(workbook.worksheets).toHaveLength(18);
+        else expect(workbook.worksheets).toHaveLength(17);
     }
 });
 
 it('잘못된 양식, 접근 거부와 없는 프로젝트는 데이터를 출력하지 않는다', async () => {
     expect((await GET(request('?format=xlsx&worksheet=bad'), params)).status).toBe(400);
+    expect((await GET(request('?format=xlsx&worksheet=dev-plan'), params)).status).toBe(400);
     expect(findUnique).not.toHaveBeenCalled();
     for (const status of [401, 403]) {
         requireProjectAccess.mockResolvedValueOnce(NextResponse.json({ error: '접근 거부' }, { status }));

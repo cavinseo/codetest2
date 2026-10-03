@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 const log = createLogger('worksheet-comments');
-const worksheet = z.enum(['overview', 'sales', 'spec', 'attributes', 'fitness', 'requirements', 'kano', 'kano-aggregation', 'qfd', 'tech-tree', 'improvements', 'target-spec', 'tech-roadmap', 'dev-plan', 'assets', 'funding-plan', 'funding-source']);
+const worksheet = z.enum(['overview', 'sales', 'spec', 'attributes', 'fitness', 'requirements', 'kano', 'kano-aggregation', 'qfd', 'tech-tree', 'improvements', 'target-spec', 'tech-roadmap', 'assets', 'funding-plan', 'funding-source']);
 const contentSchema = z.string().trim().min(1).max(5000);
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const projectId = (await props.params).id;

@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ProjectDetailPage from '../app/project/[id]/page';
 import { hasProductOverviewSource } from '../lib/final-report-document';
+import { WORKSHEET_LINKS } from '../lib/worksheet-pages';
 
 vi.mock('next/navigation', () => ({ useParams: () => ({ id: 'project' }), useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('next/link', () => ({ default: (props: any) => createElement('a', props) }));
@@ -352,4 +353,15 @@ it('추가 시장 자료의 Markdown·HTML 제목·목록·표를 미리보고 �
     await input(box().querySelector('textarea')!, '# 취소할 수정');
     await click('취소');
     expect(box().querySelector('h1')?.textContent).toBe('시장 전망');
+});
+
+it('WS-14를 프로젝트 탭과 공통 메뉴에서 제거하고 후속 워크시트 번호는 유지한다', async () => {
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    expect(container.textContent).not.toContain('[WS-14]');
+    expect(container.textContent).not.toContain('개발계획서');
+    expect(container.textContent).toContain('[WS-15]');
+    expect(container.textContent).toContain('[WS-16]');
+    expect(container.textContent).toContain('[WS-17]');
+    expect(WORKSHEET_LINKS.some(item => item.href === 'dev-plan')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/dev-plan'))).toBe(false);
 });

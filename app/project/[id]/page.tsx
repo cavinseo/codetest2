@@ -23,7 +23,6 @@ import FitnessWrapper from '@/components/project/FitnessWrapper';
 import ImprovementsTable from '@/components/project/ImprovementsTable';
 import TargetSpecTable from '@/components/project/TargetSpecTable';
 import TechRoadmapTable from '@/components/project/TechRoadmapTable';
-import DevPlanTable from '@/components/project/DevPlanTable';
 import TechTreeTable from '@/components/project/TechTreeTable';
 import AssetsTable from '@/components/project/AssetsTable';
 import FundingTable from '@/components/project/FundingTable';
@@ -415,7 +414,6 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         { id: 'improvements', name: '[WS-11] 개선포인트도출', icon: iconSvg('M13 10V3L4 14h7v7l9-11h-7z') },
         { id: 'target-spec', name: '[WS-12] 최종목표스펙도출', icon: iconSvg('M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z') },
         { id: 'tech-roadmap', name: '[WS-13] 향후목표고객LIST', icon: iconSvg('M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7') },
-        { id: 'dev-plan', name: '[WS-14] 개발계획서', icon: iconSvg('M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z') },
         { id: 'assets', name: '[WS-15] 핵심자산 및 보완자산 도출표', icon: iconSvg('M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4') },
         { id: 'funding-plan', name: '[WS-16] 자금소요계획표', icon: iconSvg('M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z') },
         { id: 'funding-source', name: '[WS-17] 자금조달계획표', icon: iconSvg('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 10v-1') },
@@ -487,7 +485,6 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         improvements: <ImprovementsTable projectId={projectId} />,
         'target-spec': <TargetSpecTable projectId={projectId} />,
         'tech-roadmap': <TechRoadmapTable projectId={projectId} />,
-        'dev-plan': <DevPlanTable projectId={projectId} />,
         'tech-tree': <TechTreeTable projectId={projectId} />,
         'assets': <AssetsTable projectId={projectId} />,
         'funding-plan': <FundingTable projectId={projectId} mode="plan" />,

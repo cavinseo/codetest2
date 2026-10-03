@@ -1,4 +1,4 @@
-// 팩토리로 만든 워크시트 라우트 5종이 같은 안전 속성을 지키는지 한 곳에서 검증한다.
+// 팩토리로 만든 워크시트 라우트 4종이 같은 안전 속성을 지키는지 한 곳에서 검증한다.
 //
 // 1단계에서 잡은 결함들(검증 누락, 배열 형태 $transaction, mass-assignment)은 전부
 // "복붙된 라우트 중 한쪽만 고쳐졌다"는 같은 원인에서 나왔다. 이제 구현이 하나이므로
@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
 const models = [
-    'salesEstimate', 'devPlan', 'techRoadmap', 'techTreeEntry', 'targetSpec',
+    'salesEstimate', 'techRoadmap', 'techTreeEntry', 'targetSpec',
 ] as const;
 
 type ModelName = (typeof models)[number];
@@ -34,7 +34,6 @@ vi.mock('../lib/authorization', () => ({
 }));
 
 const sales = await import('../app/api/projects/[id]/sales/route');
-const devPlan = await import('../app/api/projects/[id]/dev-plan/route');
 const techRoadmap = await import('../app/api/projects/[id]/tech-roadmap/route');
 const techTree = await import('../app/api/projects/[id]/tech-tree/route');
 const targetSpec = await import('../app/api/projects/[id]/target-spec/route');
@@ -51,10 +50,6 @@ const cases: Case[] = [
     {
         label: 'sales', post: sales.POST, model: 'salesEstimate', key: 'rows',
         validRow: { period: 'Y', customer: '동호회A', amount: 100, competitor: '경쟁사', order: 0 },
-    },
-    {
-        label: 'dev-plan', post: devPlan.POST, model: 'devPlan', key: 'rows',
-        validRow: { phase: '1단계', task: '설계', order: 0 },
     },
     {
         label: 'tech-roadmap', post: techRoadmap.POST, model: 'techRoadmap', key: 'rows',

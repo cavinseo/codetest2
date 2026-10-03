@@ -35,7 +35,6 @@ export function worksheetExcelProject(): WorksheetExcelProject {
             { ...common, id: 'target-new', order: 2, category: '가공', subCategory: '자동 검사', specItem: 'AI 비전', unit: '%', currentValue: '0', competitorValue: '95', targetValue: '99', note: '신규' },
         ],
         techRoadmaps: [{ ...common, id: 'roadmap', category: '자동화', techItem: '검사 기능', currentLevel: '구현 가능', targetLevel: '제조 기업', q1: '설계', q2: '개발', q3: '검증', q4: '양산', owner: '개발팀' }],
-        devPlans: [{ ...common, id: 'plan', phase: '1단계', task: '개발 과제', description: '상세 내용', startDate: '2026-10-03', endDate: '2026-12-31', owner: '홍길동', status: '진행' }],
         salesEstimates: [{ ...common, id: 'sale', period: 'Y', customer: '고객', amount: 0, competitor: '경쟁사', futureAmount: 0 }, { ...common, id: 'future-sale', period: 'Y_PLUS_1', customer: '미래고객', amount: 1000, competitor: null, futureAmount: 0 }],
         assetItems: [{ ...common, id: 'asset', type: 'CORE', category: '기술', content: '핵심 기술' }, { ...common, id: 'complement', order: 1, type: 'COMPLEMENTARY', category: '설비', content: '임대' }],
         fundingPlans: [{ ...common, id: 'revenue', category: '매출액', item: '매출액', year1: 5, year2: null, year3: 0 }, { ...common, id: 'cost', order: 1, category: '소요자금', item: '생산비', year1: 100, year2: 200, year3: 0 }, { ...common, id: 'total', order: 2, category: '소요자금', item: '소요자금 합계', year1: 999, year2: 999, year3: 999 }],

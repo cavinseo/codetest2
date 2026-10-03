@@ -19,7 +19,7 @@ function rowWith(sheet: ExcelJS.Worksheet, text: string, column = 2): number {
 }
 function result(cell: ExcelJS.Cell) { return cell.type === ExcelJS.ValueType.Formula ? cell.result : cell.value; }
 
-it('WS-1~17의 양식을 만들고 저장된 추가 항목과 원본 응답도 보존한다', async () => {
+it('WS-14를 제외한 워크시트 양식을 만들고 저장된 추가 항목과 원본 응답도 보존한다', async () => {
     const project = worksheetExcelProject();
     const before = JSON.stringify(project);
     const workbook = await load(undefined, project);
@@ -36,7 +36,7 @@ it('WS-1~17의 양식을 만들고 저장된 추가 항목과 원본 응답도 �
     rowWith(kano, '가공이 부정확하면?', 5);
     expect(kano.getCell('F11').value).toBeNull();
     expect(workbook.getWorksheet('Kano 응답원본')!.getCell(4, 8).value).toBeInstanceOf(Date);
-    rowWith(workbook.getWorksheet('WS-14 개발계획서')!, '개발 과제', 3);
+    expect(workbook.getWorksheet('WS-14 개발계획서')).toBeUndefined();
     rowWith(workbook.getWorksheet('WS-13 향후목표고객LIST')!, '설계', 7);
     const literal = workbook.getWorksheet('WS-5 고객요구사항도출표')!.getCell(8, 3);
     expect(literal.type).toBe(ExcelJS.ValueType.String);
@@ -143,11 +143,12 @@ it('개별 워크시트는 해당 양식만 출력하고 빈 프로젝트도 모
     const project = worksheetExcelProject();
     for (const key of Object.keys(project)) if (Array.isArray(project[key as keyof typeof project])) (project as unknown as Record<string, unknown>)[key] = [];
     project.fitnessMatrix = null;
-    expect((await load(undefined, project)).worksheets).toHaveLength(17);
+    expect((await load(undefined, project)).worksheets).toHaveLength(16);
     expect((await load('requirements')).worksheets.map(sheet => sheet.name)).toEqual(['WS-5 고객요구사항도출표']);
     expect(resolveWorksheetExcelId('attributes/fitness')).toBe('fitness');
     expect(resolveWorksheetExcelId('kano/analysis')).toBe('kano-aggregation');
     expect(resolveWorksheetExcelId('unknown')).toBeUndefined();
+    expect(resolveWorksheetExcelId('dev-plan')).toBeUndefined();
 });
 
 it('WS-17 같은 구분의 여러 세부행과 3개년 출처·금액을 모두 출력하고 합산한다', async () => {
