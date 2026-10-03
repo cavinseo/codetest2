@@ -3,8 +3,8 @@ import { toCanvas } from 'html-to-image';
 import type { CapturedWorksheetImage } from './final-report-document';
 import { kanoSurveyFileNameStem } from './kano-survey-document';
 
-/** 가로 스크롤로 잘려 있는 안쪽 상자들. 캡처 전에 전부 펼쳐야 표 전체가 담긴다. */
-const SCROLLABLE_SELECTOR = '.overflow-x-auto, .overflow-auto, .overflow-x-scroll, .overflow-scroll, .overflow-y-auto, .overflow-y-scroll, .overflow-hidden, textarea';
+/** 스크롤로 잘려 있는 안쪽 상자들. 캡처 전에 전부 펼쳐야 표 전체가 담긴다. */
+const SCROLLABLE_SELECTOR = '.overflow-x-auto, .overflow-auto, .overflow-x-scroll, .overflow-scroll, .overflow-y-auto, .overflow-y-scroll, .overflow-hidden, .overflow-clip, textarea';
 
 const DEFAULT_PIXEL_RATIO = 2;
 const capturingNodes = new WeakSet<HTMLElement>();
@@ -57,17 +57,14 @@ function displayInputValues(node: HTMLElement): Array<{ input: HTMLElement; labe
 }
 
 /** 안쪽 스크롤부터 펼쳐야 바깥 컨테이너가 QFD 표 전체 폭을 측정할 수 있다. */
-function expandScrollableWidths(elements: HTMLElement[]): void {
+function expandScrollableAreas(elements: HTMLElement[]): void {
     for (const element of [...elements].reverse()) {
+        element.style.setProperty('height', 'auto', 'important');
+        element.style.setProperty('max-height', 'none', 'important');
+        element.style.setProperty('overflow', 'visible', 'important');
         if (element.scrollWidth > element.clientWidth) {
             element.style.setProperty('width', `${element.scrollWidth}px`, 'important');
             element.style.setProperty('max-width', 'none', 'important');
-            element.style.setProperty('overflow', 'visible', 'important');
-        }
-        if (element.scrollHeight > element.clientHeight) {
-            element.style.setProperty('height', `${element.scrollHeight}px`, 'important');
-            element.style.setProperty('max-height', 'none', 'important');
-            element.style.setProperty('overflow', 'visible', 'important');
         }
         element.scrollLeft = 0;
         element.scrollTop = 0;
@@ -107,6 +104,14 @@ export async function captureWorksheetNode(node: HTMLElement, options: { pixelRa
     const worksheetId = node.dataset.worksheetId || node.id || 'unknown';
     const originalClass = node.getAttribute('class');
     const elements = [node, ...node.querySelectorAll<HTMLElement>(SCROLLABLE_SELECTOR)];
+    for (const table of node.querySelectorAll('table')) {
+        for (let parent = table.parentElement; parent && parent !== node; parent = parent.parentElement) {
+            if (!elements.includes(parent)) {
+                const childIndex = elements.findIndex(element => parent.contains(element));
+                elements.splice(childIndex < 0 ? elements.length : childIndex, 0, parent);
+            }
+        }
+    }
     const chartLabels = [...node.querySelectorAll<SVGElement>('[data-capture-chart-label], [data-capture-chart-label] *')];
     const originalStyles = snapshotInlineStyles([...elements, ...chartLabels]);
     const scrollPositions = elements.map(element => ({ element, left: element.scrollLeft, top: element.scrollTop }));
@@ -120,7 +125,7 @@ export async function captureWorksheetNode(node: HTMLElement, options: { pixelRa
             label.style.setProperty('stroke', 'none', 'important');
         }
         inputLabels = displayInputValues(node);
-        expandScrollableWidths(elements);
+        expandScrollableAreas(elements);
         const canvas = await toCanvas(node, {
             backgroundColor: '#ffffff',
             pixelRatio: options.pixelRatio ?? DEFAULT_PIXEL_RATIO,

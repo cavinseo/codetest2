@@ -103,3 +103,24 @@ it('SVG 내부 축 글자는 인라인 인쇄색으로 캡처하고 원래 색�
     expect(label.getAttribute('style')).toBeNull();
     expect(node.querySelector('g')?.getAttribute('fill')).toBe('white');
 });
+
+it('스펙표 상위 상자의 세로 제한을 모두 해제하고 마지막 행까지 펼친 뒤 원래 스타일을 복구한다', async () => {
+    const node = document.createElement('div');
+    node.style.cssText = 'height: 300px; max-height: 300px; overflow: hidden;';
+    node.innerHTML = '<fieldset style="height: 200px; max-height: 200px; overflow: clip;"><div class="overflow-x-auto" style="max-height: 180px"><table><tbody><tr><td>첫 스펙</td></tr><tr><td>마지막 스펙</td></tr></tbody></table></div></fieldset>';
+    document.body.append(node);
+    const fieldset = node.querySelector('fieldset')!;
+    const scroller = node.querySelector<HTMLElement>('.overflow-x-auto')!;
+    const styles = [node, fieldset, scroller].map(element => element.getAttribute('style'));
+    vi.mocked(toCanvas).mockImplementation(async target => {
+        for (const element of [target, fieldset, scroller]) {
+            expect(element.style.getPropertyValue('height')).toBe('auto');
+            expect(element.style.getPropertyValue('max-height')).toBe('none');
+            expect(element.style.getPropertyValue('overflow')).toBe('visible');
+        }
+        expect(target.querySelector('tbody tr:last-child')!.textContent).toBe('마지막 스펙');
+        return { width: 100, height: 900, toDataURL: () => 'data:image/png;base64,AA==' } as HTMLCanvasElement;
+    });
+    await captureWorksheetNode(node);
+    expect([node, fieldset, scroller].map(element => element.getAttribute('style'))).toEqual(styles);
+});
