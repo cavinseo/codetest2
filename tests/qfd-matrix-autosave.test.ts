@@ -682,6 +682,18 @@ describe('WS-9 그룹 구성', () => {
         expect(container.querySelector<HTMLInputElement>('[aria-label="가용성 측정단위"]')?.value).toBe('ms');
     });
 
+    it('그룹 재배치 저장 중에는 겹치는 변경을 막고 실패하면 다시 편집할 수 있다', async () => {
+        await mount();
+        const selects = [...container.querySelectorAll<HTMLSelectElement>('thead select')];
+        await selectValue(selects[0], '가용성');
+        expect(selects[1].matches(':disabled')).toBe(true);
+        await selectValue(selects[1], '가용성');
+        expect(server.pending('qfd/technical', 'PATCH')).toHaveLength(1);
+        await finish(server.pending('qfd/technical', 'PATCH')[0], 'http');
+        expect(selects[1].matches(':disabled')).toBe(false);
+        expect(container.querySelector<HTMLSelectElement>('thead select')?.value).toBe('처리 속도');
+    });
+
     it('그룹 추가를 취소하면 빈 열과 그룹이 생기지 않는다', async () => {
         await mount();
         await click(button('+ 그룹'));

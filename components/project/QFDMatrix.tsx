@@ -138,6 +138,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
     const [showAddTechModal, setShowAddTechModal] = useState(false);
     const [addingToGroup, setAddingToGroup] = useState<number | null>(null);
     const [isAddingTechnical, setIsAddingTechnical] = useState(false);
+    const [isUpdatingTechnical, setIsUpdatingTechnical] = useState(false);
     const [canWriteTechnicals, setCanWriteTechnicals] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [isResetting, setIsResetting] = useState(false);
@@ -250,6 +251,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
         setDeletingGroup(null);
         setAddingToGroup(null);
         setIsAddingTechnical(false);
+        setIsUpdatingTechnical(false);
         setIsDeletingTech(false);
         setCanWriteTechnicals(false);
         setShowResetConfirm(false);
@@ -331,12 +333,14 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
 
     const setTechnicalSubFunction = async (tech: DisplayTechnical, subName: string) => {
         const name = normalizeTechnicalName(subName);
-        if (!name || name === normalizeTechnicalName(tech.name)) return;
+        if (!name || name === normalizeTechnicalName(tech.name) || isUpdatingTechnical) return;
         if (technicalChars.some(item => item.id !== tech.id && normalizeTechnicalName(item.name) === name)) {
             showToast('이미 추가된 세부기능입니다.', 'error');
             return;
         }
         const snapshot = captureSnapshot();
+        setIsUpdatingTechnical(true);
+        loadRequest.current += 1;
         try {
             const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
                 method: 'PATCH',
@@ -352,6 +356,8 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
             showToast('세부기능을 저장했습니다.');
         } catch (error) {
             if (isCurrentSnapshot(snapshot)) showToast(error instanceof Error ? error.message : '세부기능을 저장하지 못했습니다.', 'error');
+        } finally {
+            if (isCurrentSnapshot(snapshot)) setIsUpdatingTechnical(false);
         }
     };
 
@@ -764,7 +770,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
         );
     }
 
-    const isWorksheetBusy = isSavingBenchmarks || isDeletingTech || isResetting || isAddingTechnical;
+    const isWorksheetBusy = isSavingBenchmarks || isDeletingTech || isResetting || isAddingTechnical || isUpdatingTechnical;
     const editingDisabled = readOnly || isWorksheetBusy;
 
     return (
