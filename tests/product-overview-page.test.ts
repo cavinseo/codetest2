@@ -162,14 +162,13 @@ async function pressDetailEnter(textarea: HTMLTextAreaElement, options: Keyboard
     return event;
 }
 
-it('상세 제품개요의 글머리 적용·자동 이어쓰기·종료 후 저장하고 다시 열어도 내용을 보존한다', async () => {
+it('글머리 도구 모음 없이 직접 작성한 목록을 이어 쓰고 저장·재편집한다', async () => {
     await act(async () => root.render(createElement(ProjectDetailPage)));
     await click('수정');
     let textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')!;
-    await input(textarea, '고객 문제\n핵심 기능');
-    textarea.setSelectionRange(0, textarea.value.length);
-    await click('• 점');
-    expect(textarea.value).toBe('• 고객 문제\n• 핵심 기능');
+    expect(container.querySelector('[role="group"][aria-label$="글머리"]')).toBeNull();
+    expect(container.textContent).not.toContain('글머리 제거');
+    await input(textarea, '• 고객 문제\n• 핵심 기능');
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     await pressDetailEnter(textarea);
     expect(textarea.value.endsWith('\n• ')).toBe(true);
@@ -201,16 +200,12 @@ it.each([{ isComposing: true }, { keyCode: 229 }, { shiftKey: true }, { ctrlKey:
     expect(textarea.value).toBe('• 작성 중');
 });
 
-it('여러 줄의 기호를 바꾸거나 제거한 뒤 취소하면 원래 상세 설명을 유지한다', async () => {
+it('목록 내용을 직접 수정한 뒤 취소하면 원래 상세 설명을 유지한다', async () => {
     project.detailedDescription = '• 첫 항목\n- 두 번째 항목';
     await act(async () => root.render(createElement(ProjectDetailPage)));
     await click('수정');
     const textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')!;
-    textarea.setSelectionRange(0, textarea.value.length);
-    await click('○ 동그라미');
-    expect(textarea.value).toBe('○ 첫 항목\n○ 두 번째 항목');
-    await click('글머리 제거');
-    expect(textarea.value).toBe('첫 항목\n두 번째 항목');
+    await input(textarea, '첫 항목\n두 번째 항목');
     await click('취소');
     await click('수정');
     expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="상세 제품개요"]')?.value).toBe(project.detailedDescription);
