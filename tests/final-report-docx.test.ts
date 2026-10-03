@@ -129,7 +129,7 @@ it('serializes overview fields and worksheet analyses while keeping WS-4 table-o
         'Ⅳ. (To-Be) 최종 고객요구사항기반 제품정의서', '정확도 항목', '목표 정확도 근거', '최종 제품/서비스 제공 스펙',
         '개선 학습지원 서비스', '개선 서비스의 구현 방향', 'KS-QFD를 활용한 제품/서비스 개선 방향성',
         'Ⅴ. 자산 및 자금계획', '핵심자산 및 보완자산', '핵심자산 분석 본문', '보완자산 분석 본문',
-        '자금소요계획 (WS-16)', '소요자금 분석 본문', '자금조달계획 (WS-17)', '조달자금 분석 본문',
+        '자금소요계획 (WS-15)', '소요자금 분석 본문', '자금조달계획 (WS-16)', '조달자금 분석 본문',
     ];
     let previous = -1;
     for (const text of orderedTexts) {

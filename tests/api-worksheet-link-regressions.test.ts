@@ -57,7 +57,7 @@ it.each([null, 0, 1234.56789])('preserves future revenue %s on POST and repeated
     expect(db.models.fundingPlan.createMany).toHaveBeenCalledTimes(1);
 });
 
-it('saves multiple WS-17 details independently and does not recreate deleted details on GET', async () => {
+it('saves multiple WS-16 details independently and does not recreate deleted details on GET', async () => {
     db.state.fundingPlan = [{ id: 'plan', category: '소요자금', item: '개발', year1: 100, year2: 200, year3: 300, order: 0 }];
     const plansBefore = structuredClone(db.state.fundingPlan);
     const sources = [

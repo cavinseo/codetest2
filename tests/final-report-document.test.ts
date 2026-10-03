@@ -51,9 +51,9 @@ it('속성의 혜택, 최종 스펙의 목표값·단위, 자산·자금의 원�
     expect(result.find(t => t.title === 'WS-3 제품속성서')?.rows).toEqual([['1', '시장', '고객', '니즈', '혜택', '속성']]);
     expect(result.find(t => t.title === 'WS-3 기술 역량')?.rows).toEqual([['역량']]);
     expect(result.find(t => t.title?.startsWith('WS-12'))?.rows).toEqual([['분류', '항목', '특성', '숨긴 단위', '숨긴 목표', '신규']]);
-    expect(result.find(t => t.title?.startsWith('WS-15'))?.rows).toEqual([['핵심자산', '숨긴 분류', '특허'], ['보완자산', '인력', '채용']]);
-    expect(result.find(t => t.title?.startsWith('WS-16'))?.rows).toEqual([['자금', '개발비', '1,234.5', '0', '미입력']]);
-    expect(result.find(t => t.title?.startsWith('WS-17'))?.rows).toEqual([['정부', '지원\n1,234.5', '출자\n2,000', '미입력']]);
+    expect(result.find(t => t.title?.startsWith('WS-14'))?.rows).toEqual([['핵심자산', '숨긴 분류', '특허'], ['보완자산', '인력', '채용']]);
+    expect(result.find(t => t.title?.startsWith('WS-15'))?.rows).toEqual([['자금', '개발비', '1,234.5', '0', '미입력']]);
+    expect(result.find(t => t.title?.startsWith('WS-16'))?.rows).toEqual([['정부', '지원\n1,234.5', '출자\n2,000', '미입력']]);
 });
 
 it('빈 워크시트도 해당 장과 미작성 안내를 남기며 진단을 임의로 채우지 않는다', () => {
@@ -61,7 +61,7 @@ it('빈 워크시트도 해당 장과 미작성 안내를 남기며 진단을 �
     const result = buildFinalReportModel(overview, empty, free, []);
     expect(result.blocks[0]).toMatchObject({ kind: 'cover', title: result.title, companyName: '미입력', outputDate: overview.generatedAt });
     const text = JSON.stringify(result);
-    for (const worksheet of ['WS-2', 'WS-3', 'WS-4', 'WS-5', 'WS-7', 'WS-9', 'WS-10', 'WS-11', 'WS-12', 'WS-13', 'WS-15', 'WS-16', 'WS-17']) expect(text).toContain(worksheet);
+    for (const worksheet of ['WS-2', 'WS-3', 'WS-4', 'WS-5', 'WS-7', 'WS-9', 'WS-10', 'WS-11', 'WS-12', 'WS-13', 'WS-14', 'WS-15', 'WS-16']) expect(text).toContain(worksheet);
     expect(text).toContain('미작성'); expect(text).not.toContain('아니요');
 });
 
@@ -76,7 +76,7 @@ it('8종 멘토 분석의 원문을 결과보다 앞에 배치하고 분석 입�
         'target-spec': { items: [{ label: '분류 / 항목', explanation: '목표 근거' }] }, 'tech-roadmap': { productName: '개선 서비스명', description: '개선 서비스 설명' },
         assets: { core: '핵심자산 검토', complementary: '보완자산 검토' }, 'funding-plan': { analysis: '소요자금 검토' }, 'funding-source': { analysis: '조달자금 검토' } };
     const before = JSON.stringify(analysis), blocks = build(analysis).blocks;
-    for (const [text, title] of [['기능 구성 검토', 'WS-2 AS-IS 스펙표'], ['혜택과 속성 검토', 'WS-3 제품속성서'], ['목표 근거', 'WS-12 최종 제품/서비스 제공 스펙'], ['개선 서비스 설명', 'WS-13 향후 목표고객'], ['보완자산 검토', 'WS-15 핵심자산 및 보완자산'], ['소요자금 검토', 'WS-16 자금소요계획'], ['조달자금 검토', 'WS-17 자금조달계획']]) {
+    for (const [text, title] of [['기능 구성 검토', 'WS-2 AS-IS 스펙표'], ['혜택과 속성 검토', 'WS-3 제품속성서'], ['목표 근거', 'WS-12 최종 제품/서비스 제공 스펙'], ['개선 서비스 설명', 'WS-13 향후 목표고객'], ['보완자산 검토', 'WS-14 핵심자산 및 보완자산'], ['소요자금 검토', 'WS-15 자금소요계획'], ['조달자금 검토', 'WS-16 자금조달계획']]) {
         const index = blocks.findIndex(b => b.kind === 'paragraph' && b.text.includes(text));
         expect(index).toBeGreaterThan(-1); expect(index).toBeLessThan(blocks.findIndex(b => b.kind === 'dataTable' && b.title === title));
     }

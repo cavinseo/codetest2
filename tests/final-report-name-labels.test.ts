@@ -5,7 +5,7 @@ import JSZip from 'jszip';
 import { expect, it } from 'vitest';
 import FinalReportPreview from '../components/project/FinalReportPreview';
 import FinalReportPages from '../components/project/FinalReportPages';
-import { normalizeReportNameLabels } from '../lib/final-report-labels';
+import { normalizeReportLabels } from '../lib/final-report-labels';
 import { buildFinalReportModel, replaceWorksheetImages, type FinalReportBlock, type FinalReportModel, type FinalReportWorksheetData } from '../lib/final-report-document';
 import { renderFinalReportDocx } from '../lib/final-report-docx';
 import { EMPTY_REPORT_FREE_INPUT } from '../lib/final-report-payload';
@@ -20,14 +20,14 @@ const paragraphs: FinalReportBlock[] = [
 
 it('기존 라벨만 바꾸고 이름 값, 줄바꿈, 교정 문단, 블록 순서를 보존한다', () => {
     const before = JSON.stringify(paragraphs);
-    const normalized = normalizeReportNameLabels(paragraphs);
+    const normalized = normalizeReportLabels(paragraphs);
     expect(normalized).toEqual([
         { kind: 'paragraph', text: '프로젝트명 : 정밀장비' },
         { kind: 'paragraph', text: '제품(서비스) 명 : 측정기\n개요의 간단 설명 · 교정한 설명' },
         { kind: 'paragraph', text: '제품(서비스) 명 : 검사기' },
         paragraphs[3],
     ]);
-    expect(normalizeReportNameLabels(normalized)).toEqual(normalized);
+    expect(normalizeReportLabels(normalized)).toEqual(normalized);
     expect(JSON.stringify(paragraphs)).toBe(before);
 });
 

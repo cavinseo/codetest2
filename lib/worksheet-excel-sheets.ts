@@ -13,9 +13,9 @@ export const WORKSHEET_EXCEL_SHEETS = [
     { id: 'improvements', name: 'WS-11 개선포인트도출' },
     { id: 'target-spec', name: 'WS-12 최종목표스펙도출' },
     { id: 'tech-roadmap', name: 'WS-13 향후목표고객LIST' },
-    { id: 'assets', name: 'WS-15 핵심자산 및 보완자산' },
-    { id: 'funding-plan', name: 'WS-16 자금소요계획표' },
-    { id: 'funding-source', name: 'WS-17 자금조달계획표' },
+    { id: 'assets', name: 'WS-14 핵심자산 및 보완자산' },
+    { id: 'funding-plan', name: 'WS-15 자금소요계획표' },
+    { id: 'funding-source', name: 'WS-16 자금조달계획표' },
 ] as const;
 
 export type WorksheetExcelId = typeof WORKSHEET_EXCEL_SHEETS[number]['id'];

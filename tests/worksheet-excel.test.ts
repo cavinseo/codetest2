@@ -19,7 +19,7 @@ function rowWith(sheet: ExcelJS.Worksheet, text: string, column = 2): number {
 }
 function result(cell: ExcelJS.Cell) { return cell.type === ExcelJS.ValueType.Formula ? cell.result : cell.value; }
 
-it('WS-14를 제외한 워크시트 양식을 만들고 저장된 추가 항목과 원본 응답도 보존한다', async () => {
+it('WS-1~16 워크시트 양식을 만들고 저장된 추가 항목과 원본 응답도 보존한다', async () => {
     const project = worksheetExcelProject();
     const before = JSON.stringify(project);
     const workbook = await load(undefined, project);
@@ -37,6 +37,10 @@ it('WS-14를 제외한 워크시트 양식을 만들고 저장된 추가 항목�
     expect(kano.getCell('F11').value).toBeNull();
     expect(workbook.getWorksheet('Kano 응답원본')!.getCell(4, 8).value).toBeInstanceOf(Date);
     expect(workbook.getWorksheet('WS-14 개발계획서')).toBeUndefined();
+    rowWith(workbook.getWorksheet('WS-14 핵심자산 및 보완자산')!, '핵심 기술');
+    expect(workbook.getWorksheet('WS-15 자금소요계획표')).toBeDefined();
+    expect(workbook.getWorksheet('WS-16 자금조달계획표')).toBeDefined();
+    expect(workbook.worksheets.some(sheet => sheet.name.startsWith('WS-17'))).toBe(false);
     rowWith(workbook.getWorksheet('WS-13 향후목표고객LIST')!, '설계', 7);
     const literal = workbook.getWorksheet('WS-5 고객요구사항도출표')!.getCell(8, 3);
     expect(literal.type).toBe(ExcelJS.ValueType.String);
@@ -151,7 +155,7 @@ it('개별 워크시트는 해당 양식만 출력하고 빈 프로젝트도 모
     expect(resolveWorksheetExcelId('dev-plan')).toBeUndefined();
 });
 
-it('WS-17 같은 구분의 여러 세부행과 3개년 출처·금액을 모두 출력하고 합산한다', async () => {
+it('WS-16 같은 구분의 여러 세부행과 3개년 출처·금액을 모두 출력하고 합산한다', async () => {
     const project = worksheetExcelProject();
     project.fundingSources.push({ ...project.fundingSources[0], id: 'source-2', order: 1, year1: JSON.stringify({ source: '추가 지원사업', amount: '300.5' }), year2: '후속 지원:200', year3: '500' });
     const sheet = (await load('funding-source', project)).worksheets[0];

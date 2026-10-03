@@ -506,7 +506,7 @@ export default function FinalReportPage() {
                 <div><h2 className="text-lg font-semibold text-white">보고서 원본 연결</h2><p className="mt-1 text-sm text-gray-400">제품 정보는 개요에서, 분석은 각 워크시트의 ‘멘토 분석(보고)’에서 불러옵니다. 아래 보완 입력은 연결된 원본이 없는 항목에만 사용됩니다.</p></div>
                 <div className="flex flex-wrap gap-3 text-sm text-primary-300">
                     <Link href={`/project/${projectId}`}>개요</Link>
-                    {['spec', 'attributes', 'attributes/fitness', 'target-spec', 'tech-roadmap', 'assets', 'funding-plan', 'funding-source'].map((path, index) => <Link key={path} href={`/project/${projectId}/${path}`}>WS-{[2, 3, 4, 12, 13, 15, 16, 17][index]} 분석</Link>)}
+                    {['spec', 'attributes', 'attributes/fitness', 'target-spec', 'tech-roadmap', 'assets', 'funding-plan', 'funding-source'].map((path, index) => <Link key={path} href={`/project/${projectId}/${path}`}>WS-{[2, 3, 4, 12, 13, 14, 15, 16][index]} 분석</Link>)}
                 </div>
                 {!usesOverview && <label className="block text-sm text-gray-300">제품/서비스 이미지
                     <input type="file" accept="image/*" onChange={event => { void handleImage(event.target.files?.[0]); event.target.value = ''; }} className="input-field mt-1 block" />

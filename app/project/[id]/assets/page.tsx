@@ -1,4 +1,4 @@
-// WS-15 핵심자산 및 보완자산 도출표 화면을 공통 테이블로 연결하는 페이지입니다.
+// WS-14 핵심자산 및 보완자산 도출표 화면을 공통 테이블로 연결하는 페이지입니다.
 import AssetsTable from '@/components/project/AssetsTable';
 
 interface AssetsPageProps {

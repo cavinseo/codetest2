@@ -1,17 +1,17 @@
-// WS-14를 제외한 엑셀의 데이터·수식·서식·병합·인쇄 설정이 그대로 유지되는지 검증한다.
+// 워크시트 엑셀의 데이터·수식·서식·병합·인쇄 설정이 그대로 유지되는지 검증한다.
 import { createHash } from 'node:crypto';
 import ExcelJS from 'exceljs';
 import { expect, it } from 'vitest';
 import { buildWorksheetExcel } from '../lib/worksheet-excel';
 import { worksheetExcelProject } from './fixtures/worksheet-excel-project';
 
-// f1b4584 출력에서 WS-14만 제외한 기준이며, 나머지 시트의 내용과 서식이 동일함을 비교 검증했다.
+// cc16ede 출력의 자산·자금 시트 이름과 B2 제목 번호만 WS-14~16으로 바꾸고 다른 내용과 서식은 동일함을 비교 검증했다.
 const baselineHashes = {
-    complete: 'dee4cf42638f76c3be89fed4818790928e22a2605f91a69a5d61a7140c22d074',
-    empty: '41456aa3b61665345c7241c30d33ae6c7f3da9d06ed7e36f08f289754e0c6c60',
-    collapsed: 'f1bbcb1ef1df1114d19f19d944b788b434a6d7fd9b0b64e391944c83cdc04dfb',
-    expanded: '3f638a6b45c7fabdb3c88bd92177e3f0c5fea143bb8ac3932bdbf2b01332e526',
-    long: '92bf7b0ede39d9fbed43dcf2dfefe1425103bbf9495247895b1f414e0be19a17',
+    complete: '24bc31070b7206625eac65d4747317ad8ffd153d7a613364c24fbcc71c4d00b9',
+    empty: '83f394d77486f08a094d361f28a6ee73bfd90786b9083d70a6395e8e86226f66',
+    collapsed: '10661f27392736012c25e689315a3c632b7776f047a1557c275dfe20078ebd45',
+    expanded: '61158db210822046d14b97783dea36397bc6da541a4a21936adf8486989885b9',
+    long: 'e221ffe41c363438a43f1cf65ea3310dd8a00c734473fb55a6197d5ae73bd75c',
 };
 
 function projectForScenario(scenario: keyof typeof baselineHashes) {

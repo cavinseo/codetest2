@@ -202,7 +202,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <h2 className="text-xl font-bold text-white">
-                        {mode === 'plan' ? '[WS-16] 자금소요계획표' : '[WS-17] 자금조달계획표'}
+                        {mode === 'plan' ? '[WS-15] 자금소요계획표' : '[WS-16] 자금조달계획표'}
                     </h2>
                     <p className="mt-1 text-sm text-gray-500">
                         {mode === 'plan'

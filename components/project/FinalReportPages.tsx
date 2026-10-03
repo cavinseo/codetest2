@@ -7,7 +7,7 @@ import { worksheetImageFileName } from '@/lib/worksheet-capture';
 import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTER_PADDING, REPORT_BOX, REPORT_PAPER, REPORT_TABLE_LEFT, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from '@/lib/final-report-layout';
 import { getTableMergeSpans } from '@/lib/final-report-table-merge';
 import type { ReportTextRun } from '@/lib/final-report-markdown';
-import { normalizeReportNameLabels } from '@/lib/final-report-labels';
+import { normalizeReportLabels } from '@/lib/final-report-labels';
 
 interface Props { blocks: FinalReportBlock[]; onEdit?: (edit: BlockEdit) => void; readOnly?: boolean; disabled?: boolean }
 interface EditTarget { label: string; value: string; edit: BlockEdit; ariaLabel?: string }
@@ -150,7 +150,7 @@ function ReportEditDialog({ target, editable, onChange, onClose, onSave }: { tar
 }
 
 export default function FinalReportPages({ blocks: sourceBlocks, onEdit, readOnly, disabled }: Props) {
-    const blocks = useMemo(() => normalizeReportNameLabels(sourceBlocks), [sourceBlocks]);
+    const blocks = useMemo(() => normalizeReportLabels(sourceBlocks), [sourceBlocks]);
     const pages = useMemo(() => layoutReportPages(blocks), [blocks]);
     const cover = blocks.find((block): block is CoverBlock => block.kind === 'cover');
     const [target, setTarget] = useState<EditTarget | null>(null);

@@ -57,7 +57,7 @@ async function input(category: string, row: number, year: number, part: '출처'
     });
 }
 
-describe('WS-17 세부항목', () => {
+describe('WS-16 세부항목', () => {
     it('같은 구분의 세부행은 묶고 기존 JSON·문자열·금액 형식을 모두 보존한다', async () => {
         const before = structuredClone(sources);
         await mount();

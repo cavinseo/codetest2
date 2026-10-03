@@ -1,4 +1,4 @@
-// WS-16 입력값의 그래프 반영과 저장·재조회 및 WS-17 화면 보존을 검증한다.
+// WS-15 입력값의 그래프 반영과 저장·재조회 및 WS-16 화면 보존을 검증한다.
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -50,7 +50,7 @@ async function input(label: string, value: string) {
 
 const chart = () => container.querySelector('section[aria-label="매출 성장 및 손익분기 분석"]')!;
 
-describe('WS-16 선 그래프', () => {
+describe('WS-15 선 그래프', () => {
     it('양식의 매출액·소요자금 두 선과 3개 연도 금액을 표시하고 저장된 합계를 중복 합산하지 않는다', async () => {
         await mount();
         expect(chart().querySelector('[data-series="revenue"]')).not.toBeNull();
@@ -101,10 +101,10 @@ describe('WS-16 선 그래프', () => {
         expect(chart().textContent).toContain(value.text);
     });
 
-    it('WS-17 조달 출처와 금액 화면에는 WS-16 그래프를 추가하지 않는다', async () => {
+    it('WS-16 조달 출처와 금액 화면에는 WS-15 그래프를 추가하지 않는다', async () => {
         await mount('source');
         expect(container.querySelector('svg[role="img"]')).toBeNull();
-        expect(container.textContent).toContain('[WS-17] 자금조달계획표');
+        expect(container.textContent).toContain('[WS-16] 자금조달계획표');
         expect([...container.querySelectorAll('input')].map(element => element.value)).toContain('지원금');
     });
 });

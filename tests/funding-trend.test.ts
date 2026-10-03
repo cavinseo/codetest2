@@ -4,7 +4,7 @@ import { buildFundingTrend } from '../lib/funding-trend';
 
 const trend = (revenues: Array<number | null>, costs: number[]) => buildFundingTrend(revenues.map((revenue, index) => ({ revenue, required: costs[index] })));
 
-describe('WS-16 성장과 손익분기 계산', () => {
+describe('WS-15 성장과 손익분기 계산', () => {
     it('첨부 양식의 연차별 금액과 매출 성장률을 계산한다', () => {
         const result = trend([250, 1000, 2000], [235, 835, 1770]);
         expect(result.years.map(year => year.balance)).toEqual([15, 165, 230]);

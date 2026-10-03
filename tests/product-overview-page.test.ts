@@ -355,13 +355,13 @@ it('추가 시장 자료의 Markdown·HTML 제목·목록·표를 미리보고 �
     expect(box().querySelector('h1')?.textContent).toBe('시장 전망');
 });
 
-it('WS-14를 프로젝트 탭과 공통 메뉴에서 제거하고 후속 워크시트 번호는 유지한다', async () => {
+it('개발계획서를 제거하고 자산·자금 워크시트를 WS-14~16으로 표시한다', async () => {
     await act(async () => root.render(createElement(ProjectDetailPage)));
-    expect(container.textContent).not.toContain('[WS-14]');
+    expect(container.textContent).toContain('[WS-14] 핵심자산 및 보완자산 도출표');
     expect(container.textContent).not.toContain('개발계획서');
-    expect(container.textContent).toContain('[WS-15]');
-    expect(container.textContent).toContain('[WS-16]');
-    expect(container.textContent).toContain('[WS-17]');
+    expect(container.textContent).toContain('[WS-15] 자금소요계획표');
+    expect(container.textContent).toContain('[WS-16] 자금조달계획표');
+    expect(container.textContent).not.toContain('[WS-17]');
     expect(WORKSHEET_LINKS.some(item => item.href === 'dev-plan')).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/dev-plan'))).toBe(false);
 });

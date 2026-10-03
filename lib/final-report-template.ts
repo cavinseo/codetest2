@@ -178,13 +178,13 @@ function appendTargetProduct(writer: ReportWriter, worksheets: FinalReportWorksh
 
 function appendAssetAndFundingPlans(writer: ReportWriter, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
     writer.addPageBreak(); writer.addHeading('Ⅴ. 자산 및 자금계획', 1);
-    writer.addHeading('핵심자산 및 보완자산 (WS-15)'); writer.addMentorAnalysis('WS-15', [analysis.assets?.core, analysis.assets?.complementary].filter(Boolean).join('\n\n'));
-    writer.addTable('WS-15 핵심자산 및 보완자산', ['구분', '필요 항목', '핵심자산·해결방안'], worksheets.assets.filter(row => row.type === 'CORE' || row.type === 'COMPLEMENTARY').map(row => [row.type === 'CORE' ? '핵심자산' : '보완자산', row.category, row.content]), [75, 170, 266], [0, 1]);
-    writer.addHeading('자금소요계획 (WS-16)'); writer.addMentorAnalysis('WS-16', analysis['funding-plan']?.analysis);
-    writer.addTable('WS-16 자금소요계획', ['구분', '항목', '1차년도(원)', '2차년도(원)', '3차년도(원)'], worksheets.fundingPlans.map(row => [row.category, row.item, displayAmount(row.year1), displayAmount(row.year2), displayAmount(row.year3)]), [59, 140, 112, 100, 100], [0]);
+    writer.addHeading('핵심자산 및 보완자산 (WS-14)'); writer.addMentorAnalysis('WS-14', [analysis.assets?.core, analysis.assets?.complementary].filter(Boolean).join('\n\n'));
+    writer.addTable('WS-14 핵심자산 및 보완자산', ['구분', '필요 항목', '핵심자산·해결방안'], worksheets.assets.filter(row => row.type === 'CORE' || row.type === 'COMPLEMENTARY').map(row => [row.type === 'CORE' ? '핵심자산' : '보완자산', row.category, row.content]), [75, 170, 266], [0, 1]);
+    writer.addHeading('자금소요계획 (WS-15)'); writer.addMentorAnalysis('WS-15', analysis['funding-plan']?.analysis);
+    writer.addTable('WS-15 자금소요계획', ['구분', '항목', '1차년도(원)', '2차년도(원)', '3차년도(원)'], worksheets.fundingPlans.map(row => [row.category, row.item, displayAmount(row.year1), displayAmount(row.year2), displayAmount(row.year3)]), [59, 140, 112, 100, 100], [0]);
     writer.addParagraph('1차년도 매출액은 WS-1의 향후 1년 목표매출 합계와 연동됩니다. 저장된 0과 미입력을 구분하여 표시합니다.', 'caption');
-    writer.startWorksheetPage('자금조달계획 (WS-17)', 'WS-17', analysis['funding-source']?.analysis);
-    writer.addTable('WS-17 자금조달계획', ['구분', '1차년도 출처·금액(원)', '2차년도 출처·금액(원)', '3차년도 출처·금액(원)'], worksheets.fundingSources.map(row => [row.category, ...[row.year1, row.year2, row.year3].map(raw => {
+    writer.startWorksheetPage('자금조달계획 (WS-16)', 'WS-16', analysis['funding-source']?.analysis);
+    writer.addTable('WS-16 자금조달계획', ['구분', '1차년도 출처·금액(원)', '2차년도 출처·금액(원)', '3차년도 출처·금액(원)'], worksheets.fundingSources.map(row => [row.category, ...[row.year1, row.year2, row.year3].map(raw => {
         if (!raw?.trim()) return '미입력';
         const parsed = parseSourceYear(raw);
         return `${displayValue(parsed.source)}\n${parsed.amount === '' ? '미입력' : formatMoney(parsed.amount)}`;

@@ -7,7 +7,7 @@ import {
 import type { FinalReportBlock, FinalReportModel } from './final-report-document';
 import { renderTemplateReportDocx } from './final-report-template-docx';
 import { getFitnessReportExcludedIndexes } from './final-report-fitness';
-import { normalizeReportNameLabels } from './final-report-labels';
+import { normalizeReportLabels } from './final-report-labels';
 
 const PAGE = {
     size: { orientation: PageOrientation.PORTRAIT, width: convertMillimetersToTwip(210), height: convertMillimetersToTwip(297) },
@@ -77,7 +77,7 @@ function renderBlock(block: FinalReportBlock): Paragraph | Table {
 }
 
 export async function renderFinalReportDocx(model: FinalReportModel): Promise<Blob> {
-    model = { ...model, blocks: normalizeReportNameLabels(model.blocks) };
+    model = { ...model, blocks: normalizeReportLabels(model.blocks) };
     if (model.blocks.some(block => block.kind === 'cover')) return renderTemplateReportDocx(model);
     const excluded = getFitnessReportExcludedIndexes(model.blocks);
     const sections: ISectionOptions[] = [];
