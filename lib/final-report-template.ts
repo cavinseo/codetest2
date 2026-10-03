@@ -78,6 +78,9 @@ function appendProductOverview(writer: ReportWriter, overview: FinalReportOvervi
     writer.addParagraph('시장정의', 'analysis');
     writer.addParagraph(displayValue(source.marketDefinition));
     writer.addParagraph(`목표고객 · ${displayValue(source.targetCustomer)}`);
+    if (overview.additionalMarketData?.trim()) {
+        writer.addTable('추가 시장 자료', ['추가 시장 자료'], [[overview.additionalMarketData]]);
+    }
     writer.addHeading('매출처별 매출현황 및 목표매출액 (WS-1)');
     for (const [period, title] of [['Y', '현재 매출현황'], ['Y_PLUS_1', '향후 1년 목표매출액']]) {
         writer.addParagraph(title, 'analysis');

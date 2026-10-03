@@ -136,6 +136,7 @@ export const importJsonSchema = z.object({
         name: z.string().optional(),
         description: z.string().nullable().optional(),
         detailedDescription: z.string().nullable().optional(),
+        additionalMarketData: z.string().max(20_000).nullable().optional(),
     }).strict().optional(),
     customerRequirements: rows(requirementRow).optional(),
     technicalCharacteristics: rows(technicalRow).refine(

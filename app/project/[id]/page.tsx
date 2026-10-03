@@ -152,6 +152,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                             productImageHeightPx: overviewData.project.productImageHeightPx,
                             marketDefinition: overviewData.project.marketDefinition,
                             targetCustomer: overviewData.project.targetCustomer,
+                            additionalMarketData: overviewData.project.additionalMarketData,
                             createdAt: overviewData.project.createdAt,
                             memberCount: current?.memberCount ?? 1,
                             role: overviewData.project.role || current?.role || 'COACH',
@@ -359,6 +360,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                 productImageHeightPx: overviewForm.productImageHeightPx,
                 marketDefinition: overviewForm.marketDefinition,
                 targetCustomer: overviewForm.targetCustomer,
+                additionalMarketData: overviewForm.additionalMarketData,
                 description: overviewForm.description,
                 detailedDescription: overviewForm.detailedDescription,
                 ...(isOverviewFileDirty ? { businessPlanFile: overviewForm.businessPlanFile } : {}),
@@ -382,6 +384,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                 productImageHeightPx: data.project.productImageHeightPx,
                 marketDefinition: data.project.marketDefinition,
                 targetCustomer: data.project.targetCustomer,
+                additionalMarketData: data.project.additionalMarketData,
                 name: data.project.name,
                 description: data.project.description || '',
                 detailedDescription: data.project.detailedDescription || '',
@@ -816,6 +819,19 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                                         <ProductOverviewContent value={project.detailedDescription} emptyMessage="입력된 상세 제품개요가 없습니다." />
                                     )}
                                 </div>
+                                <section aria-labelledby="additional-market-data-title" className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
+                                    <h3 id="additional-market-data-title" className="mb-2 text-sm font-semibold text-gray-300">추가 시장 자료</h3>
+                                    {isOverviewEditing ? (
+                                        <textarea aria-label="추가 시장 자료" rows={6} maxLength={20_000}
+                                            value={overviewForm.additionalMarketData ?? ''}
+                                            onChange={event => setOverviewForm(current => ({ ...current, additionalMarketData: event.target.value }))}
+                                            disabled={isOverviewSaving}
+                                            placeholder="시장 규모, 동향, 참고 자료와 출처 등을 입력하세요."
+                                            className="input w-full resize-y" />
+                                    ) : (
+                                        <p className="whitespace-pre-wrap break-words text-sm leading-6 text-white">{project.additionalMarketData || '입력된 추가 시장 자료가 없습니다.'}</p>
+                                    )}
+                                </section>
                             </div>
                         </div>
 

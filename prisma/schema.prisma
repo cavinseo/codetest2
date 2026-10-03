@@ -104,6 +104,7 @@ model Project {
   productImageHeightPx      Int?
   marketDefinition         String?
   targetCustomer           String?
+  additionalMarketData     String?
   // AI 에이전트 연결 방식: "rule" | "local" | "personal"
   aiMode                   String                    @default("rule")
   specDetailCollapsed      Boolean                   @default(false)

@@ -278,6 +278,7 @@ export async function POST(
                     data: {
                         description: importData.project?.description,
                         detailedDescription: importData.project?.detailedDescription,
+                        additionalMarketData: importData.project?.additionalMarketData,
                         ...(importData.technicalCharacteristics ? { qfdTechnicalInitialized: true } : {}),
                     },
                 });

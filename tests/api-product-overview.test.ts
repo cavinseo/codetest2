@@ -112,3 +112,28 @@ it('서식 입력칸을 공백만 남겨 지우면 기존 빈 값 규칙으로 �
     await PATCH(request({ name: '프로젝트', detailedDescription: ' \n ', marketDefinition: ' \n ' }), params);
     expect(stored).toMatchObject({ detailedDescription: null, marketDefinition: '' });
 });
+
+it('추가 시장 자료의 줄바꿈과 들여쓰기를 저장·재조회하고 생략 요청에서는 보존한다', async () => {
+    const additionalMarketData = '시장 규모 120억원\n  출처: 시장 조사 보고서';
+    const saved = await PATCH(request({ name: '프로젝트', additionalMarketData }), params);
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).project.additionalMarketData).toBe(additionalMarketData);
+    expect((await (await GET(request(), params)).json()).project.additionalMarketData).toBe(additionalMarketData);
+    expect(m.find.mock.calls[0][0].select.additionalMarketData).toBe(true);
+    await PATCH(request({ name: '이름만 변경' }), params);
+    expect(stored.additionalMarketData).toBe(additionalMarketData);
+    expect(m.update.mock.calls[1][0].data).not.toHaveProperty('additionalMarketData');
+});
+
+it.each(['', null])('추가 시장 자료의 명시적 삭제를 보존한다 (%s)', async additionalMarketData => {
+    stored.additionalMarketData = '기존 자료';
+    expect((await PATCH(request({ name: '프로젝트', additionalMarketData }), params)).status).toBe(200);
+    expect((await (await GET(request(), params)).json()).project.additionalMarketData).toBe(additionalMarketData);
+});
+
+it('추가 시장 자료가 제한을 초과하면 기존 내용을 덮어쓰지 않는다', async () => {
+    stored.additionalMarketData = '기존 자료';
+    expect((await PATCH(request({ name: '프로젝트', additionalMarketData: '가'.repeat(20_001) }), params)).status).toBe(400);
+    expect(m.update).not.toHaveBeenCalled();
+    expect(stored.additionalMarketData).toBe('기존 자료');
+});

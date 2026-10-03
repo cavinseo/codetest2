@@ -294,3 +294,38 @@ it('두 항목의 미리보기에서 취소하면 기존 원문을 보존하고 
     expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="시장정의"]')?.value).toBe(project.marketDefinition);
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
 });
+
+it('추가 시장 자료를 개요 마지막 박스에서 입력·저장·재조회하고 취소와 전체 삭제를 지원한다', async () => {
+    const text = '시장 규모 120억원\n출처: 시장 보고서';
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    const box = () => container.querySelector('section[aria-labelledby="additional-market-data-title"]')!;
+    expect(box().parentElement!.lastElementChild).toBe(box());
+    await click('수정');
+    await input(box().querySelector('textarea')!, text);
+    await click('저장');
+    expect(savedBody().additionalMarketData).toBe(text);
+    expect(box().textContent).toContain(text);
+    expect(box().querySelector('textarea')).toBeNull();
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    expect(box().textContent).toContain(text);
+    await click('수정');
+    await input(box().querySelector('textarea')!, '취소할 자료');
+    await click('취소');
+    expect(box().textContent).toContain(text);
+    await click('수정');
+    await input(box().querySelector('textarea')!, '');
+    await click('저장');
+    expect(project.additionalMarketData).toBe('');
+    expect(box().textContent).toContain('입력된 추가 시장 자료가 없습니다.');
+});
+
+it('읽기 전용 사용자는 추가 시장 자료의 내용을 읽을 수 있고 수정할 수 없다', async () => {
+    project = { ...project, role: 'VIEWER', additionalMarketData: '<script>실행하지 않는 자료</script>\n두 번째 줄' };
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    const box = container.querySelector('section[aria-labelledby="additional-market-data-title"]')!;
+    expect(box.textContent).toContain(project.additionalMarketData);
+    expect(box.querySelector('textarea,script')).toBeNull();
+    expect([...container.querySelectorAll('button')].some(button => button.textContent?.trim() === '수정')).toBe(false);
+});

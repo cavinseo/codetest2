@@ -7,7 +7,7 @@ export function worksheetExcelProject(): WorksheetExcelProject {
         id: 'project-1', name: '시험 프로젝트', description: '제품 개발', specDetailCollapsed: false,
         companyName: null, ownerId: 'owner', programId: 'program', createdAt: common.createdAt, updatedAt: common.createdAt,
         businessPlanFile: null, detailedDescription: null, productName: null, relatedImages: null, productImageDataUrl: null,
-        productImageWidthPx: null, productImageHeightPx: null, marketDefinition: null, targetCustomer: null, aiMode: 'rule', qfdTechnicalInitialized: true,
+        productImageWidthPx: null, productImageHeightPx: null, marketDefinition: null, targetCustomer: null, additionalMarketData: null, aiMode: 'rule', qfdTechnicalInitialized: true,
         kanoSurveyIntroduction: { technology: '자동화', productType: '분리판', companyName: '시험회사', representativeName: '홍길동', offering: '가공 솔루션' },
         specFunctions: [
             { ...common, id: 'core', level: 'CORE', parentId: null, name: '가공', technology: null },

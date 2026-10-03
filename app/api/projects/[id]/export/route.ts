@@ -75,6 +75,7 @@ export async function GET(
                 name: project.name,
                 description: project.description,
                 detailedDescription: project.detailedDescription,
+                additionalMarketData: project.additionalMarketData,
             },
             specFunctions: project.specFunctions,
             specDetailCollapsed: project.specDetailCollapsed,
