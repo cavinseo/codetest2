@@ -472,11 +472,12 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
 
     const router = useRouter();
 
+    const canEditOverview = project !== null && ['OWNER', 'EDITOR', 'ADMIN'].includes(project.role);
     const tabComponents: Record<string, React.ReactNode> = {
         attributes: <ProductAttributesTable projectId={projectId} />,
         spec: <SpecTable projectId={projectId} onSaved={() => changeTab('attributes')} />,
         requirements: <RequirementsTable projectId={projectId} />,
-        qfd: <QFDMatrix projectId={projectId} onDirtyChange={setQfdDirty} />,
+        qfd: <QFDMatrix projectId={projectId} onDirtyChange={setQfdDirty} readOnly={!canEditOverview} />,
         kano: <KanoManager projectId={projectId} />,
         sales: <SalesTable projectId={projectId} onSaved={() => changeTab('spec')} />,
         fitness: <FitnessWrapper projectId={projectId} />,
@@ -530,7 +531,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         if (tabComponents[tabId]) {
             return (
                 <WorksheetImageExport key={tabId} title={tabs.find(tab => tab.id === tabId)?.name ?? tabId} projectId={projectId} worksheetId={tabId}>
-                    <fieldset disabled={!canEditOverview} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
+                    <fieldset disabled={!canEditOverview && tabId !== 'qfd'} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
                 </WorksheetImageExport>
             );
         }
@@ -586,7 +587,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         );
     }
 
-    const canEditOverview = ['OWNER', 'EDITOR', 'ADMIN'].includes(project.role);
+
     const displayedBusinessPlanFile = isOverviewEditing ? formBusinessPlanFile : projectBusinessPlanFile;
 
     return (

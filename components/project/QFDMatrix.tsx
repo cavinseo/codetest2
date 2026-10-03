@@ -48,6 +48,7 @@ interface TechnicalBenchmark {
 interface QFDMatrixProps {
     projectId: string;
     onDirtyChange?: (dirty: boolean) => void;
+    readOnly?: boolean;
 }
 
 type DisplayTechnical = TechnicalChar;
@@ -118,7 +119,7 @@ function getRequirementGroupRowSpan(
     return span;
 }
 
-export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) {
+export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }: QFDMatrixProps) {
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [technicalChars, setTechnicalChars] = useState<TechnicalChar[]>([]);
     const [techTreeEntries, setTechTreeEntries] = useState<TechTreeEntry[]>([]);
@@ -757,8 +758,11 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
         );
     }
 
+    const isWorksheetBusy = isSavingBenchmarks || isDeletingTech || isResetting || isAddingTechnical;
+    const editingDisabled = readOnly || isWorksheetBusy;
+
     return (
-        <fieldset data-worksheet-state={dataError ? 'error' : 'ready'} disabled={isSavingBenchmarks || isDeletingTech || isResetting || isAddingTechnical} className="relative min-w-0 space-y-6">
+        <div data-worksheet-state={dataError ? 'error' : 'ready'} className="relative min-w-0 space-y-6">
             <datalist id={`qfd-competitor-options-${projectId}`}>
                 {competitorNameOptions.map((option) => (
                     <option key={option} value={option} />
@@ -781,6 +785,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
             </datalist>
             {toast && <HeaderToast message={toast.message} type={toast.type} />}
 
+            <fieldset disabled={editingDisabled} className="min-w-0 space-y-6">
             <section className="glass-strong p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
@@ -929,6 +934,8 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                 </section>
             )}
 
+            </fieldset>
+
             {(!dataError || requirements.length > 0 || technicalChars.length > 0) && <section className="glass-strong overflow-hidden">
                 <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
                     <div>
@@ -940,6 +947,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                         <button
                             type="button"
                             onClick={shouldExpandTechnicalGroups ? expandAllTechnicalGroups : collapseAllTechnicalGroups}
+                            disabled={isWorksheetBusy}
                             title={shouldExpandTechnicalGroups ? '기술특성 전체 펼치기' : '기술특성 전체 접기'}
                             aria-expanded={!shouldExpandTechnicalGroups}
                             className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-3 py-1.5 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
@@ -954,6 +962,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                     </div>
                 </div>
 
+                <fieldset disabled={editingDisabled} className="min-w-0">
                 {technicalGroups.length === 0 && <p className="px-4 py-5 text-sm text-gray-400">등록된 세부기능이 없습니다. 그룹을 추가하고 첫 세부기능을 입력해 주세요.</p>}
                 <div className="overflow-x-auto">
                     <table className="min-w-max w-full border-collapse text-[11px] text-gray-200">
@@ -1291,8 +1300,10 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                         <button onClick={() => setShowAddTechModal(true)} className="btn-primary text-sm">기술특성 추가</button>
                     </div>
                 )}
+                </fieldset>
             </section>}
 
+            <fieldset disabled={editingDisabled} className="min-w-0 space-y-6">
             {techAnalysis.length > 0 && (
                 <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {[...techAnalysis].sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999)).slice(0, 6).map((tech) => {
@@ -1386,6 +1397,7 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                     </div>
                 </div>
             )}
-        </fieldset>
+            </fieldset>
+        </div>
     );
 }
