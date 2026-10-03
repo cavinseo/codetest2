@@ -145,3 +145,31 @@ it('그림 반영 후 초안 저장은 실제 캡처 세 장과 교정 내용 �
     expect(saved.draft.free).toEqual(free);
     expect(container.querySelectorAll('figure a[download]')).toHaveLength(3);
 });
+
+it('기존 샘플 보고서에 빠진 WS-4 그림은 그림 반영으로 복구하고 교정한 분석을 유지한다', async () => {
+    const document = { title: '결과보고서', fileName: '결과보고서.docx', blocks: [
+        { kind: 'cover', title: '결과보고서', projectName: '프로젝트', companyName: '회사', coachName: '멘토', outputDate: '2026.10.04' },
+        { kind: 'heading', text: '제품/서비스 속성 적합도 (WS-4)', level: 2 },
+        { kind: 'paragraph', tone: 'analysis', text: 'WS-4 멘토 분석(보고)' },
+        { kind: 'paragraph', text: '사용자가 교정한 WS-4 분석' },
+        { kind: 'paragraph', tone: 'notice', text: '속성 적합도 행렬이 저장되어 있지 않습니다. 평가 결과 그림은 미작성 상태입니다.' },
+        { kind: 'heading', text: '제품/서비스 진단표', level: 2 },
+    ] };
+    let saved: any;
+    fetchMock.mockImplementation(async (url: string, options?: any) => {
+        if (url.endsWith('/report')) {
+            if (options?.method === 'PUT') saved = JSON.parse(options.body);
+            return json({ ...report, draft: { document, previewNeedsRefresh: false } });
+        }
+        return json(url.endsWith('/export') ? { fitnessMatrix: { marketsJson: '[]', matrixJson: '{}' } } : {});
+    });
+    await render();
+    await click('워크시트 그림 반영');
+    expect(m.capture).toHaveBeenCalledTimes(1);
+    expect(m.capture.mock.calls[0][0].dataset.worksheetId).toBe('fitness');
+    await click('초안 저장');
+    expect(saved.draft.document.blocks[3]).toEqual(document.blocks[3]);
+    expect(saved.draft.document.blocks[4]).toMatchObject({ kind: 'image', title: CAPTURED_WORKSHEET_TITLES.fitness });
+    expect(saved.draft.document.blocks[5]).toEqual(document.blocks[5]);
+    expect(saved.draft.previewNeedsRefresh).toBe(false);
+});

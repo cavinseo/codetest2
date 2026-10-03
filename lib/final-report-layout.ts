@@ -28,7 +28,7 @@ export function reportCoverElements(cover: CoverBlock): ReportCoverElement[] {
     return [
         { kind: 'text', top: 96, text: 'KS-QFD 제품개발 및 개선프로그램 결과보고서', fontSize: 11, bold: true },
         { kind: 'title', top: 218, text: cover.title, fontSize: 25, bold: true },
-        { kind: 'text', top: 260, text: cover.projectName, fontSize: 12, bold: false },
+        { kind: 'text', top: 260, text: `프로젝트명 : ${cover.projectName}`, fontSize: 12, bold: false },
         { kind: 'text', top: 302, text: `기업명: ${cover.companyName}`, fontSize: 15, bold: true },
         { kind: 'divider', top: 339, height: 10 },
         { kind: 'text', top: 442, text: `작성일: ${cover.outputDate}`, fontSize: 13, bold: false },

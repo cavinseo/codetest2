@@ -10,7 +10,7 @@ import FinalReportCaptureStage from '@/components/project/FinalReportCaptureStag
 import FinalReportPreview from '@/components/project/FinalReportPreview';
 import FinalReportPages from '@/components/project/FinalReportPages';
 import { buildWorksheetData, toKanoChartPoints, type WorksheetPayloads } from '@/lib/final-report-inputs';
-import { buildFinalReportModel, hasProductOverviewSource, replaceWorksheetImages, CAPTURED_WORKSHEET_TITLES, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel, type FinalReportOverviewInput, type FinalReportWorksheetData } from '@/lib/final-report-document';
+import { buildFinalReportModel, hasProductOverviewSource, hasWorksheetImageSlot, replaceWorksheetImages, CAPTURED_WORKSHEET_TITLES, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel, type FinalReportOverviewInput, type FinalReportWorksheetData } from '@/lib/final-report-document';
 import { applyBlockEdit, countEditedBlocks, withEditedBlocks, type BlockEdit } from '@/lib/final-report-edit';
 import { REPORT_MAX_BYTES, type ReportDraft } from '@/lib/final-report-payload';
 import { optimizeReportImage } from '@/lib/final-report-image';
@@ -95,7 +95,8 @@ function reportCaptureTargets(imagesOnly: boolean, document: FinalReportModel | 
     const usesSampleTemplate = !imagesOnly || document?.blocks.some(block => block.kind === 'cover');
     const targets = CAPTURE_TARGETS.filter(([worksheetId, title]) => {
         if (!usesSampleTemplate) return true;
-        if (imagesOnly) return document?.blocks.some(block => block.kind === 'image' && block.title === title);
+        if (imagesOnly) return document?.blocks.some(block => block.kind === 'image' && block.title === title)
+            || (worksheetId === 'fitness' && Boolean(worksheets.fitnessMatrix) && document && hasWorksheetImageSlot(document, worksheetId));
         if (worksheetId === 'fitness') return Boolean(worksheets.fitnessMatrix);
         if (worksheetId === 'kano-aggregation') return worksheets.kanoAggregation.some(row => row.responseCount > 0);
         return false;

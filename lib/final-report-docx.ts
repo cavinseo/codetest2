@@ -6,6 +6,7 @@ import {
 } from 'docx';
 import type { FinalReportBlock, FinalReportModel } from './final-report-document';
 import { renderTemplateReportDocx } from './final-report-template-docx';
+import { normalizeReportNameLabels } from './final-report-labels';
 
 const PAGE = {
     size: { orientation: PageOrientation.PORTRAIT, width: convertMillimetersToTwip(210), height: convertMillimetersToTwip(297) },
@@ -75,6 +76,7 @@ function renderBlock(block: FinalReportBlock): Paragraph | Table {
 }
 
 export async function renderFinalReportDocx(model: FinalReportModel): Promise<Blob> {
+    model = { ...model, blocks: normalizeReportNameLabels(model.blocks) };
     if (model.blocks.some(block => block.kind === 'cover')) return renderTemplateReportDocx(model);
     const sections: ISectionOptions[] = [];
     let portrait: Array<Paragraph | Table> = [];

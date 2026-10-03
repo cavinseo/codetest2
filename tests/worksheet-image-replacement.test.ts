@@ -46,3 +46,18 @@ it('그림 위치가 없으면 다른 문단을 덮어쓰지 않고 전체 갱�
     expect(original.blocks[3].kind).toBe('paragraph');
     expect(original.blocks[7]).toEqual({ kind: 'paragraph', text: '사용자가 작성한 내용' });
 });
+
+it('WS-4 누락 안내를 교정해도 분석과 다음 절을 보존하며 그림을 한 번만 복구한다', () => {
+    const original: FinalReportModel = { ...model(), blocks: [
+        { kind: 'cover', title: '보고서', projectName: '장비', companyName: '회사', coachName: '멘토', outputDate: '2026.10.04' },
+        { kind: 'heading', text: '제품/서비스 속성 적합도 (WS-4)', level: 2 },
+        { kind: 'paragraph', text: '교정한 분석과 안내 문구', tone: 'notice' },
+        { kind: 'heading', text: '제품/서비스 진단표', level: 2 },
+    ] };
+    const restored = replaceWorksheetImages(original, [images[0]]);
+    expect(restored.blocks.slice(0, 3)).toEqual(original.blocks.slice(0, 3));
+    expect(restored.blocks[3]).toMatchObject({ kind: 'image', title: images[0].title, landscape: false });
+    expect(restored.blocks[4]).toEqual(original.blocks[3]);
+    expect(replaceWorksheetImages(restored, [images[0]])).toEqual(restored);
+    expect(original.blocks).toHaveLength(4);
+});

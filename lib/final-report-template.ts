@@ -59,8 +59,8 @@ function buildSpecRows(specFunctions: FinalReportWorksheetData['specFunctions'])
 function appendProductOverview(writer: ReportWriter, overview: FinalReportOverviewInput, worksheets: FinalReportWorksheetData, freeInput: FinalReportFreeInput) {
     writer.addHeading('Ⅰ. (As-Is) 제품/서비스 정의', 1);
     writer.addHeading('제품(서비스)명 및 제품설명');
-    writer.addParagraph(`프로젝트명 · ${overview.projectName}`);
-    writer.addParagraph(`제품명 · ${displayValue(overview.productName)}\n개요의 간단 설명 · ${displayValue(overview.description)}`);
+    writer.addParagraph(`프로젝트명 : ${overview.projectName}`);
+    writer.addParagraph(`제품(서비스) 명 : ${displayValue(overview.productName)}\n개요의 간단 설명 · ${displayValue(overview.description)}`);
     writer.addParagraph('상세 제품설명', 'analysis');
     writer.addParagraph(displayValue(overview.detailedDescription));
     // 구형 개요 응답에 필드 자체가 없을 때만 기존 보고서의 자유입력을 사용한다.
@@ -95,7 +95,7 @@ function appendProductDiagnosis(writer: ReportWriter, worksheets: FinalReportWor
         showDetailColumn ? specs : specs.map(row => row.filter((_, column) => column !== 3)),
         [24, 73, 136, ...(showDetailColumn ? [57] : []), 221], [1, 2]);
     writer.startWorksheetPage('제품속성표 (WS-3)', 'WS-3', analysis.attributes?.analysis);
-    writer.addParagraph(`워크시트 제품명 · ${displayValue(worksheets.productAttributes.find(row => row.productName?.trim())?.productName)}`);
+    writer.addParagraph(`제품(서비스) 명 : ${displayValue(worksheets.productAttributes.find(row => row.productName?.trim())?.productName)}`);
     writer.addTable('WS-3 제품속성서', ['No', '세분시장', '고객명', '고객 니즈', '제공혜택', '제품속성'],
         worksheets.productAttributes.map((row, index) => [index + 1, row.marketSegment, row.customerName, row.customerNeed, row.benefit, row.attribute]), [24, 53, 46, 139, 131, 118], [1, 2, 3, 4]);
     const capabilities = Array.from(new Set(worksheets.productAttributes.map(row => row.techCapability).filter((text): text is string => Boolean(text?.trim()))));

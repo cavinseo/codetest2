@@ -97,8 +97,8 @@ export const CAPTURED_WORKSHEET_TITLES: Record<CapturedWorksheetImage['worksheet
     qfd: '고객수요기반 기술스펙 관계도',
 };
 
-function worksheetImageBlock(image: CapturedWorksheetImage): Extract<FinalReportBlock, { kind: 'image' }> {
-    const landscape = shouldUseLandscape(image.widthPx, image.heightPx);
+function worksheetImageBlock(image: CapturedWorksheetImage, portraitOnly: boolean): Extract<FinalReportBlock, { kind: 'image' }> {
+    const landscape = !portraitOnly && shouldUseLandscape(image.widthPx, image.heightPx);
     return {
         kind: 'image', title: image.title, pngDataUrl: image.pngDataUrl,
         ...fitImageToBody(image.widthPx, image.heightPx, landscape ? A4_LANDSCAPE_BODY : A4_PORTRAIT_BODY),
@@ -106,19 +106,43 @@ function worksheetImageBlock(image: CapturedWorksheetImage): Extract<FinalReport
     };
 }
 
+function worksheetImageSlot(blocks: FinalReportBlock[], worksheetId: CapturedWorksheetImage['worksheetId']) {
+    const title = CAPTURED_WORKSHEET_TITLES[worksheetId];
+    const imageIndex = blocks.findIndex(block => block.kind === 'image' && block.title === title);
+    if (imageIndex >= 0) return { index: imageIndex, replaceCount: 1 };
+    const heading = blocks.findIndex(block => block.kind === 'heading' && block.text === title);
+    const placeholder = blocks[heading + 1];
+    if (heading >= 0 && (placeholder?.kind === 'image' || (placeholder?.kind === 'paragraph' && placeholder.text === '그림을 캡처하지 못했습니다'))) {
+        return { index: heading + 1, replaceCount: 1 };
+    }
+    if (worksheetId !== 'fitness') return null;
+    const fitnessHeading = blocks.findIndex(block => block.kind === 'heading' && block.text === '제품/서비스 속성 적합도 (WS-4)');
+    if (fitnessHeading < 0) return null;
+    let sectionEnd = fitnessHeading + 1;
+    while (sectionEnd < blocks.length && blocks[sectionEnd].kind !== 'heading' && blocks[sectionEnd].kind !== 'pageBreak') {
+        const block = blocks[sectionEnd];
+        if (block.kind === 'paragraph' && block.text === '속성 적합도 행렬이 저장되어 있지 않습니다. 평가 결과 그림은 미작성 상태입니다.') {
+            return { index: sectionEnd, replaceCount: 1 };
+        }
+        sectionEnd++;
+    }
+    // 누락 안내를 교정한 경우 해당 문단을 보존하고 WS-4 절 끝에 그림을 넣는다.
+    return { index: sectionEnd, replaceCount: 0 };
+}
+
+export function hasWorksheetImageSlot(model: FinalReportModel, worksheetId: CapturedWorksheetImage['worksheetId']): boolean {
+    return worksheetImageSlot(model.blocks, worksheetId) !== null;
+}
+
 // 보고서의 교정 문구와 표를 유지하면서 지정된 그림 자리만 교체한다.
 export function replaceWorksheetImages(model: FinalReportModel, images: CapturedWorksheetImage[]): FinalReportModel {
     const blocks = [...model.blocks];
+    const portraitOnly = blocks.some(block => block.kind === 'cover');
     for (const image of images) {
         const title = CAPTURED_WORKSHEET_TITLES[image.worksheetId];
-        let index = blocks.findIndex(block => block.kind === 'image' && block.title === title);
-        if (index < 0) {
-            const heading = blocks.findIndex(block => block.kind === 'heading' && block.text === title);
-            const placeholder = blocks[heading + 1];
-            if (heading >= 0 && (placeholder?.kind === 'image' || (placeholder?.kind === 'paragraph' && placeholder.text === '그림을 캡처하지 못했습니다'))) index = heading + 1;
-        }
-        if (index < 0) throw new Error(`${title} 그림 위치를 찾지 못했습니다. 미리보기를 다시 만들어 주세요.`);
-        blocks[index] = worksheetImageBlock(image);
+        const slot = worksheetImageSlot(blocks, image.worksheetId);
+        if (!slot) throw new Error(`${title} 그림 위치를 찾지 못했습니다. 미리보기를 다시 만들어 주세요.`);
+        blocks.splice(slot.index, slot.replaceCount, worksheetImageBlock(image, portraitOnly));
     }
     return { ...model, blocks };
 }

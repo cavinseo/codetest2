@@ -80,6 +80,7 @@ export async function GET(
             specDetailCollapsed: project.specDetailCollapsed,
             productAttributes: project.productAttributes,
             attributeFitnesses: project.attributeFitnesses,
+            fitnessMatrix: project.fitnessMatrix,
             customerRequirements: project.requirements,
             technicalCharacteristics: project.technicalCharacteristics,
             qfdRelationships: project.qfdMatrices, // schema use qfdMatrices
