@@ -62,7 +62,7 @@ export function buildTechTreeSpecOptions(sourceSpecs: TechTreeSpecFunctionLike[]
 }
 
 export function findTechTreeSpecOptions(options: TechTreeSpecOption[], coreSpec: string, value: string): TechTreeSpecOption[] {
-    return options.filter((option) => option.coreSpec === coreSpec && (option.subSpec === value || option.sourceName === value));
+    return options.filter((option) => (!coreSpec.trim() || option.coreSpec === coreSpec) && (option.subSpec === value || option.sourceName === value));
 }
 
 /**

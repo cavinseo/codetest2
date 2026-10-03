@@ -27,6 +27,7 @@ export default function TargetSpecTable({ projectId }: Props) {
     const [rows, setRows] = useState<TargetSpecRow[]>([]);
     const [suggestions, setSuggestions] = useState<TargetSpecRow[]>([]);
     const [asIsRows, setAsIsRows] = useState<TargetSpecRow[]>([]);
+    const [newSpecs, setNewSpecs] = useState<Array<{ category: string; subCategory: string }>>([]);
     const [newFeatureId, setNewFeatureId] = useState('');
     const [newCategory, setNewCategory] = useState('');
     const [newSubCategory, setNewSubCategory] = useState('');
@@ -48,6 +49,7 @@ export default function TargetSpecTable({ projectId }: Props) {
                 if (!Array.isArray(data?.rows)) throw new Error('목표 사양 응답 형식 오류');
                 setSuggestions(data?.suggestions || []);
                 setAsIsRows(data?.asIsRows || []);
+                setNewSpecs(data?.newSpecs || []);
                 const sourceRows = data?.rows?.length > 0 ? data.rows : (data?.asIsRows || []);
                 if (sourceRows) {
                     setRows(sourceRows.map((r: any) => ({
@@ -111,6 +113,7 @@ export default function TargetSpecTable({ projectId }: Props) {
     const deleteRow = (id: string) => setRows(rows.filter((row) => row.id !== id));
     const getUniqueValues = (field: keyof Pick<TargetSpecRow, 'category' | 'subCategory' | 'specItem' | 'unit' | 'targetValue' | 'note'>) =>
         Array.from(new Set(rows.map((row) => String(row[field] ?? '').trim()).filter(Boolean)));
+    const isNewSpec = (row: TargetSpecRow) => row.note?.trim() === '신규' || newSpecs.some((spec) => spec.category === row.category.trim() && spec.subCategory === row.subCategory.trim());
 
     const handleSave = async () => {
         if (isLoading || loadFailed || loadedProjectId !== projectId) return;
@@ -235,9 +238,12 @@ export default function TargetSpecTable({ projectId }: Props) {
                                 </td>
                             </tr>
                         ) : rows.map((row) => (
-                            <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] group">
+                            <tr key={row.id} className={`border-b border-white/[0.04] hover:bg-white/[0.02] group ${isNewSpec(row) ? 'bg-emerald-500/[0.08] border-l-2 border-l-emerald-400' : ''}`}>
                                 <td className="border border-white/[0.06] p-0">{input(row.category, (value) => updateRow(row.id, 'category', value), '스펙분류', `target-category-${row.id}`, getUniqueValues('category'))}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.subCategory, (value) => updateRow(row.id, 'subCategory', value), '세부항목', `target-sub-${row.id}`, getUniqueValues('subCategory'))}</td>
+                                <td className="border border-white/[0.06] p-0">
+                                    {input(row.subCategory, (value) => updateRow(row.id, 'subCategory', value), '세부항목', `target-sub-${row.id}`, getUniqueValues('subCategory'))}
+                                    {isNewSpec(row) && <span className="mx-3 mb-2 inline-block rounded bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-300">신규</span>}
+                                </td>
                                 <td className="border border-white/[0.06] p-0">{input(row.specItem, (value) => updateRow(row.id, 'specItem', value), '기술적 특성', `target-spec-${row.id}`, getUniqueValues('specItem'))}</td>
                                 <td className="border border-white/[0.06] p-0">{input(row.note, (value) => updateRow(row.id, 'note', value), '개선여부', `target-note-${row.id}`, getUniqueValues('note'))}</td>
                                 <td className="border border-white/[0.06] p-2 text-center">

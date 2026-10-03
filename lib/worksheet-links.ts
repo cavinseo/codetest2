@@ -1,4 +1,4 @@
-import type { TechTreeSpecFunctionLike } from './tech-tree-utils';
+import { buildTechTreeSpecOptions, type TechTreeSpecFunctionLike } from './tech-tree-utils';
 
 export interface QfdRequirementLinkInput {
     requirementId: string;
@@ -160,6 +160,38 @@ export function buildTargetSpecsFromAsIs(specs: Array<Omit<TechTreeSpecFunctionL
         }
     }
     return result;
+}
+
+export function buildTargetSpecAdditionsFromTechTree(
+    entries: Array<{ coreSpec?: string | null; subSpec?: string | null; techCharacteristic?: string | null }>,
+    specs: Array<Omit<TechTreeSpecFunctionLike, 'level'> & { level: string }>,
+    savedRows: Array<{ category?: string | null; subCategory?: string | null; order?: number | null }>
+): Array<Omit<TargetSpecSuggestion, 'id'>> {
+    const key = (category: string, subCategory: string) => `${category.trim()}\u0000${subCategory.trim()}`;
+    const coreNames = new Set(specs.filter((spec) => spec.level === 'CORE').map((spec) => spec.name.trim()));
+    const asIsNames = new Set<string>();
+    for (const option of buildTechTreeSpecOptions(specs.filter((spec) => ['CORE', 'SUB', 'DETAIL'].includes(spec.level)) as TechTreeSpecFunctionLike[])) {
+        asIsNames.add(key(option.coreSpec, option.subSpec));
+        if (option.sourceName) asIsNames.add(key(option.coreSpec, option.sourceName));
+        if (option.depth === 1) {
+            const parent = specs.find((spec) => spec.id === option.parentId);
+            if (parent) asIsNames.add(key(option.coreSpec, `${parent.name} > ${option.sourceName || option.subSpec}`));
+        }
+    }
+
+    const baseRows = savedRows.length ? [] : buildTargetSpecsFromAsIs(specs).map(({ id: _id, ...row }) => row);
+    const existing = new Set([...savedRows, ...baseRows].map((row) => key(row.category || '', row.subCategory || '')));
+    const additions: Array<Omit<TargetSpecSuggestion, 'id'>> = [];
+    let order = Math.max(-1, ...savedRows.map((row) => row.order ?? -1), ...baseRows.map((row) => row.order));
+    for (const entry of entries) {
+        const category = entry.coreSpec?.trim() || '';
+        const subCategory = entry.subSpec?.trim() || '';
+        const pair = key(category, subCategory);
+        if (!category || !subCategory || !coreNames.has(category) || asIsNames.has(pair) || existing.has(pair)) continue;
+        existing.add(pair);
+        additions.push({ category, subCategory, specItem: entry.techCharacteristic?.trim() || '', unit: '', targetValue: '', note: '신규', order: ++order });
+    }
+    return additions.length ? [...baseRows, ...additions] : [];
 }
 
 export function getImprovementCustomerNeeds(items: ImprovementLinkInput[]): string[] {

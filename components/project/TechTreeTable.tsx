@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import { getTopRankedQfdRequirements, type RankedTechTreeRequirement } from '@/lib/tech-tree-qfd';
-import { buildBlankTechTreeRows, buildTechTreeSpecOptions, applyTechTreeSpecSelection, findTechTreeSpecOptions, type TechTreeSpecOption } from '@/lib/tech-tree-utils';
+import { buildBlankTechTreeRows, buildTechTreeSpecOptions, applyTechTreeSpecSelection, findTechTreeSpecOptions, filterTechTreeSpecOptionsByCore, type TechTreeSpecOption } from '@/lib/tech-tree-utils';
 
 interface SpecFunction {
     id: string;
@@ -69,6 +69,8 @@ export default function TechTreeTable({ projectId }: Props) {
     const [isSaving, setIsSaving] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [specPicker, setSpecPicker] = useState<{ rowIndex: number; rowIds: string[] } | null>(null);
+    const [isAddingSpec, setIsAddingSpec] = useState(false);
+    const [newSpec, setNewSpec] = useState({ coreSpec: '', subSpec: '', techCharacteristic: '' });
     const { toast, showToast } = useToast();
 
     const buildGeneratedRows = (sourceRequirements: SourceRequirement[], sourceSpecs: SpecFunction[]) =>
@@ -203,8 +205,9 @@ export default function TechTreeTable({ projectId }: Props) {
 
     const specOptions = buildTechTreeSpecOptions(specs);
     const coreSpecOptions = Array.from(new Set([...specs.filter((spec) => spec.level === 'CORE').map((spec) => spec.name), ...getUniqueValues('coreSpec')].map((value) => value.trim()).filter(Boolean)));
-    const optionsForCore = (coreSpec: string) => specOptions.filter((option) => option.coreSpec === coreSpec);
-    const pickerOptions = specPicker ? optionsForCore(rows[specPicker.rowIndex]?.coreSpec || '') : [];
+    const optionsForCore = (coreSpec: string) => filterTechTreeSpecOptionsByCore(specOptions, coreSpec);
+    const pickerOptions = specPicker ? specOptions : [];
+    const asIsCoreOptions = Array.from(new Set(specs.filter((spec) => spec.level === 'CORE').map((spec) => spec.name.trim()).filter(Boolean)));
     const techCharacteristicOptions = Array.from(new Set([...specOptions.map((option) => option.techCharacteristic), ...getUniqueValues('techCharacteristic')].map((value) => value.trim()).filter(Boolean)));
 
     const shouldShowValue = (index: number, field: GroupField) => {
@@ -295,9 +298,27 @@ export default function TechTreeTable({ projectId }: Props) {
         setRows(remainingRows);
     };
 
+    const addSubSpecForCore = (index: number) => {
+        const row = rows[index];
+        if (!row?.coreSpec.trim()) return;
+        const range = getGroupRange(index, 'coreSpec');
+        const nextRows = [...rows];
+        nextRows.splice(range.end + 1, 0, {
+            id: `sub_${Date.now()}`,
+            customerVoice: row.customerVoice,
+            coreSpec: row.coreSpec,
+            subSpec: '',
+            techCharacteristic: '',
+            order: range.end + 1,
+        });
+        setRows(nextRows.map((item, itemIndex) => ({ ...item, order: itemIndex })));
+    };
+
     const openSpecPicker = (rowIndex: number) => {
         const range = getGroupRange(rowIndex, 'subSpec');
         setSpecPicker({ rowIndex, rowIds: rows.slice(range.start, range.end + 1).map((item) => item.id) });
+        setIsAddingSpec(false);
+        setNewSpec({ coreSpec: asIsCoreOptions.includes(rows[rowIndex]?.coreSpec) ? rows[rowIndex].coreSpec : '', subSpec: '', techCharacteristic: '' });
     };
 
     const applySpecOption = (index: number, option: TechTreeSpecOption) => {
@@ -311,6 +332,22 @@ export default function TechTreeTable({ projectId }: Props) {
         setRows((prev) => applyTechTreeSpecSelection(prev, rowIds, option));
         setSpecPicker(null);
         if (!option.techCharacteristic) showToast('선택한 세부스펙에 등록된 기술적 특성이 없습니다.', 'info');
+    };
+
+    const addNewSpec = () => {
+        if (!specPicker) return;
+        const coreSpec = newSpec.coreSpec.trim();
+        const subSpec = newSpec.subSpec.trim();
+        if (!asIsCoreOptions.includes(coreSpec) || !subSpec) return;
+        if (findTechTreeSpecOptions(specOptions, coreSpec, subSpec).length) {
+            showToast('WS-2에 있는 세부스펙입니다. 목록에서 선택하세요.', 'info');
+            return;
+        }
+        const ids = new Set(specPicker.rowIds);
+        setRows((prev) => prev.map((row) => ids.has(row.id) ? {
+            ...row, coreSpec, subSpec, techCharacteristic: newSpec.techCharacteristic.trim(),
+        } : row));
+        setSpecPicker(null);
     };
 
     if (isLoading) {
@@ -389,8 +426,20 @@ export default function TechTreeTable({ projectId }: Props) {
                             </button>
                         </div>
                         <div className="max-h-[60vh] overflow-y-auto p-4">
-                            {pickerOptions.length === 0 ? (
-                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-8 text-center text-sm text-gray-500">{rows[specPicker.rowIndex]?.coreSpec ? '이 핵심스펙에 하위 세부스펙이 없습니다.' : '핵심스펙을 먼저 선택하세요.'}</div>
+                            <button type="button" onClick={() => setIsAddingSpec((value) => !value)} className="btn-secondary mb-4 text-sm">{isAddingSpec ? 'WS-2 세부스펙 목록' : '신규 세부스펙 추가'}</button>
+                            {isAddingSpec ? (
+                                <div className="space-y-3 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] p-4">
+                                    <p className="text-sm text-gray-400">WS-2에 없는 기능을 기존 핵심스펙 아래에 추가합니다. WS-10을 저장하면 WS-12에도 신규 항목으로 반영됩니다.</p>
+                                    <select aria-label="신규 세부스펙 핵심스펙" value={newSpec.coreSpec} onChange={(event) => setNewSpec({ ...newSpec, coreSpec: event.target.value })} className="input-field w-full">
+                                        <option value="">기존 핵심스펙 선택</option>
+                                        {asIsCoreOptions.map((core) => <option key={core} value={core}>{core}</option>)}
+                                    </select>
+                                    <input aria-label="신규 세부스펙 이름" value={newSpec.subSpec} onChange={(event) => setNewSpec({ ...newSpec, subSpec: event.target.value })} className="input-field w-full" placeholder="새 세부스펙 이름" />
+                                    <input aria-label="신규 세부스펙 기술적 특성" value={newSpec.techCharacteristic} onChange={(event) => setNewSpec({ ...newSpec, techCharacteristic: event.target.value })} className="input-field w-full" placeholder="기술적 특성" />
+                                    <button type="button" onClick={addNewSpec} disabled={!newSpec.coreSpec || !newSpec.subSpec.trim()} className="btn-primary text-sm disabled:opacity-40">세부스펙 추가</button>
+                                </div>
+                            ) : pickerOptions.length === 0 ? (
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-8 text-center text-sm text-gray-500">WS-2에 세부스펙이 없습니다.</div>
                             ) : (
                                 <div className="space-y-2">
                                     {pickerOptions.map((option, optionIndex) => (
@@ -482,6 +531,7 @@ export default function TechTreeTable({ projectId }: Props) {
                                                 <datalist id={`tech-tree-core-${row.id}`}>
                                                     {coreSpecOptions.map((value) => <option key={value} value={value} />)}
                                                 </datalist>
+                                                <button type="button" onClick={() => addSubSpecForCore(rowIndex)} disabled={!row.coreSpec.trim()} className="border-t border-white/[0.06] px-2.5 py-1.5 text-left text-xs text-purple-300 transition-colors hover:bg-purple-500/10 disabled:opacity-40">+ 세부스펙 추가</button>
                                                 <button
                                                     type="button"
                                                     onClick={() => deleteCoreSpecGroup(rowIndex)}

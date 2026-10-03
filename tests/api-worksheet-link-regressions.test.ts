@@ -9,7 +9,7 @@ const db = vi.hoisted(() => {
         deleteMany: vi.fn(async () => { state[name] = []; }),
         createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => { state[name] = data.map((row, index) => ({ id: name + index, ...row })); }),
     });
-    const models = { targetSpec: model('targetSpec'), specFunction: model('specFunction'), improvementItem: model('improvementItem'), technicalCharacteristic: model('technicalCharacteristic'), fundingPlan: model('fundingPlan'), fundingSource: model('fundingSource'), salesEstimate: model('salesEstimate') };
+    const models = { targetSpec: model('targetSpec'), specFunction: model('specFunction'), techTreeEntry: model('techTreeEntry'), improvementItem: model('improvementItem'), technicalCharacteristic: model('technicalCharacteristic'), fundingPlan: model('fundingPlan'), fundingSource: model('fundingSource'), salesEstimate: model('salesEstimate') };
     return { state, models };
 });
 vi.mock('../lib/prisma', () => ({ prisma: { ...db.models, $transaction: async (callback: ((client: typeof db.models) => unknown) | Promise<unknown>[]) => typeof callback === 'function' ? callback(db.models) : Promise.all(callback) } }));

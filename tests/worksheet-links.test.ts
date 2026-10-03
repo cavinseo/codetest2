@@ -4,6 +4,7 @@ import {
     buildImprovementSuggestionsFromQfd,
     buildTargetSpecSuggestions,
     buildTargetSpecsFromAsIs,
+    buildTargetSpecAdditionsFromTechTree,
     getImprovementCustomerNeeds,
     mergeRoadmapWithCustomerNeeds,
 } from '../lib/worksheet-links';
@@ -158,6 +159,38 @@ it('seeds each AS-IS hierarchy node without dropping core technology', () => {
     {id:'d',level:'DETAIL',parentId:'s',name:'세세부',technology:'상세 기술'},
     ]);
     expect(rows.map(r => [r.category,r.subCategory,r.specItem])).toEqual([['핵심','','핵심 기술'],['핵심','세부','세부 기술'],['핵심','세부 > 세세부','상세 기술']]);
+});
+
+it('adds only WS-10 sub-specs missing from WS-2 under their existing core for WS-12', () => {
+    const specs = [
+        { id: 'core', level: 'CORE', name: '구동', order: 0 },
+        { id: 'sub', level: 'SUB', parentId: 'core', name: '속도 제어', technology: '기존 제어', order: 1 },
+        { id: 'detail', level: 'DETAIL', parentId: 'sub', name: '미세 제어', technology: '기존 기술', order: 2 },
+    ];
+    const saved = [{ id: 'target', category: '구동', subCategory: '속도 제어', specItem: '수정한 기술', unit: 'ms', targetValue: '10', note: '개선', order: 3 }];
+    const entries = [
+        { coreSpec: '구동', subSpec: '속도 제어', techCharacteristic: '기존 제어' },
+        { coreSpec: '구동', subSpec: '미세 제어', techCharacteristic: '기존 기술' },
+        { coreSpec: '구동', subSpec: '신규 센서', techCharacteristic: '광학 측정' },
+        { coreSpec: '구동', subSpec: '신규 센서', techCharacteristic: '광학 측정' },
+        { coreSpec: '없는 핵심', subSpec: '신규 기능', techCharacteristic: '기술' },
+    ];
+    expect(buildTargetSpecAdditionsFromTechTree(entries, specs, saved)).toEqual([
+        { category: '구동', subCategory: '신규 센서', specItem: '광학 측정', unit: '', targetValue: '', note: '신규', order: 4 },
+    ]);
+});
+
+it('seeds AS-IS rows before a new WS-10 sub-spec when WS-12 has never been saved', () => {
+    const specs = [
+        { id: 'core', level: 'CORE', name: '구동', order: 0 },
+        { id: 'sub', level: 'SUB', parentId: 'core', name: '기존 기능', technology: '기존 기술', order: 1 },
+    ];
+    const rows = buildTargetSpecAdditionsFromTechTree([{ coreSpec: '구동', subSpec: '신규 기능', techCharacteristic: '새 기술' }], specs, []);
+    expect(rows.map((row) => [row.category, row.subCategory, row.note])).toEqual([
+        ['구동', '기존 기능', '유지'],
+        ['구동', '신규 기능', '신규'],
+    ]);
+    expect(buildTargetSpecAdditionsFromTechTree([{ coreSpec: '구동', subSpec: '기존 기능' }], specs, [])).toEqual([]);
 });
 
 it('uses WS-11 displayed need order including feature fallback', () => {
