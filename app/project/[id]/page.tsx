@@ -95,6 +95,9 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
     const [specCount, setSpecCount] = useState(0);
     const [kanoAnalysis, setKanoAnalysis] = useState<any>(null);
     const [kanoRequirements, setKanoRequirements] = useState<any[]>([]);
+    const [isKanoAnalysisLoading, setIsKanoAnalysisLoading] = useState(false);
+    const [kanoAnalysisError, setKanoAnalysisError] = useState('');
+    const [kanoAnalysisReload, setKanoAnalysisReload] = useState(0);
     const [worksheetCompleteness, setWorksheetCompleteness] = useState<WorksheetCompleteness | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
@@ -155,22 +158,18 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                     }
                 }
 
-                // 요구사항 수 (Kano 요구사항 명칭에도 재사용)
-                let requirements: any[] = [];
+                // 요구사항 수
                 const reqRes = await fetch(`/api/projects/${projectId}/requirements`);
                 if (reqRes.ok) {
                     const reqData = await reqRes.json();
-                    requirements = reqData.requirements || [];
-                    setReqCount(requirements.length);
+                    setReqCount((reqData.requirements || []).length);
                 }
 
                 // Kano 분석 데이터
                 const kanoAnalysisRes = await fetch(`/api/projects/${projectId}/kano/analysis`);
                 if (kanoAnalysisRes.ok) {
                     const kanoAnalysisData = await kanoAnalysisRes.json();
-                    setKanoAnalysis(kanoAnalysisData);
                     setKanoCount(kanoAnalysisData.totalResponses || 0);
-                    setKanoRequirements(requirements);
                 }
 
                 // 스펙 수
@@ -188,6 +187,35 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         }
         loadData();
     }, [projectId]);
+
+    useEffect(() => {
+        if (activeTab !== 'kano-aggregation') return;
+        const controller = new AbortController();
+        setIsKanoAnalysisLoading(true);
+        setKanoAnalysisError('');
+        async function loadAnalysis() {
+            try {
+                const options = { signal: controller.signal, cache: 'no-store' as const };
+                const [analysisResponse, requirementsResponse] = await Promise.all([
+                    fetch(`/api/projects/${projectId}/kano/analysis`, options),
+                    fetch(`/api/projects/${projectId}/requirements`, options),
+                ]);
+                if (!analysisResponse.ok || !requirementsResponse.ok) throw new Error('분석 결과를 불러오지 못했습니다. 다시 시도해 주세요.');
+                const [analysis, requirements] = await Promise.all([analysisResponse.json(), requirementsResponse.json()]);
+                if (controller.signal.aborted) return;
+                setKanoAnalysis(analysis);
+                setKanoRequirements(requirements.requirements || []);
+                setKanoCount(analysis.totalResponses || 0);
+                setReqCount((requirements.requirements || []).length);
+            } catch (error) {
+                if (!controller.signal.aborted) setKanoAnalysisError(error instanceof Error ? error.message : '분석 결과를 불러오지 못했습니다.');
+            } finally {
+                if (!controller.signal.aborted) setIsKanoAnalysisLoading(false);
+            }
+        }
+        void loadAnalysis();
+        return () => controller.abort();
+    }, [activeTab, projectId, kanoAnalysisReload]);
 
     useEffect(() => {
         if (!project) return;
@@ -459,7 +487,14 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         'assets': <AssetsTable projectId={projectId} />,
         'funding-plan': <FundingTable projectId={projectId} mode="plan" />,
         'funding-source': <FundingTable projectId={projectId} mode="source" />,
-        'kano-aggregation': kanoAnalysis ? (
+        'kano-aggregation': isKanoAnalysisLoading ? (
+            <p role="status" className="card py-10 text-center text-gray-500">분석 결과를 불러오는 중입니다.</p>
+        ) : kanoAnalysisError ? (
+            <div className="card space-y-3 py-10 text-center">
+                <p role="alert" className="text-red-500">{kanoAnalysisError}</p>
+                <button type="button" className="btn-secondary" onClick={() => setKanoAnalysisReload(value => value + 1)}>분석 다시 불러오기</button>
+            </div>
+        ) : kanoAnalysis ? (
             <div className="space-y-6">
                 <div className="flex items-center justify-between">
                     <h2 className="text-2xl font-display font-bold text-white">TIMKO/만족계수 그래프</h2>
