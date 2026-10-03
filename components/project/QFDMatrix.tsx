@@ -949,9 +949,10 @@ export default function QFDMatrix({ projectId, onDirtyChange }: QFDMatrixProps) 
                         <button
                             type="button"
                             onClick={hiddenTechnicalGroups.length > 0 ? expandAllTechnicalGroups : collapseAllTechnicalGroups}
+                            title={hiddenTechnicalGroups.length > 0 ? '기술특성 전체 펼치기' : '기술특성 전체 접기'}
                             className="inline-flex items-center gap-1 rounded-md border border-indigo-200/20 bg-slate-950/80 px-3 py-1.5 font-semibold text-indigo-50 transition-colors hover:border-indigo-300 hover:bg-indigo-500/20"
                         >
-                            {hiddenTechnicalGroups.length > 0 ? '기술특성 전체 펼치기' : '기술특성 전체 접기'}
+                            접기/펼치기
                         </button>
                         <div className="hidden items-center gap-3 md:flex">
                         {RELATIONSHIP_OPTIONS.slice(1).map((option) => (
