@@ -10,6 +10,7 @@
 // 쓴다. createdAt·respondedAt 은 신원·소유권 열이 아니라 실제 설문·기록 시각이므로
 // 값이 있으면 그대로 복원한다.
 import { z } from 'zod';
+import { hasDuplicateTechnicalNames } from './qfd-technical-sync';
 
 // 한 컬렉션에 한 번에 넣을 수 있는 행수 상한.
 //
@@ -137,7 +138,10 @@ export const importJsonSchema = z.object({
         detailedDescription: z.string().nullable().optional(),
     }).strict().optional(),
     customerRequirements: rows(requirementRow).optional(),
-    technicalCharacteristics: rows(technicalRow).optional(),
+    technicalCharacteristics: rows(technicalRow).refine(
+        technicals => !hasDuplicateTechnicalNames(technicals.map(tech => tech.name)),
+        '중복된 기술특성이 있습니다. 기술특성 이름을 확인해 주세요.'
+    ).optional(),
     specFunctions: rows(specRow).optional(),
     productAttributes: rows(attributeRow).optional(),
     attributeFitnesses: rows(fitnessRow).optional(),

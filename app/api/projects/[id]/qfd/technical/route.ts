@@ -5,11 +5,11 @@ import { prisma } from '@/lib/prisma';
 import { isProjectWriteRole, requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
-import { dedupeNonBlank, findMissingTechnicalCharNames } from '@/lib/qfd-technical-sync';
+import { dedupeNonBlank, findMissingTechnicalCharNames, normalizeTechnicalName } from '@/lib/qfd-technical-sync';
 
 const log = createLogger('api/qfd/technical');
 const techSchema = z.object({
-    name: z.string().trim().min(1, '세부기능을 입력해 주세요.'),
+    name: z.string().transform(normalizeTechnicalName).pipe(z.string().min(1, '세부기능을 입력해 주세요.')),
     unit: z.string().optional(),
     targetValue: z.string().optional(),
 });
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest, props: Context) {
         return await prisma.$transaction(async (tx) => {
             await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
             const existing = await tx.technicalCharacteristic.findMany({ where: { projectId } });
-            if (existing.some(t => t.name.trim() === data.name)) {
+            if (existing.some(t => normalizeTechnicalName(t.name) === data.name)) {
                 return NextResponse.json({ error: '이미 추가된 세부기능입니다.' }, { status: 409 });
             }
             if (groupIndex !== undefined && !existing.some(t => t.groupIndex === groupIndex && t.name.trim())) {
@@ -100,8 +100,10 @@ export async function PATCH(request: NextRequest, props: Context) {
             await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
             const existing = await tx.technicalCharacteristic.findFirst({ where: { id, projectId }, select: { id: true } });
             if (!existing) return NextResponse.json({ error: '현재 프로젝트의 기술특성만 수정할 수 있습니다.' }, { status: 404 });
-            const duplicate = await tx.technicalCharacteristic.findFirst({ where: { projectId, name: data.name, NOT: { id } }, select: { id: true } });
-            if (duplicate) return NextResponse.json({ error: '이미 추가된 세부기능입니다.' }, { status: 409 });
+            const others = await tx.technicalCharacteristic.findMany({ where: { projectId, NOT: { id } }, select: { name: true } });
+            if (others.some(t => normalizeTechnicalName(t.name) === data.name)) {
+                return NextResponse.json({ error: '이미 추가된 세부기능입니다.' }, { status: 409 });
+            }
             const technicalCharacteristic = await tx.technicalCharacteristic.update({ where: { id }, data });
             await tx.project.update({ where: { id: projectId }, data: { qfdTechnicalInitialized: true } });
             return NextResponse.json({ success: true, technicalCharacteristic });

@@ -122,6 +122,9 @@ export async function POST(
         // 중요: payload에 실제로 포함된 컬렉션만 삭제합니다. 부분 payload가
         // 무관한 컬렉션(고객요구/설문응답/벤치마크 등)을 전부 지우던 문제를 방지.
         await prisma.$transaction(async (tx) => {
+            if (importData.technicalCharacteristics) {
+                await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
+            }
             await validateImportReferences(tx, projectId, importData);
             const delegates = tx as unknown as Record<
                 string,

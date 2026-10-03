@@ -6,7 +6,7 @@ import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import { buildQfdSpecFooterRows } from '@/lib/qfd-footer-rows';
 import { toggleGroupVisibility } from '@/lib/qfd-technical-header';
-import { dedupeNonBlank } from '@/lib/qfd-technical-sync';
+import { findMissingTechnicalCharNames, normalizeTechnicalName } from '@/lib/qfd-technical-sync';
 import { buildTechnicalGroups } from '@/lib/qfd-technical-groups';
 import { useQfdRelationshipAutosave, type Relationship } from './useQfdRelationshipAutosave';
 
@@ -169,7 +169,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
         [competitorColumns]
     );
     const technicalNameOptions = useMemo(
-        () => dedupeNonBlank(techTreeEntries.map((entry) => entry.subSpec)).filter(name => !technicalChars.some(tech => tech.name.trim() === name)),
+        () => findMissingTechnicalCharNames(techTreeEntries.map(entry => entry.subSpec ?? ''), technicalChars.map(tech => tech.name)),
         [technicalChars, techTreeEntries]
     );
     const technicalUnitOptions = useMemo(
@@ -298,7 +298,12 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
     };
 
     const handleAddTechnical = async () => {
-        if (!newTech.name.trim() || isAddingTechnical) return;
+        const name = normalizeTechnicalName(newTech.name);
+        if (!name || isAddingTechnical) return;
+        if (technicalChars.some(tech => normalizeTechnicalName(tech.name) === name)) {
+            showToast('이미 추가된 세부기능입니다.', 'error');
+            return;
+        }
         const snapshot = captureSnapshot();
         setIsAddingTechnical(true);
         loadRequest.current += 1;
@@ -306,7 +311,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
             const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...newTech, ...(addingToGroup === null ? {} : { groupIndex: addingToGroup }) }),
+                body: JSON.stringify({ ...newTech, name, ...(addingToGroup === null ? {} : { groupIndex: addingToGroup }) }),
             });
             const data = await res.json();
             if (!isCurrentSnapshot(snapshot)) return;
@@ -325,8 +330,12 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
     };
 
     const setTechnicalSubFunction = async (tech: DisplayTechnical, subName: string) => {
-        const name = subName.trim();
-        if (!name || name === tech.name) return;
+        const name = normalizeTechnicalName(subName);
+        if (!name || name === normalizeTechnicalName(tech.name)) return;
+        if (technicalChars.some(item => item.id !== tech.id && normalizeTechnicalName(item.name) === name)) {
+            showToast('이미 추가된 세부기능입니다.', 'error');
+            return;
+        }
         const snapshot = captureSnapshot();
         try {
             const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
@@ -710,10 +719,6 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
     const hasRequirements = requirements.length > 0;
     const specFooterRows = buildQfdSpecFooterRows(competitorColumns, getCompetitorLabel);
     const specBlockRowSpan = specFooterRows.filter((row) => row.kind !== 'target').length;
-    const subFunctionOptions = useMemo(
-        () => dedupeNonBlank(techTreeEntries.map((entry) => entry.subSpec)).map((name) => ({ id: name, name })),
-        [techTreeEntries]
-    );
     const technicalGroups = useMemo(() => buildTechnicalGroups(technicalChars, techTreeEntries), [technicalChars, techTreeEntries]);
     // 화면 진입 시에는 모든 그룹을 접고, 버튼을 누른 뒤에는 사용자가 선택한 상태를 따른다.
     const effectiveCollapsedTechnicalGroups = useMemo(
@@ -1036,12 +1041,10 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                 className="min-h-9 w-full rounded-md border border-indigo-200/15 bg-slate-950/80 px-1 text-center text-[11px] font-semibold leading-tight text-cyan-50 outline-none focus:border-cyan-300"
                                                 title="세부기능 선택"
                                             >
-                                                {subFunctionOptions.map((sub) => (
-                                                    <option key={sub.id} value={sub.name}>{sub.name}</option>
+                                                <option value={tech.name}>{tech.name}</option>
+                                                {technicalNameOptions.map((name) => (
+                                                    <option key={name} value={name}>{name}</option>
                                                 ))}
-                                                {!subFunctionOptions.some((sub) => sub.name === tech.name) && (
-                                                    <option value={tech.name}>{tech.name}</option>
-                                                )}
                                             </select>
                                         </div>
                                     </th>

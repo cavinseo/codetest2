@@ -10,8 +10,11 @@ import { MAX_IMPORT_ROWS } from '../lib/import-json-schema';
 
 const counts = { kano: 0, benchmark: 0, qfd: 0, fitness: 0, correlation: 0, technicalBenchmark: 0 };
 
+const lockProject = vi.fn();
+
 const tx = new Proxy({} as Record<string, Record<string, ReturnType<typeof vi.fn>>>, {
     get(target, model: string) {
+        if (model === '$queryRaw') return lockProject;
         if (!target[model]) {
             target[model] = {
                 deleteMany: vi.fn(),
@@ -63,6 +66,15 @@ function jsonRequest(body: unknown): NextRequest {
 
 it.each(['', ' \t\n '])('공백 세부기능 %j가 있으면 기존 관계를 건드리기 전에 복원을 거절한다', async name => {
     const response = await POST(jsonRequest({ technicalCharacteristics: [{ name }], confirmCascade: true }), params);
+    expect(response.status).toBe(400);
+    expect(transaction).not.toHaveBeenCalled();
+});
+
+it('중복 기술특성은 ID나 입력값이 달라도 기존 데이터를 지우기 전에 복원을 거절한다', async () => {
+    const response = await POST(jsonRequest({ technicalCharacteristics: [
+        { id: 'a', name: '처리 속도', unit: 'ms', targetValue: '100' },
+        { id: 'b', name: '처리\n속도', unit: 's', targetValue: '1' },
+    ], confirmCascade: true }), params);
     expect(response.status).toBe(400);
     expect(transaction).not.toHaveBeenCalled();
 });

@@ -114,6 +114,14 @@ describe('GET /api/projects/[id]/qfd/technical', () => {
         expect(createManyTech).not.toHaveBeenCalled();
     });
 
+    it('공백과 줄바꿈만 다른 WS-10 항목은 기존 기술특성을 다시 만들지 않는다', async () => {
+        findManyTech.mockResolvedValue([{ id: 'tech_1', name: '처리  속도', groupIndex: 0, columnOrder: 0 }]);
+        findManyTechTree.mockResolvedValue([{ subSpec: '처리 속도' }, { subSpec: '처리\n속도' }]);
+
+        expect((await call()).status).toBe(200);
+        expect(createManyTech).not.toHaveBeenCalled();
+    });
+
     it('VIEWER 는 조회만 해도 자동 채움 쓰기가 일어나지 않는다', async () => {
         requireProjectAccess.mockResolvedValue({ user: USER, role: 'VIEWER' });
         findManyTech.mockResolvedValue([{ id: 'tech_1', name: '센서', groupIndex: 0, columnOrder: 0 }]);

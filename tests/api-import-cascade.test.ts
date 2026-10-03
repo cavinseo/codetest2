@@ -9,8 +9,11 @@ import * as XLSX from 'xlsx';
 
 const counts = { kano: 0, benchmark: 0, qfd: 0, fitness: 0, correlation: 0, technicalBenchmark: 0 };
 
+const lockProject = vi.fn();
+
 const tx = new Proxy({} as Record<string, Record<string, ReturnType<typeof vi.fn>>>, {
     get(target, model: string) {
+        if (model === '$queryRaw') return lockProject;
         if (!target[model]) {
             target[model] = {
                 deleteMany: vi.fn(),
@@ -93,6 +96,30 @@ afterEach(() => {
 });
 
 describe('import POST — 캐스케이드 가드', () => {
+    it.each(['replace', 'append'])('%s 가져오기 파일 내 중복 기술특성은 기존 데이터를 변경하기 전에 거절한다', async writePolicy => {
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+            ['Spec', '처리 속도', '처리  속도'], ['', 'ms', 's'], [], ['', '100', '1'],
+        ]), 'QFD');
+        const file = new File([new Uint8Array(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }))], 'duplicate.xlsx');
+        const response = await POST(importRequest({ action: 'apply', writePolicy, confirmCascade: 'true' }, file), params);
+        expect(response.status).toBe(409);
+        expect((await response.json()).error).toContain('중복');
+        expect(tx.technicalCharacteristic.createMany).not.toHaveBeenCalled();
+        for (const model of Object.values(tx)) expect(model.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('append는 이미 저장된 기술특성과 중복되면 기존 열과 관계를 보존한다', async () => {
+        tx.technicalCharacteristic.findMany.mockResolvedValueOnce([{ name: '처리  속도', groupIndex: 0 }]);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['Spec', '처리 속도']]), 'QFD');
+        const file = new File([new Uint8Array(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }))], 'existing.xlsx');
+        const response = await POST(importRequest({ action: 'apply', writePolicy: 'append' }, file), params);
+        expect(response.status).toBe(409);
+        expect(tx.technicalCharacteristic.createMany).not.toHaveBeenCalled();
+        for (const model of Object.values(tx)) expect(model.deleteMany).not.toHaveBeenCalled();
+    });
+
     it.each([
         { sheet: '제품속성표', rows: [['제품명', '고객명', '세분시장', '제품속성'], ['새 제품', '고객', '시장', '새 속성']], count: 'fitness', label: '적합도' },
         { sheet: 'QFD', rows: [['Spec', '응답시간', '측정단위'], ['', 'ms', ''], [], ['', '200', '']], count: 'correlation', label: '기술 상관관계' },

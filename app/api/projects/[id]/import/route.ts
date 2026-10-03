@@ -16,6 +16,10 @@ import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { parseWritePolicy } from '@/lib/write-policy';
 
+import { hasDuplicateTechnicalNames } from '@/lib/qfd-technical-sync';
+
+class DuplicateTechnicalNameError extends Error {}
+
 const log = createLogger('api/import');
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -127,6 +131,14 @@ async function applyImportedRecords(
     // 롤백된다(실제로 9.4초 지점에서 끊겼다). 시트가 많은 파일까지 감안해 넉넉히 준다.
     // maxWait 는 커넥션을 기다리는 시간이라, 여러 요청이 겹칠 때를 위해 함께 늘린다.
     await prisma.$transaction(async (tx) => {
+        if (records.technicalCharacteristics.length > 0) {
+            await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
+            const existing = writePolicy === 'append'
+                ? await tx.technicalCharacteristic.findMany({ where: { projectId }, select: { name: true } }) : [];
+            if (hasDuplicateTechnicalNames([...existing, ...records.technicalCharacteristics].map(tech => tech.name))) {
+                throw new DuplicateTechnicalNameError();
+            }
+        }
         if (writePolicy === 'replace') {
             if (records.specFunctions.length > 0) await tx.specFunction.deleteMany({ where: { projectId } });
             if (records.productAttributes.length > 0) {
@@ -365,6 +377,9 @@ export async function POST(
             parseErrors: parsedData.parseErrors,
         });
     } catch (error: unknown) {
+        if (error instanceof DuplicateTechnicalNameError) {
+            return NextResponse.json({ error: '중복된 기술특성이 있습니다. 기존 항목과 파일의 기술특성 이름을 확인해 주세요.' }, { status: 409 });
+        }
         // projectId 는 try 블록 스코프라 여기서는 params.id 를 쓴다.
         return toErrorResponse(error, {
             log,

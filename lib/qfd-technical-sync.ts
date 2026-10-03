@@ -1,11 +1,20 @@
 // WS-9 최초 구성과 세부기능 선택에 쓰는 WS-10 세부스펙의 빈 값과 중복을 정리한다.
 
+export function normalizeTechnicalName(value: string | null | undefined): string {
+    return (value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ');
+}
+
+export function hasDuplicateTechnicalNames(names: string[]): boolean {
+    const nonBlank = names.map(normalizeTechnicalName).filter(Boolean);
+    return new Set(nonBlank).size !== nonBlank.length;
+}
+
 /** 빈 값과 중복을 걸러내고 먼저 나온 순서를 그대로 유지한다. */
 export function dedupeNonBlank(values: Array<string | null | undefined>): string[] {
     const seen = new Set<string>();
     const result: string[] = [];
     for (const raw of values) {
-        const value = (raw ?? '').trim();
+        const value = normalizeTechnicalName(raw);
         if (!value || seen.has(value)) continue;
         seen.add(value);
         result.push(value);
@@ -18,8 +27,6 @@ export function findMissingTechnicalCharNames(
     subSpecNames: string[],
     existingNames: Array<string | null | undefined>
 ): string[] {
-    const existing = new Set(
-        existingNames.map((name) => (name ?? '').trim()).filter(Boolean)
-    );
-    return subSpecNames.filter((name) => !existing.has(name));
+    const existing = new Set(dedupeNonBlank(existingNames));
+    return dedupeNonBlank(subSpecNames).filter((name) => !existing.has(name));
 }

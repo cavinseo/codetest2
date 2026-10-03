@@ -597,6 +597,24 @@ async function enterTechnicalName(value: string) {
 }
 
 describe('WS-9 그룹 구성', () => {
+    it('다른 열에서 사용 중인 세부기능은 선택 목록과 추가 추천에서 제외한다', async () => {
+        await mount();
+        const select = container.querySelector<HTMLSelectElement>('thead select')!;
+        expect([...select.options].map(option => option.value)).toEqual(['처리 속도', '가용성']);
+        const suggestions = container.querySelector<HTMLDataListElement>('#qfd-technical-name-options-fixture-project')!;
+        expect([...suggestions.options].map(option => option.value)).toEqual(['가용성']);
+    });
+
+    it('공백만 바꿔 같은 세부기능을 직접 추가해도 요청을 보내지 않는다', async () => {
+        await mount();
+        await click(button('+ 그룹'));
+        await enterTechnicalName(' 처리   속도 ');
+        await click(button('추가'));
+        expect(server.pending('qfd/technical', 'POST')).toHaveLength(0);
+        expect(container.textContent).toContain('이미 추가된 세부기능입니다.');
+        expect(container.querySelectorAll('thead select')).toHaveLength(2);
+    });
+
     it('실제 세부기능만 표시하고 그룹의 핵심기능을 중복 없이 표시한다', async () => {
         await mount();
         const headers = [...container.querySelectorAll('thead select')];

@@ -23,3 +23,11 @@ it('그룹 소속 세부기능에 연결된 모든 핵심기능을 공백·중�
     ]);
     expect(groups[0].coreNames).toEqual(['측정', '통신']);
 });
+
+it('공백을 정리한 세부기능도 원래 WS-10 핵심기능과 연결한다', () => {
+    const groups = buildTechnicalGroups([{ id: 'a', name: '처리 속도', groupIndex: 0 }], [
+        { subSpec: '처리\n속도', coreSpec: '처리  성능' },
+        { subSpec: '처리 속도'.normalize('NFD'), coreSpec: '처리 성능' },
+    ]);
+    expect(groups[0].coreNames).toEqual(['처리 성능']);
+});
