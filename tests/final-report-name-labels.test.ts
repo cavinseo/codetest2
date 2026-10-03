@@ -56,7 +56,7 @@ it('새 보고서의 프로젝트명과 개요·WS-3 제품명을 요청한 형�
     expect(model.blocks).toContainEqual({ kind: 'paragraph', text: '제품(서비스) 명 : 검사기' });
 });
 
-it('복구된 WS-4 그림과 기존 이름·교정 내용을 Word 파일에 함께 넣는다', async () => {
+it('복구된 WS-4 그림과 이름을 Word에 넣고 WS-4 분석은 원본에만 보존한다', async () => {
     const original: FinalReportModel = { title: '보고서', fileName: '보고서.docx', blocks: [cover, ...paragraphs,
         { kind: 'heading', text: '제품/서비스 속성 적합도 (WS-4)', level: 2 },
         { kind: 'paragraph', text: 'WS-4 교정 분석 유지' },
@@ -67,7 +67,9 @@ it('복구된 WS-4 그림과 기존 이름·교정 내용을 Word 파일에 함�
     const blob = await renderFinalReportDocx(restored);
     const zip = await JSZip.loadAsync(await blob.arrayBuffer());
     const xml = await zip.file('word/document.xml')!.async('string');
-    for (const text of ['프로젝트명 : 정밀장비', '제품(서비스) 명 : 측정기', '제품(서비스) 명 : 검사기', 'WS-4 교정 분석 유지']) expect(xml).toContain(text);
+    for (const text of ['프로젝트명 : 정밀장비', '제품(서비스) 명 : 측정기', '제품(서비스) 명 : 검사기']) expect(xml).toContain(text);
+    expect(xml).not.toContain('WS-4 교정 분석 유지');
+    expect(JSON.stringify(restored)).toContain('WS-4 교정 분석 유지');
     expect(xml).not.toContain('그림은 미작성');
     expect(xml).toContain('descr="제품/서비스 속성 적합도"');
     const images = zip.file(/^word\/media\/.*\.png$/);

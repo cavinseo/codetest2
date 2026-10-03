@@ -104,18 +104,8 @@ function appendProductDiagnosis(writer: ReportWriter, worksheets: FinalReportWor
     const capabilities = Array.from(new Set(worksheets.productAttributes.map(row => row.techCapability).filter((text): text is string => Boolean(text?.trim()))));
     if (capabilities.length) { writer.addHeading('공통 기술 역량 (WS-3)'); writer.addTable('WS-3 기술 역량', ['기술 역량'], capabilities.map(text => [text])); }
 
-    writer.startWorksheetPage('제품/서비스 속성 적합도 (WS-4)', 'WS-4', analysis.fitness?.analysis);
+    writer.addPageBreak(); writer.addHeading('제품/서비스 속성 적합도 (WS-4)');
     writer.addWorksheetImage('fitness', '제품/서비스 속성 적합도', '속성 적합도 행렬이 저장되어 있지 않습니다. 평가 결과 그림은 미작성 상태입니다.');
-    writer.addHeading('제품/서비스 진단표');
-    writer.addParagraph('원본 양식의 진단표와 연결된 입력란이 없어 아래 항목은 미응답입니다.', 'notice');
-    writer.addTable('제품/서비스 진단표', ['No', '진단항목', '진단 내용', '응답'], [
-        [1, '인식정도 진단', '5배 매출 경쟁자를 인식하고 있는가?', '미응답'],
-        [2, '진입정도 진단', '해당 경쟁사의 고객에게 진입할 수 있는가?', '미응답'],
-        [3, '경쟁자 진단', '경쟁사를 이길 스펙이 있다고 생각하는가?', '미응답'],
-        [4, '경쟁우위요인 진단', '경쟁사를 딛고 5배 매출을 올릴 수 있는가?', '미응답'],
-    ], [25, 115, 310, 61]);
-    writer.addHeading('제품/서비스 개선 방향');
-    writer.addParagraph('5배 매출 경쟁자의 이름·전년도 매출액 · 미입력\n경쟁자 보유 주요 고객 5개 · 미입력\n경쟁 우위를 위한 제품개선항목·도출 의견 · 미입력', 'notice');
 }
 
 function appendKanoResults(writer: ReportWriter, worksheets: FinalReportWorksheetData) {

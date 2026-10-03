@@ -1,5 +1,6 @@
 // 미리보기와 Word가 함께 사용하는 A4 페이지 배치와 긴 표 분할을 계산한다.
 import type { FinalReportBlock, FinalReportModel } from './final-report-document';
+import { getFitnessReportExcludedIndexes } from './final-report-fitness';
 import { getGroupedCellSpans } from './final-report-table-merge';
 import { parseReportMarkdown, reportRunsText, type ReportMarkdownBlock, type ReportTextRun } from './final-report-markdown';
 
@@ -338,7 +339,9 @@ function appendMarketReferenceBox(cursor: PageCursor, block: Extract<TableBlock,
 
 export function layoutReportPages(blocks: FinalReportBlock[]): ReportPageLayout[] {
     const cursor: PageCursor = { pages: [], currentPage: { items: [] }, top: REPORT_PAPER.top, bounds: { top: REPORT_PAPER.top, bottom: REPORT_PAPER.bottom, body: REPORT_PAPER.body, tableWidth: REPORT_VISUAL_WIDTH - 1, paragraphIndentMm: 12 } };
+    const excluded = getFitnessReportExcludedIndexes(blocks);
     blocks.forEach((block, blockIndex) => {
+        if (excluded.has(blockIndex)) return;
         if (block.kind === 'pageBreak') {
             const next = blocks[blockIndex + 1];
             const worksheetSection = next?.kind === 'heading' && next.level === 2 && /\(WS-\d+\)/i.test(next.text);

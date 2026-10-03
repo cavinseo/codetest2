@@ -6,6 +6,7 @@ import {
 } from 'docx';
 import type { FinalReportBlock, FinalReportModel } from './final-report-document';
 import { renderTemplateReportDocx } from './final-report-template-docx';
+import { getFitnessReportExcludedIndexes } from './final-report-fitness';
 import { normalizeReportNameLabels } from './final-report-labels';
 
 const PAGE = {
@@ -78,6 +79,7 @@ function renderBlock(block: FinalReportBlock): Paragraph | Table {
 export async function renderFinalReportDocx(model: FinalReportModel): Promise<Blob> {
     model = { ...model, blocks: normalizeReportNameLabels(model.blocks) };
     if (model.blocks.some(block => block.kind === 'cover')) return renderTemplateReportDocx(model);
+    const excluded = getFitnessReportExcludedIndexes(model.blocks);
     const sections: ISectionOptions[] = [];
     let portrait: Array<Paragraph | Table> = [];
     const flushPortrait = () => {
@@ -86,7 +88,8 @@ export async function renderFinalReportDocx(model: FinalReportModel): Promise<Bl
             portrait = [];
         }
     };
-    for (const block of model.blocks) {
+    for (const [index, block] of model.blocks.entries()) {
+        if (excluded.has(index)) continue;
         const child = renderBlock(block);
         if (block.kind === 'image' && block.landscape) {
             flushPortrait();

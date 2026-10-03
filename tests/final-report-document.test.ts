@@ -83,10 +83,10 @@ it('8종 멘토 분석의 원문을 결과보다 앞에 배치하고 분석 입�
     expect(JSON.stringify(analysis)).toBe(before);
 });
 
-it('적합도 분석은 실제 그림보다 앞에 오고 그림 원본을 보존한다', () => {
+it('적합도 분석은 출력하지 않고 실제 워크시트 그림 원본을 보존한다', () => {
     const blocks = buildFinalReportModel(overview, data, free, [{ worksheetId: 'fitness', title: '적합도 이미지', pngDataUrl: 'fitness-image', widthPx: 100, heightPx: 100 }], { fitness: { analysis: '적합도 분석 원문' } }).blocks;
     const image = blocks.findIndex(b => b.kind === 'image' && b.pngDataUrl === 'fitness-image');
-    expect(blocks.findIndex(b => b.kind === 'paragraph' && b.text === '적합도 분석 원문')).toBeLessThan(image);
+    expect(blocks.findIndex(b => b.kind === 'paragraph' && b.text === '적합도 분석 원문')).toBe(-1);
     expect(image).toBeGreaterThan(-1);
 });
 
