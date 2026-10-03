@@ -5,6 +5,7 @@ import MoneyInput from '@/components/ui/MoneyInput';
 import { formatMoney } from '@/lib/money';
 import { parseSourceYear } from '@/lib/funding-ai-agent';
 import WorksheetLoadError from './WorksheetLoadError';
+import FundingPlanChart from './FundingPlanChart';
 
 interface FundingPlan {
     id: string;
@@ -49,12 +50,6 @@ const FUNDING_LABELS: Record<string, string> = {
     TIPS: '민간투자주도형 기술창업지원(TIPS)',
     VC: '벤처캐피털(VC)',
 };
-
-const PLAN_SERIES = [
-    { field: 'year1' as const, label: 'Y+1', color: 'bg-cyan-400/90' },
-    { field: 'year2' as const, label: 'Y+2', color: 'bg-blue-400/90' },
-    { field: 'year3' as const, label: 'Y+3', color: 'bg-violet-400/90' },
-];
 
 const formatFundingLabel = (value: string) => FUNDING_LABELS[value] ?? value;
 const encodeYear = (value: FundingSourceYear) => JSON.stringify(value);
@@ -136,7 +131,6 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
     const sortedPlans = useMemo(() => [...plans].sort((a, b) => a.order - b.order), [plans]);
     const costPlans = useMemo(() => sortedPlans.filter(isCostPlan), [sortedPlans]);
     const revenuePlan = useMemo(() => sortedPlans.find(isRevenuePlan) ?? null, [sortedPlans]);
-    const totalPlan = useMemo(() => sortedPlans.find(isTotalPlan) ?? null, [sortedPlans]);
 
     const planTotals = useMemo(
         () => YEAR_FIELDS.reduce((acc, field) => ({
@@ -154,7 +148,6 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
         [sources]
     );
 
-    const maxPlanValue = Math.max(1, ...costPlans.flatMap((plan) => YEAR_FIELDS.map((field) => Number(plan[field]) || 0)));
     const totalRequiredCost = YEAR_FIELDS.reduce((sum, field) => sum + planTotals[field], 0);
     const sourceOptions = Array.from(
         new Set(
@@ -199,7 +192,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
             )}
 
             {mode === 'plan' ? (
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)]">
+                <div className="space-y-6">
                     <div className="card overflow-hidden">
                         <div className="flex items-end justify-between border-b border-white/[0.06] px-6 py-4">
                             <div>
@@ -249,6 +242,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                             {YEAR_FIELDS.map((field) => (
                                                 <td key={field} className="p-0">
                                                     <MoneyInput
+                                                        aria-label={YEAR_LABELS[field] + ' ' + plan.item}
                                                         value={plan[field]}
                                                         onValueChange={(value) => updatePlan(plan.id, field, value ?? 0)}
                                                         className={`w-full bg-transparent px-4 py-3 text-right outline-none transition-colors focus:bg-white/[0.04] ${
@@ -265,27 +259,8 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                         </div>
                     </div>
 
-                    <div className="space-y-6">
-                        <div className="card">
-                            <h3 className="text-base font-semibold text-white">연차별 소요자금 그래프</h3>
-                            <div className="mt-5 space-y-4">
-                                {PLAN_SERIES.map((series) => (
-                                    <div key={series.field} className="space-y-1.5">
-                                        <div className="flex items-center justify-between text-xs text-gray-400">
-                                            <span>{series.label}</span>
-                                            <span className="text-white">{formatMoney(planTotals[series.field])}</span>
-                                        </div>
-                                        <div className="h-3 rounded-full bg-white/[0.05]">
-                                            <div
-                                                className={`h-3 rounded-full ${series.color}`}
-                                                style={{ width: `${Math.max((planTotals[series.field] / maxPlanValue) * 100, 6)}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
+                    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_260px]">
+                        <FundingPlanChart values={YEAR_FIELDS.map(field => ({ revenue: revenuePlan?.[field] ?? null, required: planTotals[field] }))} />
                         <div className="card">
                             <h3 className="text-base font-semibold text-white">핵심 요약</h3>
                             <div className="mt-4 grid grid-cols-1 gap-3">
@@ -293,7 +268,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                     <div key={field} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                                         <div className="text-xs text-gray-500">{YEAR_LABELS[field]}</div>
                                         <div className="mt-1 text-lg font-semibold text-white">
-                                            {formatMoney(totalPlan?.[field] ?? planTotals[field])}
+                                            {formatMoney(planTotals[field])}
                                         </div>
                                     </div>
                                 ))}
