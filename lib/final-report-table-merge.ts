@@ -5,11 +5,14 @@ import type { ReportLayoutItem } from './final-report-layout';
 type TableLayout = Extract<ReportLayoutItem, { kind: 'table' }>;
 
 export function getTableMergeSpans(item: TableLayout, block: FinalReportBlock): number[][] {
-    const spans = item.rows.map(row => row.lines.map(() => 1));
-    if (block.kind !== 'dataTable' || !block.mergeColumns?.length) return spans;
+    if (block.kind !== 'dataTable' || !block.mergeColumns?.length) return item.rows.map(row => row.lines.map(() => 1));
+    return getGroupedCellSpans(item.rows.map(row => row.lines.map((_, column) => block.rows[row.index]?.[column] ?? '')), block.mergeColumns);
+}
 
-    const mergeColumns = [...block.mergeColumns].sort((a, b) => a - b);
-    const sourceCell = (rowIndex: number, column: number) => block.rows[item.rows[rowIndex].index]?.[column]?.trim() ?? '';
+export function getGroupedCellSpans(rows: string[][], columns: number[]): number[][] {
+    const spans = rows.map(row => row.map(() => 1));
+    const mergeColumns = [...columns].sort((a, b) => a - b);
+    const sourceCell = (rowIndex: number, column: number) => rows[rowIndex]?.[column]?.trim() ?? '';
     const mergeable = (value: string) => Boolean(value && value !== '미입력' && value !== '—');
     const sameGroup = (start: number, next: number, column: number) =>
         sourceCell(start, column) === sourceCell(next, column) &&
@@ -17,11 +20,11 @@ export function getTableMergeSpans(item: TableLayout, block: FinalReportBlock): 
             mergeable(sourceCell(start, parent)) && sourceCell(start, parent) === sourceCell(next, parent));
 
     for (const column of mergeColumns) {
-        for (let start = 0; start < item.rows.length;) {
+        for (let start = 0; start < rows.length;) {
             const value = sourceCell(start, column);
             if (!mergeable(value)) { start++; continue; }
             let end = start + 1;
-            while (end < item.rows.length && sameGroup(start, end, column)) end++;
+            while (end < rows.length && sameGroup(start, end, column)) end++;
             if (end - start > 1) {
                 spans[start][column] = end - start;
                 for (let index = start + 1; index < end; index++) spans[index][column] = 0;
