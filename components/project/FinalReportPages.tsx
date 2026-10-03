@@ -78,6 +78,7 @@ function ReportText({ item, block, onRequestEdit }: { item: Extract<ReportLayout
 function tableCellEditTarget(block: TableBlock | Extract<FinalReportBlock, { kind: 'paragraph' }>, blockIndex: number, row: number, column: number): EditTarget | undefined {
     if (block.kind === 'paragraph') return textEditTarget(block, blockIndex);
     if (block.kind === 'dataTable') {
+        if (row < 0) return { label: '표 머리글 교정', value: block.headers[column], ariaLabel: `머리글 ${column + 1} 교정`, edit: { kind: 'tableHeader', blockIndex, col: column, value: block.headers[column] } };
         const value = block.rows[row][column];
         return { label: '표 내용 교정', value, ariaLabel: `${row + 1}행 ${column + 1}열 교정`, edit: { kind: 'tableCell', blockIndex, row, col: column, value } };
     }
@@ -98,7 +99,7 @@ function ReportTable({ item, block, onRequestEdit }: { item: Extract<ReportLayou
             } : textEditTarget(block, item.blockIndex)} />
         </th>)}</tr></thead>}
         <tbody>{item.rows.map((row, index) => <tr key={index} style={{ height: pt(row.height) }}>{row.lines.map((lines, col) => mergeSpans[index][col] === 0 ? null : <td key={col} rowSpan={mergeSpans[index][col] > 1 ? mergeSpans[index][col] : undefined} style={col === 0 || mergeSpans[index][col] > 1 ? { ...cellStyle, verticalAlign: 'middle', textAlign: 'center' } : cellStyle}>
-            <EditableReportValue text={lines.join('\n') || (mergeSpans[index][col] > 1 && block.kind === 'dataTable' ? block.rows[row.index][col] : '') || '\u00a0'} richLines={row.richLines?.[col]} target={tableCellEditTarget(block, item.blockIndex, row.index, col)} onRequestEdit={onRequestEdit} />
+            <EditableReportValue text={lines.join('\n') || '\u00a0'} richLines={row.richLines?.[col]} target={tableCellEditTarget(block, item.blockIndex, row.index, col)} onRequestEdit={onRequestEdit} />
         </td>)}</tr>)}</tbody>
     </table>;
 }
@@ -107,7 +108,7 @@ function PageItem({ item, blocks, onRequestEdit }: { item: ReportLayoutItem; blo
     const block = blocks[item.blockIndex];
     if (item.kind === 'image') return <figure style={{ ...pagePosition(item.top), left: pt(REPORT_PAPER.margin + REPORT_TABLE_LEFT), width: pt(REPORT_VISUAL_WIDTH), margin: 0, textAlign: 'center' }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- 저장된 워크시트 그림을 출력 치수로 표시한다. */}
-        <img src={item.block.pngDataUrl} alt={item.block.title} style={{ width: pt(item.width), height: pt(item.height), maxWidth: 'none', display: 'inline-block' }} />
+        <img src={item.block.pngDataUrl} alt={item.block.title} style={{ width: pt(item.width), height: pt(item.height), maxWidth: 'none', display: 'block', margin: '0 auto' }} />
     </figure>;
     if (item.kind === 'text') return <ReportText item={item} block={block} onRequestEdit={onRequestEdit} />;
     return <ReportTable item={item} block={block as TableBlock | Extract<FinalReportBlock, { kind: 'paragraph' }>} onRequestEdit={onRequestEdit} />;

@@ -71,11 +71,10 @@ function gap(height: number): Paragraph {
 function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: FinalReportModel['blocks'][number]) {
     const mergeSpans = getTableMergeSpans(item, block);
     const row = (cells: string[][], height: number, header: boolean, rowIndex = -1) => new TableRow({
-        tableHeader: header, cantSplit: true, height: { value: pointsToTwips(height), rule: HeightRule.EXACT },
+        tableHeader: header, cantSplit: true, height: { value: pointsToTwips(height), rule: HeightRule.ATLEAST },
         children: cells.map((lines, index) => {
             const span = rowIndex < 0 ? 1 : mergeSpans[rowIndex][index];
-            const original = block.kind === 'dataTable' && rowIndex >= 0 ? block.rows[item.rows[rowIndex].index][index] : '';
-            const displayedLines = span > 1 && !lines.join('').trim() && original ? [original] : lines;
+            const displayedLines = lines;
             return new TableCell({
             width: { size: pointsToTwips(item.widths[index]), type: WidthType.DXA },
             margins: { top: pointsToTwips(6), bottom: pointsToTwips(6), left: pointsToTwips(3), right: pointsToTwips(3) },

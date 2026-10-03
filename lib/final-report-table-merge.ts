@@ -5,6 +5,7 @@ import type { ReportLayoutItem } from './final-report-layout';
 type TableLayout = Extract<ReportLayoutItem, { kind: 'table' }>;
 
 export function getTableMergeSpans(item: TableLayout, block: FinalReportBlock): number[][] {
+    if (item.mergeSpans) return item.mergeSpans;
     if (block.kind !== 'dataTable' || !block.mergeColumns?.length) return item.rows.map(row => row.lines.map(() => 1));
     return getGroupedCellSpans(item.rows.map(row => row.lines.map((_, column) => block.rows[row.index]?.[column] ?? '')), block.mergeColumns);
 }
