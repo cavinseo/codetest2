@@ -48,7 +48,7 @@ export async function buildWorksheetExcel(project: WorksheetExcelProject, reques
     const context = prepareWorksheetData(project);
     const selectedSheets = WORKSHEET_EXCEL_SHEETS.filter(sheet => !requestedWorksheetId || sheet.id === requestedWorksheetId);
     for (const definition of selectedSheets) {
-        const sheet = createWorksheet(workbook, definition.name, project.name, context.technicalCharacteristics.length);
+        const sheet = definition.id === 'qfd' ? workbook.addWorksheet(definition.name) : createWorksheet(workbook, definition.name, project.name, context.technicalCharacteristics.length);
         writeWorksheetContents(sheet, definition.id, context);
         sheet.pageSetup.printArea = `B2:${sheet.getColumn(Math.max(8, sheet.columnCount)).letter}${sheet.rowCount}`;
     }

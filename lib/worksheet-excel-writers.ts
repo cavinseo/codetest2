@@ -3,13 +3,13 @@ import type ExcelJS from 'exceljs';
 import type { WorksheetExcelContext } from './worksheet-excel';
 import type { WorksheetExcelId } from './worksheet-excel-sheets';
 import { getWeightedTimkoCategory, getSatisfactionQuadrant } from './kano-algorithm';
-import { relationshipWeight } from './qfd-worksheet';
+import { writeQfdSheet } from './worksheet-excel-qfd';
 import { resolveKanoQuestionPair, kanoSurveyAnswerLabels } from './kano-survey-document';
 import { buildKanoSurveyIntroduction, kanoSurveyIntroductionSchema } from './kano-survey-introduction';
 import { dedupeByAttributeName } from './product-attributes-utils';
 import { parseSourceYear } from './funding-ai-agent';
 import { buildFundingPlansWithSales, buildTargetSpecAdditionsFromTechTree } from './worksheet-links';
-import { addTable, addTotals, sortByOrder, cachedFormula, textDisplayWidth, writeNumericFormula, type ExcelCellValue, type ExcelTableRange } from './worksheet-excel-layout';
+import { addTable, addTotals, sortByOrder, cachedFormula, textDisplayWidth, writeNumericFormula, type ExcelCellValue } from './worksheet-excel-layout';
 
 function writeSalesSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
     const { project } = context;
@@ -116,52 +116,6 @@ function writeTimkoSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContex
     const quadrantLabels = { ATTRACTIVE: '매력적 품질', ONE_DIMENSIONAL: '일원적 품질', MUST_BE: '당연적 품질', INDIFFERENT: '무관심 품질' };
     const table = addTable(sheet, 'TIMKO / 만족계수', ['번호', '설문항목', '만족계수', '불만족계수', '품질 분류', '자동 가중치', '적용 가중치', '사분면'], kanoAnalysis.map((row, index) => [index + 1, row.requirement.requirement, row.counts.total ? row.better : null, row.counts.total ? row.worse : null, row.counts.total ? getWeightedTimkoCategory(row.timkoWeight) ?? '' : '', row.autoKanoWeight, row.timkoWeight, row.counts.total ? quadrantLabels[getSatisfactionQuadrant(row.better, row.worse)] : '']));
     kanoAnalysis.forEach((_, index) => { sheet.getCell(table.start + index, 4).numFmt = '0.00'; sheet.getCell(table.start + index, 5).numFmt = '0.00'; });
-}
-
-function writeQfdSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
-    const { project, technicalCharacteristics, qfdAnalysis } = context;
-    for (let column = 5; column < technicalCharacteristics.length + 5; column++) sheet.getColumn(column).width = 18;
-    const table = addTable(sheet, 'QFD 관계도 (강 9 / 중 3 / 약 1)', ['2차 그룹', '1차 그룹', '고객요구사항', ...technicalCharacteristics.map(row => row.name), '가중치', '가중치(%)', '자사', '경쟁사', '기획품질', '수준향상율', '절대적 중요성', '요구품질중요성(%)', '순위'], qfdAnalysis.requirements.map(row => [row.subcategory ?? '', row.category, row.requirement, ...technicalCharacteristics.map(technical => relationshipWeight(project.qfdMatrices.find(relation => relation.requirementId === row.id && relation.technicalCharId === technical.id)?.strength ?? 'NONE') || null), row.weight, row.weightPercent, row.selfScore, row.competitorScore, row.planQuality, row.improvementRate, row.absoluteImportance, row.qualityImportancePercent, row.rank]));
-    writeQfdRequirementFormulas(sheet, table, context);
-    writeQfdTechnicalSummary(sheet, table, context);
-    writeQfdComparisons(sheet, context);
-}
-
-function writeQfdRequirementFormulas(sheet: ExcelJS.Worksheet, table: ExcelTableRange, context: WorksheetExcelContext) {
-    const { technicalCharacteristics, qfdAnalysis } = context;
-    const weightColumn = technicalCharacteristics.length + 5;
-    const columnLetter = (offset: number) => sheet.getColumn(weightColumn + offset).letter;
-    qfdAnalysis.requirements.forEach((row, index) => {
-        const rowNumber = table.start + index;
-        sheet.getCell(rowNumber, weightColumn + 1).value = cachedFormula(`IF(SUM(${columnLetter(0)}$${table.start}:${columnLetter(0)}$${table.end})=0,0,ROUND(${columnLetter(0)}${rowNumber}/SUM(${columnLetter(0)}$${table.start}:${columnLetter(0)}$${table.end})*100,2))`, row.weightPercent);
-        sheet.getCell(rowNumber, weightColumn + 4).value = cachedFormula(`MAX(${columnLetter(2)}${rowNumber}:${columnLetter(3)}${rowNumber})`, row.planQuality);
-        sheet.getCell(rowNumber, weightColumn + 5).value = cachedFormula(`IF(${columnLetter(2)}${rowNumber}>0,ROUND(${columnLetter(4)}${rowNumber}/${columnLetter(2)}${rowNumber},2),0)`, row.improvementRate);
-        sheet.getCell(rowNumber, weightColumn + 6).value = cachedFormula(`ROUND(${columnLetter(0)}${rowNumber}*IF(${columnLetter(2)}${rowNumber}>0,${columnLetter(4)}${rowNumber}/${columnLetter(2)}${rowNumber},0),2)`, row.absoluteImportance);
-        sheet.getCell(rowNumber, weightColumn + 7).value = cachedFormula(`IF(SUM(${columnLetter(6)}$${table.start}:${columnLetter(6)}$${table.end})=0,0,ROUND(${columnLetter(6)}${rowNumber}/SUM(${columnLetter(6)}$${table.start}:${columnLetter(6)}$${table.end})*100,2))`, row.qualityImportancePercent);
-        sheet.getCell(rowNumber, weightColumn + 8).value = cachedFormula(`IF(${columnLetter(6)}${rowNumber}>0,RANK(${columnLetter(6)}${rowNumber},${columnLetter(6)}$${table.start}:${columnLetter(6)}$${table.end}),"")`, row.rank ?? '');
-    });
-}
-
-function writeQfdTechnicalSummary(sheet: ExcelJS.Worksheet, table: ExcelTableRange, context: WorksheetExcelContext) {
-    const { project, technicalCharacteristics, qfdAnalysis } = context;
-    const weightColumnLetter = sheet.getColumn(technicalCharacteristics.length + 5).letter;
-    const companies = [...new Set(project.technicalBenchmarks.map(row => row.company))];
-    const summary = addTable(sheet, '기술특성별 목표 및 중요도', ['기술적 특성', '측정단위', '목표값', ...companies.map(company => company === 'self' ? '자사' : company), '합계 점수', '중요도(%)', '순위'], qfdAnalysis.technicals.map(row => [row.name, row.unit ?? '', row.targetValue ?? '', ...companies.map(company => project.technicalBenchmarks.find(value => value.technicalCharId === row.id && value.company === company)?.value ?? ''), row.totalScore, row.importancePercent, row.rank]));
-    qfdAnalysis.technicals.forEach((row, index) => {
-        const scoreColumn = companies.length + 5;
-        const technicalLetter = sheet.getColumn(5 + index).letter;
-        sheet.getCell(summary.start + index, scoreColumn).value = cachedFormula(`ROUND(SUMPRODUCT(${technicalLetter}${table.start}:${technicalLetter}${table.end},${weightColumnLetter}${table.start}:${weightColumnLetter}${table.end}),2)`, row.totalScore);
-        const scoreLetter = sheet.getColumn(scoreColumn).letter;
-        const rowNumber = summary.start + index;
-        sheet.getCell(rowNumber, scoreColumn + 1).value = cachedFormula(`IF(SUM(${weightColumnLetter}${table.start}:${weightColumnLetter}${table.end})=0,0,ROUND(${scoreLetter}${rowNumber}/SUM(${weightColumnLetter}${table.start}:${weightColumnLetter}${table.end})*10,2))`, row.importancePercent);
-        sheet.getCell(rowNumber, scoreColumn + 2).value = cachedFormula(`IF(${scoreLetter}${rowNumber}>0,RANK(${scoreLetter}${rowNumber},${scoreLetter}$${summary.start}:${scoreLetter}$${summary.end}),"")`, row.rank ?? '');
-    });
-}
-
-function writeQfdComparisons(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
-    const { project, requirements, technicalCharacteristics } = context;
-    if (project.techCorrelations.length) addTable(sheet, '기술특성 상관관계', ['기술특성 1', '기술특성 2', '상관관계'], project.techCorrelations.map(row => [technicalCharacteristics.find(technical => technical.id === row.techId1)?.name ?? '', technicalCharacteristics.find(technical => technical.id === row.techId2)?.name ?? '', row.correlation]));
-    if (project.benchmarks.length) addTable(sheet, '고객요구사항별 경쟁 비교', ['고객요구사항', '회사', '점수'], project.benchmarks.map(row => [requirements.find(requirement => requirement.id === row.requirementId)?.requirement ?? '', row.company === 'self' ? '자사' : row.company, row.score]));
 }
 
 function writeTechTreeSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {

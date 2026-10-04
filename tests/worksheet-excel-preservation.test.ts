@@ -5,13 +5,13 @@ import { expect, it } from 'vitest';
 import { buildWorksheetExcel } from '../lib/worksheet-excel';
 import { worksheetExcelProject } from './fixtures/worksheet-excel-project';
 
-// cc16ede 출력의 자산·자금 시트 이름과 B2 제목 번호만 WS-14~16으로 바꾸고 다른 내용과 서식은 동일함을 비교 검증했다.
+// c52f6a5 출력에서 이번 수정 대상인 WS-9를 제외한 모든 시트의 내용과 서식을 비교한다.
 const baselineHashes = {
-    complete: '24bc31070b7206625eac65d4747317ad8ffd153d7a613364c24fbcc71c4d00b9',
-    empty: '83f394d77486f08a094d361f28a6ee73bfd90786b9083d70a6395e8e86226f66',
-    collapsed: '10661f27392736012c25e689315a3c632b7776f047a1557c275dfe20078ebd45',
-    expanded: '61158db210822046d14b97783dea36397bc6da541a4a21936adf8486989885b9',
-    long: 'e221ffe41c363438a43f1cf65ea3310dd8a00c734473fb55a6197d5ae73bd75c',
+    complete: 'bd89d578fc5e410cb3b35478b9293db1c16f262efc3a1e94279846b1421421ff',
+    empty: '477d0bda31fe3ac61673ae6e298f5dd4295b69c7f15a642a95ad2b5e1550e639',
+    collapsed: '4b561c1c961052665524d3e7a395c6fa3f868cb92418c5685fbe636501b7356a',
+    expanded: '4610cee6f42bbddccd60e5a879f8f108fee6a1e4b6b72c8f0cefc6e0447eb143',
+    long: '64774aec4bd60a394dd7fe54ec2f5db68e4ea0c1b8e6d8d17f194f8cdd4ba870',
 };
 
 function projectForScenario(scenario: keyof typeof baselineHashes) {
@@ -44,10 +44,10 @@ function canonicalize(value: unknown): unknown {
     return value;
 }
 
-it.each(Object.keys(baselineHashes) as Array<keyof typeof baselineHashes>)('%s 프로젝트의 엑셀 내용과 양식을 변경하지 않는다', async scenario => {
+it.each(Object.keys(baselineHashes) as Array<keyof typeof baselineHashes>)('%s 프로젝트의 WS-9 이외 내용과 양식을 변경하지 않는다', async scenario => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(await buildWorksheetExcel(projectForScenario(scenario)) as never);
-    const output = canonicalize(workbook.worksheets.map(sheet => sheet.model));
+    const output = canonicalize(workbook.worksheets.filter(sheet => sheet.name !== 'WS-9 QFD').map(sheet => sheet.model));
     const hash = createHash('sha256').update(JSON.stringify(output)).digest('hex');
     expect(hash).toBe(baselineHashes[scenario]);
 });

@@ -97,19 +97,17 @@ it('WS-4의 L*는 와일드카드가 아닌 정확한 우선순위로 집계한�
 
 it('QFD의 적용 가중치와 관계 점수, 경쟁 비교, 중요도, 순위가 계산 규칙과 일치한다', async () => {
     const sheet = (await load('qfd')).worksheets[0];
-    expect(sheet.getCell('E7').value).toBe(9);
-    expect(sheet.getCell('F7').value).toBe(1.73);
-    expect(result(sheet.getCell('J7'))).toBe(5);
-    expect(result(sheet.getCell('K7'))).toBe(1.67);
-    expect(result(sheet.getCell('L7'))).toBe(2.88);
-    expect(result(sheet.getCell('M7'))).toBe(100);
-    const summary = rowWith(sheet, '위치 제어');
-    expect(result(sheet.getCell(summary, 6))).toBe(15.57);
-    expect(result(sheet.getCell(summary, 7))).toBe(90);
-    expect(result(sheet.getCell(summary, 8))).toBe(1);
-    expect(sheet.getCell(summary, 6).formula).toContain('SUMPRODUCT');
-    expect(sheet.getCell(summary, 8).formula).toContain('RANK');
-    rowWith(sheet, '경쟁기업', 3);
+    expect(sheet.getCell('E4').value).toBe(9);
+    expect(sheet.getCell('T4').value).toBe(1.73);
+    expect(result(sheet.getCell('X4'))).toBe(5);
+    expect(result(sheet.getCell('Y4'))).toBe(1.67);
+    expect(result(sheet.getCell('Z4'))).toBe(2.88);
+    expect(result(sheet.getCell('AA4'))).toBe(100);
+    expect(result(sheet.getCell('E32'))).toBe(15.57);
+    expect(result(sheet.getCell('E33'))).toBe(1);
+    expect(sheet.getCell('E32').formula).toContain('SUMPRODUCT');
+    expect(sheet.getCell('E33').formula).toContain('RANK');
+    expect(sheet.getCell('W3').value).toBe('경쟁기업');
 });
 
 it('TIMKO의 수동 가중치 0도 보존하고 QFD에는 기존 양식의 가중치 규칙을 적용한다', async () => {
@@ -120,7 +118,7 @@ it('TIMKO의 수동 가중치 0도 보존하고 QFD에는 기존 양식의 가�
     expect(timko.getCell('I7').value).toBe('일원적 품질');
     expect(timko.getCell('D7').numFmt).toBe('0.00');
     const qfd = (await load('qfd', project)).worksheets[0];
-    expect(qfd.getCell('F7').value).toBe(3.2);
+    expect(qfd.getCell('T4').value).toBe(3.2);
 });
 
 it('매출의 0과 빈칸을 구분하고 자동 연동 매출 및 자금 합계는 이중 합산하지 않는다', async () => {
