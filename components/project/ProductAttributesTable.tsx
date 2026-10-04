@@ -522,7 +522,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         setRows(rows.filter(r => r.id !== id).map((r, order) => ({ ...r, order })));
     };
 
-    const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
+    const handleSave = async (options: { confirmedCascadeImpact?: { fitnesses: number } } = {}) => {
         if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
@@ -531,7 +531,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     attributes: savedAttributes,
-                    ...(options.confirmCascade ? { confirmCascade: true } : {}),
+                    ...(options.confirmedCascadeImpact ? { confirmedCascadeImpact: options.confirmedCascadeImpact } : {}),
                 }),
             });
             const data = await res.json().catch(() => null);
@@ -540,7 +540,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
             if (res.status === 409 && data?.needsCascadeConfirm) {
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await handleSave({ confirmCascade: true });
+                    await handleSave({ confirmedCascadeImpact: data.cascadeImpact });
                     return;
                 }
                 showToast('저장을 취소했습니다.', 'error');
@@ -621,14 +621,26 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         }
     };
 
-    const handleReset = async () => {
+    const handleReset = async (confirmedCascadeImpact?: { fitnesses: number }) => {
         if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         try {
-            const res = await fetch(`/api/projects/${projectId}/attributes`, { method: 'DELETE' });
+            // 적합도가 함께 지워지는 초기화는 서버가 409 로 막는다. 확인받은 영향 개수를 돌려보내
+            // 그사이 적합도가 바뀌었으면 다시 확인받게 한다.
+            const res = await fetch(`/api/projects/${projectId}/attributes`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(confirmedCascadeImpact ? { confirmedCascadeImpact } : {}),
+            });
+            const data = await res.json().catch(() => null);
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (window.confirm(`${data.error}\n\n계속하면 적합도 평가도 함께 삭제됩니다. 진행하시겠습니까?`)) {
+                    await handleReset(data.cascadeImpact);
+                }
+                return;
+            }
             // 응답을 보지 않고 비우면, 서버가 거절(권한 없음·오류)해도 표가 비고 "초기화되었습니다"
             // 가 떠서 지워진 줄 안다. 실패하면 표와 확인 창을 그대로 두고 서버 문구를 보인다.
             if (!res.ok) {
-                const data = await res.json().catch(() => null);
                 showToast(data?.error || '초기화 중 오류가 발생했습니다.', 'error');
                 return;
             }
@@ -863,7 +875,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         </div>
                         <div className="flex items-center gap-2">
                             <button onClick={() => setShowResetConfirm(false)} className="btn-secondary text-sm">취소</button>
-                            <button onClick={handleReset} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded-lg transition-colors font-medium">초기화</button>
+                            <button onClick={() => void handleReset()} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded-lg transition-colors font-medium">초기화</button>
                         </div>
                     </div>
                 </div>

@@ -6,6 +6,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { GOOGLE_FORMS_DISABLED_MESSAGE, GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';
+import { issueGoogleFormBinding } from '@/lib/google-form-binding';
 
 const log = createLogger('api/kano/create-form');
 
@@ -66,6 +67,11 @@ export async function POST(
             formId: result.formId,
             formUrl: result.formUrl,
             editUrl: result.editUrl,
+            formBinding: issueGoogleFormBinding({
+                projectId,
+                formId: result.formId,
+                questionPairs: result.questionPairs,
+            }),
             questionCount: requirements.length,
         });
     } catch (error: unknown) {

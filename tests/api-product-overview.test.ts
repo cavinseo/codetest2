@@ -18,7 +18,7 @@ const request = (body?: unknown) => new NextRequest('http://localhost/api/projec
 let stored: Record<string, unknown>;
 beforeEach(() => {
     vi.clearAllMocks();
-    stored = { id: 'p', name: '기존 프로젝트', description: '기존 설명', detailedDescription: '상세', createdAt: new Date(), updatedAt: new Date(), ...details };
+    stored = { id: 'p', name: '기존 프로젝트', companyName: null, owner: { profile: { companyName: '가입 회사' } }, description: '기존 설명', detailedDescription: '상세', createdAt: new Date(), updatedAt: new Date(), ...details };
     m.access.mockResolvedValue({ role: 'OWNER', user: { userId: 'mentee', role: 'MENTEE' } });
     m.update.mockImplementation(async ({ data }) => (stored = { ...stored, ...data }));
     m.find.mockImplementation(async () => stored);
@@ -31,6 +31,31 @@ it('제품명·이미지·시장·고객을 저장하고 새 요청으로 조회
     const loaded = await GET(request(), params);
     expect((await loaded.json()).project).toMatchObject({ ...details, name: '프로젝트' });
     expect(m.find.mock.calls[0][0].select).toMatchObject({ productName: true, productImageDataUrl: true, marketDefinition: true, targetCustomer: true });
+});
+it('개요 기업명이 없으면 회원가입 시 입력한 회사명을 기본값으로 표시한다', async () => {
+    const loaded = await GET(request(), params);
+    expect((await loaded.json()).project.companyName).toBe('가입 회사');
+    expect(m.find.mock.calls[0][0].select).toMatchObject({ companyName: true, owner: { select: { profile: { select: { companyName: true } } } } });
+});
+it('개요에서 수정한 기업명을 저장하고 회원가입 값보다 우선 표시한다', async () => {
+    const saved = await PATCH(request({ name: '프로젝트', companyName: '수정한 회사' }), params);
+    expect(saved.status).toBe(200);
+    expect(m.update.mock.calls[0][0].data.companyName).toBe('수정한 회사');
+    expect((await (await GET(request(), params)).json()).project.companyName).toBe('수정한 회사');
+});
+it('기업명이 빠진 기존 저장 요청은 저장된 기업명을 변경하지 않는다', async () => {
+    stored.companyName = '기존 기업';
+    await PATCH(request({ name: '이름만 변경' }), params);
+    expect(m.update.mock.calls[0][0].data).not.toHaveProperty('companyName');
+    expect(stored.companyName).toBe('기존 기업');
+});
+it('기업명을 지우면 회원가입 값으로 다시 채우지 않는다', async () => {
+    await PATCH(request({ name: '프로젝트', companyName: '  ' }), params);
+    expect((await (await GET(request(), params)).json()).project.companyName).toBe('');
+});
+it('기업명이 너무 길면 저장하지 않는다', async () => {
+    expect((await PATCH(request({ name: '프로젝트', companyName: '가'.repeat(301) }), params)).status).toBe(400);
+    expect(m.update).not.toHaveBeenCalled();
 });
 it('기존 저장 요청이 신규 필드를 생략하면 저장된 제품 정보를 보존한다', async () => {
     await PATCH(request({ name: '이름만 변경', description: '기존 설명' }), params);
@@ -125,6 +150,13 @@ it('추가 시장 자료의 줄바꿈과 들여쓰기를 저장·재조회하고
     expect(m.update.mock.calls[1][0].data).not.toHaveProperty('additionalMarketData');
 });
 
+it('추가 시장 자료의 보고서 반영 체크를 저장하고 조회한다', async () => {
+    expect((await PATCH(request({ name: '프로젝트', includeAdditionalMarketDataInReport: true }), params)).status).toBe(200);
+    expect(stored.includeAdditionalMarketDataInReport).toBe(true);
+    expect((await (await GET(request(), params)).json()).project.includeAdditionalMarketDataInReport).toBe(true);
+    expect(m.find.mock.calls[0][0].select.includeAdditionalMarketDataInReport).toBe(true);
+});
+
 it.each(['', null])('추가 시장 자료의 명시적 삭제를 보존한다 (%s)', async additionalMarketData => {
     stored.additionalMarketData = '기존 자료';
     expect((await PATCH(request({ name: '프로젝트', additionalMarketData }), params)).status).toBe(200);
@@ -140,7 +172,7 @@ it('추가 시장 자료가 제한을 초과하면 기존 내용을 덮어쓰지
 it('소유 멘티의 이름만 ownerName 으로 내보내고 owner 객체는 응답에 남기지 않는다', async () => {
     stored = { ...stored, owner: { name: ' 김멘티 ' } };
     const body = await (await GET(request(), params)).json();
-    expect(m.find.mock.calls[0][0].select.owner).toEqual({ select: { name: true } });
+    expect(m.find.mock.calls[0][0].select.owner).toEqual({ select: { name: true, profile: { select: { companyName: true } } } });
     expect(body.project.ownerName).toBe('김멘티');
     expect(body.project).not.toHaveProperty('owner');
 

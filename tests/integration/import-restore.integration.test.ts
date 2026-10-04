@@ -50,6 +50,16 @@ async function makeProject(populated = false) {
     await db.techCorrelation.create({ data: { projectId: project.id, techId1: tech1.id, techId2: tech2.id, correlation: '+' } });
     await db.qFDMatrix.create({ data: { projectId: project.id, requirementId: requirement.id, technicalCharId: tech1.id, strength: '강' } });
     await db.attributeFitness.create({ data: { projectId: project.id, attributeId: attr.id, importance: 4, currentLevel: 2, targetLevel: 5 } });
+    await db.techTreeEntry.create({ data: { projectId: project.id, customerVoice: '빠른 응답', coreSpec: '성능', subSpec: '처리 속도', techCharacteristic: '응답시간' } });
+    await db.improvementItem.create({ data: { projectId: project.id, type: 'need', content: '응답 지연 개선', priority: '높음' } });
+    await db.targetSpec.create({ data: { projectId: project.id, category: '성능', specItem: '응답시간', unit: 'ms', targetValue: '25' } });
+    await db.techRoadmap.create({ data: { projectId: project.id, category: '성능', techItem: '응답 엔진', q1: '설계', targetLevel: '상용화' } });
+    await db.devPlan.create({ data: { projectId: project.id, phase: '개발', task: '응답 최적화', status: '진행 중' } });
+    await db.salesEstimate.create({ data: { projectId: project.id, period: 'Y+1', customer: '기관 A', amount: 120, futureAmount: 180 } });
+    await db.assetItem.create({ data: { projectId: project.id, type: 'CORE', content: '응답 처리 기술' } });
+    await db.fundingPlan.create({ data: { projectId: project.id, category: '소요자금', item: '연구개발', year1: 100, year2: 150, year3: 200 } });
+    await db.fundingSource.create({ data: { projectId: project.id, category: '정부자금', year1: 'R&D:100' } });
+    await db.fitnessMatrix.create({ data: { projectId: project.id, marketsJson: '["공공"]', matrixJson: '{"성능":5}', managerComment: '검토 완료' } });
     return project.id;
 }
 async function snapshot(id: string) {
@@ -82,6 +92,16 @@ describe('실제 DB 백업 복원', () => {
         expect(restored.qfdRelationships).toHaveLength(1);
         expect(restored.attributeFitnesses).toEqual([expect.objectContaining({ importance: 4, targetLevel: 5 })]);
         expect(restored.kanoResponses).toHaveLength(2);
+        expect(restored.techTreeEntries).toEqual([expect.objectContaining({ customerVoice: '빠른 응답', techCharacteristic: '응답시간' })]);
+        expect(restored.improvementItems).toEqual([expect.objectContaining({ type: 'need', content: '응답 지연 개선' })]);
+        expect(restored.targetSpecs).toEqual([expect.objectContaining({ specItem: '응답시간', targetValue: '25' })]);
+        expect(restored.techRoadmaps).toEqual([expect.objectContaining({ techItem: '응답 엔진', q1: '설계' })]);
+        expect(restored.devPlans).toEqual([expect.objectContaining({ task: '응답 최적화', status: '진행 중' })]);
+        expect(restored.salesEstimates).toEqual([expect.objectContaining({ customer: '기관 A', amount: 120, futureAmount: 180 })]);
+        expect(restored.assetItems).toEqual([expect.objectContaining({ type: 'CORE', content: '응답 처리 기술' })]);
+        expect(restored.fundingPlans).toEqual([expect.objectContaining({ item: '연구개발', year2: 150 })]);
+        expect(restored.fundingSources).toEqual([expect.objectContaining({ category: '정부자금', year1: 'R&D:100' })]);
+        expect(restored.fitnessMatrix).toMatchObject({ marketsJson: '["공공"]', matrixJson: '{"성능":5}', managerComment: '검토 완료' });
         const responses = await db.kanoResponse.findMany({ where: { projectId: target }, include: { invitation: true, requirement: true } });
         for (const row of responses) {
             expect(row.invitation.projectId).toBe(target);
@@ -102,8 +122,9 @@ describe('실제 DB 백업 복원', () => {
         for (let i = 0; i < 2; i++) {
             expect((await restore(projectId, { ...backup, confirmCascade: true })).status).toBe(200);
             const restored = await exportBackup(projectId);
-            for (const key of ['benchmarks', 'technicalBenchmarks', 'techCorrelations', 'qfdRelationships', 'attributeFitnesses']) expect(restored[key]).toHaveLength(1);
+            for (const key of ['benchmarks', 'technicalBenchmarks', 'techCorrelations', 'qfdRelationships', 'attributeFitnesses', 'techTreeEntries', 'improvementItems', 'targetSpecs', 'techRoadmaps', 'devPlans', 'salesEstimates', 'assetItems', 'fundingPlans', 'fundingSources']) expect(restored[key]).toHaveLength(1);
             expect(restored.kanoResponses).toHaveLength(2);
+            expect(restored.fitnessMatrix).not.toBeNull();
             expect(restored.kanoResponses[0].invitationId).toBe(invitationId);
         }
         expect(await db.kanoSurveyInvitation.count({ where: { projectId } })).toBe(1);

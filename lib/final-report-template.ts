@@ -77,7 +77,8 @@ function appendProductOverview(writer: ReportWriter, overview: FinalReportOvervi
     writer.addParagraph('시장정의', 'analysis');
     writer.addParagraph(displayValue(source.marketDefinition));
     writer.addParagraph(`목표고객 · ${displayValue(source.targetCustomer)}`);
-    if (overview.additionalMarketData?.trim()) {
+    // 추가 시장 자료는 보고서에 싣겠다고 고른 프로젝트만 넣는다(기본값은 싣지 않음).
+    if (overview.includeAdditionalMarketDataInReport && overview.additionalMarketData?.trim()) {
         writer.addTable('추가 시장 자료', ['추가 시장 자료'], [[overview.additionalMarketData]]);
     }
     writer.addHeading('매출처별 매출현황 및 목표매출액 (WS-1)');

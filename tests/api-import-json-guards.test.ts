@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server';
 import { MAX_IMPORT_ROWS } from '../lib/import-json-schema';
 
 const counts = { kano: 0, benchmark: 0, qfd: 0, fitness: 0, correlation: 0, technicalBenchmark: 0 };
+const lockProject = vi.fn();
 
 const lockProject = vi.fn();
 
@@ -151,6 +152,46 @@ describe('import-json 가드', () => {
 
         expect(res.status).toBe(200);
         expect(transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('독립 워크시트와 적합도 매트릭스를 함께 복원한다', async () => {
+        const response = await POST(jsonRequest({
+            techTreeEntries: [{ customerVoice: '요구', coreSpec: '성능', order: 0 }],
+            improvementItems: [{ type: 'need', content: '개선', order: 0 }],
+            targetSpecs: [{ category: '성능', specItem: '응답시간', order: 0 }],
+            techRoadmaps: [{ techItem: '응답 엔진', q1: '설계', order: 0 }],
+            devPlans: [{ task: '개발', status: '진행 중', order: 0 }],
+            salesEstimates: [{ period: 'Y+1', amount: 100, futureAmount: 150, order: 0 }],
+            assetItems: [{ type: 'CORE', content: '핵심 기술', order: 0 }],
+            fundingPlans: [{ category: '소요자금', item: '개발', year1: 100, order: 0 }],
+            fundingSources: [{ category: '정부자금', year1: 'R&D:100', order: 0 }],
+            fitnessMatrix: { marketsJson: '["공공"]', matrixJson: '{"성능":5}', managerComment: '검토' },
+        }), params);
+
+        expect(response.status).toBe(200);
+        for (const model of ['techTreeEntry', 'improvementItem', 'targetSpec', 'techRoadmap', 'devPlan', 'salesEstimate', 'assetItem', 'fundingPlan', 'fundingSource']) {
+            expect(tx[model].deleteMany).toHaveBeenCalledWith({ where: { projectId: 'proj_1' } });
+            expect(tx[model].createMany).toHaveBeenCalledTimes(1);
+        }
+        expect(tx.fitnessMatrix.upsert).toHaveBeenCalledWith(expect.objectContaining({
+            where: { projectId: 'proj_1' },
+            create: expect.objectContaining({ marketsJson: '["공공"]', matrixJson: '{"성능":5}' }),
+        }));
+    });
+
+    it('1.1 전체 백업의 빈 워크시트와 적합도 매트릭스 부재를 복원한다', async () => {
+        const response = await POST(jsonRequest({
+            version: '1.1-prisma',
+            exportedAt: '2026-09-18T00:00:00.000Z',
+            specFunctions: [],
+            fundingPlans: [],
+            fitnessMatrix: null,
+        }), params);
+
+        expect(response.status).toBe(200);
+        expect(tx.specFunction.deleteMany).toHaveBeenCalledWith({ where: { projectId: 'proj_1' } });
+        expect(tx.fundingPlan.deleteMany).toHaveBeenCalledWith({ where: { projectId: 'proj_1' } });
+        expect(tx.fitnessMatrix.deleteMany).toHaveBeenCalledWith({ where: { projectId: 'proj_1' } });
     });
 
     it('createdAt 이 날짜 형식이 아니면 400 으로 막는다', async () => {

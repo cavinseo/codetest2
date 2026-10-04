@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 
         // 가입을 무제한 허용하면 승인 대기 큐가 오염되고 DB 행이 소모된다.
         const rateKey = `signup:${clientIpFrom(request.headers)}`;
-        const limit = consumeRateLimit(rateKey, SIGNUP_RATE_LIMIT);
+        const limit = await consumeRateLimit(rateKey, SIGNUP_RATE_LIMIT);
         if (!limit.allowed) {
             log.warn('가입 시도 제한 초과');
             return NextResponse.json(

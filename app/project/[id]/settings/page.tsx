@@ -379,7 +379,7 @@ export default function ProjectSettingsPage() {
                                         📤 데이터 내보내기 (Export)
                                     </h3>
                                     <p className="text-gray-400 mb-6 text-sm">
-                                        프로젝트의 모든 데이터를 JSON 파일로 다운로드합니다. 백업이나 다른 환경으로 이전 시 사용하세요.
+                                        프로젝트 워크시트와 분석 데이터를 JSON 파일로 다운로드합니다. 백업이나 다른 환경으로 이전 시 사용하세요.
                                     </p>
                                     <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-6">
                                         <h4 className="text-white font-semibold mb-2 text-sm">📦 포함되는 데이터</h4>
@@ -390,6 +390,9 @@ export default function ProjectSettingsPage() {
                                             <li>고객 요구사항</li>
                                             <li>기술특성 및 QFD 매트릭스</li>
                                             <li>Kano 설문 응답</li>
+                                            <li>기술트리, 개선항목, 목표사양, 기술로드맵</li>
+                                            <li>개발계획, 매출추정, 자금계획, 핵심자산 및 적합도 매트릭스</li>
+                                            <li>프로젝트 접근 권한, 초대 링크, 워크시트 의견, 결과보고서는 포함하지 않음</li>
                                         </ul>
                                     </div>
                                     <button
@@ -415,7 +418,7 @@ export default function ProjectSettingsPage() {
                                             ⚠️ 주의사항
                                         </h4>
                                         <ul className="text-gray-300 text-sm space-y-1 list-disc list-inside">
-                                            <li>기존 데이터가 모두 덮어씌워집니다</li>
+                                            <li>백업에 포함된 워크시트 데이터가 덮어씌워집니다</li>
                                             <li>이 작업은 되돌릴 수 없습니다</li>
                                             <li>먼저 현재 데이터를 백업하는 것을 권장합니다</li>
                                         </ul>

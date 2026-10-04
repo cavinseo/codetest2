@@ -31,6 +31,7 @@ export const productOverviewSchema = z.object({
     marketDefinition: z.string().max(20_000).transform(value => value.trim() ? value : '').nullable().optional(),
     targetCustomer: z.string().trim().max(20_000).nullable().optional(),
     additionalMarketData: z.string().max(20_000).transform(value => value.trim() ? value : '').nullable().optional(),
+    includeAdditionalMarketDataInReport: z.boolean().optional(),
     relatedImages: z.array(relatedImageSchema).max(RELATED_IMAGE_MAX_COUNT).optional(),
     productImageDataUrl: imageDataUrlSchema.nullable().optional(),
     productImageWidthPx: imageDimensionSchema.nullable().optional(),

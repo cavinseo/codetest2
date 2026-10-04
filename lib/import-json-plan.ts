@@ -24,6 +24,15 @@ export const IMPORT_COLLECTION_MODELS: ReadonlyArray<readonly [string, string]> 
     ['benchmarks', 'benchmark'],
     ['techCorrelations', 'techCorrelation'],
     ['technicalBenchmarks', 'technicalBenchmark'],
+    ['techTreeEntries', 'techTreeEntry'],
+    ['improvementItems', 'improvementItem'],
+    ['targetSpecs', 'targetSpec'],
+    ['techRoadmaps', 'techRoadmap'],
+    ['devPlans', 'devPlan'],
+    ['salesEstimates', 'salesEstimate'],
+    ['assetItems', 'assetItem'],
+    ['fundingPlans', 'fundingPlan'],
+    ['fundingSources', 'fundingSource'],
 ];
 
 /**
@@ -38,7 +47,7 @@ export function importDeletionPlan(data: Record<string, unknown>): string[] {
 
 /** True when the payload carries at least one non-empty collection to import. */
 export function importHasAnyData(data: Record<string, unknown>): boolean {
-    return IMPORT_COLLECTION_MODELS.some(([key]) => {
+    return data.fitnessMatrix !== undefined || IMPORT_COLLECTION_MODELS.some(([key]) => {
         const value = data[key];
         return Array.isArray(value) && value.length > 0;
     });

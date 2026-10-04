@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import WorksheetExcelDownload from '../components/project/WorksheetExcelDownload';
 import WorksheetImageExport from '../components/project/WorksheetImageExport';
 
-afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 async function render(element: ReturnType<typeof createElement>) {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     const container = document.createElement('div');
@@ -17,6 +17,7 @@ async function render(element: ReturnType<typeof createElement>) {
 }
 
 it('개별 양식의 저장된 내용만 요청하고 서버 파일명으로 다운로드한다', async () => {
+    vi.useFakeTimers();
     const fetcher = vi.fn().mockResolvedValue({ ok: true, headers: new Headers({ 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent('시험_WS-2.xlsx')}` }), blob: async () => new Blob(['xlsx']) });
     vi.stubGlobal('fetch', fetcher);
     const createUrl = vi.fn().mockReturnValue('blob:excel');
@@ -30,6 +31,8 @@ it('개별 양식의 저장된 내용만 요청하고 서버 파일명으로 다
     expect(fetcher).toHaveBeenCalledWith('/api/projects/project-1/export?format=xlsx&worksheet=spec', { cache: 'no-store' });
     expect(name).toBe('시험_WS-2.xlsx');
     expect(click).toHaveBeenCalledOnce();
+    expect(revokeUrl).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(revokeUrl).toHaveBeenCalledWith('blob:excel');
     expect(document.querySelector('a')).toBeNull();
     await act(async () => root.unmount());

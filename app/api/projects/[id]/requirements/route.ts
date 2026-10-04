@@ -135,7 +135,7 @@ export async function GET(
         });
 
         return NextResponse.json({
-            requirements: projectReqs.map((r: any) => ({
+            requirements: projectReqs.map((r) => ({
                 id: r.id,
                 category: r.category,
                 subcategory: r.subcategory,

@@ -1,6 +1,7 @@
 // Kano 일괄 초대가 업로드 파일 크기·확장자를 검사하고, 내부 오류 문구를 화면에 내보내지 않는지 확인한다.
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import * as XLSX from 'xlsx';
 
 const findProject = vi.fn();
 const findInvitations = vi.fn();
@@ -92,7 +93,11 @@ it('명단이 비어 있으면 안내 문구로 400 을 준다', async () => {
 });
 
 it('정상 업로드는 초대를 만든다', async () => {
-    const res = await POST(uploadRequest(new File(['xlsx'], 'list.xlsx')), params);
+    // 압축 폭탄 검사가 진짜 xlsx(zip) 구조를 확인하므로 실제 통합문서를 만들어 보낸다.
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['email'], ['a@x.com']]), '명단');
+    const bytes = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    const res = await POST(uploadRequest(new File([new Uint8Array(bytes)], 'list.xlsx')), params);
 
     expect(res.status).toBe(200);
     expect(createInvitation).toHaveBeenCalledTimes(1);

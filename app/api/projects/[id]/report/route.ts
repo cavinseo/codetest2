@@ -25,13 +25,14 @@ async function getAccess(request: NextRequest, id: string) {
     const access = await requireProjectAccess(request, id);
     if (access instanceof NextResponse) return access;
     const project = await prisma.project.findUnique({ where: { id }, select: {
+        companyName: true,
         owner: { select: { profile: { select: { companyName: true } }, mentorAssignment: { select: { mentorId: true, mentor: { select: { name: true } } } } } },
     } });
     if (!project) return json({ error: '프로젝트를 찾을 수 없습니다.' }, 404);
     const assignment = project.owner.mentorAssignment;
     const canEdit = canBeAssignedMentor(access) && assignment?.mentorId === access.user.userId;
     return { access, canEdit, canReadDraft: canEdit || access.user.role === 'ADMIN', mentorName: assignment?.mentor.name ?? null,
-        companyName: project.owner.profile?.companyName ?? null };
+        companyName: project.companyName ?? project.owner.profile?.companyName ?? null };
 }
 
 function worksheetAnalysis(draft: ReportDraft | undefined, worksheetId: AnalysisWorksheetId) {

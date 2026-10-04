@@ -242,17 +242,30 @@ export default function AdminModePage() {
         return true;
     };
 
-    const handleDeleteProject = async (projectId: string) => {
+    const handleDeleteProject = async (projectId: string, confirmCascade = false) => {
         if (deletingRef.current) return;
         deletingRef.current = true;
         setIsDeleting(true);
+        // 서버가 연결 데이터 건수를 알려 주며 409 로 되물으면 확인창을 열어 둔 채 경고를 보여 준다.
+        let closeDialog = true;
         try {
             const res = await fetch('/api/admin/projects', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ projectId }),
+                body: JSON.stringify({ projectId, ...(confirmCascade ? { confirmCascade: true } : {}) }),
             });
             const data = await res.json().catch(() => null);
+
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                closeDialog = false;
+                setConfirmDelete((prev) => prev ? {
+                    ...prev,
+                    stage: 2,
+                    cascadeWarning: data.error || '프로젝트와 연결된 데이터가 함께 삭제됩니다.',
+                    error: undefined,
+                } : prev);
+                return;
+            }
 
             if (!res.ok) {
                 // 서버가 준 이유(404·403·500)를 그대로 보여준다. "삭제 실패" 한 줄로
@@ -272,7 +285,7 @@ export default function AdminModePage() {
         } finally {
             deletingRef.current = false;
             setIsDeleting(false);
-            setConfirmDelete(null);
+            if (closeDialog) setConfirmDelete(null);
         }
     };
 
@@ -458,7 +471,9 @@ export default function AdminModePage() {
                 isDeleting={isDeleting}
                 targetProject={deleteTargetProject}
                 onDeleteUser={handleDeleteUser}
-                onDeleteProject={handleDeleteProject}
+                // 프로젝트는 2단계 확인을 거쳐야 확정되므로, 2단계에서 누른 삭제만 연결 데이터 삭제에
+                // 동의한 것으로 서버에 보낸다.
+                onDeleteProject={(projectId) => handleDeleteProject(projectId, confirmDelete?.stage === 2)}
             />
 
             <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 page-enter">

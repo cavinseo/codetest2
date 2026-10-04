@@ -15,6 +15,7 @@ const log = createLogger('api/project/overview');
 
 const updateOverviewSchema = z.object({
     name: z.string().min(1, '프로젝트명을 입력하세요.'),
+    companyName: z.string().trim().max(300).optional(),
     description: z.string().optional(),
     detailedDescription: z.string().optional(),
     businessPlanFile: z.string().nullable().optional(),
@@ -53,6 +54,7 @@ export async function GET(
                 select: {
                     id: true,
                     name: true,
+                    companyName: true,
                     description: true,
                     detailedDescription: true,
                     productName: true,
@@ -63,11 +65,13 @@ export async function GET(
                     marketDefinition: true,
                     targetCustomer: true,
                     additionalMarketData: true,
+                    includeAdditionalMarketDataInReport: true,
                     businessPlanFile: true,
                     createdAt: true,
                     updatedAt: true,
                     // 화면 상단에 누구의 프로젝트인지 보이려고 소유 멘티의 이름만 가져온다(이메일은 내보내지 않는다).
-                    owner: { select: { name: true } },
+                    // 프로젝트에 기업명이 없으면 멘티 프로필의 기업명을 기본값으로 쓰려고 함께 읽는다.
+                    owner: { select: { name: true, profile: { select: { companyName: true } } } },
                 },
             }),
             prisma.salesEstimate.count({ where: { projectId } }),
@@ -124,6 +128,7 @@ export async function GET(
             project: {
                 ...projectFields,
                 ownerName: owner?.name?.trim() || null,
+                companyName: project.companyName ?? owner?.profile?.companyName ?? '',
                 relatedImages: getProductOverviewImages(project),
                 role: accessResult.role,
                 createdAt: project.createdAt.toISOString(),
@@ -158,9 +163,11 @@ export async function PATCH(
 
         const project = await prisma.project.update({
             where: { id: projectId },
+            include: { owner: { select: { profile: { select: { companyName: true } } } } },
             data: {
                 ...productDetails,
                 name: data.name.trim(),
+                ...(data.companyName !== undefined ? { companyName: data.companyName } : {}),
                 description: data.description?.trim() || null,
                 detailedDescription: data.detailedDescription?.trim() ? data.detailedDescription : null,
                 ...(businessPlanFile !== undefined ? { businessPlanFile } : {}),
@@ -171,6 +178,7 @@ export async function PATCH(
             project: {
                 id: project.id,
                 name: project.name,
+                companyName: project.companyName ?? project.owner.profile?.companyName ?? '',
                 description: project.description,
                 detailedDescription: project.detailedDescription,
                 productName: project.productName,
@@ -181,6 +189,7 @@ export async function PATCH(
                 marketDefinition: project.marketDefinition,
                 targetCustomer: project.targetCustomer,
                 additionalMarketData: project.additionalMarketData,
+                includeAdditionalMarketDataInReport: project.includeAdditionalMarketDataInReport,
                 createdAt: project.createdAt.toISOString(),
                 updatedAt: project.updatedAt.toISOString(),
             },

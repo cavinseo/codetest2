@@ -1,12 +1,10 @@
-// 인증 엔드포인트용 슬라이딩 윈도 제한.
+// 인증 엔드포인트의 요청 제한을 데이터베이스에 기록해 모든 서버 인스턴스에서 공유한다.
 //
-// 로그인·가입에 시도 제한이 전혀 없어, 알려진 관리자 이메일을 상대로 무제한
-// 비밀번호 추측이 가능했다. 가입도 무제한이라 승인 대기 큐를 오염시킬 수 있었다.
-//
-// 한계: 저장소가 프로세스 메모리라 서버리스에서는 인스턴스마다 카운터가 따로 논다.
-// 인스턴스 수만큼 임계값이 늘어나는 셈이라 완벽한 방어가 아니다. 그래도 단일
-// 클라이언트의 고속 무차별 대입은 실질적으로 막힌다. durable 한 제한이 필요해지면
-// Upstash 같은 외부 저장소로 이 모듈의 구현만 바꾸면 된다.
+// 프로세스 메모리 저장소는 서버리스 인스턴스마다 카운터가 따로 놀아 인스턴스 수만큼
+// 임계값이 늘어났다. DB 에 두면 모든 인스턴스가 같은 카운터를 본다. 만료 행은 요청
+// 처리 중 지우므로, 메모리 저장소 때 따로 두던 키 수 상한·주기 청소가 필요 없다.
+import { createHash } from 'crypto';
+import { prisma } from './prisma';
 
 export interface RateLimitRule {
     /** 윈도 길이(밀리초) */
@@ -25,72 +23,64 @@ export interface RateLimitResult {
 export const LOGIN_RATE_LIMIT: RateLimitRule = { windowMs: 15 * 60 * 1000, max: 5 };
 export const SIGNUP_RATE_LIMIT: RateLimitRule = { windowMs: 60 * 60 * 1000, max: 3 };
 
-// expiresAt 은 마지막 시도 + 윈도. 이 시각이 지난 키는 다시 볼 일이 없어 지워도 된다.
-type Store = Map<string, { hits: number[]; expiresAt: number }>;
-
-// 키가 이만큼 쌓이면 만료된 키를 치운다. 그래도 넘치면 오래된 키부터 버린다 —
-// 키마다 IP·이메일이 섞여 있어, 치우지 않으면 서로 다른 값으로 계속 두드리는 것만으로
-// 프로세스 메모리가 끝없이 커졌다(2026-10-25 코드 리뷰 B14).
-const SWEEP_THRESHOLD = 5_000;
-const MAX_KEYS = 10_000;
-// 전체 순회는 키 수만큼 걸리므로, 살아 있는 키가 많을 때 요청마다 돌지 않도록 간격을 둔다.
-const SWEEP_INTERVAL_MS = 60_000;
-let lastSweepAt = Number.NEGATIVE_INFINITY;
-
-// 개발 중 핫리로드로 카운터가 초기화되지 않도록 globalThis 에 붙인다.
-const globalStore = globalThis as unknown as { __rateLimitStore?: Store };
-const store: Store = globalStore.__rateLimitStore ?? new Map();
-globalStore.__rateLimitStore = store;
-
-// 지웠다가 다시 넣어 Map 순서의 맨 뒤로 보낸다. 그러면 맨 앞 키가 가장 오래 안 쓰인 키다.
-function remember(key: string, hits: number[], expiresAt: number): void {
-    store.delete(key);
-    store.set(key, { hits, expiresAt });
+function keyHash(key: string): string {
+    return createHash('sha256').update(key).digest('hex');
 }
 
 /**
  * 시도를 1회 기록하고 허용 여부를 돌려준다.
- * 같은 key 로 windowMs 안에 max 번을 넘기면 거부한다.
+ * 원본 이메일과 IP는 해시로 바꿔 저장하며, 만료된 기록은 요청 처리 중 함께 지운다.
  */
-export function consumeRateLimit(
+export async function consumeRateLimit(
     key: string,
     rule: RateLimitRule,
     now: number = Date.now()
-): RateLimitResult {
-    const windowStart = now - rule.windowMs;
-    const hits = (store.get(key)?.hits ?? []).filter((timestamp) => timestamp > windowStart);
+): Promise<RateLimitResult> {
+    const hash = keyHash(key);
+    const attemptedAt = new Date(now);
+    const windowStart = new Date(now - rule.windowMs);
 
-    if (hits.length >= rule.max) {
-        remember(key, hits, hits[hits.length - 1] + rule.windowMs);
-        const oldest = hits[0];
-        return {
-            allowed: false,
-            remaining: 0,
-            retryAfterSeconds: Math.max(1, Math.ceil((oldest + rule.windowMs - now) / 1000)),
-        };
-    }
+    return prisma.$transaction(async (tx) => {
+        await tx.rateLimitHit.deleteMany({ where: { expiresAt: { lte: attemptedAt } } });
+        // 같은 키의 요청은 일렬로 처리해 두 인스턴스가 동시에 임계값을 통과하지 못하게 한다.
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`rate-limit:${hash}`}))::text`;
+        await tx.rateLimitHit.deleteMany({
+            where: { keyHash: hash, attemptedAt: { lte: windowStart } },
+        });
+        const hits = await tx.rateLimitHit.findMany({
+            where: { keyHash: hash },
+            select: { attemptedAt: true },
+            orderBy: { attemptedAt: 'asc' },
+        });
 
-    hits.push(now);
-    remember(key, hits, now + rule.windowMs);
-    if (store.size > MAX_KEYS) {
-        // 살아 있는 키만으로 넘치면 가장 오래 안 쓰인 키를 버린다. 방금 쓴 키는 맨 뒤라 안전하다.
-        store.delete(store.keys().next().value as string);
-    } else if (store.size > SWEEP_THRESHOLD && now - lastSweepAt >= SWEEP_INTERVAL_MS) {
-        sweep(now);
-    }
-    return { allowed: true, remaining: rule.max - hits.length, retryAfterSeconds: 0 };
+        if (hits.length >= rule.max) {
+            const oldest = hits[0].attemptedAt.getTime();
+            return {
+                allowed: false,
+                remaining: 0,
+                retryAfterSeconds: Math.max(1, Math.ceil((oldest + rule.windowMs - now) / 1000)),
+            };
+        }
+
+        await tx.rateLimitHit.create({
+            data: {
+                keyHash: hash,
+                attemptedAt,
+                expiresAt: new Date(now + rule.windowMs),
+            },
+        });
+        return { allowed: true, remaining: rule.max - hits.length - 1, retryAfterSeconds: 0 };
+    });
 }
 
-function sweep(now: number): void {
-    lastSweepAt = now;
-    for (const [key, entry] of store) {
-        if (entry.expiresAt <= now) store.delete(key);
-    }
+/** 로그인 성공처럼 정상 사용자가 확인됐을 때 해당 키의 실패 카운터를 비운다. */
+export async function resetRateLimit(key: string): Promise<void> {
+    await prisma.rateLimitHit.deleteMany({ where: { keyHash: keyHash(key) } });
 }
 
-/** 로그인 성공처럼 "이 클라이언트는 정상"이 확인됐을 때 카운터를 비운다. */
-export function resetRateLimit(key: string): void {
-    store.delete(key);
+/** 테스트와 운영 점검에서 만료 전 기록까지 비우기 위한 용도. */
+export async function clearAllRateLimits(): Promise<void> {
+    await prisma.rateLimitHit.deleteMany();
 }
 
 /**
@@ -107,15 +97,4 @@ export function clientIpFrom(headers: Headers): string {
     if (realIp) return realIp;
     const forwarded = headers.get('x-forwarded-for')?.split(',').map((part) => part.trim()).filter(Boolean);
     return forwarded?.[forwarded.length - 1] || 'unknown';
-}
-
-/** 테스트에서 저장된 키 수를 확인하기 위한 용도. */
-export function rateLimitKeyCount(): number {
-    return store.size;
-}
-
-/** 테스트에서 상태를 비우기 위한 용도. */
-export function clearAllRateLimits(): void {
-    store.clear();
-    lastSweepAt = Number.NEGATIVE_INFINITY;
 }

@@ -14,7 +14,7 @@ import {
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { parseWritePolicy } from '@/lib/write-policy';
-import { guardUploadedExcel } from '@/lib/upload-guard';
+import { checkExcelArchiveSafety, guardUploadedExcel } from '@/lib/upload-guard';
 
 const log = createLogger('api/import');
 
@@ -51,6 +51,11 @@ export async function POST(
         // 크기·형식 검사는 다른 업로드 라우트와 같은 기준을 쓴다(2026-10-25 코드 리뷰 D5).
         if (!upload.ok) return NextResponse.json({ error: upload.failure.error }, { status: upload.failure.status });
         const file = upload.file;
+
+        const archiveFailure = checkExcelArchiveSafety(file.name, new Uint8Array(await file.arrayBuffer()));
+        if (archiveFailure) {
+            return NextResponse.json({ error: archiveFailure.error }, { status: archiveFailure.status });
+        }
 
         const parsedData = await parseExcelFile(file);
         if (parsedData.parseErrors.some((error) => error.severity === 'error')) {

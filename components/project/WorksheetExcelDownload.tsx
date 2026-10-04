@@ -1,6 +1,7 @@
 'use client';
 // 저장된 워크시트의 개별 양식 또는 전체 엑셀 파일을 내려받는다.
 import { useRef, useState } from 'react';
+import { downloadBlobAsFile } from '@/lib/file-download';
 
 async function fetchWorksheetExcel(projectId: string, worksheetId?: string) {
     const query = new URLSearchParams({ format: 'xlsx' });
@@ -15,18 +16,8 @@ async function fetchWorksheetExcel(projectId: string, worksheetId?: string) {
 
 async function saveExcelResponse(response: Response) {
     const excelBlob = await response.blob();
-    const downloadUrl = URL.createObjectURL(excelBlob);
-    const downloadLink = document.createElement('a');
-    try {
-        downloadLink.href = downloadUrl;
-        const encodedFileName = response.headers.get('Content-Disposition')?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-        downloadLink.download = encodedFileName ? decodeURIComponent(encodedFileName) : '워크시트.xlsx';
-        document.body.append(downloadLink);
-        downloadLink.click();
-    } finally {
-        downloadLink.remove();
-        URL.revokeObjectURL(downloadUrl);
-    }
+    const encodedFileName = response.headers.get('Content-Disposition')?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    downloadBlobAsFile(excelBlob, encodedFileName ? decodeURIComponent(encodedFileName) : '워크시트.xlsx');
 }
 
 export default function WorksheetExcelDownload({ projectId, worksheetId, disabled = false }: { projectId: string; worksheetId?: string; disabled?: boolean }) {

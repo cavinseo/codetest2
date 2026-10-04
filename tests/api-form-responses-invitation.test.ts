@@ -40,6 +40,14 @@ vi.mock('../lib/google-forms', () => ({
     getFormResponses: (...args: unknown[]) => getFormResponses(...(args as [])),
 }));
 
+vi.mock('../lib/google-form-binding', () => ({
+    verifyGoogleFormBinding: () => ({
+        projectId: 'proj_1',
+        formId: 'form_1',
+        questionPairs: [{ requirementId: 'req_1', functionalQuestionId: 'q1', dysfunctionalQuestionId: 'q2' }],
+    }),
+}));
+
 vi.mock('../lib/feature-flags', () => ({
     GOOGLE_FORMS_INTEGRATION_ENABLED: true,
     GOOGLE_FORMS_DISABLED_MESSAGE: '',
@@ -49,11 +57,11 @@ const { POST } = await import('../app/api/projects/[id]/kano/form-responses/rout
 
 const REQUESTER = { userId: 'user_42', email: 'pm@ks-qfd.com', name: '매니저' };
 
-function postRequest(body: unknown): NextRequest {
+function postRequest(body: Record<string, unknown> = {}): NextRequest {
     return new NextRequest('http://localhost/api/projects/proj_1/kano/form-responses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ formId: 'form_1', formBinding: 'binding_1', ...body }),
     });
 }
 
@@ -69,7 +77,7 @@ beforeEach(() => {
             {
                 respondentEmail: 'r@example.com',
                 submittedAt: '2026-08-20T00:00:00.000Z',
-                answers: [{ requirementIndex: 0, functional: 'LIKE', dysfunctional: 'TOLERATE' }],
+                answers: [{ requirementId: 'req_1', functional: 'LIKE', dysfunctional: 'TOLERATE' }],
             },
         ],
     });
@@ -81,7 +89,7 @@ afterEach(() => {
 
 describe('form-responses 시스템 초대', () => {
     it('invitedBy 에 요청자의 userId 를 넣는다', async () => {
-        const res = await POST(postRequest({ formId: 'form_1' }), { params });
+        const res = await POST(postRequest(), { params });
 
         expect(res.status).toBe(200);
         expect(upsertInvitation).toHaveBeenCalledTimes(1);
@@ -90,7 +98,7 @@ describe('form-responses 시스템 초대', () => {
     });
 
     it("invitedBy 에 'system' 같은 가짜 ID 를 넣지 않는다", async () => {
-        await POST(postRequest({ formId: 'form_1' }), { params });
+        await POST(postRequest(), { params });
 
         const created = upsertInvitation.mock.calls[0][0].create;
         expect(created.invitedBy).not.toBe('system');
@@ -99,13 +107,13 @@ describe('form-responses 시스템 초대', () => {
     it('초대가 이미 있으면 기존 ID에 응답을 저장한다', async () => {
         upsertInvitation.mockResolvedValue({ id: 'inv_old' });
 
-        await POST(postRequest({ formId: 'form_1' }), { params });
+        await POST(postRequest(), { params });
 
         expect(createManyResponses.mock.calls[0][0].data[0].invitationId).toBe('inv_old');
     });
 
     it('같은 Google Forms 응답을 다시 가져오면 기존 응답을 지운 뒤 한 번만 저장한다', async () => {
-        const response = await POST(postRequest({ formId: 'form_1' }), { params });
+        const response = await POST(postRequest(), { params });
 
         expect(response.status).toBe(200);
         expect(lockProject.mock.calls[0][0].join('')).toContain('pg_advisory_xact_lock');
@@ -128,17 +136,17 @@ describe('form-responses 시스템 초대', () => {
                 {
                     respondentEmail: 'r@example.com',
                     submittedAt: '2026-08-20T00:00:00.000Z',
-                    answers: [{ requirementIndex: 0, functional: 'LIKE', dysfunctional: 'TOLERATE' }],
+                    answers: [{ requirementId: 'req_1', functional: 'LIKE', dysfunctional: 'TOLERATE' }],
                 },
                 {
                     respondentEmail: 'r@example.com',
                     submittedAt: '2026-08-21T00:00:00.000Z',
-                    answers: [{ requirementIndex: 0, functional: 'EXPECT', dysfunctional: 'LIKE' }],
+                    answers: [{ requirementId: 'req_1', functional: 'EXPECT', dysfunctional: 'LIKE' }],
                 },
             ],
         });
 
-        const response = await POST(postRequest({ formId: 'form_1' }), { params });
+        const response = await POST(postRequest(), { params });
 
         expect((await response.json()).importedCount).toBe(1);
         expect(createManyResponses.mock.calls[0][0].data).toMatchObject([

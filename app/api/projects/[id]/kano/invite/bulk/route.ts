@@ -5,7 +5,7 @@ import { sendSurveyInvitation } from '@/lib/email';
 import { generateId } from '@/lib/id';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
-import { guardUploadedExcel } from '@/lib/upload-guard';
+import { checkExcelArchiveSafety, guardUploadedExcel } from '@/lib/upload-guard';
 import {
     parseInviteEmailText,
     parseKanoInviteWorkbook,
@@ -48,7 +48,11 @@ async function readInviteList(request: NextRequest): Promise<ParsedInviteList> {
         // 다른 엑셀 업로드 라우트와 같은 검사를 거친다.
         const upload = guardUploadedExcel(formData.get('file'));
         if (!upload.ok) throw new InviteListError(upload.failure.error, upload.failure.status);
-        const buffer = Buffer.from(await upload.file.arrayBuffer());
+        const bytes = new Uint8Array(await upload.file.arrayBuffer());
+        // 크기 검사는 압축된 크기만 본다. 압축 해제 크기는 SheetJS 에 넘기기 전에 따로 막는다.
+        const archiveFailure = checkExcelArchiveSafety(upload.file.name, bytes);
+        if (archiveFailure) throw new InviteListError(archiveFailure.error, archiveFailure.status);
+        const buffer = Buffer.from(bytes);
         try {
             return parseKanoInviteWorkbook(buffer);
         } catch {

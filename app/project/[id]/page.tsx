@@ -36,6 +36,7 @@ import { UNSAVED_WORKSHEET_MESSAGE, WorksheetDirtyContext } from '@/components/p
 interface ProjectData extends ProductOverview {
     id: string;
     name: string;
+    companyName?: string;
     description?: string;
     detailedDescription?: string;
     businessPlanFile?: string;
@@ -144,6 +145,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                     setProject((current) => ({
                         id: overviewData.project.id,
                         name: overviewData.project.name,
+                        companyName: overviewData.project.companyName || '',
                         description: overviewData.project.description || '',
                         detailedDescription: overviewData.project.detailedDescription || '',
                         businessPlanFile: overviewData.project.businessPlanFile || '',
@@ -156,6 +158,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                         marketDefinition: overviewData.project.marketDefinition,
                         targetCustomer: overviewData.project.targetCustomer,
                         additionalMarketData: overviewData.project.additionalMarketData,
+                        includeAdditionalMarketDataInReport: overviewData.project.includeAdditionalMarketDataInReport,
                         createdAt: overviewData.project.createdAt,
                         memberCount: current?.memberCount ?? 1,
                         role: overviewData.project.role || current?.role || 'COACH',
@@ -520,6 +523,21 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                             <div className="mb-4"><ProductOverviewFields value={isOverviewEditing ? overviewForm : project} editing={isOverviewEditing} disabled={isOverviewSaving || isProductImageReading} onChange={patch => setOverviewForm(current => ({ ...current, ...patch }))} onBusy={setIsProductImageReading} onError={setOverviewError} /></div>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+                                    <p className="text-xs text-gray-500 mb-2">기업명(창업자)</p>
+                                    {isOverviewEditing ? (
+                                        <input
+                                            type="text"
+                                            aria-label="기업명(창업자)"
+                                            value={overviewForm.companyName}
+                                            onChange={(event) => setOverviewForm({ ...overviewForm, companyName: event.target.value })}
+                                            maxLength={300}
+                                            className="w-full rounded-md border border-white/[0.08] bg-gray-950 px-3 py-2 text-sm text-white outline-none focus:border-primary-500"
+                                        />
+                                    ) : (
+                                        <p className="text-sm font-semibold text-white whitespace-pre-wrap">{project.companyName || '입력된 기업명(창업자)이 없습니다.'}</p>
+                                    )}
+                                </div>
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
                                     <p className="text-xs text-gray-500 mb-2">프로젝트명</p>
                                     {isOverviewEditing ? (
                                         <input
@@ -631,11 +649,18 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                                 <section aria-labelledby="additional-market-data-title" className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
                                     <h3 id="additional-market-data-title" className="mb-2 text-sm font-semibold text-gray-300">추가 시장 자료</h3>
                                     {isOverviewEditing ? (
+                                        <>
+                                        <label className="mb-3 flex items-center gap-2 text-sm text-gray-300">
+                                            <input type="checkbox" checked={Boolean(overviewForm.includeAdditionalMarketDataInReport)} disabled={isOverviewSaving}
+                                                onChange={event => setOverviewForm(current => ({ ...current, includeAdditionalMarketDataInReport: event.target.checked }))} />
+                                            결과보고서에 반영
+                                        </label>
                                         <ProductOverviewDetailEditor label="추가 시장 자료" maxLength={20_000}
                                             value={overviewForm.additionalMarketData ?? ''}
                                             onChange={additionalMarketData => setOverviewForm(current => ({ ...current, additionalMarketData }))}
                                             disabled={isOverviewSaving}
                                         />
+                                        </>
                                     ) : (
                                         <ProductOverviewContent value={project.additionalMarketData} emptyMessage="입력된 추가 시장 자료가 없습니다." />
                                     )}

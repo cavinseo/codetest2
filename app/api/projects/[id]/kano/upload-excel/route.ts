@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
-import { guardUploadedExcel } from '@/lib/upload-guard';
+import { checkExcelArchiveSafety, guardUploadedExcel } from '@/lib/upload-guard';
 import type { KanoAnswer } from '@/lib/kano-algorithm';
 import {
     parseGoogleFormsResponseSheet,
@@ -131,6 +131,10 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         }
 
         const bytes = Buffer.from(await upload.file.arrayBuffer());
+        const archiveFailure = checkExcelArchiveSafety(upload.file.name, bytes);
+        if (archiveFailure) {
+            return NextResponse.json({ error: archiveFailure.error }, { status: archiveFailure.status });
+        }
         const workbook = XLSX.read(bytes, { type: 'buffer' });
         const sheetName = pickKanoUploadSheet(workbook, uploadFormat);
         if (!sheetName) {

@@ -4,6 +4,20 @@ import { NextRequest } from 'next/server';
 import { SESSION_COOKIE_NAME } from '../lib/constants';
 import { clearAllRateLimits } from '../lib/rate-limit';
 
+const rateLimitState = vi.hoisted(() => ({ attempts: 0 }));
+vi.mock('../lib/rate-limit', () => ({
+    LOGIN_RATE_LIMIT: { windowMs: 1, max: 5 },
+    clientIpFrom: () => 'test-ip',
+    consumeRateLimit: () => {
+        rateLimitState.attempts += 1;
+        return rateLimitState.attempts > 5
+            ? { allowed: false, remaining: 0, retryAfterSeconds: 1 }
+            : { allowed: true, remaining: 5 - rateLimitState.attempts, retryAfterSeconds: 0 };
+    },
+    resetRateLimit: () => { rateLimitState.attempts = 0; },
+    clearAllRateLimits: () => { rateLimitState.attempts = 0; },
+}));
+
 const findUser = vi.fn();
 const updateUser = vi.fn();
 const updateMany = vi.fn();

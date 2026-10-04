@@ -3,6 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { clearAllRateLimits } from '../lib/rate-limit';
 
+vi.mock('../lib/rate-limit', () => ({
+    LOGIN_RATE_LIMIT: { windowMs: 1, max: 5 },
+    clientIpFrom: () => 'test-ip',
+    consumeRateLimit: async () => ({ allowed: true, remaining: 4, retryAfterSeconds: 0 }),
+    resetRateLimit: async () => undefined,
+    clearAllRateLimits: async () => undefined,
+}));
+
 const findUniqueUser = vi.fn();
 const updateUser = vi.fn();
 

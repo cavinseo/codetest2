@@ -16,12 +16,13 @@ import { isExcelFileName } from '@/lib/upload-guard';
 /** 개요 편집이 읽고 고치는 프로젝트 필드 */
 export interface OverviewEditableProject extends ProductOverview {
     name: string;
+    companyName?: string;
     description?: string;
     detailedDescription?: string;
     businessPlanFile?: string;
 }
 
-type OverviewForm = ProductOverview & { name: string; description: string; detailedDescription: string; businessPlanFile: string };
+type OverviewForm = ProductOverview & { name: string; companyName: string; description: string; detailedDescription: string; businessPlanFile: string };
 
 export function useProjectOverviewEditor<P extends OverviewEditableProject>(
     projectId: string,
@@ -39,6 +40,7 @@ export function useProjectOverviewEditor<P extends OverviewEditableProject>(
     const overviewFileSelectionRef = useRef(0);
     const [overviewForm, setOverviewForm] = useState<OverviewForm>({
         name: '',
+        companyName: '',
         description: '',
         detailedDescription: '',
         businessPlanFile: '',
@@ -49,6 +51,7 @@ export function useProjectOverviewEditor<P extends OverviewEditableProject>(
         setOverviewForm({
             ...project,
             name: project.name || '',
+            companyName: project.companyName || '',
             description: project.description || '',
             detailedDescription: project.detailedDescription || '',
             businessPlanFile: project.businessPlanFile || '',
@@ -73,6 +76,7 @@ export function useProjectOverviewEditor<P extends OverviewEditableProject>(
         setOverviewForm({
             ...project,
             name: project.name || '',
+            companyName: project.companyName || '',
             description: project.description || '',
             detailedDescription: project.detailedDescription || '',
             businessPlanFile: project.businessPlanFile || '',
@@ -178,6 +182,7 @@ export function useProjectOverviewEditor<P extends OverviewEditableProject>(
         try {
             const payload = {
                 name: overviewForm.name,
+                companyName: overviewForm.companyName,
                 productName: overviewForm.productName,
                 relatedImages: overviewForm.relatedImages,
                 productImageDataUrl: overviewForm.productImageDataUrl,
@@ -186,6 +191,7 @@ export function useProjectOverviewEditor<P extends OverviewEditableProject>(
                 marketDefinition: overviewForm.marketDefinition,
                 targetCustomer: overviewForm.targetCustomer,
                 additionalMarketData: overviewForm.additionalMarketData,
+                includeAdditionalMarketDataInReport: overviewForm.includeAdditionalMarketDataInReport,
                 description: overviewForm.description,
                 detailedDescription: overviewForm.detailedDescription,
                 ...(isOverviewFileDirty ? { businessPlanFile: overviewForm.businessPlanFile } : {}),
@@ -210,7 +216,9 @@ export function useProjectOverviewEditor<P extends OverviewEditableProject>(
                 marketDefinition: data.project.marketDefinition,
                 targetCustomer: data.project.targetCustomer,
                 additionalMarketData: data.project.additionalMarketData,
+                includeAdditionalMarketDataInReport: data.project.includeAdditionalMarketDataInReport,
                 name: data.project.name,
+                companyName: data.project.companyName || '',
                 description: data.project.description || '',
                 detailedDescription: data.project.detailedDescription || '',
                 businessPlanFile: isOverviewFileDirty ? overviewForm.businessPlanFile : project.businessPlanFile || '',

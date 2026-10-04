@@ -79,7 +79,7 @@ export async function POST(
             return NextResponse.json({ error: '유효하지 않은 적합도 데이터입니다.' }, { status: 400 });
         }
 
-        const updatedFitnesses = await prisma.$transaction(async (tx: any) => {
+        const updatedFitnesses = await prisma.$transaction(async (tx) => {
             await tx.attributeFitness.deleteMany({
                 where: { projectId },
             });

@@ -8,6 +8,7 @@ import KanoAnalysisPanel, { type KanoAnalysisData, type KanoAnalysisViewMode } f
 import KanoInviteModal from '@/components/project/KanoInviteModal';
 import HeaderToast from '@/components/HeaderToast';
 import KanoResponseCollection from './KanoResponseCollection';
+import KanoSummaryCards from './KanoSummaryCards';
 import KanoSurveyIntroductionFields from './KanoSurveyIntroductionFields';
 import { useKanoResponseCollection } from './useKanoResponseCollection';
 import { useUnsavedWorksheet } from './useUnsavedWorksheet';
@@ -15,6 +16,7 @@ import { useToast } from '@/components/useToast';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
 import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
 import { readJsonOrThrow } from '@/lib/client-fetch';
+import { GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';
 import {
     EMPTY_KANO_INTRODUCTION,
     kanoSurveyIntroductionSchema,
@@ -89,7 +91,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const loadData = useCallback(async () => {
         if (!hasLoadedRef.current) setIsLoading(true);
         try {
-            const projRes = await fetch(`/api/projects/${projectId}`);
+            const projRes = await fetch(`/api/projects/${projectId}/overview`);
             if (projRes.ok) {
                 const projData = await projRes.json();
                 setProjectName(projData.project?.name || projData.name || '프로젝트');
@@ -133,10 +135,12 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 setInvitations(invData.invitations || []);
             }
 
-            const settingsRes = await fetch('/api/settings');
-            if (settingsRes.ok) {
-                const data = await settingsRes.json();
-                setGoogleConfigured(data.google?.configured || false);
+            if (GOOGLE_FORMS_INTEGRATION_ENABLED) {
+                const googleStatusRes = await fetch(`/api/projects/${projectId}/kano/google-status`);
+                if (googleStatusRes.ok) {
+                    const data = await googleStatusRes.json();
+                    setGoogleConfigured(data.configured === true);
+                }
             }
 
             const analysisRes = await fetch(`/api/projects/${projectId}/kano/analysis`);
@@ -347,24 +351,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             {/* ===== 설문 관리 탭 ===== */}
             {activeTab === 'manage' && (
                 <div className="space-y-6 animate-fade-in">
-                    {/* 통계 카드 */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {[
-                            { label: '설문 질문', value: `${requirements.length}개`, sub: '긍정/부정 2문항이 1세트', color: 'text-blue-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
-                            { label: '초대 발송', value: `${invitations.length}명`, sub: '응답자 초대', color: 'text-purple-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg> },
-                            { label: '응답 완료', value: `${respondedCount}명`, sub: '설문 완료자', color: 'text-emerald-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
-                            { label: '응답률', value: `${invitations.length > 0 ? Math.round((respondedCount / invitations.length) * 100) : 0}%`, sub: '완료/발송', color: 'text-amber-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg> },
-                        ].map(item => (
-                            <div key={item.label} className="card">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className={item.color}>{item.icon}</span>
-                                    <p className="text-xs text-gray-500">{item.label}</p>
-                                </div>
-                                <p className={`text-2xl font-bold font-display ${item.color}`}>{item.value}</p>
-                                <p className="text-[11px] text-gray-600 mt-1">{item.sub}</p>
-                            </div>
-                        ))}
-                    </div>
+                    <KanoSummaryCards requirementCount={requirements.length} invitationCount={invitations.length} respondedCount={respondedCount} />
 
                     <div className="flex justify-end">
                         <div className="flex flex-wrap justify-end gap-2">

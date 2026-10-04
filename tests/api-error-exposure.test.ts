@@ -29,6 +29,15 @@ vi.mock('../lib/google-forms', () => ({
     getFormResponses: () => Promise.resolve({ responses: [] }),
 }));
 
+vi.mock('../lib/google-form-binding', () => ({
+    GoogleFormBindingError: class GoogleFormBindingError extends Error {},
+    verifyGoogleFormBinding: () => ({
+        projectId: 'proj_1',
+        formId: 'form_1',
+        questionPairs: [],
+    }),
+}));
+
 vi.mock('../lib/feature-flags', () => ({
     GOOGLE_FORMS_INTEGRATION_ENABLED: true,
     GOOGLE_FORMS_DISABLED_MESSAGE: '',
@@ -56,7 +65,7 @@ describe('form-responses 오류 응답', () => {
         const req = new NextRequest('http://localhost/api/projects/proj_1/kano/form-responses', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ formId: 'form_1' }),
+            body: JSON.stringify({ formId: 'form_1', formBinding: 'binding_1' }),
         });
         const res = await POST(req, { params: Promise.resolve({ id: 'proj_1' }) });
         const body = await res.json();

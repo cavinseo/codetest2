@@ -114,6 +114,7 @@ describe('POST /api/projects/[id]/kano/upload-excel', () => {
         expect(response.status).toBe(400);
         expect(tx.kanoResponse.createMany).not.toHaveBeenCalled();
     });
+
     it('요구사항이 없으면 기존 400 오류를 반환한다', async () => {
         findManyRequirement.mockResolvedValue([]);
 

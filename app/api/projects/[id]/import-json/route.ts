@@ -40,8 +40,10 @@ export async function POST(
         }
         const importData = parsed.data;
 
-        // 최소 하나의 데이터 배열이 있어야 import 허용 (빈 payload로 전체 삭제 방지)
-        if (!importHasAnyData(importData)) {
+        // 임의의 빈 요청은 전체 삭제가 될 수 있어 거절한다. 다만 1.1 전체 백업은
+        // 빈 워크시트도 원본 상태이므로, 그 경우에는 빈 배열을 복원할 수 있어야 한다.
+        const isFullBackup = importData.version === '1.1-prisma' && typeof importData.exportedAt === 'string';
+        if (!importHasAnyData(importData) && !isFullBackup) {
             return NextResponse.json(
                 { error: '가져올 데이터가 없습니다.' },
                 { status: 400 }

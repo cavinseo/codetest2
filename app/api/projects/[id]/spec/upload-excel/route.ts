@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { parseWritePolicy, type WritePolicy } from '@/lib/write-policy';
-import { guardUploadedExcel } from '@/lib/upload-guard';
+import { checkExcelArchiveSafety, guardUploadedExcel } from '@/lib/upload-guard';
 
 type FlatSpecRow = {
     core: string;
@@ -334,7 +334,12 @@ export async function POST(
         if (!upload.ok) return NextResponse.json({ error: upload.failure.error }, { status: upload.failure.status });
         const file = upload.file;
 
-        const workbook = XLSX.read(Buffer.from(await file.arrayBuffer()), {
+        const bytes = Buffer.from(await file.arrayBuffer());
+        const archiveFailure = checkExcelArchiveSafety(file.name, bytes);
+        if (archiveFailure) {
+            return NextResponse.json({ error: archiveFailure.error }, { status: archiveFailure.status });
+        }
+        const workbook = XLSX.read(bytes, {
             type: 'buffer',
             cellFormula: true,
         });

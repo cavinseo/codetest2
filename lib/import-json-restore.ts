@@ -51,6 +51,17 @@ export async function restoreImportedProject(projectId: string, importData: Impo
     const benchmarks = importData.benchmarks ?? [];
     const techCorrelations = importData.techCorrelations ?? [];
     const technicalBenchmarks = importData.technicalBenchmarks ?? [];
+    const techTreeEntries = importData.techTreeEntries ?? [];
+    const improvementItems = importData.improvementItems ?? [];
+    const targetSpecs = importData.targetSpecs ?? [];
+    const techRoadmaps = importData.techRoadmaps ?? [];
+    const devPlans = importData.devPlans ?? [];
+    const salesEstimates = importData.salesEstimates ?? [];
+    const assetItems = importData.assetItems ?? [];
+    const fundingPlans = importData.fundingPlans ?? [];
+    const fundingSources = importData.fundingSources ?? [];
+    const hasFitnessMatrix = Object.hasOwn(importData, 'fitnessMatrix');
+    const fitnessMatrix = importData.fitnessMatrix;
 
     const requirementIds = assignIds(requirements, 'req');
     const technicalIds = assignIds(technicals, 'tech');
@@ -210,6 +221,153 @@ export async function restoreImportedProject(projectId: string, importData: Impo
             });
         }
 
+        // importDeletionPlan 이 아래 컬렉션도 지우므로 여기서 다시 채우지 않으면 백업 복원이
+        // 워크시트 데이터를 지우기만 한다. 다른 행을 참조하지 않아 id 는 컬럼 기본값에 맡긴다.
+        if (techTreeEntries.length > 0) {
+            await tx.techTreeEntry.createMany({
+                data: techTreeEntries.map((row) => ({
+                    projectId,
+                    customerVoice: row.customerVoice ?? null,
+                    coreSpec: row.coreSpec ?? null,
+                    subSpec: row.subSpec ?? null,
+                    techCharacteristic: row.techCharacteristic ?? null,
+                    order: row.order,
+                })),
+            });
+        }
+        if (improvementItems.length > 0) {
+            await tx.improvementItem.createMany({
+                data: improvementItems.map((row) => ({
+                    projectId,
+                    type: row.type,
+                    content: row.content ?? null,
+                    improvementRate: row.improvementRate ?? null,
+                    devProportion: row.devProportion ?? null,
+                    priority: row.priority ?? null,
+                    order: row.order,
+                })),
+            });
+        }
+        if (targetSpecs.length > 0) {
+            await tx.targetSpec.createMany({
+                data: targetSpecs.map((row) => ({
+                    projectId,
+                    category: row.category ?? null,
+                    subCategory: row.subCategory ?? null,
+                    specItem: row.specItem ?? null,
+                    unit: row.unit ?? null,
+                    currentValue: row.currentValue ?? null,
+                    competitorValue: row.competitorValue ?? null,
+                    targetValue: row.targetValue ?? null,
+                    note: row.note ?? null,
+                    order: row.order,
+                })),
+            });
+        }
+        if (techRoadmaps.length > 0) {
+            await tx.techRoadmap.createMany({
+                data: techRoadmaps.map((row) => ({
+                    projectId,
+                    category: row.category ?? null,
+                    techItem: row.techItem ?? null,
+                    currentLevel: row.currentLevel ?? null,
+                    q1: row.q1 ?? null,
+                    q2: row.q2 ?? null,
+                    q3: row.q3 ?? null,
+                    q4: row.q4 ?? null,
+                    targetLevel: row.targetLevel ?? null,
+                    owner: row.owner ?? null,
+                    order: row.order,
+                })),
+            });
+        }
+        if (devPlans.length > 0) {
+            await tx.devPlan.createMany({
+                data: devPlans.map((row) => ({
+                    projectId,
+                    phase: row.phase ?? null,
+                    task: row.task ?? null,
+                    description: row.description ?? null,
+                    startDate: row.startDate ?? null,
+                    endDate: row.endDate ?? null,
+                    owner: row.owner ?? null,
+                    status: row.status,
+                    order: row.order,
+                })),
+            });
+        }
+        if (salesEstimates.length > 0) {
+            await tx.salesEstimate.createMany({
+                data: salesEstimates.map((row) => ({
+                    projectId,
+                    period: row.period,
+                    customer: row.customer ?? null,
+                    amount: row.amount,
+                    futureAmount: row.futureAmount,
+                    competitor: row.competitor ?? null,
+                    order: row.order,
+                })),
+            });
+        }
+        if (assetItems.length > 0) {
+            await tx.assetItem.createMany({
+                data: assetItems.map((row) => ({
+                    projectId,
+                    type: row.type,
+                    category: row.category ?? null,
+                    content: row.content ?? null,
+                    order: row.order,
+                })),
+            });
+        }
+        if (fundingPlans.length > 0) {
+            await tx.fundingPlan.createMany({
+                data: fundingPlans.map((row) => ({
+                    projectId,
+                    category: row.category ?? null,
+                    item: row.item ?? null,
+                    year1: row.year1,
+                    year2: row.year2 ?? null,
+                    year3: row.year3 ?? null,
+                    order: row.order,
+                })),
+            });
+        }
+        if (fundingSources.length > 0) {
+            await tx.fundingSource.createMany({
+                data: fundingSources.map((row) => ({
+                    projectId,
+                    category: row.category ?? null,
+                    year1: row.year1 ?? null,
+                    year2: row.year2 ?? null,
+                    year3: row.year3 ?? null,
+                    order: row.order,
+                })),
+            });
+        }
+        if (hasFitnessMatrix) {
+            if (fitnessMatrix) {
+                await tx.fitnessMatrix.upsert({
+                    where: { projectId },
+                    update: {
+                        marketsJson: fitnessMatrix.marketsJson,
+                        matrixJson: fitnessMatrix.matrixJson,
+                        managerComment: fitnessMatrix.managerComment ?? null,
+                        consultantNote: fitnessMatrix.consultantNote ?? null,
+                    },
+                    create: {
+                        projectId,
+                        marketsJson: fitnessMatrix.marketsJson,
+                        matrixJson: fitnessMatrix.matrixJson,
+                        managerComment: fitnessMatrix.managerComment ?? null,
+                        consultantNote: fitnessMatrix.consultantNote ?? null,
+                    },
+                });
+            } else {
+                await tx.fitnessMatrix.deleteMany({ where: { projectId } });
+            }
+        }
+
         // 프로젝트 기본 정보 업데이트
         if (importData.project || importData.technicalCharacteristics) {
             await tx.project.update({
@@ -218,6 +376,7 @@ export async function restoreImportedProject(projectId: string, importData: Impo
                     description: importData.project?.description,
                     detailedDescription: importData.project?.detailedDescription,
                     additionalMarketData: importData.project?.additionalMarketData,
+                    includeAdditionalMarketDataInReport: importData.project?.includeAdditionalMarketDataInReport,
                     ...(importData.technicalCharacteristics ? { qfdTechnicalInitialized: true } : {}),
                 },
             });
@@ -235,5 +394,15 @@ export async function restoreImportedProject(projectId: string, importData: Impo
         benchmarks: benchmarks.length,
         techCorrelations: techCorrelations.length,
         technicalBenchmarks: technicalBenchmarks.length,
+        techTreeEntries: techTreeEntries.length,
+        improvementItems: improvementItems.length,
+        targetSpecs: targetSpecs.length,
+        techRoadmaps: techRoadmaps.length,
+        devPlans: devPlans.length,
+        salesEstimates: salesEstimates.length,
+        assetItems: assetItems.length,
+        fundingPlans: fundingPlans.length,
+        fundingSources: fundingSources.length,
+        fitnessMatrix: fitnessMatrix ? 1 : 0,
     };
 }

@@ -40,6 +40,9 @@ export async function GET(
                 improvementItems: true,
                 targetSpecs: true,
                 techRoadmaps: true,
+                // WS-14 화면은 없앴지만 행은 DB 에 남아 있고, JSON 복원이 이 컬렉션을 지운 뒤 다시
+                // 채우므로 백업에서 빼면 복원 한 번에 사라진다.
+                devPlans: true,
                 salesEstimates: true,
                 assetItems: true,
                 fundingPlans: true,
@@ -75,6 +78,8 @@ export async function GET(
                 description: project.description,
                 detailedDescription: project.detailedDescription,
                 additionalMarketData: project.additionalMarketData,
+                // 보고서 반영 여부도 백업에 담아야 복원 뒤 결과보고서 내용이 달라지지 않는다.
+                includeAdditionalMarketDataInReport: project.includeAdditionalMarketDataInReport,
             },
             specFunctions: project.specFunctions,
             specDetailCollapsed: project.specDetailCollapsed,
@@ -88,8 +93,17 @@ export async function GET(
             techCorrelations: project.techCorrelations,
             benchmarks: project.benchmarks,
             technicalBenchmarks: project.technicalBenchmarks,
+            techTreeEntries: project.techTreeEntries,
+            improvementItems: project.improvementItems,
+            targetSpecs: project.targetSpecs,
+            techRoadmaps: project.techRoadmaps,
+            devPlans: project.devPlans,
+            salesEstimates: project.salesEstimates,
+            assetItems: project.assetItems,
+            fundingPlans: project.fundingPlans,
+            fundingSources: project.fundingSources,
             exportedAt: new Date().toISOString(),
-            version: '1.0-prisma',
+            version: '1.1-prisma',
         };
 
         return NextResponse.json(exportData);
