@@ -2,16 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { loadPersonalConnection } from '@/lib/ai/personal-store';
 import { runAiTask } from '@/lib/ai/registry';
 import type { AttributeDraftInput } from '@/lib/ai/types';
+import { valueAnalysisContextSchema } from '@/lib/ai/types';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 
 const log = createLogger('api/attributes/mentor');
 
-type MentorMode = 'questions' | 'draft';
+type MentorMode = 'questions' | 'draft' | 'value-analysis';
 
 function parseMode(value: unknown): MentorMode {
-    return value === 'draft' ? 'draft' : 'questions';
+    return value === 'draft' || value === 'value-analysis' ? value : 'questions';
 }
 
 function parseAnswers(value: unknown): AttributeDraftInput['answers'] {
@@ -39,6 +40,12 @@ export async function POST(
 
         const body = await request.json().catch(() => ({}));
         const mode = parseMode(body.mode);
+        const analysisContext = mode === 'value-analysis'
+            ? valueAnalysisContextSchema.safeParse(body.context ?? {})
+            : null;
+        if (analysisContext && !analysisContext.success) {
+            return NextResponse.json({ error: '분석할 제품 정보 형식이 올바르지 않습니다.' }, { status: 400 });
+        }
 
         const project = await prisma.project.findUnique({
             where: { id: projectId },
@@ -46,7 +53,14 @@ export async function POST(
                 name: true,
                 description: true,
                 detailedDescription: true,
+                productName: true,
                 productAttributes: { orderBy: { order: 'asc' } },
+                ...(mode === 'value-analysis' ? {
+                    specFunctions: {
+                        orderBy: { order: 'asc' as const },
+                        select: { name: true, level: true, technology: true },
+                    },
+                } : {}),
             },
         });
 
@@ -66,7 +80,17 @@ export async function POST(
             ? 'personal' as const
             : 'rule' as const;
 
-        const outcome = mode === 'draft'
+        const outcome = mode === 'value-analysis'
+            ? await runAiTask((provider) => provider.valueAnalysis({
+                project: projectContext,
+                productName: analysisContext?.data?.productName?.trim()
+                    || project.productAttributes.find(row => row.productName?.trim())?.productName
+                    || project.productName || project.name,
+                existingRows: analysisContext?.data?.existingRows ?? project.productAttributes,
+                specFunctions: project.specFunctions,
+                answers: parseAnswers(body.answers),
+            }), { requested, personalConnection })
+            : mode === 'draft'
             ? await runAiTask((provider) => provider.attributeDraft({
                 project: projectContext,
                 answers: parseAnswers(body.answers),

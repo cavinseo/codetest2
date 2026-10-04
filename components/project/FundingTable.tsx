@@ -5,6 +5,7 @@ import MoneyInput from '@/components/ui/MoneyInput';
 import { formatMoney } from '@/lib/money';
 import { parseSourceYear } from '@/lib/funding-ai-agent';
 import WorksheetLoadError from './WorksheetLoadError';
+import FundingPlanChart from './FundingPlanChart';
 
 interface FundingPlan {
     id: string;
@@ -50,11 +51,7 @@ const FUNDING_LABELS: Record<string, string> = {
     VC: '벤처캐피털(VC)',
 };
 
-const PLAN_SERIES = [
-    { field: 'year1' as const, label: 'Y+1', color: 'bg-cyan-400/90' },
-    { field: 'year2' as const, label: 'Y+2', color: 'bg-blue-400/90' },
-    { field: 'year3' as const, label: 'Y+3', color: 'bg-violet-400/90' },
-];
+const SOURCE_CATEGORIES = ['정부자금', '엔젤투자금', '연구개발 지원금(R&D)', '민간투자주도형 기술창업지원(TIPS)', '벤처캐피털(VC)', '기타'];
 
 const formatFundingLabel = (value: string) => FUNDING_LABELS[value] ?? value;
 const encodeYear = (value: FundingSourceYear) => JSON.stringify(value);
@@ -73,6 +70,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
     const [loadFailed, setLoadFailed] = useState(false);
     const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [canWrite, setCanWrite] = useState(false);
     const [aiMessage, setAiMessage] = useState<string | null>(null);
 
     const loadData = useCallback(async () => {
@@ -86,6 +84,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                 if (!Array.isArray(data.plans) || !Array.isArray(data.sources)) throw new Error('자금 계획 응답 형식 오류');
                 setPlans(data.plans || []);
                 setSources(data.sources || []);
+                setCanWrite(data.canWrite === true);
                 setLoadedProjectId(projectId);
             }
         } catch (error) {
@@ -101,21 +100,22 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
     }, [loadData]);
 
     const handleSave = async () => {
-        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
+        if (isLoading || isSaving || !canWrite || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
+        setAiMessage(null);
         try {
-            const payload = mode === 'plan' ? { plans } : { sources };
+            const payload = mode === 'plan' ? { plans } : { sources: sourceGroups.flatMap(group => group.rows).map((source, order) => ({ ...source, order })) };
             const res = await fetch(`/api/projects/${projectId}/funding`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
-            if (res.ok) {
-                setAiMessage('저장되었습니다.');
-                await loadData();
-            }
+            if (!res.ok) throw new Error('저장 실패');
+            setAiMessage('저장되었습니다.');
+            await loadData();
         } catch (error) {
             console.error('Failed to save funding data:', error);
+            setAiMessage('저장하지 못했습니다. 입력 내용은 유지됩니다. 다시 저장해 주세요.');
         } finally {
             setIsSaving(false);
         }
@@ -126,6 +126,8 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
     };
 
     const updateSourceYear = (id: string, field: YearField, part: keyof FundingSourceYear, value: string) => {
+        if (!canWrite || isSaving) return;
+        setAiMessage(null);
         setSources((prev) => prev.map((source) => {
             if (source.id !== id) return source;
             const year = parseSourceYear(source[field]);
@@ -133,10 +135,37 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
         }));
     };
 
+    const addSource = (category: string) => {
+        if (!canWrite || isSaving) return;
+        const id = crypto.randomUUID();
+        setSources(previous => [...previous, { id, category, year1: '', year2: '', year3: '', order: Math.max(-1, ...previous.map(source => source.order)) + 1 }]);
+        setAiMessage('세부항목을 추가했습니다. 출처와 금액을 입력한 뒤 저장해 주세요.');
+    };
+
+    const removeSource = (source: FundingSource) => {
+        if (!canWrite || isSaving) return;
+        const hasContent = YEAR_FIELDS.some(field => {
+            const year = parseSourceYear(source[field]);
+            return year.source.trim() !== '' || year.amountNumber !== 0;
+        });
+        if (hasContent && !window.confirm('이 세부항목의 1·2·3차년도 출처와 금액을 삭제할까요? 저장하면 반영됩니다.')) return;
+        setSources(previous => previous.filter(row => row.id !== source.id));
+        setAiMessage('세부항목을 삭제했습니다. 저장하면 반영됩니다.');
+    };
+
+    const sourceGroups = useMemo(() => {
+        const groups = new Map<string, FundingSource[]>(SOURCE_CATEGORIES.map(category => [category, []]));
+        for (const source of [...sources].sort((a, b) => a.order - b.order)) {
+            const category = formatFundingLabel(source.category);
+            if (!groups.has(category)) groups.set(category, []);
+            groups.get(category)!.push(source);
+        }
+        return [...groups].map(([category, rows]) => ({ category, rows }));
+    }, [sources]);
+
     const sortedPlans = useMemo(() => [...plans].sort((a, b) => a.order - b.order), [plans]);
     const costPlans = useMemo(() => sortedPlans.filter(isCostPlan), [sortedPlans]);
     const revenuePlan = useMemo(() => sortedPlans.find(isRevenuePlan) ?? null, [sortedPlans]);
-    const totalPlan = useMemo(() => sortedPlans.find(isTotalPlan) ?? null, [sortedPlans]);
 
     const planTotals = useMemo(
         () => YEAR_FIELDS.reduce((acc, field) => ({
@@ -154,7 +183,6 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
         [sources]
     );
 
-    const maxPlanValue = Math.max(1, ...costPlans.flatMap((plan) => YEAR_FIELDS.map((field) => Number(plan[field]) || 0)));
     const totalRequiredCost = YEAR_FIELDS.reduce((sum, field) => sum + planTotals[field], 0);
     const sourceOptions = Array.from(
         new Set(
@@ -170,11 +198,11 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
     }
 
     return (
-        <div className="space-y-6">
+        <fieldset disabled={!canWrite || isSaving} className="min-w-0 space-y-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <h2 className="text-xl font-bold text-white">
-                        {mode === 'plan' ? '[WS-16] 자금소요계획표' : '[WS-17] 자금조달계획표'}
+                        {mode === 'plan' ? '[WS-15] 자금소요계획표' : '[WS-16] 자금조달계획표'}
                     </h2>
                     <p className="mt-1 text-sm text-gray-500">
                         {mode === 'plan'
@@ -199,7 +227,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
             )}
 
             {mode === 'plan' ? (
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)]">
+                <div className="space-y-6">
                     <div className="card overflow-hidden">
                         <div className="flex items-end justify-between border-b border-white/[0.06] px-6 py-4">
                             <div>
@@ -249,6 +277,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                             {YEAR_FIELDS.map((field) => (
                                                 <td key={field} className="p-0">
                                                     <MoneyInput
+                                                        aria-label={YEAR_LABELS[field] + ' ' + plan.item}
                                                         value={plan[field]}
                                                         onValueChange={(value) => updatePlan(plan.id, field, value ?? 0)}
                                                         className={`w-full bg-transparent px-4 py-3 text-right outline-none transition-colors focus:bg-white/[0.04] ${
@@ -265,27 +294,8 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                         </div>
                     </div>
 
-                    <div className="space-y-6">
-                        <div className="card">
-                            <h3 className="text-base font-semibold text-white">연차별 소요자금 그래프</h3>
-                            <div className="mt-5 space-y-4">
-                                {PLAN_SERIES.map((series) => (
-                                    <div key={series.field} className="space-y-1.5">
-                                        <div className="flex items-center justify-between text-xs text-gray-400">
-                                            <span>{series.label}</span>
-                                            <span className="text-white">{formatMoney(planTotals[series.field])}</span>
-                                        </div>
-                                        <div className="h-3 rounded-full bg-white/[0.05]">
-                                            <div
-                                                className={`h-3 rounded-full ${series.color}`}
-                                                style={{ width: `${Math.max((planTotals[series.field] / maxPlanValue) * 100, 6)}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
+                    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_260px]">
+                        <FundingPlanChart values={YEAR_FIELDS.map(field => ({ revenue: revenuePlan?.[field] ?? null, required: planTotals[field] }))} />
                         <div className="card">
                             <h3 className="text-base font-semibold text-white">핵심 요약</h3>
                             <div className="mt-4 grid grid-cols-1 gap-3">
@@ -293,7 +303,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                     <div key={field} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                                         <div className="text-xs text-gray-500">{YEAR_LABELS[field]}</div>
                                         <div className="mt-1 text-lg font-semibold text-white">
-                                            {formatMoney(totalPlan?.[field] ?? planTotals[field])}
+                                            {formatMoney(planTotals[field])}
                                         </div>
                                     </div>
                                 ))}
@@ -313,7 +323,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                         <div className="flex items-end justify-between border-b border-white/[0.06] px-6 py-4">
                             <div>
                                 <h3 className="text-lg font-semibold text-white">자금조달계획</h3>
-                                <p className="mt-1 text-xs text-gray-500">출처와 금액을 함께 관리합니다.</p>
+                                <p className="mt-1 text-xs text-gray-500">구분별 세부항목을 추가하고 연차별 출처와 금액을 입력합니다. 추가·삭제 후 저장해 주세요.</p>
                             </div>
                             <span className="text-xs text-gray-500">단위: 백만원</span>
                         </div>
@@ -323,16 +333,27 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                 <thead>
                                     <tr className="border-b border-white/[0.08] bg-white/[0.02] text-center text-gray-400">
                                         <th className="min-w-[240px] w-[240px] px-4 py-3 text-left">구분</th>
+                                        <th className="min-w-[100px] px-3 py-3">세부항목</th>
                                         {YEAR_FIELDS.map((field) => (
                                             <th key={field} className="px-4 py-3">{YEAR_LABELS[field]}</th>
                                         ))}
                                     </tr>
                                 </thead>
-                                <tbody>
-                                    {sources.map((source) => (
+                                {sourceGroups.map(({ category, rows }) => {
+                                    const categoryCell = <th scope="rowgroup" rowSpan={Math.max(1, rows.length)} className="px-4 py-3 text-left align-top font-medium text-white">
+                                        <div>{category}</div>
+                                        <button type="button" onClick={() => addSource(category)} aria-label={`${category} 세부항목 추가`} data-capture-exclude className="btn-secondary mt-3 whitespace-nowrap text-xs">+ 세부항목 추가</button>
+                                    </th>;
+                                    return <tbody key={category} data-source-category={category}>
+                                    {rows.length === 0 ? <tr className="border-b border-white/[0.05]">
+                                        {categoryCell}
+                                        <td colSpan={4} className="px-4 py-4 text-gray-500">세부항목이 없습니다. 추가 버튼으로 등록하세요.</td>
+                                    </tr> : rows.map((source, index) => (
                                         <tr key={source.id} className="border-b border-white/[0.05] align-top">
-                                            <td className="px-4 py-3 font-medium text-white">
-                                                {formatFundingLabel(source.category)}
+                                            {index === 0 && categoryCell}
+                                            <td className="px-3 py-3 text-center text-gray-400">
+                                                <div>{index + 1}</div>
+                                                <button type="button" onClick={() => removeSource(source)} aria-label={`${category} 세부항목 ${index + 1} 삭제`} data-capture-exclude className="mt-2 text-xs text-rose-300 hover:underline">삭제</button>
                                             </td>
                                             {YEAR_FIELDS.map((field) => {
                                                 const year = parseSourceYear(source[field]);
@@ -342,6 +363,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                                         <div className="grid divide-x divide-white/[0.05]" style={{ gridTemplateColumns: `minmax(${sourceWidth}px, 1fr) 160px`, minWidth: sourceWidth + 160 }}>
                                                             <input
                                                                 type="text"
+                                                                aria-label={`${category} 세부항목 ${index + 1} ${YEAR_LABELS[field]} 출처`}
                                                                 list={`source-options-${projectId}`}
                                                                 value={year.source}
                                                                 title={year.source}
@@ -350,6 +372,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                                                 placeholder="출처"
                                                             />
                                                             <MoneyInput
+                                                                aria-label={`${category} 세부항목 ${index + 1} ${YEAR_LABELS[field]} 금액`}
                                                                 value={year.amount}
                                                                 onValueChange={(value) => updateSourceYear(source.id, field, 'amount', value == null ? '' : String(value))}
                                                                 className="min-w-0 bg-transparent px-3 py-3 text-right text-white outline-none focus:bg-white/[0.04]"
@@ -361,15 +384,18 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                             })}
                                         </tr>
                                     ))}
+                                    </tbody>;
+                                })}
+                                <tfoot>
                                     <tr className="bg-white/[0.03] font-semibold text-white">
-                                        <td className="px-4 py-3">자금조달 합계</td>
+                                        <td colSpan={2} className="px-4 py-3">자금조달 합계</td>
                                         {YEAR_FIELDS.map((field) => (
                                             <td key={field} className="px-4 py-3 text-right">
                                                 {formatMoney(sourceTotals[field])}
                                             </td>
                                         ))}
                                     </tr>
-                                </tbody>
+                                </tfoot>
                             </table>
                             <datalist id={`source-options-${projectId}`}>
                                 {sourceOptions.map((option) => <option key={option} value={option} />)}
@@ -378,6 +404,6 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                     </div>
                 </div>
             )}
-        </div>
+        </fieldset>
     );
 }

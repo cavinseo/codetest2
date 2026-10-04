@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
     ANALYSIS_WORKSHEETS, appendTargetSpecItems, emptyWorksheetAnalysis, isAnalysisWorksheetId,
     type AnalysisWorksheetId, type WorksheetAnalysis,
@@ -29,6 +31,7 @@ function AnalysisForm({ projectId, id, onDirtyChange }: { projectId: string; id:
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
+    const [previewField, setPreviewField] = useState<string | null>(null);
     const [confirmBack, setConfirmBack] = useState(false);
     const backDialog = useRef<HTMLDialogElement>(null);
     const allowNextPop = useRef(false);
@@ -119,11 +122,21 @@ function AnalysisForm({ projectId, id, onDirtyChange }: { projectId: string; id:
         finally { setBusy(false); }
     };
     if (!canRead) return error ? <p role="alert" className="mx-auto max-w-[1800px] p-4 text-sm text-rose-400">{error}</p> : null;
-    const field = (label: string, text: string, onChange: (text: string) => void, maxLength = 20_000) => (
-        <label className="block text-sm text-gray-300">{label}
-            <textarea className="input mt-2 w-full" rows={4} maxLength={maxLength} value={text} readOnly={!canEdit} onChange={event => onChange(event.target.value)} />
-        </label>
-    );
+    const field = (label: string, text: string, onChange: (text: string) => void, maxLength = 20_000) => {
+        const supportsMarkdown = maxLength === 20_000;
+        const showingPreview = supportsMarkdown && previewField === label;
+        return <div className="text-sm text-gray-300">
+            <div className="flex items-center justify-between gap-3">
+                <label htmlFor={`${id}-${label}`}>{label}</label>
+                {supportsMarkdown && <button type="button" className="text-sm text-primary-300 hover:underline" onClick={() => setPreviewField(showingPreview ? null : label)}>
+                    {showingPreview ? '편집으로 돌아가기' : 'Markdown 미리보기'}
+                </button>}
+            </div>
+            {showingPreview ? <div role="region" aria-label={`${label} Markdown 미리보기`} className="input mt-2 min-h-72 overflow-x-auto text-sm leading-7 [&_h1]:mb-4 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-3 [&_h2]:text-xl [&_h2]:font-bold [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-semibold [&_p]:mb-3 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_blockquote]:border-l-2 [&_blockquote]:border-primary-400 [&_blockquote]:pl-3 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-slate-900 [&_pre]:p-3 [&_code]:font-mono [&_a]:text-primary-300 [&_a]:underline [&_table]:border-collapse [&_th]:border [&_th]:p-2 [&_td]:border [&_td]:p-2">
+                {text.trim() ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown> : <p>미리볼 내용이 없습니다.</p>}
+            </div> : <textarea id={`${id}-${label}`} className="input mt-2 w-full resize-y" rows={supportsMarkdown ? 12 : 4} maxLength={maxLength} value={text} readOnly={!canEdit} onChange={event => onChange(event.target.value)} />}
+        </div>;
+    };
     return <section aria-label={`${ANALYSIS_WORKSHEETS[id]} 멘토 분석`} className="card mx-auto my-6 w-full max-w-[1800px] space-y-4">
         {confirmBack && <dialog ref={backDialog} aria-label="저장하지 않은 멘토 분석" onCancel={() => setConfirmBack(false)} className="rounded-xl border border-white/10 bg-surface-900 p-6 text-gray-200 backdrop:bg-black/60">
             <h3 className="font-semibold">저장하지 않은 멘토 분석이 있습니다.</h3>
@@ -136,6 +149,7 @@ function AnalysisForm({ projectId, id, onDirtyChange }: { projectId: string; id:
         <div>
             <h2 className="font-semibold text-white">멘토 분석(보고) · {ANALYSIS_WORKSHEETS[id]}</h2>
             <p className="mt-1 text-sm text-gray-400">배정 멘토가 작성하며 관리자는 초안을 열람할 수 있습니다. 결과보고서를 완료하면 이 분석이 포함된 완료본을 멘티가 열람할 수 있습니다.</p>
+            <p className="mt-1 text-sm text-gray-400">긴 분석 내용은 Markdown 문법으로 작성하고 미리보기로 확인할 수 있습니다.</p>
             {!canEdit && <p className="mt-1 text-sm text-primary-300">관리자 열람 전용입니다. 작성·저장·완료는 배정 멘토만 가능합니다.</p>}
         </div>
         {error && <p role="alert" className="text-sm text-rose-400">{error}</p>}

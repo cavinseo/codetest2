@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         // IP 와 이메일을 함께 키로 쓴다. IP 만 쓰면 공유 IP 뒤의 정상 사용자가
         // 말려들고, 이메일만 쓰면 IP 를 바꿔 가며 계정을 돌려 칠 수 있다.
         const rateKey = `login:${clientIpFrom(request.headers)}:${email.toLowerCase()}`;
-        const limit = consumeRateLimit(rateKey, LOGIN_RATE_LIMIT);
+        const limit = await consumeRateLimit(rateKey, LOGIN_RATE_LIMIT);
         if (!limit.allowed) {
             log.warn('로그인 시도 제한 초과');
             return NextResponse.json(
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
         });
 
         // 정상 로그인이 확인됐으니 이 조합의 실패 카운터는 비운다.
-        resetRateLimit(rateKey);
+        await resetRateLimit(rateKey);
 
         log.info('로그인 성공', { userId: user.id });
         return NextResponse.json({

@@ -1,4 +1,42 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+// 데이터베이스 기반 인증 요청 제한이 여러 서버 인스턴스에서도 유지되는지 확인한다.
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+type Hit = { id: string; keyHash: string; attemptedAt: Date; expiresAt: Date };
+
+const database = vi.hoisted(() => {
+    const hits: Hit[] = [];
+    const deleteMany = vi.fn(async (args?: { where?: { keyHash?: string; attemptedAt?: { lte: Date }; expiresAt?: { lte: Date } } }) => {
+        const where = args?.where;
+        const removed = hits.filter((hit) => !where
+            || (where.keyHash === undefined || hit.keyHash === where.keyHash)
+                && (where.attemptedAt?.lte === undefined || hit.attemptedAt <= where.attemptedAt.lte)
+                && (where.expiresAt?.lte === undefined || hit.expiresAt <= where.expiresAt.lte));
+        for (const hit of removed) hits.splice(hits.indexOf(hit), 1);
+        return { count: removed.length };
+    });
+    const findMany = vi.fn(async (args: { where: { keyHash: string } }) => hits
+        .filter((hit) => hit.keyHash === args.where.keyHash)
+        .sort((left, right) => left.attemptedAt.getTime() - right.attemptedAt.getTime())
+        .map(({ attemptedAt }) => ({ attemptedAt })));
+    const create = vi.fn(async ({ data }: { data: Omit<Hit, 'id'> }) => {
+        hits.push({ ...data, id: `hit_${hits.length}` });
+    });
+    const rateLimitHit = { deleteMany, findMany, create };
+    const tx = { rateLimitHit, $queryRaw: vi.fn(async () => []) };
+    return {
+        hits,
+        rateLimitHit,
+        transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+});
+
+vi.mock('../lib/prisma', () => ({
+    prisma: {
+        rateLimitHit: database.rateLimitHit,
+        $transaction: database.transaction,
+    },
+}));
+
 import {
     LOGIN_RATE_LIMIT,
     clearAllRateLimits,
@@ -9,78 +47,74 @@ import {
 
 const RULE = { windowMs: 1000, max: 3 };
 
-beforeEach(() => {
-    clearAllRateLimits();
+beforeEach(async () => {
+    await clearAllRateLimits();
+    vi.clearAllMocks();
 });
 
 describe('consumeRateLimit', () => {
-    it('max 까지는 허용하고 그다음부터 막는다', () => {
+    it('max 까지는 허용하고 그다음부터 막는다', async () => {
         for (let attempt = 1; attempt <= RULE.max; attempt++) {
-            expect(consumeRateLimit('k', RULE).allowed).toBe(true);
+            expect((await consumeRateLimit('k', RULE)).allowed).toBe(true);
         }
 
-        expect(consumeRateLimit('k', RULE).allowed).toBe(false);
+        expect((await consumeRateLimit('k', RULE)).allowed).toBe(false);
     });
 
-    it('남은 횟수를 알려준다', () => {
-        expect(consumeRateLimit('k', RULE).remaining).toBe(2);
-        expect(consumeRateLimit('k', RULE).remaining).toBe(1);
-        expect(consumeRateLimit('k', RULE).remaining).toBe(0);
+    it('남은 횟수를 알려준다', async () => {
+        expect((await consumeRateLimit('k', RULE)).remaining).toBe(2);
+        expect((await consumeRateLimit('k', RULE)).remaining).toBe(1);
+        expect((await consumeRateLimit('k', RULE)).remaining).toBe(0);
     });
 
-    it('윈도가 지나면 다시 허용한다', () => {
+    it('윈도가 지나면 다시 허용한다', async () => {
         const start = 1_000_000;
         for (let attempt = 0; attempt < RULE.max; attempt++) {
-            consumeRateLimit('k', RULE, start);
+            await consumeRateLimit('k', RULE, start);
         }
-        expect(consumeRateLimit('k', RULE, start).allowed).toBe(false);
+        expect((await consumeRateLimit('k', RULE, start)).allowed).toBe(false);
 
-        // 윈도를 벗어난 시점
-        expect(consumeRateLimit('k', RULE, start + RULE.windowMs + 1).allowed).toBe(true);
+        expect((await consumeRateLimit('k', RULE, start + RULE.windowMs + 1)).allowed).toBe(true);
     });
 
-    it('막혔을 때 다시 시도할 수 있는 시각을 알려준다', () => {
+    it('막혔을 때 다시 시도할 수 있는 시각을 알려준다', async () => {
         const start = 1_000_000;
         for (let attempt = 0; attempt < RULE.max; attempt++) {
-            consumeRateLimit('k', RULE, start);
+            await consumeRateLimit('k', RULE, start);
         }
 
-        const blocked = consumeRateLimit('k', RULE, start + 200);
+        const blocked = await consumeRateLimit('k', RULE, start + 200);
 
         expect(blocked.allowed).toBe(false);
         expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
     });
 
-    it('키가 다르면 서로 영향을 주지 않는다', () => {
-        for (let attempt = 0; attempt < RULE.max; attempt++) consumeRateLimit('a', RULE);
+    it('키가 다르면 서로 영향을 주지 않고 원본 키를 저장하지 않는다', async () => {
+        for (let attempt = 0; attempt < RULE.max; attempt++) await consumeRateLimit('login:203.0.113.2:person@example.com', RULE);
 
-        expect(consumeRateLimit('a', RULE).allowed).toBe(false);
-        expect(consumeRateLimit('b', RULE).allowed).toBe(true);
+        expect((await consumeRateLimit('login:203.0.113.2:person@example.com', RULE)).allowed).toBe(false);
+        expect((await consumeRateLimit('login:203.0.113.2:other@example.com', RULE)).allowed).toBe(true);
+        expect(database.hits.every((hit) => !hit.keyHash.includes('person@example.com'))).toBe(true);
     });
 
-    it('막힌 뒤에도 카운터가 무한히 늘지 않는다', () => {
-        const start = 1_000_000;
-        for (let attempt = 0; attempt < RULE.max + 10; attempt++) {
-            consumeRateLimit('k', RULE, start);
-        }
+    it('새 서버 모듈도 이미 기록된 제한을 적용한다', async () => {
+        for (let attempt = 0; attempt < RULE.max; attempt++) await consumeRateLimit('k', RULE);
 
-        // 윈도가 지나면 정확히 max 번 다시 허용되어야 한다.
-        const after = start + RULE.windowMs + 1;
-        for (let attempt = 0; attempt < RULE.max; attempt++) {
-            expect(consumeRateLimit('k', RULE, after).allowed).toBe(true);
-        }
-        expect(consumeRateLimit('k', RULE, after).allowed).toBe(false);
+        vi.resetModules();
+        const reloaded = await import('../lib/rate-limit');
+
+        expect((await reloaded.consumeRateLimit('k', RULE)).allowed).toBe(false);
     });
 });
 
 describe('resetRateLimit', () => {
-    it('로그인 성공 후 카운터를 비운다', () => {
-        for (let attempt = 0; attempt < RULE.max; attempt++) consumeRateLimit('k', RULE);
-        expect(consumeRateLimit('k', RULE).allowed).toBe(false);
+    it('로그인 성공 후 해당 키의 카운터를 비운다', async () => {
+        for (let attempt = 0; attempt < RULE.max; attempt++) await consumeRateLimit('k', RULE);
+        expect((await consumeRateLimit('k', RULE)).allowed).toBe(false);
 
-        resetRateLimit('k');
+        await resetRateLimit('k');
 
-        expect(consumeRateLimit('k', RULE).allowed).toBe(true);
+        expect((await consumeRateLimit('k', RULE)).allowed).toBe(true);
     });
 });
 

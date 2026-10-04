@@ -1,4 +1,4 @@
-// WS-16 자금계획 초안을 규칙 기반으로 생성하는 유틸리티
+// WS-15 자금계획 초안을 규칙 기반으로 생성하는 유틸리티
 export interface FundingAiPlan {
     id: string;
     category: string;

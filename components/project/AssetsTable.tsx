@@ -96,7 +96,7 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
     return (
         <div className="space-y-8">
             <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-white">[WS-15] 핵심자산 및 보완자산 도출표</h2>
+                <h2 className="text-xl font-bold text-white">[WS-14] 핵심자산 및 보완자산 도출표</h2>
                 <button
                     onClick={handleSave}
                     disabled={isSaving}

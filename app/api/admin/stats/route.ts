@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
             },
         });
 
-        distribution.forEach((item: any) => {
+        distribution.forEach((item) => {
             const cat = item.kanoCategory as keyof typeof kanoDistribution;
             if (cat in kanoDistribution) {
                 kanoDistribution[cat] = item._count.kanoCategory;
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
             totalUsers: userCount,
             totalRequirements: requirementCount,
             totalResponses: responseCount,
-            recentProjects: recentProjects.map((p: any) => ({
+            recentProjects: recentProjects.map((p) => ({
                 id: p.id,
                 name: p.name,
                 createdAt: p.createdAt.toISOString(),

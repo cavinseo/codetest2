@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_UPLOAD_BYTES, checkUploadedExcel, guardUploadedExcel } from '../lib/upload-guard';
+import {
+    MAX_EXCEL_ARCHIVE_ENTRIES,
+    MAX_EXCEL_UNCOMPRESSED_BYTES,
+    MAX_UPLOAD_BYTES,
+    checkExcelArchiveSafety,
+    checkUploadedExcel,
+    guardUploadedExcel,
+} from '../lib/upload-guard';
 import {
     MAX_OFFLINE_HTML_BYTES,
     MAX_OFFLINE_HTML_FILES,
@@ -10,6 +17,25 @@ function fileOf(name: string, size: number): File {
     return new File([new Uint8Array(size)], name, {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
+}
+
+function zipWithCentralEntry(compressedSize: number, uncompressedSize: number, entryCount = 1): Uint8Array {
+    const name = new TextEncoder().encode('xl/worksheets/sheet1.xml');
+    const centralDirectorySize = 46 + name.length;
+    const bytes = new Uint8Array(centralDirectorySize + 22);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(0, 0x02014b50, true);
+    view.setUint32(20, compressedSize, true);
+    view.setUint32(24, uncompressedSize, true);
+    view.setUint16(28, name.length, true);
+    bytes.set(name, 46);
+    const eocdOffset = centralDirectorySize;
+    view.setUint32(eocdOffset, 0x06054b50, true);
+    view.setUint16(eocdOffset + 8, entryCount, true);
+    view.setUint16(eocdOffset + 10, entryCount, true);
+    view.setUint32(eocdOffset + 12, centralDirectorySize, true);
+    view.setUint32(eocdOffset + 16, 0, true);
+    return bytes;
 }
 
 describe('checkUploadedExcel', () => {
@@ -42,6 +68,12 @@ describe('checkUploadedExcel', () => {
         expect(checkUploadedExcel(fileOf('payload.zip', 100))?.error).toContain('.xlsx');
         expect(checkUploadedExcel(fileOf('noext', 100))?.status).toBe(400);
     });
+
+    it('Google Forms 응답 업로드에서만 CSV를 허용한다', () => {
+        expect(checkUploadedExcel(fileOf('responses.csv', 100))?.status).toBe(400);
+        expect(checkUploadedExcel(fileOf('responses.CSV', 100), { allowCsv: true })).toBeNull();
+        expect(checkUploadedExcel(fileOf('payload.zip', 100), { allowCsv: true })?.status).toBe(400);
+    });
 });
 
 describe('guardUploadedExcel', () => {
@@ -58,6 +90,33 @@ describe('guardUploadedExcel', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) expect(result.failure.status).toBe(413);
+    });
+});
+
+describe('checkExcelArchiveSafety', () => {
+    it('안전한 xlsx 중앙 디렉터리는 통과시킨다', () => {
+        expect(checkExcelArchiveSafety('safe.xlsx', zipWithCentralEntry(100, 500))).toBeNull();
+    });
+
+    it('압축 해제 크기가 큰 xlsx를 SheetJS 파싱 전에 거절한다', () => {
+        const result = checkExcelArchiveSafety(
+            'bomb.xlsx',
+            zipWithCentralEntry(1, MAX_EXCEL_UNCOMPRESSED_BYTES + 1)
+        );
+
+        expect(result).toMatchObject({ status: 413 });
+        expect(result?.error).toContain('압축 해제 크기');
+    });
+
+    it('과도한 압축 비율과 항목 수를 거절한다', () => {
+        expect(checkExcelArchiveSafety('ratio.xlsx', zipWithCentralEntry(1, 1024 * 1024 + 1)))
+            .toMatchObject({ status: 413 });
+        expect(checkExcelArchiveSafety('entries.xlsx', zipWithCentralEntry(1, 1, MAX_EXCEL_ARCHIVE_ENTRIES + 1)))
+            .toMatchObject({ status: 413 });
+    });
+
+    it('기존 xls 파일은 ZIP 중앙 디렉터리 검사 대상이 아니다', () => {
+        expect(checkExcelArchiveSafety('legacy.xls', new Uint8Array([0, 1, 2]))).toBeNull();
     });
 });
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
-import { guardUploadedExcel } from '@/lib/upload-guard';
+import { checkExcelArchiveSafety, guardUploadedExcel } from '@/lib/upload-guard';
 import type { KanoAnswer } from '@/lib/kano-algorithm';
 import {
     parseGoogleFormsResponseSheet,
@@ -10,7 +10,11 @@ import {
     parseWorksheetMatrixSheet,
     type ParsedKanoUploadAnswer,
 } from '@/lib/kano-upload-parser';
-import { parseWritePolicy, persistKanoUploadAnswers } from '@/lib/kano-response-store';
+import {
+    KanoUploadConflictError,
+    parseWritePolicy,
+    persistKanoUploadAnswers,
+} from '@/lib/kano-response-store';
 
 const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
     [/^\s*1\s*$|마음에\s*든다|like/i, 1],
@@ -111,8 +115,9 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         const file = formData.get('file');
         const uploadFormat = String(formData.get('format') ?? 'template');
         const writePolicy = parseWritePolicy(formData.get('writePolicy'));
+        const replaceExistingRespondents = formData.get('replaceExistingRespondents') === 'true';
         // 다른 업로드 라우트에는 있던 크기·확장자 검사가 여기만 빠져 있었다.
-        const upload = guardUploadedExcel(file);
+        const upload = guardUploadedExcel(file, { allowCsv: uploadFormat === 'googleForms' });
         if (!upload.ok) {
             return NextResponse.json({ error: upload.failure.error }, { status: upload.failure.status });
         }
@@ -126,6 +131,10 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         }
 
         const bytes = Buffer.from(await upload.file.arrayBuffer());
+        const archiveFailure = checkExcelArchiveSafety(upload.file.name, bytes);
+        if (archiveFailure) {
+            return NextResponse.json({ error: archiveFailure.error }, { status: archiveFailure.status });
+        }
         const workbook = XLSX.read(bytes, { type: 'buffer' });
         const sheetName = pickKanoUploadSheet(workbook, uploadFormat);
         if (!sheetName) {
@@ -147,6 +156,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             writePolicy,
             requirements,
             answers,
+            replaceExistingRespondents,
         });
 
         return NextResponse.json({
@@ -158,6 +168,9 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             sheetName,
         });
     } catch (error) {
+        if (error instanceof KanoUploadConflictError) {
+            return NextResponse.json({ error: error.message, code: 'KANO_RESPONSES_EXIST' }, { status: 409 });
+        }
         console.error('Kano Excel upload failed:', error);
         return NextResponse.json({ error: 'Kano 엑셀 업로드에 실패했습니다.' }, { status: 500 });
     }

@@ -74,6 +74,8 @@ function executeBrowserScript(
     const listeners = new Map<string, () => void>();
     const emailInput = { value: '' };
     const payloadElement = { textContent: payloadMatch[1] };
+    const introductionElement = { textContent: '' };
+    const introductionInput = { value: '', setAttribute: vi.fn(), addEventListener: vi.fn() };
     const saveButton = {
         addEventListener: (event: string, listener: () => void) => listeners.set(event, listener),
     };
@@ -83,9 +85,12 @@ function executeBrowserScript(
             if (id === KANO_OFFLINE_PAYLOAD_ID) return payloadElement;
             if (id === 'kano-respondent-email') return emailInput;
             if (id === 'kano-save') return saveButton;
+            if (id === 'kano-save-form') return { addEventListener: vi.fn() };
+            if (id.startsWith('kano-intro-')) return introductionInput;
             return null;
         },
         querySelector(selector: string) {
+            if (selector === '.introduction') return introductionElement;
             const name = selector.match(/name="([^"]+)"/)?.[1];
             const value = selector.match(/value="([^"]+)"/)?.[1];
             return radios.find((radio) => (
@@ -122,6 +127,8 @@ function executeBrowserScript(
     const confirm = vi.fn(() => options.confirm ?? true);
     const createObjectURL = vi.fn(() => 'blob:offline-response');
     const revokeObjectURL = vi.fn();
+    const scheduledTimers: Array<() => void> = [];
+    const setTimeout = vi.fn((callback: () => void) => { scheduledTimers.push(callback); return 1; });
     const date = options.date ?? { year: 2026, month: 9, day: 5, hour: 12, minute: 34, second: 56 };
     class FakeDate {
         getFullYear() { return date.year; }
@@ -137,6 +144,7 @@ function executeBrowserScript(
         Blob: FakeBlob,
         URL: { createObjectURL, revokeObjectURL },
         Date: FakeDate,
+        setTimeout,
         Number,
         JSON,
     });
@@ -151,6 +159,8 @@ function executeBrowserScript(
         payloadElement,
         radios,
         revokeObjectURL,
+        scheduledTimers,
+        setTimeout,
     };
 }
 
@@ -210,7 +220,7 @@ describe('buildKanoOfflineFormHtml 정적 계약', () => {
                 { name: expectedQuestions[index].name, value: '5', label: '마음에 안든다' },
             ]);
         });
-        expect(html.match(/<\/label><label/g)).toHaveLength(16);
+        expect(html.match(/<\/span><\/label><label class="answer"/g)).toHaveLength(16);
         expect(html.match(/<\/section>\n<section/g)).toHaveLength(1);
     });
 
@@ -344,6 +354,9 @@ describe('인라인 브라우저 스크립트', () => {
         expect(browser.anchors[0].href).toBe('blob:offline-response');
         expect(browser.anchors[0].click).toHaveBeenCalledOnce();
         expect(browser.createObjectURL).toHaveBeenCalledOnce();
+        expect(browser.revokeObjectURL).not.toHaveBeenCalled();
+        expect(browser.setTimeout).toHaveBeenCalledWith(expect.any(Function), 10_000);
+        browser.scheduledTimers.forEach(revoke => revoke());
         expect(browser.revokeObjectURL).toHaveBeenCalledWith('blob:offline-response');
     });
 

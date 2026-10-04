@@ -19,7 +19,7 @@ export type AnalysisWorksheetId = keyof WorksheetAnalysis;
 export const ANALYSIS_WORKSHEETS: Record<AnalysisWorksheetId, string> = {
     spec: 'WS-2 AS-IS 스펙표', attributes: 'WS-3 제품속성서', fitness: 'WS-4 제품속성적합도',
     'target-spec': 'WS-12 최종목표스펙', 'tech-roadmap': 'WS-13 개선 제품(서비스)',
-    assets: 'WS-15 핵심자산 및 보완자산', 'funding-plan': 'WS-16 자금소요계획', 'funding-source': 'WS-17 자금조달계획',
+    assets: 'WS-14 핵심자산 및 보완자산', 'funding-plan': 'WS-15 자금소요계획', 'funding-source': 'WS-16 자금조달계획',
 };
 export function isAnalysisWorksheetId(value: string): value is AnalysisWorksheetId {
     return Object.hasOwn(ANALYSIS_WORKSHEETS, value);

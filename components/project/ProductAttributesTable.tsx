@@ -2,17 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import AttributeMentorWizard from './AttributeMentorWizard';
 import type { MentorAppliedRow } from '@/lib/attribute-mentor-utils';
 import {
     buildSpecPickerRows,
+    combineTechnologies,
+    getAdditionalTechnologies,
+    getAppliedTechnologiesForAttributes,
     getBenefitSpan,
     getCustomerNameSpan,
     getCustomerNeedSpan,
     getMarketSegmentSpan,
-    resolveRelatedTechnology,
 } from '@/lib/product-attributes-utils';
 
 interface ProductAttributeRow {
@@ -65,7 +68,7 @@ function SpecSheetTable({
 }: {
     specFunctions: SpecFunction[];
     field: 'attribute' | 'techCapability';
-    onPick: (value: string, technology: string, options?: { autoFillTech?: boolean }) => void;
+    onPick: (value: string, technology: string) => void;
 }) {
     const flatRows = buildFlatRows(specFunctions, field);
 
@@ -118,7 +121,7 @@ function SpecSheetTable({
                         return (
                             <tr
                                 key={idx}
-                                onClick={() => onPick(clickValue, clickTechnology, { autoFillTech: Boolean(clickTechnology) })}
+                                onClick={() => onPick(clickValue, clickTechnology)}
                                 className={`border-b border-white/[0.04] cursor-pointer transition-colors
                                     ${isHighlighted
                                         ? 'hover:bg-cyan-500/10'
@@ -148,7 +151,7 @@ function SpecSheetTable({
                                         onClick={(event) => {
                                             if (field !== 'attribute' || !row.sub) return;
                                             event.stopPropagation();
-                                            onPick(row.sub, '', { autoFillTech: false });
+                                            onPick(row.sub, '');
                                         }}
                                         className={`border border-white/[0.06] px-3 py-2 text-purple-200 text-sm align-middle ${field === 'attribute' && row.sub ? 'cursor-pointer hover:bg-cyan-500/10 hover:text-cyan-100' : ''}`}
                                         title={field === 'attribute' && row.sub ? `세부기능 '${row.sub}'을 제품속성으로 선택` : undefined}
@@ -188,8 +191,8 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const [isLoading, setIsLoading] = useState(true);
     const [loadFailed, setLoadFailed] = useState(false);
     const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
-    // 기술 역량은 행별이 아니라 표 전체에 하나만 두고, 저장 시 모든 행에 같은 값을 기록한다.
-    const [techCapability, setTechCapability] = useState('');
+    // 자동 연결된 적용기술과 작성자 추가 내용을 합쳐 기존 공용 저장 필드에 기록한다.
+    const [additionalTechCapability, setAdditionalTechCapability] = useState('');
     const [showSpecPicker, setShowSpecPicker] = useState<{ rowId: string | null; field: 'attribute' | 'techCapability' } | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
@@ -200,6 +203,8 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const [showMentor, setShowMentor] = useState(false);
     const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const excelInputRef = useRef<HTMLInputElement | null>(null);
+    const automaticTechnologies = getAppliedTechnologiesForAttributes(specFunctions, rows.map(row => row.attribute));
+    const techCapability = combineTechnologies(automaticTechnologies, additionalTechCapability);
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -239,19 +244,19 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 if (loadedAttrs.length > 0 && loadedAttrs[0].productName) {
                     setProductName(loadedAttrs[0].productName);
                 }
-                // 행마다 저장돼 있던 기존 값 중 처음 발견되는 값을 공용 기술 역량으로 끌어올린다.
-                const firstTech = loadedAttrs.find((a: any) => a.techCapability?.trim())?.techCapability;
-                if (firstTech) {
-                    setTechCapability(firstTech);
-                }
             }
 
             let loadedSpecs: SpecFunction[] = [];
             if (specRes.ok) {
                 const data = await specRes.json();
                 loadedSpecs = data.specFunctions || [];
-                setSpecFunctions(loadedSpecs);
             }
+            setSpecFunctions(loadedSpecs);
+
+            const savedTechnology = loadedAttrs.find((a: any) => a.techCapability?.trim())?.techCapability || '';
+            const selectedAttributes = loadedAttrs.map((attribute: any) => attribute.attribute || '');
+            const automatic = getAppliedTechnologiesForAttributes(loadedSpecs, selectedAttributes);
+            setAdditionalTechCapability(getAdditionalTechnologies(savedTechnology, automatic));
 
             if (loadedAttrs.length > 0 && loadedSpecs.length > 0) {
                 const specNames = new Set(loadedSpecs.map(f => f.name));
@@ -277,60 +282,75 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     }, [loadData]);
 
     const createRow = (order: number, overrides: Partial<ProductAttributeRow> = {}): ProductAttributeRow => ({
-            id: `attr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            productName: '',
-            customerName: '',
-            marketSegment: '',
-            customerNeed: '',
-            benefit: '',
-            attribute: '',
-            techCapability: '',
-            order,
-            ...overrides,
+        id: `attr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        productName: '',
+        customerName: '',
+        marketSegment: '',
+        customerNeed: '',
+        benefit: '',
+        attribute: '',
+        techCapability: '',
+        order,
+        ...overrides,
     });
 
     const addRow = () => {
         setRows([...rows, createRow(rows.length)]);
     };
 
-    const addSegmentItem = (row: ProductAttributeRow) => {
-        const targetIndex = rows.findIndex(r => r.id === row.id);
-        const newRow = createRow(rows.length, { marketSegment: row.marketSegment });
-        const nextRows = targetIndex === -1
-            ? [...rows, newRow]
-            : [
-                ...rows.slice(0, targetIndex + 1),
-                newRow,
-                ...rows.slice(targetIndex + 1),
-            ];
-        setRows(nextRows.map((r, order) => ({ ...r, order })));
+    const insertRowAt = (currentRows: ProductAttributeRow[], insertIndex: number, values: Partial<ProductAttributeRow>) => {
+        const insertedRow = createRow(insertIndex, values);
+        return [
+            ...currentRows.slice(0, insertIndex),
+            insertedRow,
+            ...currentRows.slice(insertIndex),
+        ].map((item, order) => ({ ...item, order }));
     };
 
-    const addCustomerNeedItem = (row: ProductAttributeRow) => {
-        const targetIndex = rows.findIndex(r => r.id === row.id);
-        const newRow = createRow(rows.length, {
+    const addRowAfter = (row: ProductAttributeRow, values: Partial<ProductAttributeRow>) => {
+        setRows(currentRows => {
+            const targetIndex = currentRows.findIndex(item => item.id === row.id);
+            const insertIndex = targetIndex === -1 ? currentRows.length : targetIndex + 1;
+            return insertRowAt(currentRows, insertIndex, values);
+        });
+    };
+
+    const addMarketSegmentRow = (row: ProductAttributeRow) => {
+        addRowAfter(row, { marketSegment: row.marketSegment });
+    };
+
+    const addCustomerNeedRow = (row: ProductAttributeRow) => {
+        addRowAfter(row, {
             marketSegment: row.marketSegment,
             customerName: row.customerName,
         });
-        const nextRows = targetIndex === -1
-            ? [...rows, newRow]
-            : [
-                ...rows.slice(0, targetIndex + 1),
-                newRow,
-                ...rows.slice(targetIndex + 1),
-            ];
-        setRows(nextRows.map((r, order) => ({ ...r, order })));
     };
 
-    const updateRow = (id: string, field: keyof ProductAttributeRow, value: string) => {
-        setRows(rows.map(r => r.id === id ? { ...r, [field]: value } : r));
+    const addProductAttribute = (row: ProductAttributeRow) => {
+        setRows(currentRows => {
+            const targetIndex = currentRows.findIndex(item => item.id === row.id);
+            if (targetIndex === -1) return currentRows;
+            const sameCustomerNeedAndBenefit = (item: ProductAttributeRow) =>
+                item.marketSegment === row.marketSegment &&
+                item.customerName === row.customerName &&
+                item.customerNeed === row.customerNeed &&
+                item.benefit === row.benefit;
+            let insertIndex = targetIndex + 1;
+            while (insertIndex < currentRows.length && sameCustomerNeedAndBenefit(currentRows[insertIndex])) insertIndex++;
+            return insertRowAt(currentRows, insertIndex, {
+                marketSegment: row.marketSegment,
+                customerName: row.customerName,
+                customerNeed: row.customerNeed,
+                benefit: row.benefit,
+            });
+        });
     };
 
     const deleteRow = (id: string) => {
         setRows(rows.filter(r => r.id !== id).map((r, order) => ({ ...r, order })));
     };
 
-    const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
+    const handleSave = async (options: { confirmedCascadeImpact?: { fitnesses: number } } = {}) => {
         if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
@@ -344,7 +364,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         techCapability: techCapability,
                         order: i,
                     })),
-                    ...(options.confirmCascade ? { confirmCascade: true } : {}),
+                    ...(options.confirmedCascadeImpact ? { confirmedCascadeImpact: options.confirmedCascadeImpact } : {}),
                 }),
             });
             const data = await res.json().catch(() => null);
@@ -353,7 +373,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
             if (res.status === 409 && data?.needsCascadeConfirm) {
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await handleSave({ confirmCascade: true });
+                    await handleSave({ confirmedCascadeImpact: data.cascadeImpact });
                     return;
                 }
                 showToast('저장을 취소했습니다.', 'error');
@@ -429,12 +449,24 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         }
     };
 
-    const handleReset = async () => {
+    const handleReset = async (confirmedCascadeImpact?: { fitnesses: number }) => {
         if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         try {
-            await fetch(`/api/projects/${projectId}/attributes`, { method: 'DELETE' });
+            const response = await fetch(`/api/projects/${projectId}/attributes`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(confirmedCascadeImpact ? { confirmedCascadeImpact } : {}),
+            });
+            const data = await response.json().catch(() => null);
+            if (response.status === 409 && data?.needsCascadeConfirm) {
+                if (window.confirm(`${data.error}\n\n계속하면 적합도 평가도 함께 삭제됩니다. 진행하시겠습니까?`)) {
+                    await handleReset(data.cascadeImpact);
+                }
+                return;
+            }
+            if (!response.ok) throw new Error(data?.error ?? '제품 속성 초기화에 실패했습니다.');
             setRows([]);
-            setTechCapability('');
+            setAdditionalTechCapability('');
             setShowResetConfirm(false);
             showToast('초기화되었습니다.', 'success');
         } catch (error) {
@@ -455,7 +487,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         return getCustomerNameSpan(rows, index);
     };
 
-    // 세분시장 안에서 값이 같은 고객 니즈/제공혜택은 한 칸으로 묶어 보여준다.
+    // 같은 세분시장의 고객니즈를 묶고, 제공혜택은 같은 니즈 안에서만 병합한다.
     const getCustomerNeedRowSpan = (index: number) => {
         return getCustomerNeedSpan(rows, index);
     };
@@ -489,16 +521,12 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         setRows(rows.map(r => targetIds.has(r.id) ? { ...r, benefit: value } : r));
     };
 
-    // 선택한 스펙 항목에 연결된 기술역량 자동 조회
-    const findRelatedTech = (specName: string, pickedTechnology = ''): string =>
-        resolveRelatedTechnology(specFunctions, specName, pickedTechnology);
-
-    const applySpecPick = (value: string, pickedTechnology = '', options: { autoFillTech?: boolean } = {}) => {
+    const applySpecPick = (value: string, pickedTechnology = '') => {
         if (!showSpecPicker) return;
         const { rowId, field } = showSpecPicker;
         // 기술 역량은 공용 필드이므로 행이 아니라 한 칸에 줄 단위로 덧붙인다.
         if (field === 'techCapability') {
-            appendTechCapability(pickedTechnology || value);
+            appendAdditionalTechnology(pickedTechnology || value);
             setShowSpecPicker(null);
             return;
         }
@@ -508,48 +536,31 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             return;
         }
 
-        const relatedTech = options.autoFillTech === false ? '' : findRelatedTech(value, pickedTechnology);
         setRows(prev => prev.map(r => r.id === rowId ? { ...r, attribute: value } : r));
         setImportedFields(prev => {
             const next = new Set(prev);
             next.add(`${rowId}_attribute`);
             return next;
         });
-        if (relatedTech) {
-            appendTechCapability(relatedTech);
-            showToast(`기술역량에 추가: ${relatedTech}`, 'success');
-        }
         setShowSpecPicker(null);
     };
 
-    // 공용 기술 역량 칸에 값을 한 줄씩 추가한다. 이미 있는 항목은 중복으로 넣지 않는다.
-    const appendTechCapability = (value: string) => {
+    // 작성자 추가 칸에는 같은 기술을 중복 입력하지 않는다.
+    const appendAdditionalTechnology = (value: string) => {
         const trimmed = value.trim();
         if (!trimmed) return;
-        setTechCapability(prev => {
+        setAdditionalTechCapability(prev => {
             const lines = prev.split('\n').map(l => l.trim()).filter(Boolean);
             if (lines.includes(trimmed)) return prev;
             return [...lines, trimmed].join('\n');
         });
     };
 
-    const handleManualInput = (rowId: string, field: 'attribute' | 'techCapability', value: string) => {
-        if (field === 'attribute') {
-            const relatedTech = findRelatedTech(value);
-            setRows(rows.map(r => r.id === rowId ? { ...r, attribute: value } : r));
-            setImportedFields(prev => {
-                const next = new Set(prev);
-                next.delete(`${rowId}_attribute`);
-                return next;
-            });
-            if (relatedTech) appendTechCapability(relatedTech);
-            return;
-        }
-
-        updateRow(rowId, field, value);
+    const handleManualInput = (rowId: string, value: string) => {
+        setRows(rows.map(r => r.id === rowId ? { ...r, attribute: value } : r));
         setImportedFields(prev => {
             const next = new Set(prev);
-            next.delete(`${rowId}_${field}`);
+            next.delete(`${rowId}_attribute`);
             return next;
         });
     };
@@ -580,7 +591,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         });
 
         for (const technology of technologies) {
-            appendTechCapability(technology);
+            appendAdditionalTechnology(technology);
         }
 
         setShowMentor(false);
@@ -614,7 +625,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     <button
                         onClick={() => setShowMentor(true)}
                         className="btn-secondary text-sm flex items-center gap-1.5 border-accent-500/30 text-accent-300 hover:bg-accent-500/10"
-                        title="질문에 답하면 세분시장·고객·니즈 초안을 만들고, WS-2 기능과 적용기술을 연결해 줍니다."
+                        title="제품의 가치사슬·가치시스템을 분석하고, 문진을 통해 제품속성서 초안과 WS-2 기능·기술을 연결합니다."
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -671,45 +682,16 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             </div>
 
             {pendingExcelFile && (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <h3 className="text-sm font-semibold text-emerald-100">엑셀 양식 업로드</h3>
-                            <p className="mt-1 text-xs text-emerald-200/70">
-                                {pendingExcelFile.name} 파일을 제품속성표로 반영할 방식을 선택하세요.
-                            </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => uploadExcelFile(pendingExcelFile, 'append')}
-                                disabled={isUploadingExcel}
-                                className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"
-                            >
-                                {isUploadingExcel ? '업로드 중...' : '기존 데이터에 추가'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => uploadExcelFile(pendingExcelFile, 'replace')}
-                                disabled={isUploadingExcel}
-                                className="px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-sm font-semibold text-white disabled:opacity-50"
-                            >
-                                기존 데이터 지우고 업로드
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setPendingExcelFile(null);
-                                    if (excelInputRef.current) excelInputRef.current.value = '';
-                                }}
-                                disabled={isUploadingExcel}
-                                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white disabled:opacity-50"
-                            >
-                                취소
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <UploadWritePolicyPrompt
+                    fileName={pendingExcelFile.name}
+                    targetLabel="제품속성표"
+                    isUploading={isUploadingExcel}
+                    onSelect={policy => uploadExcelFile(pendingExcelFile, policy)}
+                    onCancel={() => {
+                        setPendingExcelFile(null);
+                        if (excelInputRef.current) excelInputRef.current.value = '';
+                    }}
+                />
             )}
 
             {/* 리셋 확인 배너 */}
@@ -727,7 +709,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         </div>
                         <div className="flex items-center gap-2">
                             <button onClick={() => setShowResetConfirm(false)} className="btn-secondary text-sm">취소</button>
-                            <button onClick={handleReset} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded-lg transition-colors font-medium">초기화</button>
+                            <button onClick={() => void handleReset()} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded-lg transition-colors font-medium">초기화</button>
                         </div>
                     </div>
                 </div>
@@ -771,16 +753,16 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                     </button>
                 </div>
             ) : (
-                <div className="card p-0 overflow-x-auto">
-                    <table className="w-full border-collapse text-sm table-fixed">
+                <div className="card p-0 overflow-x-auto" style={{ containerType: 'inline-size' }}>
+                    <table className="w-full min-w-[960px] border-collapse text-sm table-fixed">
                         <thead>
                             <tr className="bg-white/[0.03] border-b border-white/[0.06]">
                                 <th className="px-3 py-3 text-gray-500 font-medium text-center text-xs w-[44px]">No</th>
-                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[110px]">세분시장</th>
-                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[110px]">고객명</th>
-                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[150px]">고객 니즈</th>
-                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs min-w-[150px]">제공혜택</th>
-                                <th className="px-3 py-3 text-left text-xs min-w-[170px]">
+                                <th style={{ width: 'calc((max(100cqw, 960px) - 116px) / 10)' }} className="px-3 py-3 text-gray-400 font-medium text-left text-xs">세분시장</th>
+                                <th style={{ width: 'calc((max(100cqw, 960px) - 116px) / 10)' }} className="px-3 py-3 text-gray-400 font-medium text-left text-xs">고객명</th>
+                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs">고객 니즈</th>
+                                <th className="px-3 py-3 text-gray-400 font-medium text-left text-xs">제공혜택</th>
+                                <th style={{ width: 'calc((max(100cqw, 960px) - 116px) / 5)' }} className="px-3 py-3 text-left text-xs">
                                     <div className="text-cyan-400 font-semibold">제품속성</div>
                                     <div className="text-[10px] text-gray-600 font-normal mt-0.5">📥 스펙에서 가져오기</div>
                                 </th>
@@ -811,13 +793,13 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                                     className="w-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
                                                     placeholder="입력"
                                                 />
-                                                <div className="flex items-center justify-between gap-2 px-3 pb-2">
+                                                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2">
                                                     <span className="text-[10px] text-gray-600 whitespace-nowrap">
                                                         {marketSegmentRowSpan > 1 ? `${marketSegmentRowSpan}개 항목` : '1개 항목'}
                                                     </span>
                                                     <button
                                                         type="button"
-                                                        onClick={() => addSegmentItem(row)}
+                                                        onClick={() => addMarketSegmentRow(row)}
                                                         className="rounded-md border border-primary-500/20 px-2 py-1 text-[10px] text-primary-300 hover:bg-primary-500/10 transition-colors whitespace-nowrap"
                                                         title="같은 세분시장 항목 추가"
                                                     >
@@ -845,13 +827,13 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                                 <datalist id={`customer_name_list_${row.id}`}>
                                                     {getUniqueValues('customerName').map((v, i) => <option key={i} value={v} />)}
                                                 </datalist>
-                                                <div className="flex items-center justify-between gap-2 px-3 pb-2">
+                                                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2">
                                                     <span className="text-[10px] text-gray-600 whitespace-nowrap">
                                                         {customerNameRowSpan > 1 ? `${customerNameRowSpan}개 니즈` : '1개 니즈'}
                                                     </span>
                                                     <button
                                                         type="button"
-                                                        onClick={() => addCustomerNeedItem(row)}
+                                                        onClick={() => addCustomerNeedRow(row)}
                                                         className="rounded-md border border-cyan-500/20 px-2 py-1 text-[10px] text-cyan-300 hover:bg-cyan-500/10 transition-colors whitespace-nowrap"
                                                         title="같은 고객명에 고객니즈 추가"
                                                     >
@@ -879,7 +861,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                         </td>
                                     )}
 
-                                    {/* 제공혜택 - 같은 세분시장에서 값이 같으면 병합 */}
+                                    {/* 제공혜택 - 같은 세분시장과 고객니즈 안에서 값이 같으면 병합 */}
                                     {benefitRowSpan > 0 && (
                                         <td rowSpan={benefitRowSpan} className="p-0 align-top">
                                             <input
@@ -902,7 +884,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                             type="text"
                                             list={`attribute_list_${row.id}`}
                                             value={row.attribute}
-                                            onChange={(e) => handleManualInput(row.id, 'attribute', e.target.value)}
+                                            onChange={(e) => handleManualInput(row.id, e.target.value)}
                                             className={`w-full px-3 pr-8 py-2.5 bg-transparent text-sm outline-none focus:bg-cyan-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-cyan-500/30 transition-colors ${isImported(row.id, 'attribute') ? 'text-cyan-300' : 'text-gray-300'}`}
                                             placeholder="입력"
                                         />
@@ -921,12 +903,13 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                         </button>
                                     </td>
 
-                                    {/* 삭제 */}
+                                    {/* 속성 추가 및 행 삭제 */}
                                     <td className="px-2 py-2 text-center">
                                         <button
-                                            onClick={() => addSegmentItem(row)}
-                                            className="p-1.5 rounded-lg text-transparent group-hover:text-primary-400 hover:bg-primary-500/10 transition-all"
-                                            title="같은 세분시장 항목 추가"
+                                            onClick={() => addProductAttribute(row)}
+                                            className="p-1.5 rounded-lg text-cyan-500 hover:text-cyan-300 hover:bg-cyan-500/10 transition-all"
+                                            title="같은 고객 니즈에 제품속성 추가"
+                                            aria-label="같은 고객 니즈에 제품속성 추가"
                                         >
                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -971,7 +954,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                             기술 역량
                         </h3>
                         <p className="text-[11px] text-gray-500 mt-0.5">
-                            제품속성 전체에 공통으로 적용됩니다. 여러 개면 줄을 나눠 입력하세요.
+                            선택한 제품속성의 WS-2 적용기술이 자동 반영됩니다. 필요한 기술역량은 아래에 추가하세요.
                         </p>
                     </div>
                     <button
@@ -986,12 +969,17 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         스펙에서 추가
                     </button>
                 </div>
+                <div aria-label="WS-2 적용기술 자동 입력" className="px-4 py-3 text-sm text-gray-200 whitespace-pre-wrap border-b border-white/[0.06]">
+                    <div className="text-xs text-amber-300 mb-2">WS-2 적용기술 자동 입력</div>
+                    {automaticTechnologies.length > 0 ? automaticTechnologies.join('\n') : <span className="text-gray-500">연결된 적용기술이 없습니다.</span>}
+                </div>
                 <textarea
-                    value={techCapability}
-                    onChange={(e) => setTechCapability(e.target.value)}
+                    aria-label="추가 기술역량"
+                    value={additionalTechCapability}
+                    onChange={(e) => setAdditionalTechCapability(e.target.value)}
                     rows={6}
                     className="w-full px-4 py-3 bg-transparent text-sm text-gray-200 outline-none resize-y focus:bg-amber-500/[0.04] transition-colors leading-relaxed"
-                    placeholder={'예)\n· 데이터 통합 계층: 조직-회원-활동 이력 연계\n· 실시간 알림 파이프라인'}
+                    placeholder={'작성자가 추가할 기술역량을 입력하세요.\n예) 실시간 알림 파이프라인'}
                 />
             </div>
 
@@ -1000,6 +988,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 <AttributeMentorWizard
                     projectId={projectId}
                     specFunctions={specFunctions}
+                    analysisContext={{ productName, existingRows: rows.map(row => ({ ...row, techCapability })) }}
                     onApply={applyMentorResult}
                     onClose={() => setShowMentor(false)}
                     onNotify={showToast}
@@ -1022,7 +1011,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                 </h3>
                                 <p className="text-xs text-gray-500 mt-0.5">
                                     {showSpecPicker.field === 'attribute'
-                                        ? '세세부기능 행을 클릭하면 적용기술이 함께 입력되고, 세부기능 셀을 클릭하면 제품속성만 입력됩니다'
+                                        ? '제품속성을 선택하면 연결된 WS-2 적용기술이 자동으로 반영됩니다'
                                         : '행을 클릭하면 기술역량 칸에 적용기술이 입력됩니다'}
                                 </p>
                             </div>

@@ -17,6 +17,7 @@ function stubProvider(id: AiProviderId, overrides: Partial<AiProvider> = {}): Ai
         isAvailable: async () => true,
         mentorQuestions: async () => ({ questions: [], focus: id }),
         attributeDraft: async () => ({ rows: [], issues: [] }),
+        valueAnalysis: ruleProvider.valueAnalysis,
         specDraft: async () => ({
             cores: [{ name: `${id} 핵심`, subs: [{ name: '세부', details: [{ name: '기능', technology: '기술' }] }] }],
         }),

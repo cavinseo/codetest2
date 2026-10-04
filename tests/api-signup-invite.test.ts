@@ -77,10 +77,10 @@ describe('초대 코드 없는 가입', () => {
     const activeInvite = { id: 'invite', role: 'MENTEE', email: 'm@x.com', usedAt: null, usedById: null,
         expiresAt: future, accessExpiresAt: future, program: { endsAt: future }, accessDurationDays: 90 };
 
-    it.each(['MENTEE', 'MENTOR'])('유효한 미사용 멘티 초대가 있으면 %s 가입 대신 코드 로그인을 안내한다', async role => {
+    it('유효한 미사용 멘티 초대가 있으면 멘티 가입 대신 코드 로그인을 안내한다', async () => {
         txFindInvites.mockResolvedValue([activeInvite]);
         const response = await POST(signupRequest({ name: '새회원', email: 'M@X.COM', password: 'password123',
-            role, profile: role === 'MENTOR' ? mentorProfile : menteeProfile }));
+            role: 'MENTEE', profile: menteeProfile }));
         expect(response.status).toBe(409);
         expect(await response.json()).toMatchObject({ code: 'INVITE_LOGIN_REQUIRED', error: expect.stringContaining('초대') });
         expect(txLock.mock.calls[0][0].join('')).toContain('pg_advisory_xact_lock');
@@ -91,6 +91,17 @@ describe('초대 코드 없는 가입', () => {
         }) }));
         expect(txCreateUser).not.toHaveBeenCalled();
         expect(txCreateProfile).not.toHaveBeenCalled();
+        expect(txUpdateInvite).not.toHaveBeenCalled();
+        expect(cookieSet).not.toHaveBeenCalled();
+    });
+
+    it('멘토 가입 이메일에 멘티 초대가 있으면 코드 로그인 대신 관리자 확인을 안내한다', async () => {
+        txFindInvites.mockResolvedValue([activeInvite]);
+        const response = await POST(signupRequest({ name: '새멘토', email: 'm@x.com', password: 'password123',
+            role: 'MENTOR', profile: mentorProfile }));
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({ code: 'INVITE_ROLE_CONFLICT', error: expect.stringContaining('관리자') });
+        expect(txCreateUser).not.toHaveBeenCalled();
         expect(txUpdateInvite).not.toHaveBeenCalled();
         expect(cookieSet).not.toHaveBeenCalled();
     });
@@ -280,20 +291,20 @@ describe('초대 코드 가입', () => {
         expect(txCreateUser.mock.calls[0][0].data.programId).toBe('prog_1');
     });
 
-    it('본문의 role 이 달라도 코드의 역할이 이긴다', async () => {
-        // 코드가 있으면 코드의 역할이 항상 이긴다. 클라이언트가 본문에 다른
-        // role(여기서는 MENTOR)을 실어 보내도 무시되고 코드의 역할(MENTEE)이 쓰인다.
+    it.each([menteeProfile, mentorProfile])('멘토가 코드를 보내면 멘티로 변경하지 않고 가입을 거절한다 (%j)', async profile => {
         findUniqueInvite.mockResolvedValue(validInvite);
 
         const res = await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123',
-            inviteCode: 'KSQF-ABCD-EFGH-JKMN', role: 'MENTOR', profile: menteeProfile,
+            inviteCode: 'KSQF-ABCD-EFGH-JKMN', role: 'MENTOR', profile,
         }));
 
-        expect(res.status).toBe(200);
-        const created = txCreateUser.mock.calls[0][0].data;
-        expect(created.role).toBe('MENTEE');
-        expect(created.status).toBe('APPROVED');
+        expect(res.status).toBe(400);
+        expect(await res.json()).toMatchObject({ error: '초대 코드는 멘티 가입에만 사용할 수 있습니다.' });
+        expect(transaction).not.toHaveBeenCalled();
+        expect(txCreateUser).not.toHaveBeenCalled();
+        expect(txUpdateInvite).not.toHaveBeenCalled();
+        expect(cookieSet).not.toHaveBeenCalled();
     });
 
     it('코드를 사용 처리한다', async () => {
@@ -379,10 +390,10 @@ describe('초대 코드 가입', () => {
         expect(transaction).not.toHaveBeenCalled();
     });
 
-    it('예전에 발급된 멘토 코드는 더 이상 쓸 수 없다', async () => {
+    it.each(['MENTOR', 'PROGRAM_MANAGER', 'ADMIN'])('예전에 발급된 %s 코드는 더 이상 쓸 수 없다', async role => {
         // role 컬럼은 과거 발급분과의 호환을 위해 남아 있지만, 새 가입은
         // 더 이상 멘토 코드를 받아들이지 않는다.
-        findUniqueInvite.mockResolvedValue({ ...validInvite, role: 'MENTOR' });
+        findUniqueInvite.mockResolvedValue({ ...validInvite, role });
 
         const res = await POST(signupRequest({
             name: '새회원', email: 'm@x.com', password: 'password123',

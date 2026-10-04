@@ -11,6 +11,8 @@ import {
 } from '@/lib/attribute-mentor-utils';
 import type { AttributeSpecFunctionLike } from '@/lib/product-attributes-utils';
 import { describeAiEngine } from '@/lib/ai/engine-label';
+import type { ValueAnalysisContext } from '@/lib/ai/types';
+import AttributeValueAnalysis from './AttributeValueAnalysis';
 
 interface MentorQuestion {
     id: string;
@@ -23,6 +25,7 @@ interface MentorQuestion {
 interface AttributeMentorWizardProps {
     projectId: string;
     specFunctions: AttributeSpecFunctionLike[];
+    analysisContext: ValueAnalysisContext;
     onApply: (rows: MentorAppliedRow[], technologies: string[]) => void;
     onClose: () => void;
     onNotify: (message: string, type: 'success' | 'error') => void;
@@ -40,11 +43,13 @@ const STEP_LABELS: Array<{ step: WizardStep; label: string }> = [
 export default function AttributeMentorWizard({
     projectId,
     specFunctions,
+    analysisContext,
     onApply,
     onClose,
     onNotify,
 }: AttributeMentorWizardProps) {
     const [step, setStep] = useState<WizardStep>('questions');
+    const [view, setView] = useState<'worksheet' | 'value-analysis'>('worksheet');
     const [isLoading, setIsLoading] = useState(true);
     const [isWorking, setIsWorking] = useState(false);
     const [questions, setQuestions] = useState<MentorQuestion[]>([]);
@@ -58,6 +63,8 @@ export default function AttributeMentorWizard({
     const [engineLabel, setEngineLabel] = useState('');
 
     const specOptions = useMemo(() => buildSpecFunctionOptions(specFunctions), [specFunctions]);
+    const answerPayload = Object.fromEntries(Object.entries(MENTOR_ANSWER_KEY_BY_QUESTION_ID)
+        .map(([questionId, answerKey]) => [answerKey, answers[questionId] ?? '']));
 
     const loadQuestions = useCallback(async () => {
         setIsLoading(true);
@@ -85,10 +92,7 @@ export default function AttributeMentorWizard({
     }, [loadQuestions]);
 
     const generateDraft = async () => {
-        const payload: Record<string, string> = {};
-        for (const [questionId, answerKey] of Object.entries(MENTOR_ANSWER_KEY_BY_QUESTION_ID)) {
-            payload[answerKey] = answers[questionId] ?? '';
-        }
+        const payload = answerPayload;
 
         if (!payload.marketSegments?.trim()) {
             onNotify('세분시장은 반드시 입력해야 초안을 만들 수 있습니다.', 'error');
@@ -192,7 +196,7 @@ export default function AttributeMentorWizard({
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-            <div className="glass-strong max-w-5xl w-full max-h-[88vh] overflow-hidden flex flex-col rounded-2xl border border-white/[0.1]">
+            <div className="bg-surface-900 max-w-5xl w-full max-h-[88vh] overflow-hidden flex flex-col rounded-2xl border border-white/[0.1]">
                 {/* 헤더 + 단계 표시 */}
                 <div className="flex items-start justify-between px-6 py-4 border-b border-white/[0.08] flex-shrink-0 bg-white/[0.02]">
                     <div>
@@ -200,9 +204,13 @@ export default function AttributeMentorWizard({
                             <svg className="w-5 h-5 text-accent-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                             </svg>
-                            AI 멘토링 — 제품속성서 작성
+                            AI 멘토링 — {view === 'worksheet' ? '제품속성서 작성' : '제품 가치 분석'}
                         </h3>
-                        <div className="flex items-center gap-2 mt-2">
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                            <button type="button" onClick={() => setView('worksheet')} aria-pressed={view === 'worksheet'} className="btn-secondary text-xs">제품속성서 작성</button>
+                            <button type="button" onClick={() => setView('value-analysis')} aria-pressed={view === 'value-analysis'} className="btn-secondary text-xs">가치사슬·가치시스템</button>
+                        </div>
+                        <div className={`flex flex-wrap items-center gap-2 mt-2 ${view === 'worksheet' ? '' : 'hidden'}`}>
                             {STEP_LABELS.map((item) => (
                                 <span
                                     key={item.step}
@@ -233,6 +241,10 @@ export default function AttributeMentorWizard({
                 </div>
 
                 <div className="overflow-auto flex-1 px-6 py-5">
+                    <div hidden={view !== 'value-analysis'}>
+                        <AttributeValueAnalysis projectId={projectId} context={analysisContext} answers={answerPayload} />
+                    </div>
+                    <div hidden={view !== 'worksheet'}>
                     {isLoading ? (
                         <div className="flex items-center justify-center py-20">
                             <div className="animate-spin h-8 w-8 border-2 border-accent-500 border-t-transparent rounded-full" />
@@ -432,10 +444,11 @@ export default function AttributeMentorWizard({
                             </div>
                         </div>
                     )}
+                    </div>
                 </div>
 
                 {/* 하단 버튼 */}
-                <div className="flex items-center justify-between px-6 py-4 border-t border-white/[0.08] flex-shrink-0 bg-white/[0.02]">
+                <div className={`${view === 'worksheet' ? 'flex' : 'hidden'} items-center justify-between px-6 py-4 border-t border-white/[0.08] flex-shrink-0 bg-white/[0.02]`}>
                     <span className="text-[11px] text-gray-600">
                         {step === 'draft' || step === 'attributes' ? `${selectedCount}개 행 선택됨` : ''}
                     </span>

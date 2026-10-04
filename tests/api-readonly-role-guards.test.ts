@@ -69,7 +69,7 @@ beforeEach(() => {
     ]);
 });
 
-describe('자금계획 GET 의 기본행 자동 채움', () => {
+describe('자금계획 GET 의 화면용 기본행', () => {
     it.each(['VIEWER', 'COACH'])('%s 는 조회만 해도 행을 만들지 않는다', async (role) => {
         grantRole(role);
 
@@ -81,13 +81,19 @@ describe('자금계획 GET 의 기본행 자동 채움', () => {
         expect(fundingSourceCreateMany).not.toHaveBeenCalled();
     });
 
-    it.each(['OWNER', 'EDITOR', 'ADMIN'])('%s 는 기존대로 기본행을 채운다', async (role) => {
+    it.each(['OWNER', 'EDITOR', 'ADMIN'])('%s 는 저장 전에도 기본행을 보지만 조회로 저장하지 않는다', async (role) => {
         grantRole(role);
 
         const response = await getFunding(getRequest('funding'), { params });
+        const body = await response.json();
 
         expect(response.status).toBe(200);
-        expect(transaction).toHaveBeenCalledTimes(1);
+        expect(body.plans).toHaveLength(7);
+        expect(body.sources).toHaveLength(0);
+        expect(body.canWrite).toBe(true);
+        expect(transaction).not.toHaveBeenCalled();
+        expect(fundingPlanCreateMany).not.toHaveBeenCalled();
+        expect(fundingSourceCreateMany).not.toHaveBeenCalled();
     });
 });
 

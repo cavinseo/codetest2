@@ -9,8 +9,12 @@ import RequirementsTable from '@/components/project/RequirementsTable';
 import QFDMatrix from '@/components/project/QFDMatrix';
 import ThemeToggle from '@/components/ThemeToggle';
 import WorksheetComments from '@/components/project/WorksheetComments';
+import WorksheetImageExport from '@/components/project/WorksheetImageExport';
+import WorksheetExcelDownload from '@/components/project/WorksheetExcelDownload';
 import MentorWorksheetAnalysis from '@/components/project/MentorWorksheetAnalysis';
 import ProductOverviewFields from '@/components/project/ProductOverviewFields';
+import ProductOverviewDetailEditor from '@/components/project/ProductOverviewDetailEditor';
+import ProductOverviewContent from '@/components/project/ProductOverviewContent';
 import type { ProductOverview } from '@/lib/product-overview';
 import { HEADER_TOAST_SLOT_ID } from '@/components/HeaderToast';
 import KanoManager from '@/components/project/KanoManager';
@@ -19,7 +23,6 @@ import FitnessWrapper from '@/components/project/FitnessWrapper';
 import ImprovementsTable from '@/components/project/ImprovementsTable';
 import TargetSpecTable from '@/components/project/TargetSpecTable';
 import TechRoadmapTable from '@/components/project/TechRoadmapTable';
-import DevPlanTable from '@/components/project/DevPlanTable';
 import TechTreeTable from '@/components/project/TechTreeTable';
 import AssetsTable from '@/components/project/AssetsTable';
 import FundingTable from '@/components/project/FundingTable';
@@ -39,6 +42,7 @@ function isExcelFileName(fileName: string) {
 interface ProjectData extends ProductOverview {
     id: string;
     name: string;
+    companyName?: string;
     description?: string;
     detailedDescription?: string;
     businessPlanFile?: string;
@@ -69,9 +73,13 @@ interface WorksheetCompleteness {
 }
 
 export default function ProjectDetailPage() {
+    return <ProjectDetailWorkspace initialTab="overview" />;
+}
+
+export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
     const params = useParams();
     const projectId = params.id as string;
-    const [activeTab, setActiveTab] = useState('overview');
+    const [activeTab, setActiveTab] = useState(initialTab);
     const mentorAnalysisDirty = useRef(false);
     const setMentorAnalysisDirty = useCallback((dirty: boolean) => { mentorAnalysisDirty.current = dirty; }, []);
     const qfdDirty = useRef(false);
@@ -88,6 +96,9 @@ export default function ProjectDetailPage() {
     const [specCount, setSpecCount] = useState(0);
     const [kanoAnalysis, setKanoAnalysis] = useState<any>(null);
     const [kanoRequirements, setKanoRequirements] = useState<any[]>([]);
+    const [isKanoAnalysisLoading, setIsKanoAnalysisLoading] = useState(false);
+    const [kanoAnalysisError, setKanoAnalysisError] = useState('');
+    const [kanoAnalysisReload, setKanoAnalysisReload] = useState(0);
     const [worksheetCompleteness, setWorksheetCompleteness] = useState<WorksheetCompleteness | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
@@ -100,8 +111,9 @@ export default function ProjectDetailPage() {
     // 사업계획 양식에서 어떤 항목이 자동으로 채워졌는지 알려주는 안내 문구
     const [overviewAutoFillNotice, setOverviewAutoFillNotice] = useState('');
     const overviewFileSelectionRef = useRef(0);
-    const [overviewForm, setOverviewForm] = useState<ProductOverview & { name: string; description: string; detailedDescription: string; businessPlanFile: string }>({
+    const [overviewForm, setOverviewForm] = useState<ProductOverview & { name: string; companyName: string; description: string; detailedDescription: string; businessPlanFile: string }>({
         name: '',
+        companyName: '',
         description: '',
         detailedDescription: '',
         businessPlanFile: '',
@@ -131,15 +143,19 @@ export default function ProjectDetailPage() {
                         setProject((current) => ({
                             id: overviewData.project.id,
                             name: overviewData.project.name,
+                            companyName: overviewData.project.companyName || '',
                             description: overviewData.project.description || '',
                             detailedDescription: overviewData.project.detailedDescription || '',
                             businessPlanFile: overviewData.project.businessPlanFile || '',
                             productName: overviewData.project.productName,
+                            relatedImages: overviewData.project.relatedImages,
                             productImageDataUrl: overviewData.project.productImageDataUrl,
                             productImageWidthPx: overviewData.project.productImageWidthPx,
                             productImageHeightPx: overviewData.project.productImageHeightPx,
                             marketDefinition: overviewData.project.marketDefinition,
                             targetCustomer: overviewData.project.targetCustomer,
+                            additionalMarketData: overviewData.project.additionalMarketData,
+                            includeAdditionalMarketDataInReport: overviewData.project.includeAdditionalMarketDataInReport,
                             createdAt: overviewData.project.createdAt,
                             memberCount: current?.memberCount ?? 1,
                             role: overviewData.project.role || current?.role || 'COACH',
@@ -147,22 +163,18 @@ export default function ProjectDetailPage() {
                     }
                 }
 
-                // 요구사항 수 (Kano 요구사항 명칭에도 재사용)
-                let requirements: any[] = [];
+                // 요구사항 수
                 const reqRes = await fetch(`/api/projects/${projectId}/requirements`);
                 if (reqRes.ok) {
                     const reqData = await reqRes.json();
-                    requirements = reqData.requirements || [];
-                    setReqCount(requirements.length);
+                    setReqCount((reqData.requirements || []).length);
                 }
 
                 // Kano 분석 데이터
                 const kanoAnalysisRes = await fetch(`/api/projects/${projectId}/kano/analysis`);
                 if (kanoAnalysisRes.ok) {
                     const kanoAnalysisData = await kanoAnalysisRes.json();
-                    setKanoAnalysis(kanoAnalysisData);
                     setKanoCount(kanoAnalysisData.totalResponses || 0);
-                    setKanoRequirements(requirements);
                 }
 
                 // 스펙 수
@@ -182,10 +194,40 @@ export default function ProjectDetailPage() {
     }, [projectId]);
 
     useEffect(() => {
+        if (activeTab !== 'kano-aggregation') return;
+        const controller = new AbortController();
+        setIsKanoAnalysisLoading(true);
+        setKanoAnalysisError('');
+        async function loadAnalysis() {
+            try {
+                const options = { signal: controller.signal, cache: 'no-store' as const };
+                const [analysisResponse, requirementsResponse] = await Promise.all([
+                    fetch(`/api/projects/${projectId}/kano/analysis`, options),
+                    fetch(`/api/projects/${projectId}/requirements`, options),
+                ]);
+                if (!analysisResponse.ok || !requirementsResponse.ok) throw new Error('분석 결과를 불러오지 못했습니다. 다시 시도해 주세요.');
+                const [analysis, requirements] = await Promise.all([analysisResponse.json(), requirementsResponse.json()]);
+                if (controller.signal.aborted) return;
+                setKanoAnalysis(analysis);
+                setKanoRequirements(requirements.requirements || []);
+                setKanoCount(analysis.totalResponses || 0);
+                setReqCount((requirements.requirements || []).length);
+            } catch (error) {
+                if (!controller.signal.aborted) setKanoAnalysisError(error instanceof Error ? error.message : '분석 결과를 불러오지 못했습니다.');
+            } finally {
+                if (!controller.signal.aborted) setIsKanoAnalysisLoading(false);
+            }
+        }
+        void loadAnalysis();
+        return () => controller.abort();
+    }, [activeTab, projectId, kanoAnalysisReload]);
+
+    useEffect(() => {
         if (!project) return;
         setOverviewForm({
             ...project,
             name: project.name || '',
+            companyName: project.companyName || '',
             description: project.description || '',
             detailedDescription: project.detailedDescription || '',
             businessPlanFile: project.businessPlanFile || '',
@@ -210,6 +252,7 @@ export default function ProjectDetailPage() {
         setOverviewForm({
             ...project,
             name: project.name || '',
+            companyName: project.companyName || '',
             description: project.description || '',
             detailedDescription: project.detailedDescription || '',
             businessPlanFile: project.businessPlanFile || '',
@@ -315,12 +358,16 @@ export default function ProjectDetailPage() {
         try {
             const payload = {
                 name: overviewForm.name,
+                companyName: overviewForm.companyName,
                 productName: overviewForm.productName,
+                relatedImages: overviewForm.relatedImages,
                 productImageDataUrl: overviewForm.productImageDataUrl,
                 productImageWidthPx: overviewForm.productImageWidthPx,
                 productImageHeightPx: overviewForm.productImageHeightPx,
                 marketDefinition: overviewForm.marketDefinition,
                 targetCustomer: overviewForm.targetCustomer,
+                additionalMarketData: overviewForm.additionalMarketData,
+                includeAdditionalMarketDataInReport: overviewForm.includeAdditionalMarketDataInReport,
                 description: overviewForm.description,
                 detailedDescription: overviewForm.detailedDescription,
                 ...(isOverviewFileDirty ? { businessPlanFile: overviewForm.businessPlanFile } : {}),
@@ -338,12 +385,16 @@ export default function ProjectDetailPage() {
             setProject({
                 ...project,
                 productName: data.project.productName,
+                relatedImages: data.project.relatedImages,
                 productImageDataUrl: data.project.productImageDataUrl,
                 productImageWidthPx: data.project.productImageWidthPx,
                 productImageHeightPx: data.project.productImageHeightPx,
                 marketDefinition: data.project.marketDefinition,
                 targetCustomer: data.project.targetCustomer,
+                additionalMarketData: data.project.additionalMarketData,
+                includeAdditionalMarketDataInReport: data.project.includeAdditionalMarketDataInReport,
                 name: data.project.name,
+                companyName: data.project.companyName || '',
                 description: data.project.description || '',
                 detailedDescription: data.project.detailedDescription || '',
                 businessPlanFile: isOverviewFileDirty ? overviewForm.businessPlanFile : project.businessPlanFile || '',
@@ -373,10 +424,9 @@ export default function ProjectDetailPage() {
         { id: 'improvements', name: '[WS-11] 개선포인트도출', icon: iconSvg('M13 10V3L4 14h7v7l9-11h-7z') },
         { id: 'target-spec', name: '[WS-12] 최종목표스펙도출', icon: iconSvg('M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z') },
         { id: 'tech-roadmap', name: '[WS-13] 향후목표고객LIST', icon: iconSvg('M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7') },
-        { id: 'dev-plan', name: '[WS-14] 개발계획서', icon: iconSvg('M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z') },
-        { id: 'assets', name: '[WS-15] 핵심자산 및 보완자산 도출표', icon: iconSvg('M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4') },
-        { id: 'funding-plan', name: '[WS-16] 자금소요계획표', icon: iconSvg('M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z') },
-        { id: 'funding-source', name: '[WS-17] 자금조달계획표', icon: iconSvg('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 10v-1') },
+        { id: 'assets', name: '[WS-14] 핵심자산 및 보완자산 도출표', icon: iconSvg('M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4') },
+        { id: 'funding-plan', name: '[WS-15] 자금소요계획표', icon: iconSvg('M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z') },
+        { id: 'funding-source', name: '[WS-16] 자금조달계획표', icon: iconSvg('M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 10v-1') },
         { id: 'import', name: '가져오기', icon: iconSvg('M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4') },
     ];
 
@@ -433,23 +483,30 @@ export default function ProjectDetailPage() {
 
     const router = useRouter();
 
+    const canEditOverview = project !== null && ['OWNER', 'EDITOR', 'ADMIN'].includes(project.role);
     const tabComponents: Record<string, React.ReactNode> = {
         attributes: <ProductAttributesTable projectId={projectId} />,
         spec: <SpecTable projectId={projectId} onSaved={() => changeTab('attributes')} />,
         requirements: <RequirementsTable projectId={projectId} />,
-        qfd: <QFDMatrix projectId={projectId} onDirtyChange={setQfdDirty} />,
+        qfd: <QFDMatrix projectId={projectId} onDirtyChange={setQfdDirty} readOnly={!canEditOverview} />,
         kano: <KanoManager projectId={projectId} />,
         sales: <SalesTable projectId={projectId} onSaved={() => changeTab('spec')} />,
         fitness: <FitnessWrapper projectId={projectId} />,
         improvements: <ImprovementsTable projectId={projectId} />,
         'target-spec': <TargetSpecTable projectId={projectId} />,
         'tech-roadmap': <TechRoadmapTable projectId={projectId} />,
-        'dev-plan': <DevPlanTable projectId={projectId} />,
         'tech-tree': <TechTreeTable projectId={projectId} />,
         'assets': <AssetsTable projectId={projectId} />,
         'funding-plan': <FundingTable projectId={projectId} mode="plan" />,
         'funding-source': <FundingTable projectId={projectId} mode="source" />,
-        'kano-aggregation': kanoAnalysis ? (
+        'kano-aggregation': isKanoAnalysisLoading ? (
+            <p role="status" className="card py-10 text-center text-gray-500">분석 결과를 불러오는 중입니다.</p>
+        ) : kanoAnalysisError ? (
+            <div className="card space-y-3 py-10 text-center">
+                <p role="alert" className="text-red-500">{kanoAnalysisError}</p>
+                <button type="button" className="btn-secondary" onClick={() => setKanoAnalysisReload(value => value + 1)}>분석 다시 불러오기</button>
+            </div>
+        ) : kanoAnalysis ? (
             <div className="space-y-6">
                 <div className="flex items-center justify-between">
                     <h2 className="text-2xl font-display font-bold text-white">TIMKO/만족계수 그래프</h2>
@@ -483,9 +540,9 @@ export default function ProjectDetailPage() {
     const renderTabContent = (tabId: string) => {
         if (tabComponents[tabId]) {
             return (
-                <div className="animate-fade-in">
-                    {tabComponents[tabId]}
-                </div>
+                <WorksheetImageExport key={tabId} title={tabs.find(tab => tab.id === tabId)?.name ?? tabId} projectId={projectId} worksheetId={tabId}>
+                    <fieldset disabled={!canEditOverview && tabId !== 'qfd'} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
+                </WorksheetImageExport>
             );
         }
 
@@ -540,7 +597,6 @@ export default function ProjectDetailPage() {
         );
     }
 
-    const canEditOverview = ['OWNER', 'EDITOR', 'ADMIN'].includes(project.role);
     const displayedBusinessPlanFile = isOverviewEditing ? formBusinessPlanFile : projectBusinessPlanFile;
 
     return (
@@ -571,6 +627,7 @@ export default function ProjectDetailPage() {
                             <Link href={`/project/${projectId}/report`} className="btn-secondary text-sm">
                                 결과보고서
                             </Link>
+                            <WorksheetExcelDownload projectId={projectId} />
                             {['OWNER', 'ADMIN'].includes(project.role) && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 팀원 초대
                             </Link>}
@@ -659,6 +716,21 @@ export default function ProjectDetailPage() {
 
                             <div className="mb-4"><ProductOverviewFields value={isOverviewEditing ? overviewForm : project} editing={isOverviewEditing} disabled={isOverviewSaving || isProductImageReading} onChange={patch => setOverviewForm(current => ({ ...current, ...patch }))} onBusy={setIsProductImageReading} onError={setOverviewError} /></div>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+                                    <p className="text-xs text-gray-500 mb-2">기업명(창업자)</p>
+                                    {isOverviewEditing ? (
+                                        <input
+                                            type="text"
+                                            aria-label="기업명(창업자)"
+                                            value={overviewForm.companyName}
+                                            onChange={(event) => setOverviewForm({ ...overviewForm, companyName: event.target.value })}
+                                            maxLength={300}
+                                            className="w-full rounded-md border border-white/[0.08] bg-gray-950 px-3 py-2 text-sm text-white outline-none focus:border-primary-500"
+                                        />
+                                    ) : (
+                                        <p className="text-sm font-semibold text-white whitespace-pre-wrap">{project.companyName || '입력된 기업명(창업자)이 없습니다.'}</p>
+                                    )}
+                                </div>
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
                                     <p className="text-xs text-gray-500 mb-2">프로젝트명</p>
                                     {isOverviewEditing ? (
@@ -759,16 +831,34 @@ export default function ProjectDetailPage() {
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
                                     <p className="text-xs text-gray-500 mb-2">상세 제품개요</p>
                                     {isOverviewEditing ? (
-                                        <textarea
+                                        <ProductOverviewDetailEditor
                                             value={overviewForm.detailedDescription}
-                                            onChange={(event) => setOverviewForm({ ...overviewForm, detailedDescription: event.target.value })}
-                                            rows={7}
-                                            className="w-full resize-y rounded-md border border-white/[0.08] bg-gray-950 px-3 py-2 text-sm leading-6 text-white outline-none focus:border-primary-500"
+                                            onChange={detailedDescription => setOverviewForm(current => ({ ...current, detailedDescription }))}
+                                            disabled={isOverviewSaving}
                                         />
                                     ) : (
-                                        <p className="text-sm leading-6 text-white whitespace-pre-wrap">{project.detailedDescription || '입력된 상세 제품개요가 없습니다.'}</p>
+                                        <ProductOverviewContent value={project.detailedDescription} emptyMessage="입력된 상세 제품개요가 없습니다." />
                                     )}
                                 </div>
+                                <section aria-labelledby="additional-market-data-title" className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
+                                    <h3 id="additional-market-data-title" className="mb-2 text-sm font-semibold text-gray-300">추가 시장 자료</h3>
+                                    {isOverviewEditing ? (
+                                        <>
+                                        <label className="mb-3 flex items-center gap-2 text-sm text-gray-300">
+                                            <input type="checkbox" checked={Boolean(overviewForm.includeAdditionalMarketDataInReport)} disabled={isOverviewSaving}
+                                                onChange={event => setOverviewForm(current => ({ ...current, includeAdditionalMarketDataInReport: event.target.checked }))} />
+                                            결과보고서에 반영
+                                        </label>
+                                        <ProductOverviewDetailEditor label="추가 시장 자료" maxLength={20_000}
+                                            value={overviewForm.additionalMarketData ?? ''}
+                                            onChange={additionalMarketData => setOverviewForm(current => ({ ...current, additionalMarketData }))}
+                                            disabled={isOverviewSaving}
+                                        />
+                                        </>
+                                    ) : (
+                                        <ProductOverviewContent value={project.additionalMarketData} emptyMessage="입력된 추가 시장 자료가 없습니다." />
+                                    )}
+                                </section>
                             </div>
                         </div>
 
@@ -932,7 +1022,7 @@ export default function ProjectDetailPage() {
 
                 {!canEditOverview && <p className="mb-4 text-sm text-amber-300">읽기 전용입니다. 워크시트 내용은 수정할 수 없습니다.</p>}
                 {activeTab !== 'overview' && (canEditOverview || activeTab !== 'import') && (
-                    <fieldset disabled={!canEditOverview} className="min-w-0">{renderTabContent(activeTab)}</fieldset>
+                    renderTabContent(activeTab)
                 )}
                 <MentorWorksheetAnalysis projectId={projectId} worksheetId={activeTab} onDirtyChange={setMentorAnalysisDirty} />
                 {activeTab !== 'import' && <WorksheetComments key={`${projectId}-${activeTab}`} projectId={projectId} worksheetId={activeTab} />}

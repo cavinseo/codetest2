@@ -2,6 +2,7 @@
 import type { ReactNode } from 'react';
 import ProjectWorksheetMenu from '@/components/project/ProjectWorksheetMenu';
 import MentorWorksheetAnalysis from '@/components/project/MentorWorksheetAnalysis';
+import WorksheetPageExport from '@/components/project/WorksheetPageExport';
 
 interface ProjectLayoutProps {
     children: ReactNode;
@@ -14,7 +15,7 @@ export default async function ProjectLayout({ children, params }: ProjectLayoutP
     return (
         <>
             <ProjectWorksheetMenu projectId={id} />
-            {children}
+            <WorksheetPageExport projectId={id}>{children}</WorksheetPageExport>
             <MentorWorksheetAnalysis projectId={id} />
         </>
     );

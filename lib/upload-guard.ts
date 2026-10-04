@@ -5,6 +5,8 @@
 // 이벤트 루프가 막히고 메모리가 터진다(압축 폭탄 포함).
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const MAX_EXCEL_ARCHIVE_ENTRIES = 10_000;
+export const MAX_EXCEL_UNCOMPRESSED_BYTES = 50 * 1024 * 1024;
 
 export interface UploadGuardFailure {
     error: string;
@@ -21,16 +23,16 @@ export type UploadGuardResult =
  */
 export function guardUploadedExcel(
     value: unknown,
-    options: { maxBytes?: number } = {}
+    options: { maxBytes?: number; allowCsv?: boolean } = {}
 ): UploadGuardResult {
     const failure = checkUploadedExcel(value, options);
     if (failure) return { ok: false, failure };
     return { ok: true, file: value as File };
 }
 
-function hasSupportedExtension(fileName: string): boolean {
+function hasSupportedExtension(fileName: string, allowCsv = false): boolean {
     const lower = fileName.trim().toLowerCase();
-    return lower.endsWith('.xlsx') || lower.endsWith('.xls');
+    return lower.endsWith('.xlsx') || lower.endsWith('.xls') || (allowCsv && lower.endsWith('.csv'));
 }
 
 /**
@@ -39,7 +41,7 @@ function hasSupportedExtension(fileName: string): boolean {
  */
 export function checkUploadedExcel(
     value: unknown,
-    options: { maxBytes?: number } = {}
+    options: { maxBytes?: number; allowCsv?: boolean } = {}
 ): UploadGuardFailure | null {
     const maxBytes = options.maxBytes ?? MAX_UPLOAD_BYTES;
 
@@ -55,10 +57,88 @@ export function checkUploadedExcel(
             status: 413,
         };
     }
-    if (!hasSupportedExtension(value.name)) {
-        return { error: '.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', status: 400 };
+    if (!hasSupportedExtension(value.name, options.allowCsv)) {
+        return { error: options.allowCsv ? '.xlsx, .xls 또는 .csv 파일만 업로드할 수 있습니다.' : '.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', status: 400 };
     }
     return null;
+}
+
+function zipUInt16(bytes: Uint8Array, offset: number): number {
+    return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint16(offset, true);
+}
+
+function zipUInt32(bytes: Uint8Array, offset: number): number {
+    return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true);
+}
+
+function archiveFailure(error: string, status: 400 | 413 = 400): UploadGuardFailure {
+    return { error, status };
+}
+
+/**
+ * xlsx 중앙 디렉터리의 압축 해제 크기를 읽어 SheetJS보다 먼저 압축 폭탄을 막는다.
+ * xls는 ZIP 형식이 아니므로 기존 파서에 맡긴다.
+ */
+export function checkExcelArchiveSafety(fileName: string, bytes: Uint8Array): UploadGuardFailure | null {
+    if (!fileName.trim().toLowerCase().endsWith('.xlsx')) return null;
+
+    const minimumEocdLength = 22;
+    if (bytes.length < minimumEocdLength) {
+        return archiveFailure('올바른 .xlsx 압축 파일이 아닙니다.');
+    }
+
+    let eocdOffset = -1;
+    const minimumOffset = Math.max(0, bytes.length - minimumEocdLength - 0xffff);
+    for (let offset = bytes.length - minimumEocdLength; offset >= minimumOffset; offset--) {
+        if (zipUInt32(bytes, offset) === 0x06054b50) {
+            eocdOffset = offset;
+            break;
+        }
+    }
+    if (eocdOffset < 0) return archiveFailure('올바른 .xlsx 압축 파일이 아닙니다.');
+
+    const entryCount = zipUInt16(bytes, eocdOffset + 10);
+    const centralDirectorySize = zipUInt32(bytes, eocdOffset + 12);
+    const centralDirectoryOffset = zipUInt32(bytes, eocdOffset + 16);
+    if (entryCount === 0xffff || centralDirectorySize === 0xffffffff || centralDirectoryOffset === 0xffffffff) {
+        return archiveFailure('ZIP64 형식의 엑셀 파일은 업로드할 수 없습니다.', 413);
+    }
+    if (entryCount > MAX_EXCEL_ARCHIVE_ENTRIES) {
+        return archiveFailure(`엑셀 압축 파일에는 최대 ${MAX_EXCEL_ARCHIVE_ENTRIES.toLocaleString()}개 항목만 포함할 수 있습니다.`, 413);
+    }
+    const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
+    if (centralDirectoryEnd > eocdOffset || centralDirectoryEnd < centralDirectoryOffset) {
+        return archiveFailure('올바른 .xlsx 압축 파일이 아닙니다.');
+    }
+
+    let cursor = centralDirectoryOffset;
+    let uncompressedBytes = 0;
+    for (let entry = 0; entry < entryCount; entry++) {
+        if (cursor + 46 > centralDirectoryEnd || zipUInt32(bytes, cursor) !== 0x02014b50) {
+            return archiveFailure('올바른 .xlsx 압축 파일이 아닙니다.');
+        }
+        const compressedSize = zipUInt32(bytes, cursor + 20);
+        const uncompressedSize = zipUInt32(bytes, cursor + 24);
+        const nameLength = zipUInt16(bytes, cursor + 28);
+        const extraLength = zipUInt16(bytes, cursor + 30);
+        const commentLength = zipUInt16(bytes, cursor + 32);
+        if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) {
+            return archiveFailure('ZIP64 형식의 엑셀 파일은 업로드할 수 없습니다.', 413);
+        }
+        uncompressedBytes += uncompressedSize;
+        if (uncompressedBytes > MAX_EXCEL_UNCOMPRESSED_BYTES) {
+            return archiveFailure(`엑셀 압축 해제 크기는 ${MAX_EXCEL_UNCOMPRESSED_BYTES / (1024 * 1024)}MB를 초과할 수 없습니다.`, 413);
+        }
+        if (uncompressedSize > 1024 * 1024 && compressedSize > 0 && uncompressedSize / compressedSize > 100) {
+            return archiveFailure('엑셀 압축 비율이 안전 한도를 초과했습니다.', 413);
+        }
+        const next = cursor + 46 + nameLength + extraLength + commentLength;
+        if (next > centralDirectoryEnd || next < cursor) {
+            return archiveFailure('올바른 .xlsx 압축 파일이 아닙니다.');
+        }
+        cursor = next;
+    }
+    return cursor === centralDirectoryEnd ? null : archiveFailure('올바른 .xlsx 압축 파일이 아닙니다.');
 }
 
 export const MAX_OFFLINE_HTML_BYTES = 2 * 1024 * 1024;

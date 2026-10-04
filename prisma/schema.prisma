@@ -87,6 +87,7 @@ model Program {
 model Project {
   id                       String                    @id @default(cuid())
   name                     String
+  companyName              String?
   description              String?
   ownerId                  String
   /// 이 프로젝트가 속한 프로그램. Restrict 인 이유는 Program.managerId 와 같다.
@@ -98,14 +99,19 @@ model Project {
   businessPlanFile         String?
   detailedDescription      String?
   productName              String?
+  relatedImages            Json?
   productImageDataUrl       String?
   productImageWidthPx       Int?
   productImageHeightPx      Int?
   marketDefinition         String?
   targetCustomer           String?
+  additionalMarketData     String?
+  includeAdditionalMarketDataInReport Boolean @default(false)
   // AI 에이전트 연결 방식: "rule" | "local" | "personal"
   aiMode                   String                    @default("rule")
+  specDetailCollapsed      Boolean                   @default(false)
   qfdTechnicalInitialized  Boolean                   @default(false)
+  kanoSurveyIntroduction   Json?
   attributeFitnesses       AttributeFitness[]
   benchmarks               Benchmark[]
   requirements             CustomerRequirement[]
@@ -721,4 +727,16 @@ model UserAiConnection {
   updatedAt DateTime @updatedAt
 
   @@map("user_ai_connections")
+}
+
+/// 인증 시도를 짧게 보관해 서버 재시작과 다중 인스턴스에서도 요청 제한을 유지한다.
+model RateLimitHit {
+  id          String   @id @default(cuid())
+  keyHash     String
+  attemptedAt DateTime
+  expiresAt   DateTime
+
+  @@index([keyHash, attemptedAt])
+  @@index([expiresAt])
+  @@map("rate_limit_hits")
 }

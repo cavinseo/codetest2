@@ -59,19 +59,6 @@ export const techRoadmapRowSchema = z.object({
 });
 export const techRoadmapBodySchema = z.object({ rows: z.array(techRoadmapRowSchema) });
 
-// ── dev-plan ──────────────────────────────────────────────────
-export const devPlanRowSchema = z.object({
-    phase: optionalText,
-    task: optionalText,
-    description: optionalText,
-    startDate: optionalText,
-    endDate: optionalText,
-    owner: optionalText,
-    status: z.string().trim().optional(),
-    order: z.coerce.number(),
-});
-export const devPlanBodySchema = z.object({ rows: z.array(devPlanRowSchema) });
-
 // ── tech-tree ─────────────────────────────────────────────────
 export const techTreeRowSchema = z.object({
     customerVoice: optionalText,
@@ -190,7 +177,6 @@ export const fitnessMatrixBodySchema = z.object({
 export type TargetSpecRow = z.infer<typeof targetSpecRowSchema>;
 export type SalesRow = z.infer<typeof salesRowSchema>;
 export type TechRoadmapRow = z.infer<typeof techRoadmapRowSchema>;
-export type DevPlanRow = z.infer<typeof devPlanRowSchema>;
 export type TechTreeRow = z.infer<typeof techTreeRowSchema>;
 export type AttributeRow = z.infer<typeof attributeRowSchema>;
 export type FitnessRow = z.infer<typeof fitnessRowSchema>;

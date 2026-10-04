@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     try {
         const { email, inviteCode, name } = schema.parse(await request.json());
         const rateKey = `invite-login:${clientIpFrom(request.headers)}:${email}`;
-        const limit = consumeRateLimit(rateKey, LOGIN_RATE_LIMIT);
+        const limit = await consumeRateLimit(rateKey, LOGIN_RATE_LIMIT);
         if (!limit.allowed) {
             return NextResponse.json({ error: `로그인 시도가 너무 많습니다. ${limit.retryAfterSeconds}초 후 다시 시도하세요.` }, {
                 status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) },
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
             httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production',
             maxAge: SESSION_MAX_AGE_SECONDS, path: '/',
         });
-        resetRateLimit(rateKey);
+        await resetRateLimit(rateKey);
         return NextResponse.json({ success: true, user: { id: user.id, email: user.email, name: user.name },
             mustChangePassword: user.mustChangePassword, needsProfile: !isProfileCompleteForRole('MENTEE', profile) });
     } catch (error) {

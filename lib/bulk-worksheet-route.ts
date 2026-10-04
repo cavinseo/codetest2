@@ -1,6 +1,6 @@
 // 워크시트 "전체 교체 저장" 라우트를 만드는 팩토리.
 //
-// sales / dev-plan / tech-roadmap / tech-tree / target-spec 은 모델명과 문구를
+// sales / tech-roadmap / tech-tree / target-spec 은 모델명과 문구를
 // 빼면 토큰 단위로 같은 코드였다. 복붙이 문제였던 이유는 길이가 아니라,
 // 한쪽만 고쳐지는 일이 실제로 일어났다는 데 있다. 1단계에서 잡은 결함들
 // (검증 누락, 배열 형태 $transaction, mass-assignment)이 전부 그렇게 생겼다.
@@ -37,7 +37,7 @@ export interface BulkWorksheetConfig<TBody, TRow> {
     bodySchema: z.ZodType<TBody, z.ZodTypeDef, unknown>;
     /** 검증된 본문에서 행 배열을 꺼낸다 */
     selectRows: (body: TBody) => TRow[];
-    /** 트랜잭션 클라이언트에서 대상 delegate 를 고른다 (예: (c) => c.devPlan) */
+    /** 트랜잭션 클라이언트에서 대상 delegate 를 고른다 (예: (c) => c.salesEstimate) */
     delegate: (client: typeof prisma) => unknown;
     /** 저장할 필드를 명시적으로 만든다. 클라이언트가 보낸 임의 필드는 여기서 걸러진다 */
     toCreateData: (row: TRow, projectId: string) => Record<string, unknown>;

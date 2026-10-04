@@ -4,7 +4,6 @@ import {
     fundingPlanRowSchema,
     salesBodySchema,
     techRoadmapBodySchema,
-    devPlanBodySchema,
     techTreeBodySchema,
     attributesBodySchema,
     fitnessBodySchema,
@@ -31,7 +30,6 @@ describe('bulk-save schemas — 데이터 손실 방지 가드', () => {
         expect(targetSpecBodySchema.safeParse({ rows: [] }).success).toBe(true);
         expect(salesBodySchema.safeParse({ rows: [] }).success).toBe(true);
         expect(techRoadmapBodySchema.safeParse({ rows: [] }).success).toBe(true);
-        expect(devPlanBodySchema.safeParse({ rows: [] }).success).toBe(true);
         expect(techTreeBodySchema.safeParse({ entries: [] }).success).toBe(true);
         expect(attributesBodySchema.safeParse({ attributes: [] }).success).toBe(true);
         expect(fitnessBodySchema.safeParse({ fitnesses: [] }).success).toBe(true);

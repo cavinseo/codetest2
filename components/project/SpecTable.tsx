@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -98,6 +99,10 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=spec`;
     const [project, setProject] = useState<ProjectData | null>(null);
     const [rows, setRows] = useState<FlatSpecRow[]>([]);
+    const [isDetailColumnCollapsed, setIsDetailColumnCollapsed] = useState(false);
+    const [isSavingDetailVisibility, setIsSavingDetailVisibility] = useState(false);
+    const hasDetailContent = rows.some(row => row.detail.trim() !== '');
+    const showDetailColumn = hasDetailContent || !isDetailColumnCollapsed;
     const [isLoading, setIsLoading] = useState(true);
     const [loadFailed, setLoadFailed] = useState(false);
     const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
@@ -158,6 +163,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                     if (!Array.isArray(specData.specFunctions)) throw new Error('스펙 응답 형식 오류');
                     const loadedSpecs: SpecFunction[] = specData.specFunctions;
                     setRows(buildRowsFromSpecs(loadedSpecs));
+                    setIsDetailColumnCollapsed(specData.specDetailCollapsed === true);
                     setLoadedProjectId(projectId);
                 } else throw new Error('스펙 조회 실패');
             } catch (error) {
@@ -170,6 +176,26 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         loadData();
         return () => { active = false; };
     }, [buildRowsFromSpecs, projectId, loadAttempt]);
+
+    const updateDetailVisibility = async (collapsed: boolean) => {
+        const previous = isDetailColumnCollapsed;
+        setIsDetailColumnCollapsed(collapsed);
+        if (project?.role === 'VIEWER') return;
+        setIsSavingDetailVisibility(true);
+        try {
+            const response = await fetch(`/api/projects/${projectId}/spec`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ specDetailCollapsed: collapsed }),
+            });
+            if (!response.ok) throw new Error('세세부기술 열 상태 저장 실패');
+        } catch {
+            setIsDetailColumnCollapsed(previous);
+            showToast('세세부기술 열 상태를 저장하지 못했습니다.', 'error');
+        } finally {
+            setIsSavingDetailVisibility(false);
+        }
+    };
 
     const addRow = () => {
         setRows([...rows, { id: Math.random().toString(36).slice(2), core: '', sub: '', detail: '', technology: '' }]);
@@ -774,45 +800,16 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
             {/* 인라인 토스트 */}
             {toast && <HeaderToast message={toast.message} type={toast.type} />}
             {pendingExcelFile && (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/30 p-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <h3 className="text-sm font-semibold text-emerald-100">엑셀 양식 업로드</h3>
-                            <p className="mt-1 text-xs text-emerald-200/70">
-                                {pendingExcelFile.name} 파일을 AS-IS 스펙표로 반영할 방식을 선택하세요.
-                            </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => uploadSpecExcelFile(pendingExcelFile, 'append')}
-                                disabled={isUploadingExcel}
-                                className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"
-                            >
-                                {isUploadingExcel ? '업로드 중...' : '기존 데이터에 추가'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => uploadSpecExcelFile(pendingExcelFile, 'replace')}
-                                disabled={isUploadingExcel}
-                                className="px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-sm font-semibold text-white disabled:opacity-50"
-                            >
-                                기존 데이터 지우고 업로드
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setPendingExcelFile(null);
-                                    if (excelInputRef.current) excelInputRef.current.value = '';
-                                }}
-                                disabled={isUploadingExcel}
-                                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white disabled:opacity-50"
-                            >
-                                취소
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <UploadWritePolicyPrompt
+                    fileName={pendingExcelFile.name}
+                    targetLabel="AS-IS 스펙표"
+                    isUploading={isUploadingExcel}
+                    onSelect={policy => uploadSpecExcelFile(pendingExcelFile, policy)}
+                    onCancel={() => {
+                        setPendingExcelFile(null);
+                        if (excelInputRef.current) excelInputRef.current.value = '';
+                    }}
+                />
             )}
             {showAiDetailPopup && (
                 <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 px-4">
@@ -1177,6 +1174,17 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                         AI 에이전트
                     </button>
                 </div>
+                {activeMode === 'manual' && <button
+                    type="button"
+                    onClick={() => void updateDetailVisibility(!isDetailColumnCollapsed)}
+                    disabled={hasDetailContent || isSavingDetailVisibility}
+                    aria-expanded={showDetailColumn}
+                    aria-controls={`spec-table-${projectId}`}
+                    title={hasDetailContent ? '세세부기술 내용이 있어 열을 표시합니다.' : '세세부기술이 모두 비어 있으면 열을 접을 수 있습니다.'}
+                    className="ml-auto rounded border border-gray-600 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {showDetailColumn ? '세세부기술 접기' : '세세부기술 펼치기'}
+                </button>}
             </div>
 
             {
@@ -1225,13 +1233,13 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                 <option key={option} value={option} />
                             ))}
                         </datalist>
-                        <table className="w-full border-collapse text-sm table-fixed">
+                        <table id={`spec-table-${projectId}`} aria-label="AS-IS 스펙표" className="w-full border-collapse text-sm table-fixed">
                             <thead>
                                 <tr className="bg-gray-800">
                                     <th className="border border-gray-700 p-2 text-gray-300 font-medium text-center w-[50px]">No</th>
                                     <th className="border border-gray-700 p-2 text-blue-400 font-medium text-center">핵심기술</th>
                                     <th className="border border-gray-700 p-2 text-purple-400 font-medium text-center">세부기술</th>
-                                    <th className="border border-gray-700 p-2 text-emerald-400 font-medium text-center">세세부기술</th>
+                                    {showDetailColumn && <th className="border border-gray-700 p-2 text-emerald-400 font-medium text-center">세세부기술</th>}
                                     <th className="border border-gray-700 p-2 text-amber-400 font-medium text-center">적용기술</th>
                                     <th className="border border-gray-700 p-2 text-gray-500 font-medium text-center w-[116px]"></th>
                                 </tr>
@@ -1239,7 +1247,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                             <tbody>
                                 {rows.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="border border-gray-700 p-8 text-center text-gray-500 bg-gray-800/20">
+                                        <td colSpan={showDetailColumn ? 6 : 5} className="border border-gray-700 p-8 text-center text-gray-500 bg-gray-800/20">
                                             데이터가 없습니다. 우상단의 &apos;행 추가&apos; 버튼을 눌러 입력을 시작하세요.
                                         </td>
                                     </tr>
@@ -1281,7 +1289,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                                 />
                                             </td>
                                             )}
-                                            <td className="border border-gray-700 p-0">
+                                            {showDetailColumn && <td className="border border-gray-700 p-0">
                                                 <input
                                                     type="text"
                                                     list={`detail-options-${projectId}`}
@@ -1290,7 +1298,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                                     className="w-full h-full p-2 bg-transparent text-emerald-100 outline-none focus:bg-gray-800 focus:ring-1 focus:ring-emerald-500/50 transition-colors"
                                                     placeholder="입력"
                                                 />
-                                            </td>
+                                            </td>}
                                             <td className="border border-gray-700 p-0">
                                                 <input
                                                     type="text"
@@ -1315,7 +1323,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                                                     <button
                                                         type="button"
                                                         onClick={() => addDetailToSub(row)}
-                                                        disabled={!row.core.trim() || !row.sub.trim()}
+                                                        disabled={!row.core.trim() || !row.sub.trim() || isDetailColumnCollapsed || isSavingDetailVisibility}
                                                         className="w-9 py-2 text-xs text-emerald-300 hover:bg-emerald-500/10 disabled:text-gray-700 disabled:hover:bg-transparent transition-colors"
                                                         title="이 세부기능에 세세부기능 추가"
                                                     >

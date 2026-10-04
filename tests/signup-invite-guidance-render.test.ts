@@ -65,3 +65,28 @@ it('초대가 없는 일반 가입의 기존 승인 대기 이동은 유지한�
     await submit();
     expect(pushMock).toHaveBeenCalledWith('/login?signup=pending');
 });
+
+it('멘토를 선택하면 초대 입력을 감추고 이전 코드를 지워 일반 가입만 전송한다', async () => {
+    await enter('inviteCode', 'KSQF-ABCD-EFGH-JKMN');
+    await act(async () => {
+        const select = container.querySelector<HTMLSelectElement>('select')!;
+        select.value = 'MENTOR';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(container.querySelector('#inviteCode')).toBeNull();
+    expect(container.querySelector('a[href="/login?mode=invite"]')).toBeNull();
+    expect(container.textContent).toContain('멘토는 초대 코드 없이 가입');
+    expect(container.textContent).toContain('프로그램 매니저');
+    fetchMock.mockResolvedValueOnce(response({ pendingApproval: true }));
+    await enter('email', 'mentor@example.test'); await enter('password', 'test-password'); await enter('confirmPassword', 'test-password');
+    await submit();
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.role).toBe('MENTOR');
+    expect(body).not.toHaveProperty('inviteCode');
+    await act(async () => {
+        const select = container.querySelector<HTMLSelectElement>('select')!;
+        select.value = 'MENTEE';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(container.querySelector<HTMLInputElement>('#inviteCode')!.value).toBe('');
+});

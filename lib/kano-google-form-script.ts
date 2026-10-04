@@ -1,4 +1,5 @@
 import { getKanoTopic } from './utils/korean-utils';
+import { kanoSurveyAnswerLabels, resolveKanoQuestionPair } from './kano-survey-document';
 
 export interface KanoFormScriptRequirement {
     category?: string | null;
@@ -7,14 +8,6 @@ export interface KanoFormScriptRequirement {
     kanoPositiveQ?: string | null;
     kanoNegativeQ?: string | null;
 }
-
-const KANO_CHOICES = [
-    '마음에 든다',
-    '당연하다',
-    '아무런느낌이 없다',
-    '하는수 없다',
-    '마음에 안든다',
-];
 
 function escapeScriptString(value: string): string {
     return JSON.stringify(value);
@@ -31,12 +24,12 @@ export function buildKanoGoogleFormScript(
     projectName = 'Kano 설문'
 ): string {
     const payload = requirements.map((requirement, index) => {
-        const topic = getKanoTopic(requirement.requirement);
+        const pair = resolveKanoQuestionPair(requirement);
         return {
             positiveTitle: questionTitle(requirement, index, 'positive'),
-            positiveDescription: requirement.kanoPositiveQ || `만약 "${topic}"(이)라면 어떻게 느끼시겠습니까?`,
+            positiveDescription: pair.positive,
             negativeTitle: questionTitle(requirement, index, 'negative'),
-            negativeDescription: requirement.kanoNegativeQ || `만약 "${topic}"(이)가 아니라면 어떻게 느끼시겠습니까?`,
+            negativeDescription: pair.negative,
         };
     });
 
@@ -57,7 +50,7 @@ function createKanoForm() {
   );
   form.setCollectEmail(true);
 
-  const choices = ${JSON.stringify(KANO_CHOICES, null, 2)};
+  const choices = ${JSON.stringify(kanoSurveyAnswerLabels(), null, 2)};
   const questions = ${JSON.stringify(payload, null, 2)};
 
   questions.forEach((question) => {

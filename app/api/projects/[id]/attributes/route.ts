@@ -75,7 +75,11 @@ export async function POST(
         // 캐스케이드로 적합도가 함께 사라지므로, 비우는 저장뿐 아니라 비어있지 않은
         // 전체 교체 저장도 적합도가 있으면 확인 없이 진행하면 안 된다.
         const impact = await countAttributeCascadeImpact(prisma, projectId);
-        if (impact.fitnesses > 0 && rawBody?.confirmCascade !== true) {
+        const confirmedImpact = rawBody?.confirmedCascadeImpact;
+        if (
+            impact.fitnesses > 0 &&
+            (confirmedImpact?.fitnesses !== impact.fitnesses)
+        ) {
             return NextResponse.json(
                 {
                     error: describeAttributeCascadeImpact(impact),
@@ -86,14 +90,14 @@ export async function POST(
             );
         }
 
-        const updatedAttrs = await prisma.$transaction(async (tx: any) => {
+        const updatedAttrs = await prisma.$transaction(async (tx) => {
             await tx.productAttribute.deleteMany({
                 where: { projectId },
             });
 
             if (newAttributes.length > 0) {
                 await tx.productAttribute.createMany({
-                    data: newAttributes.map((attr: any) => ({
+                    data: newAttributes.map((attr) => ({
                         ...attr,
                         projectId,
                     })),
@@ -133,6 +137,22 @@ export async function DELETE(
         const { id: projectId } = await params;
         const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
         if (accessResult instanceof NextResponse) return accessResult;
+        const rawBody = await request.json().catch(() => ({}));
+        const impact = await countAttributeCascadeImpact(prisma, projectId);
+        const confirmedImpact = rawBody?.confirmedCascadeImpact;
+        if (
+            impact.fitnesses > 0 &&
+            confirmedImpact?.fitnesses !== impact.fitnesses
+        ) {
+            return NextResponse.json(
+                {
+                    error: describeAttributeCascadeImpact(impact),
+                    needsCascadeConfirm: true,
+                    cascadeImpact: impact,
+                },
+                { status: 409 }
+            );
+        }
         const deleteResult = await prisma.productAttribute.deleteMany({
             where: { projectId },
         });

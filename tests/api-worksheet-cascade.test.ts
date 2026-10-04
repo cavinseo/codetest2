@@ -172,11 +172,11 @@ describe('attributes 저장 캐스케이드', () => {
         expect(body.error).toContain('9');
     });
 
-    it('confirmCascade 가 오면 진행한다', async () => {
+    it('확인한 적합도 영향 범위가 일치하면 진행한다', async () => {
         countFitness.mockResolvedValue(9);
 
         const res = await saveAttributes(
-            postRequest('attributes', { attributes: [], confirmCascade: true }),
+            postRequest('attributes', { attributes: [], confirmedCascadeImpact: { fitnesses: 9 } }),
             { params }
         );
 
@@ -214,13 +214,13 @@ describe('attributes 저장 캐스케이드', () => {
         expect(res.status).toBe(200);
     });
 
-    it('적합도가 있어도 confirmCascade 면 비어있지 않은 저장을 진행한다', async () => {
+    it('적합도가 있어도 확인한 영향 범위가 일치하면 비어있지 않은 저장을 진행한다', async () => {
         countFitness.mockResolvedValue(9);
 
         const res = await saveAttributes(
             postRequest('attributes', {
                 attributes: [{ marketSegment: 'M', attribute: 'A', order: 0 }],
-                confirmCascade: true,
+                confirmedCascadeImpact: { fitnesses: 9 },
             }),
             { params }
         );

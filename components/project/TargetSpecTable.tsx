@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
+import { getGroupedCellSpans } from '@/lib/final-report-table-merge';
 
 interface TargetSpecRow {
     performanceImprovement?: string;
@@ -23,10 +24,13 @@ interface Props {
     projectId: string;
 }
 
+type GroupField = 'category' | 'subCategory';
+
 export default function TargetSpecTable({ projectId }: Props) {
     const [rows, setRows] = useState<TargetSpecRow[]>([]);
     const [suggestions, setSuggestions] = useState<TargetSpecRow[]>([]);
     const [asIsRows, setAsIsRows] = useState<TargetSpecRow[]>([]);
+    const [newSpecs, setNewSpecs] = useState<Array<{ category: string; subCategory: string }>>([]);
     const [newFeatureId, setNewFeatureId] = useState('');
     const [newCategory, setNewCategory] = useState('');
     const [newSubCategory, setNewSubCategory] = useState('');
@@ -35,6 +39,7 @@ export default function TargetSpecTable({ projectId }: Props) {
     const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
+    const groupEdit = useRef<{ id: string; field: GroupField; rowIds: string[] } | null>(null);
     const { toast, showToast } = useToast();
 
     useEffect(() => {
@@ -48,6 +53,7 @@ export default function TargetSpecTable({ projectId }: Props) {
                 if (!Array.isArray(data?.rows)) throw new Error('목표 사양 응답 형식 오류');
                 setSuggestions(data?.suggestions || []);
                 setAsIsRows(data?.asIsRows || []);
+                setNewSpecs(data?.newSpecs || []);
                 const sourceRows = data?.rows?.length > 0 ? data.rows : (data?.asIsRows || []);
                 if (sourceRows) {
                     setRows(sourceRows.map((r: any) => ({
@@ -108,9 +114,18 @@ export default function TargetSpecTable({ projectId }: Props) {
         setRows(rows.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
     };
 
+    const mergeSpans = getGroupedCellSpans(rows.map((row) => [row.category, row.subCategory]), [0, 1]);
+    const groupRowIds = (index: number, field: GroupField) => rows.slice(index, index + mergeSpans[index][field === 'category' ? 0 : 1]).map((row) => row.id);
+    const updateGroup = (index: number, field: GroupField, value: string) => {
+        const editing = groupEdit.current;
+        const ids = new Set(editing?.id === rows[index].id && editing.field === field ? editing.rowIds : groupRowIds(index, field));
+        setRows((prev) => prev.map((row) => ids.has(row.id) ? { ...row, [field]: value } : row));
+    };
+
     const deleteRow = (id: string) => setRows(rows.filter((row) => row.id !== id));
     const getUniqueValues = (field: keyof Pick<TargetSpecRow, 'category' | 'subCategory' | 'specItem' | 'unit' | 'targetValue' | 'note'>) =>
         Array.from(new Set(rows.map((row) => String(row[field] ?? '').trim()).filter(Boolean)));
+    const isNewSpec = (row: TargetSpecRow) => row.note?.trim() === '신규' || newSpecs.some((spec) => spec.category === row.category.trim() && spec.subCategory === row.subCategory.trim());
 
     const handleSave = async () => {
         if (isLoading || loadFailed || loadedProjectId !== projectId) return;
@@ -159,13 +174,15 @@ export default function TargetSpecTable({ projectId }: Props) {
         }
     };
 
-    const input = (value: string, onChange: (value: string) => void, placeholder: string, optionsId: string, options: string[]) => (
+    const input = (value: string, onChange: (value: string) => void, placeholder: string, optionsId: string, options: string[], group?: { index: number; field: GroupField }) => (
         <>
             <input
                 type="text"
                 list={optionsId}
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
+                onFocus={group ? () => { groupEdit.current = { id: rows[group.index].id, field: group.field, rowIds: groupRowIds(group.index, group.field) }; } : undefined}
+                onBlur={group ? () => { groupEdit.current = null; } : undefined}
                 className="w-full bg-transparent px-3 py-2 text-sm text-white outline-none focus:bg-white/5 placeholder-gray-700"
                 placeholder={placeholder}
             />
@@ -234,10 +251,13 @@ export default function TargetSpecTable({ projectId }: Props) {
                                     <button onClick={addRow} className="btn-primary text-sm">첫 행 추가</button>
                                 </td>
                             </tr>
-                        ) : rows.map((row) => (
-                            <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] group">
-                                <td className="border border-white/[0.06] p-0">{input(row.category, (value) => updateRow(row.id, 'category', value), '스펙분류', `target-category-${row.id}`, getUniqueValues('category'))}</td>
-                                <td className="border border-white/[0.06] p-0">{input(row.subCategory, (value) => updateRow(row.id, 'subCategory', value), '세부항목', `target-sub-${row.id}`, getUniqueValues('subCategory'))}</td>
+                        ) : rows.map((row, rowIndex) => (
+                            <tr key={row.id} className={`border-b border-white/[0.04] hover:bg-white/[0.02] group ${isNewSpec(row) ? 'bg-emerald-500/[0.08] border-l-2 border-l-emerald-400' : ''}`}>
+                                {mergeSpans[rowIndex][0] > 0 && <td rowSpan={mergeSpans[rowIndex][0]} className="border border-white/[0.06] p-0 align-middle">{input(row.category, (value) => updateGroup(rowIndex, 'category', value), '스펙분류', `target-category-${row.id}`, getUniqueValues('category'), { index: rowIndex, field: 'category' })}</td>}
+                                {mergeSpans[rowIndex][1] > 0 && <td rowSpan={mergeSpans[rowIndex][1]} className="border border-white/[0.06] p-0 align-middle">
+                                    {input(row.subCategory, (value) => updateGroup(rowIndex, 'subCategory', value), '세부항목', `target-sub-${row.id}`, getUniqueValues('subCategory'), { index: rowIndex, field: 'subCategory' })}
+                                    {rows.slice(rowIndex, rowIndex + mergeSpans[rowIndex][1]).some(isNewSpec) && <span className="mx-3 mb-2 inline-block rounded bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-300">신규</span>}
+                                </td>}
                                 <td className="border border-white/[0.06] p-0">{input(row.specItem, (value) => updateRow(row.id, 'specItem', value), '기술적 특성', `target-spec-${row.id}`, getUniqueValues('specItem'))}</td>
                                 <td className="border border-white/[0.06] p-0">{input(row.note, (value) => updateRow(row.id, 'note', value), '개선여부', `target-note-${row.id}`, getUniqueValues('note'))}</td>
                                 <td className="border border-white/[0.06] p-2 text-center">

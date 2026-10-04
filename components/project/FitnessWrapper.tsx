@@ -63,7 +63,7 @@ const PRIORITY_COUNT_COLOR: Record<string, string> = {
     'L*': 'text-rose-400',
 };
 
-interface Props { projectId: string; }
+interface Props { projectId: string; reportTableOnly?: boolean; }
 
 function createSubSegmentsFromCustomerNames(customerNames: string[], fallbackPrefix: string): SubSegment[] {
     if (customerNames.length > 0) {
@@ -137,7 +137,7 @@ function PriorityCell({
 // ──────────────────────────────────
 // 메인 컴포넌트
 // ──────────────────────────────────
-export default function FitnessWrapper({ projectId }: Props) {
+export default function FitnessWrapper({ projectId, reportTableOnly = false }: Props) {
     const [attrs, setAttrs] = useState<ProductAttribute[]>([]);
     const [markets, setMarkets] = useState<Market[]>([]);
     const [matrix, setMatrix] = useState<MatrixData>({});
@@ -448,7 +448,7 @@ export default function FitnessWrapper({ projectId }: Props) {
     };
 
     // ── 총 열 수 계산 (세분화 추가 버튼 열 포함)
-    const totalSubCols = markets.reduce((s, m) => s + m.subSegments.length + 1, 0);
+    const totalSubCols = markets.reduce((s, m) => s + m.subSegments.length + (reportTableOnly ? 0 : 1), 0);
     const marketOptions = useMemo(() => Array.from(new Set(markets.map((market) => market.name.trim()).filter(Boolean))), [markets]);
     const subSegmentOptions = useMemo(() => Array.from(new Set(markets.flatMap((market) => market.subSegments.map((subSegment) => subSegment.name.trim())).filter(Boolean))), [markets]);
 
@@ -476,7 +476,7 @@ export default function FitnessWrapper({ projectId }: Props) {
     }
 
     return (
-        <div className="space-y-4 relative">
+        <div className={reportTableOnly ? 'relative' : 'space-y-4 relative'}>
             <datalist id={`fitness-market-options-${projectId}`}>
                 {marketOptions.map((option) => (
                     <option key={option} value={option} />
@@ -490,13 +490,14 @@ export default function FitnessWrapper({ projectId }: Props) {
             {/* 토스트 */}
             {toast && <HeaderToast message={toast.message} type={toast.type} />}
 
+            {!reportTableOnly && <>
             {/* 헤더 */}
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-xl font-display font-bold text-white">[WS-4] 제품 속성 적합도</h2>
                     <p className="text-sm text-gray-500 mt-0.5">셀 클릭으로 우선순위 입력 · 우클릭으로 초기화</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div data-capture-exclude className="flex items-center gap-2">
                     <button onClick={handleSave} disabled={isSaving} className="btn-primary text-sm flex items-center gap-1.5">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -517,6 +518,8 @@ export default function FitnessWrapper({ projectId }: Props) {
                 <span className="ml-auto text-gray-600">셀 클릭 → H → M → L → L* 순환</span>
             </div>
 
+            </>}
+
             {/* 엑셀 형태 테이블 */}
             <div className="overflow-x-auto rounded-xl border border-gray-700/60 bg-gray-900/60">
                 <table className="border-collapse text-xs w-full">
@@ -533,7 +536,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                 // 세분화 수 + 추가 버튼 열(1) = colSpan
                                 <th
                                     key={mkt.id}
-                                    colSpan={mkt.subSegments.length + 1}
+                                    colSpan={mkt.subSegments.length + (reportTableOnly ? 0 : 1)}
                                     className="border border-gray-600/60 px-3 py-1.5 text-center group"
                                 >
                                     <div className="flex items-center justify-center gap-1">
@@ -593,7 +596,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                         </th>
                                     ))}
                                     {/* 세분화 추가 버튼 열 */}
-                                    <th
+                                    {!reportTableOnly && <th
                                         key={`${mkt.id}-add`}
                                         className="border border-gray-600/60 px-1 py-1 text-center w-[36px]"
                                     >
@@ -606,7 +609,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
                                             </svg>
                                         </button>
-                                    </th>
+                                    </th>}
                                 </Fragment>
                             ))}
                         </tr>
@@ -631,7 +634,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                             />
                                         ))}
                                         {/* 추가 버튼 열 (빈 셀) */}
-                                        <td key={`${attr.id}-${mkt.id}-add`} className="border border-gray-700/30 bg-gray-900/10 w-[36px]" />
+                                        {!reportTableOnly && <td key={`${attr.id}-${mkt.id}-add`} className="border border-gray-700/30 bg-gray-900/10 w-[36px]" />}
                                     </Fragment>
                                 ))}
                             </tr>
@@ -655,7 +658,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                             개수
                                         </td>
                                     ))}
-                                    <td key={`${mkt.id}-add-hdr`} className="border border-gray-600/60 w-[36px] bg-gray-800/50" />
+                                    {!reportTableOnly && <td key={`${mkt.id}-add-hdr`} className="border border-gray-600/60 w-[36px] bg-gray-800/50" />}
                                 </Fragment>
                             ))}
                         </tr>
@@ -677,7 +680,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                                 </td>
                                             );
                                         })}
-                                        <td key={`${mkt.id}-${p}-add`} className="border border-gray-700/30 w-[36px] bg-gray-900/10" />
+                                        {!reportTableOnly && <td key={`${mkt.id}-${p}-add`} className="border border-gray-700/30 w-[36px] bg-gray-900/10" />}
                                     </Fragment>
                                 ))}
                             </tr>
@@ -709,7 +712,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                                                 </td>
                                             );
                                         })}
-                                        <td key={`${mkt.id}-rank-add`} className="border border-indigo-500/20 w-[36px] bg-gray-900/10" />
+                                        {!reportTableOnly && <td key={`${mkt.id}-rank-add`} className="border border-indigo-500/20 w-[36px] bg-gray-900/10" />}
                                     </Fragment>
                                 ));
                             })()}
@@ -718,6 +721,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                 </table>
             </div>
 
+            {!reportTableOnly && <>
             <p className="text-xs text-gray-600">
                 총 {attrs.length}개 속성 · {markets.length}개 시장 · {markets.reduce((s, m) => s + m.subSegments.length, 0)}개 세분화
             </p>
@@ -769,6 +773,7 @@ export default function FitnessWrapper({ projectId }: Props) {
                     </div>
                 </div>
             </div>
+            </>}
         </div>
     );
 }

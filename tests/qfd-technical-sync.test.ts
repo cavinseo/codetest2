@@ -18,6 +18,15 @@ describe('dedupeNonBlank', () => {
     it('입력이 비어 있으면 빈 배열을 돌려준다', () => {
         expect(dedupeNonBlank([])).toEqual([]);
     });
+
+    it('연속 공백·줄바꿈·한글 조합 형태만 다른 이름은 한 번만 남긴다', () => {
+        expect(dedupeNonBlank([' 처리  속도 ', '처리\n속도', '처리 속도'.normalize('NFD'), '백업 주기']))
+            .toEqual(['처리 속도', '백업 주기']);
+    });
+
+    it('다른 수치·단위·기능의 이름은 합치지 않는다', () => {
+        expect(dedupeNonBlank(['2D 센서', '3D 센서', '1 ms', '1 MS'])).toHaveLength(4);
+    });
 });
 
 describe('findMissingTechnicalCharNames', () => {
@@ -39,5 +48,10 @@ describe('findMissingTechnicalCharNames', () => {
     it('기존 이름에 null 이 섞여 있어도 안전하다', () => {
         const result = findMissingTechnicalCharNames(['센서'], [null, undefined, '']);
         expect(result).toEqual(['센서']);
+    });
+
+    it('기존 이름과 후보 이름에 동일한 공백·중복 기준을 적용한다', () => {
+        expect(findMissingTechnicalCharNames(['처리 속도', '백업\n주기', '백업  주기'], [' 처리\t속도 ']))
+            .toEqual(['백업 주기']);
     });
 });

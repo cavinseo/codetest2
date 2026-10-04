@@ -9,7 +9,7 @@ const db = vi.hoisted(() => {
         deleteMany: vi.fn(async () => { state[name] = []; }),
         createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => { state[name] = data.map((row, index) => ({ id: name + index, ...row })); }),
     });
-    const models = { targetSpec: model('targetSpec'), specFunction: model('specFunction'), improvementItem: model('improvementItem'), technicalCharacteristic: model('technicalCharacteristic'), fundingPlan: model('fundingPlan'), fundingSource: model('fundingSource'), salesEstimate: model('salesEstimate') };
+    const models = { targetSpec: model('targetSpec'), specFunction: model('specFunction'), techTreeEntry: model('techTreeEntry'), improvementItem: model('improvementItem'), technicalCharacteristic: model('technicalCharacteristic'), fundingPlan: model('fundingPlan'), fundingSource: model('fundingSource'), salesEstimate: model('salesEstimate') };
     return { state, models };
 });
 vi.mock('../lib/prisma', () => ({ prisma: { ...db.models, $transaction: async (callback: ((client: typeof db.models) => unknown) | Promise<unknown>[]) => typeof callback === 'function' ? callback(db.models) : Promise.all(callback) } }));
@@ -55,4 +55,22 @@ it.each([null, 0, 1234.56789])('preserves future revenue %s on POST and repeated
     expect(second.plans[1]).toMatchObject({ year1: 10, year2: 20, year3: 30 });
     expect(second.sources[0].year1).toBe('정부:1,234.5');
     expect(db.models.fundingPlan.createMany).toHaveBeenCalledTimes(1);
+});
+
+it('saves multiple WS-16 details independently and does not recreate deleted details on GET', async () => {
+    db.state.fundingPlan = [{ id: 'plan', category: '소요자금', item: '개발', year1: 100, year2: 200, year3: 300, order: 0 }];
+    const plansBefore = structuredClone(db.state.fundingPlan);
+    const sources = [
+        { category: '정부자금', year1: '지원:1,300.5', year2: '{"source":"운전","amount":"500"}', year3: '', order: 0 },
+        { category: '정부자금', year1: '사업:100', year2: '', year3: '200', order: 1 },
+    ];
+    expect((await funding.POST(post({ sources }), params)).status).toBe(200);
+    const saved = await (await funding.GET(get(), params)).json();
+    expect(saved.sources).toEqual(sources.map(source => expect.objectContaining(source)));
+    expect(saved.canWrite).toBe(true);
+    expect((await funding.POST(post({ sources: [sources[1]] }), params)).status).toBe(200);
+    expect((await (await funding.GET(get(), params)).json()).sources).toHaveLength(1);
+    expect((await funding.POST(post({ sources: [] }), params)).status).toBe(200);
+    expect((await (await funding.GET(get(), params)).json()).sources).toEqual([]);
+    expect(db.state.fundingPlan).toEqual(plansBefore);
 });

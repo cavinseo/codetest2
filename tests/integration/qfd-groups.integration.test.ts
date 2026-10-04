@@ -13,6 +13,7 @@ vi.mock('../../lib/prisma', () => ({ get prisma() { return db; } }));
 import { encodeSessionCookie } from '../../lib/auth';
 import { SESSION_COOKIE_NAME } from '../../lib/constants';
 import { GET, POST, PATCH, DELETE } from '../../app/api/projects/[id]/qfd/technical/route';
+import { POST as saveTechTree } from '../../app/api/projects/[id]/tech-tree/route';
 
 const prefix = 'qfd_groups_' + randomUUID() + '_';
 const ownerId = prefix + 'admin';
@@ -83,7 +84,7 @@ it('마이그레이션은 기존 세부기능 ID와 3열 그룹·순서를 보�
 
 it('최초 동시 조회는 한 번만 채우고 삭제 후 조회는 기능을 되살리지 않는다', async () => {
     const p = await project('initial');
-    await db.techTreeEntry.createMany({ data: ['기능1', '기능2', '기능3', '기능4', ' 기능1 ', '', null].map((subSpec, order) => ({ projectId: p.id, subSpec, order })) });
+    await db.techTreeEntry.createMany({ data: ['기능1', '기능2', '기능3', '기능4', ' 기능1 ', '', null].map((subSpec, order) => ({ projectId: p.id, subSpec, coreSpec: order === 3 ? '핵심2' : '핵심1', order })) });
     const results = await Promise.all([list(p.id), list(p.id)]);
     expect(results[0]).toHaveLength(4);
     expect(results[1]).toHaveLength(4);
@@ -98,6 +99,32 @@ it('최초 동시 조회는 한 번만 채우고 삭제 후 조회는 기능을 
     expect(await list(p.id)).toEqual([]);
     expect((await db.project.findUniqueOrThrow({ where: { id: p.id } })).qfdTechnicalInitialized).toBe(true);
     expect((await add(p.id, '새 기능')).groupIndex).toBe(0);
+});
+
+it('동시 WS-10 저장과 WS-9 조회에서도 핵심스펙별 그룹·관계·실측값을 유지한다', async () => {
+    const p = await project('core-sync');
+    const a = await add(p.id, '기능 A'), b = await add(p.id, '기능 B', a.groupIndex), c = await add(p.id, '기능 C', a.groupIndex);
+    await db.technicalCharacteristic.update({ where: { id: b.id }, data: { unit: 'ms', targetValue: '100' } });
+    const req = await db.customerRequirement.create({ data: { projectId: p.id, category: '품질', requirement: '요구', order: 0 } });
+    await db.qFDMatrix.create({ data: { projectId: p.id, requirementId: req.id, technicalCharId: b.id, strength: 'STRONG' } });
+    await db.technicalBenchmark.create({ data: { projectId: p.id, technicalCharId: b.id, company: 'self', value: '80' } });
+    await db.techCorrelation.create({ data: { projectId: p.id, techId1: a.id, techId2: b.id, correlation: 'POSITIVE' } });
+    const entries = [
+        { coreSpec: 'CNC', subSpec: '기능 A', order: 0 }, { coreSpec: '이송', subSpec: '기능 B', order: 1 },
+        { coreSpec: 'CNC', subSpec: '기능 C', order: 2 }, { coreSpec: '이송', subSpec: '신규 기능', order: 3 },
+        { coreSpec: 'CNC', subSpec: '기능  A', order: 4 },
+    ];
+    const save = () => saveTechTree(request(p.id, 'POST', { entries }), params(p.id));
+    const [first, second] = await Promise.all([save(), save(), list(p.id)]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const rows = await list(p.id);
+    expect(rows.map(row => [row.name, row.groupIndex])).toEqual([['기능 A', 0], ['기능 C', 0], ['기능 B', 1], ['신규 기능', 1]]);
+    expect(rows.find(row => row.name === '기능 C')?.id).toBe(c.id);
+    expect(await db.technicalCharacteristic.findUnique({ where: { id: b.id } })).toMatchObject({ unit: 'ms', targetValue: '100' });
+    expect(await db.qFDMatrix.findMany({ where: { projectId: p.id } })).toEqual([expect.objectContaining({ technicalCharId: b.id, strength: 'STRONG' })]);
+    expect(await db.technicalBenchmark.findMany({ where: { projectId: p.id } })).toEqual([expect.objectContaining({ technicalCharId: b.id, value: '80' })]);
+    expect(await db.techCorrelation.count({ where: { projectId: p.id } })).toBe(1);
 });
 
 it('이름 있는 기능으로만 그룹을 만들고 기존 그룹에 추가·수정한다', async () => {

@@ -94,9 +94,12 @@ export async function PUT(request: NextRequest) {
                     throw error;
                 }
 
+                const existing = await getPersonalConnectionSummary(authResult.userId);
                 await upsertPersonalConnection(authResult.userId, {
                     mode,
-                    apiKey: parsed.data.apiKey,
+                    // API 모드에서 넘어올 때 키 입력을 비웠다면 이전 벤더 키를
+                    // 새 MCP 주소로 보내면 안 된다. 기존 MCP 키는 그대로 둔다.
+                    apiKey: parsed.data.apiKey ?? (existing?.mode === 'api' ? null : undefined),
                     mcpBaseUrl,
                     mcpModel: parsed.data.mcpModel?.trim() || null,
                 });

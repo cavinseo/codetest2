@@ -65,8 +65,10 @@ export async function POST(
         }
         const importData = parsed.data;
 
-        // 최소 하나의 데이터 배열이 있어야 import 허용 (빈 payload로 전체 삭제 방지)
-        if (!importHasAnyData(importData)) {
+        // 임의의 빈 요청은 전체 삭제가 될 수 있어 거절한다. 다만 1.1 전체 백업은
+        // 빈 워크시트도 원본 상태이므로, 그 경우에는 빈 배열을 복원할 수 있어야 한다.
+        const isFullBackup = importData.version === '1.1-prisma' && typeof importData.exportedAt === 'string';
+        if (!importHasAnyData(importData) && !isFullBackup) {
             return NextResponse.json(
                 { error: '가져올 데이터가 없습니다.' },
                 { status: 400 }
@@ -112,6 +114,17 @@ export async function POST(
         const benchmarks = importData.benchmarks ?? [];
         const techCorrelations = importData.techCorrelations ?? [];
         const technicalBenchmarks = importData.technicalBenchmarks ?? [];
+        const techTreeEntries = importData.techTreeEntries ?? [];
+        const improvementItems = importData.improvementItems ?? [];
+        const targetSpecs = importData.targetSpecs ?? [];
+        const techRoadmaps = importData.techRoadmaps ?? [];
+        const devPlans = importData.devPlans ?? [];
+        const salesEstimates = importData.salesEstimates ?? [];
+        const assetItems = importData.assetItems ?? [];
+        const fundingPlans = importData.fundingPlans ?? [];
+        const fundingSources = importData.fundingSources ?? [];
+        const hasFitnessMatrix = Object.hasOwn(importData, 'fitnessMatrix');
+        const fitnessMatrix = importData.fitnessMatrix;
 
         const requirementIds = assignIds(requirements, 'spec');
         const technicalIds = assignIds(technicals, 'tech');
@@ -122,6 +135,9 @@ export async function POST(
         // 중요: payload에 실제로 포함된 컬렉션만 삭제합니다. 부분 payload가
         // 무관한 컬렉션(고객요구/설문응답/벤치마크 등)을 전부 지우던 문제를 방지.
         await prisma.$transaction(async (tx) => {
+            if (importData.technicalCharacteristics) {
+                await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
+            }
             await validateImportReferences(tx, projectId, importData);
             const delegates = tx as unknown as Record<
                 string,
@@ -267,6 +283,150 @@ export async function POST(
                     })),
                 });
             }
+            if (techTreeEntries.length > 0) {
+                await tx.techTreeEntry.createMany({
+                    data: techTreeEntries.map((row) => ({
+                        projectId,
+                        customerVoice: row.customerVoice ?? null,
+                        coreSpec: row.coreSpec ?? null,
+                        subSpec: row.subSpec ?? null,
+                        techCharacteristic: row.techCharacteristic ?? null,
+                        order: row.order,
+                    })),
+                });
+            }
+            if (improvementItems.length > 0) {
+                await tx.improvementItem.createMany({
+                    data: improvementItems.map((row) => ({
+                        projectId,
+                        type: row.type,
+                        content: row.content ?? null,
+                        improvementRate: row.improvementRate ?? null,
+                        devProportion: row.devProportion ?? null,
+                        priority: row.priority ?? null,
+                        order: row.order,
+                    })),
+                });
+            }
+            if (targetSpecs.length > 0) {
+                await tx.targetSpec.createMany({
+                    data: targetSpecs.map((row) => ({
+                        projectId,
+                        category: row.category ?? null,
+                        subCategory: row.subCategory ?? null,
+                        specItem: row.specItem ?? null,
+                        unit: row.unit ?? null,
+                        currentValue: row.currentValue ?? null,
+                        competitorValue: row.competitorValue ?? null,
+                        targetValue: row.targetValue ?? null,
+                        note: row.note ?? null,
+                        order: row.order,
+                    })),
+                });
+            }
+            if (techRoadmaps.length > 0) {
+                await tx.techRoadmap.createMany({
+                    data: techRoadmaps.map((row) => ({
+                        projectId,
+                        category: row.category ?? null,
+                        techItem: row.techItem ?? null,
+                        currentLevel: row.currentLevel ?? null,
+                        q1: row.q1 ?? null,
+                        q2: row.q2 ?? null,
+                        q3: row.q3 ?? null,
+                        q4: row.q4 ?? null,
+                        targetLevel: row.targetLevel ?? null,
+                        owner: row.owner ?? null,
+                        order: row.order,
+                    })),
+                });
+            }
+            if (devPlans.length > 0) {
+                await tx.devPlan.createMany({
+                    data: devPlans.map((row) => ({
+                        projectId,
+                        phase: row.phase ?? null,
+                        task: row.task ?? null,
+                        description: row.description ?? null,
+                        startDate: row.startDate ?? null,
+                        endDate: row.endDate ?? null,
+                        owner: row.owner ?? null,
+                        status: row.status,
+                        order: row.order,
+                    })),
+                });
+            }
+            if (salesEstimates.length > 0) {
+                await tx.salesEstimate.createMany({
+                    data: salesEstimates.map((row) => ({
+                        projectId,
+                        period: row.period,
+                        customer: row.customer ?? null,
+                        amount: row.amount,
+                        futureAmount: row.futureAmount,
+                        competitor: row.competitor ?? null,
+                        order: row.order,
+                    })),
+                });
+            }
+            if (assetItems.length > 0) {
+                await tx.assetItem.createMany({
+                    data: assetItems.map((row) => ({
+                        projectId,
+                        type: row.type,
+                        category: row.category ?? null,
+                        content: row.content ?? null,
+                        order: row.order,
+                    })),
+                });
+            }
+            if (fundingPlans.length > 0) {
+                await tx.fundingPlan.createMany({
+                    data: fundingPlans.map((row) => ({
+                        projectId,
+                        category: row.category ?? null,
+                        item: row.item ?? null,
+                        year1: row.year1,
+                        year2: row.year2 ?? null,
+                        year3: row.year3 ?? null,
+                        order: row.order,
+                    })),
+                });
+            }
+            if (fundingSources.length > 0) {
+                await tx.fundingSource.createMany({
+                    data: fundingSources.map((row) => ({
+                        projectId,
+                        category: row.category ?? null,
+                        year1: row.year1 ?? null,
+                        year2: row.year2 ?? null,
+                        year3: row.year3 ?? null,
+                        order: row.order,
+                    })),
+                });
+            }
+            if (hasFitnessMatrix) {
+                if (fitnessMatrix) {
+                    await tx.fitnessMatrix.upsert({
+                        where: { projectId },
+                        update: {
+                            marketsJson: fitnessMatrix.marketsJson,
+                            matrixJson: fitnessMatrix.matrixJson,
+                            managerComment: fitnessMatrix.managerComment ?? null,
+                            consultantNote: fitnessMatrix.consultantNote ?? null,
+                        },
+                        create: {
+                            projectId,
+                            marketsJson: fitnessMatrix.marketsJson,
+                            matrixJson: fitnessMatrix.matrixJson,
+                            managerComment: fitnessMatrix.managerComment ?? null,
+                            consultantNote: fitnessMatrix.consultantNote ?? null,
+                        },
+                    });
+                } else {
+                    await tx.fitnessMatrix.deleteMany({ where: { projectId } });
+                }
+            }
 
             // 프로젝트 기본 정보 업데이트
             if (importData.project || importData.technicalCharacteristics) {
@@ -275,6 +435,8 @@ export async function POST(
                     data: {
                         description: importData.project?.description,
                         detailedDescription: importData.project?.detailedDescription,
+                        additionalMarketData: importData.project?.additionalMarketData,
+                        includeAdditionalMarketDataInReport: importData.project?.includeAdditionalMarketDataInReport,
                         ...(importData.technicalCharacteristics ? { qfdTechnicalInitialized: true } : {}),
                     },
                 });
@@ -297,6 +459,16 @@ export async function POST(
                 benchmarks: benchmarks.length,
                 techCorrelations: techCorrelations.length,
                 technicalBenchmarks: technicalBenchmarks.length,
+                techTreeEntries: techTreeEntries.length,
+                improvementItems: improvementItems.length,
+                targetSpecs: targetSpecs.length,
+                techRoadmaps: techRoadmaps.length,
+                devPlans: devPlans.length,
+                salesEstimates: salesEstimates.length,
+                assetItems: assetItems.length,
+                fundingPlans: fundingPlans.length,
+                fundingSources: fundingSources.length,
+                fitnessMatrix: fitnessMatrix ? 1 : 0,
             },
         });
     } catch (error: unknown) {

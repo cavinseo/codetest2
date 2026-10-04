@@ -10,6 +10,7 @@ import {
     parseKanoInviteWorkbook,
     type ParsedInviteList,
 } from '@/lib/kano-invite-template';
+import { checkExcelArchiveSafety, guardUploadedExcel } from '@/lib/upload-guard';
 
 const log = createLogger('api/kano/invite/bulk');
 
@@ -34,7 +35,16 @@ async function readInviteList(request: NextRequest): Promise<ParsedInviteList> {
         if (!(file instanceof File)) {
             throw new Error('업로드할 명단 파일이 없습니다.');
         }
-        const buffer = Buffer.from(await file.arrayBuffer());
+        const fileGuard = guardUploadedExcel(file);
+        if (!fileGuard.ok) {
+            throw Object.assign(new Error(fileGuard.failure.error), { status: fileGuard.failure.status });
+        }
+        const bytes = new Uint8Array(await fileGuard.file.arrayBuffer());
+        const archiveFailure = checkExcelArchiveSafety(fileGuard.file.name, bytes);
+        if (archiveFailure) {
+            throw Object.assign(new Error(archiveFailure.error), { status: archiveFailure.status });
+        }
+        const buffer = Buffer.from(bytes);
         return parseKanoInviteWorkbook(buffer);
     }
 
@@ -155,6 +165,7 @@ export async function POST(
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : '일괄 초대에 실패했습니다.';
         log.error('Kano 일괄 초대 오류', error);
-        return NextResponse.json({ error: message }, { status: 400 });
+        const status = error && typeof error === 'object' && 'status' in error && error.status === 413 ? 413 : 400;
+        return NextResponse.json({ error: message }, { status });
     }
 }

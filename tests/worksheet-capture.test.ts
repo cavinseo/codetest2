@@ -37,7 +37,7 @@ it('passes light options and returns actual canvas dimensions including library 
         return { width: 2400, height: 1000, toDataURL } as unknown as HTMLCanvasElement;
     });
     expect(await captureWorksheetNode(node as unknown as HTMLElement)).toEqual({ pngDataUrl: 'data:image/png;base64,captured', widthPx: 2400, heightPx: 1000 });
-    expect(toCanvas).toHaveBeenCalledWith(node, { backgroundColor: '#ffffff', pixelRatio: 2, width: 1400, height: 600 });
+    expect(toCanvas).toHaveBeenCalledWith(node, expect.objectContaining({ backgroundColor: '#ffffff', pixelRatio: 2, width: 1400, height: 600 }));
     expect(toDataURL).toHaveBeenCalledWith('image/png');
     expect(node.getAttribute('class')).toBe('dark worksheet');
     expect(node.style.cssText).toBe('width: 700px;');
@@ -46,7 +46,7 @@ it('passes light options and returns actual canvas dimensions including library 
 it('expands nested horizontal scrollers and honors the requested pixel ratio', async () => {
     const node = element();
     const scroller = element('qfd', 2000, 600);
-    node.querySelectorAll.mockReturnValue([scroller]);
+    node.querySelectorAll.mockImplementation((selector?: string) => selector?.includes('overflow') ? [scroller] : []);
     vi.mocked(toCanvas).mockResolvedValue({ width: 2000, height: 600, toDataURL: () => 'data:image/png;base64,ok' } as unknown as HTMLCanvasElement);
     await captureWorksheetNode(node as unknown as HTMLElement, { pixelRatio: 1 });
     expect(scroller.style.setProperty).toHaveBeenCalledWith('width', '2000px', 'important');

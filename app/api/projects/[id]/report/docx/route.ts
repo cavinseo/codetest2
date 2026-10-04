@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { renderFinalReportDocx } from '@/lib/final-report-docx';
-import type { FinalReportModel } from '@/lib/final-report-document';
+import { REPORT_MAX_BYTES, reportDocumentSchema } from '@/lib/final-report-payload';
 
 const log = createLogger('api/report-docx');
 
@@ -19,11 +19,22 @@ export async function POST(
     if (accessResult instanceof NextResponse) return accessResult;
 
     try {
-        const model = await request.json() as FinalReportModel;
-        if (!model || typeof model.fileName !== 'string' || !Array.isArray(model.blocks)) {
+        if (Number(request.headers.get('content-length')) > REPORT_MAX_BYTES) {
+            return NextResponse.json({ error: '보고서 용량이 큽니다.' }, { status: 413 });
+        }
+        const raw = await request.text();
+        if (Buffer.byteLength(raw, 'utf8') > REPORT_MAX_BYTES) {
+            return NextResponse.json({ error: '보고서 용량이 큽니다.' }, { status: 413 });
+        }
+        let input: unknown;
+        try { input = JSON.parse(raw); }
+        catch { return NextResponse.json({ error: '결과보고서 데이터 형식이 올바르지 않습니다.' }, { status: 400 }); }
+        const parsed = reportDocumentSchema.safeParse(input);
+        if (!parsed.success) {
             return NextResponse.json({ error: '결과보고서 데이터 형식이 올바르지 않습니다.' }, { status: 400 });
         }
 
+        const model = parsed.data;
         const blob = await renderFinalReportDocx(model);
         const buffer = await blob.arrayBuffer();
         const fileName = encodeURIComponent(model.fileName);

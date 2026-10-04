@@ -86,6 +86,45 @@ export interface AttributeDraftInput {
     };
 }
 
+// WS-3 제품의 내부 가치창출 활동과 외부 참여자 간 가치 흐름 분석.
+export const valueAnalysisResultSchema = z.object({
+    summary: z.string().min(1),
+    valueChain: z.array(z.object({
+        activity: z.string().min(1),
+        category: z.enum(['primary', 'support']),
+        analysis: z.string().min(1),
+        opportunity: z.string().min(1),
+    })).min(2).refine(items => items.some(item => item.category === 'primary') && items.some(item => item.category === 'support'), '본원활동과 지원활동을 모두 포함해야 합니다.'),
+    valueSystem: z.array(z.object({
+        actor: z.string().min(1),
+        position: z.enum(['upstream', 'company', 'downstream', 'customer', 'partner']),
+        valueFlow: z.string().min(1),
+        opportunity: z.string().min(1),
+    })).min(1),
+    assumptions: z.array(z.string().min(1)).default([]),
+    nextActions: z.array(z.string().min(1)).min(1),
+});
+
+export type ValueAnalysisResult = z.infer<typeof valueAnalysisResultSchema>;
+
+export const valueAnalysisContextSchema = z.object({
+    productName: z.string().optional(),
+    existingRows: z.array(z.object({
+        marketSegment: z.string().nullish(),
+        customerName: z.string().nullish(),
+        customerNeed: z.string().nullish(),
+        benefit: z.string().nullish(),
+        attribute: z.string().nullish(),
+        techCapability: z.string().nullish(),
+    })).optional(),
+});
+
+export type ValueAnalysisContext = z.infer<typeof valueAnalysisContextSchema>;
+
+export interface ValueAnalysisInput extends AttributeDraftInput, ValueAnalysisContext {
+    specFunctions?: Array<{ name: string; level: string; technology?: string | null }>;
+}
+
 // ─────────────────────────────────────────
 // 작업 3: WS-2 AS-IS 스펙표 FAST 초안
 // ─────────────────────────────────────────
@@ -129,6 +168,7 @@ export interface AiProvider {
     isAvailable(): Promise<boolean>;
     mentorQuestions(input: MentorQuestionsInput): Promise<MentorQuestionsResult>;
     attributeDraft(input: AttributeDraftInput): Promise<AttributeDraftResult>;
+    valueAnalysis(input: ValueAnalysisInput): Promise<ValueAnalysisResult>;
     specDraft(input: SpecDraftInput): Promise<SpecDraftTree>;
 }
 

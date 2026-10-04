@@ -11,6 +11,7 @@ const FORMS_API_BASE = 'https://forms.googleapis.com/v1/forms';
 const fetchMock = vi.fn();
 
 beforeEach(() => {
+    fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
 });
 
@@ -61,11 +62,17 @@ const FORM_STRUCTURE = {
     ],
 };
 
+const QUESTION_PAIRS = [
+    { requirementId: 'req_1', functionalQuestionId: 'q1', dysfunctionalQuestionId: 'q2' },
+    { requirementId: 'req_2', functionalQuestionId: 'q3', dysfunctionalQuestionId: 'q4' },
+];
+
 describe('createKanoForm', () => {
     it('폼을 만들고 요구사항마다 긍정·부정 질문을 붙인다', async () => {
         fetchMock
             .mockResolvedValueOnce(ok({ formId: 'form_abc', responderUri: 'https://forms.gle/xyz' }))
-            .mockResolvedValueOnce(ok({}));
+            .mockResolvedValueOnce(ok({}))
+            .mockResolvedValueOnce(ok(FORM_STRUCTURE));
 
         const result = await createKanoForm('token_1', 'KS-QFD', REQUIREMENTS);
 
@@ -73,9 +80,10 @@ describe('createKanoForm', () => {
             formId: 'form_abc',
             formUrl: 'https://forms.gle/xyz',
             editUrl: 'https://docs.google.com/forms/d/form_abc/edit',
+            questionPairs: QUESTION_PAIRS,
         });
 
-        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock).toHaveBeenCalledTimes(3);
 
         const [createUrl, createInit] = fetchMock.mock.calls[0];
         expect(createUrl).toBe(FORMS_API_BASE);
@@ -126,7 +134,8 @@ describe('createKanoForm', () => {
     it('응답 주소가 오지 않으면 폼 ID 로 조립한 주소를 쓴다', async () => {
         fetchMock
             .mockResolvedValueOnce(ok({ formId: 'form_abc' }))
-            .mockResolvedValueOnce(ok({}));
+            .mockResolvedValueOnce(ok({}))
+            .mockResolvedValueOnce(ok(FORM_STRUCTURE));
 
         const result = await createKanoForm('token_1', 'KS-QFD', REQUIREMENTS);
 
@@ -168,15 +177,15 @@ describe('getFormResponses', () => {
                 }],
             }));
 
-        const result = await getFormResponses('token_1', 'form_abc');
+        const result = await getFormResponses('token_1', 'form_abc', QUESTION_PAIRS);
 
         expect(result).toEqual({
             responses: [{
                 respondentEmail: 'r@example.com',
                 submittedAt: '2026-08-27T00:00:00.000Z',
                 answers: [
-                    { requirementIndex: 0, functional: 'LIKE', dysfunctional: 'TOLERATE' },
-                    { requirementIndex: 1, functional: 'LIKE', dysfunctional: 'DISLIKE' },
+                    { requirementId: 'req_1', functional: 'LIKE', dysfunctional: 'TOLERATE' },
+                    { requirementId: 'req_2', functional: 'LIKE', dysfunctional: 'DISLIKE' },
                 ],
             }],
         });
@@ -190,16 +199,15 @@ describe('getFormResponses', () => {
             .mockResolvedValueOnce(ok(FORM_STRUCTURE))
             .mockResolvedValueOnce(ok({}));
 
-        await expect(getFormResponses('token_1', 'form_abc')).resolves.toEqual({ responses: [] });
+        await expect(getFormResponses('token_1', 'form_abc', QUESTION_PAIRS)).resolves.toEqual({ responses: [] });
     });
 
-    it('빠진 답변과 알 수 없는 답변을 모두 NEUTRAL 로 채운다', async () => {
-        // NEUTRAL 은 응답자가 실제로 고를 수 있는 값이기도 하다. 그래서 조회 실패와
-        // 진짜 "아무런느낌이 없다" 가 결과에서 구분되지 않는다. 현재 동작을 고정만 한다.
+    it('빠진 답변과 알 수 없는 답변은 중립으로 바꾸지 않고 가져오기를 막는다', async () => {
         fetchMock
             .mockResolvedValueOnce(ok(FORM_STRUCTURE))
             .mockResolvedValueOnce(ok({
                 responses: [{
+                    responseId: 'response_1',
                     answers: {
                         q1: { textAnswers: { answers: [{ value: '알 수 없는 보기' }] } },
                         // q2·q3·q4 는 응답에 아예 없다.
@@ -207,35 +215,25 @@ describe('getFormResponses', () => {
                 }],
             }));
 
-        const result = await getFormResponses('token_1', 'form_abc');
-
-        expect(result.responses[0].answers).toEqual([
-            { requirementIndex: 0, functional: 'NEUTRAL', dysfunctional: 'NEUTRAL' },
-            { requirementIndex: 1, functional: 'NEUTRAL', dysfunctional: 'NEUTRAL' },
-        ]);
-        expect(result.responses[0].respondentEmail).toBeUndefined();
+        await expect(getFormResponses('token_1', 'form_abc', QUESTION_PAIRS))
+            .rejects.toThrow('설문 응답 형식을 확인할 수 없습니다.');
     });
 
-    it('제출 시각이 없으면 조회 시각으로 채운다', async () => {
+    it('생성 뒤 질문이 바뀌면 잘못된 요구사항으로 저장하지 않고 막는다', async () => {
         fetchMock
             .mockResolvedValueOnce(ok({ items: [{ questionItem: { question: { questionId: 'q1' } } }] }))
             .mockResolvedValueOnce(ok({
                 responses: [{ answers: { q1: { textAnswers: { answers: [{ value: '당연하다' }] } } } }],
             }));
 
-        const result = await getFormResponses('token_1', 'form_abc');
-
-        // 질문이 홀수면 마지막 쌍의 부정 질문이 없어 NEUTRAL 로 채워진다.
-        expect(result.responses[0].answers).toEqual([
-            { requirementIndex: 0, functional: 'EXPECT', dysfunctional: 'NEUTRAL' },
-        ]);
-        expect(new Date(result.responses[0].submittedAt).toISOString()).toBe(result.responses[0].submittedAt);
+        await expect(getFormResponses('token_1', 'form_abc', QUESTION_PAIRS))
+            .rejects.toThrow('설문 문항이 변경되었습니다. 새 설문을 생성해 주세요.');
     });
 
     it('폼 구조 조회가 실패하면 던진다', async () => {
         fetchMock.mockResolvedValueOnce(denied());
 
-        await expect(getFormResponses('token_1', 'form_abc'))
+        await expect(getFormResponses('token_1', 'form_abc', QUESTION_PAIRS))
             .rejects.toThrow('Failed to fetch form structure');
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
@@ -245,7 +243,69 @@ describe('getFormResponses', () => {
             .mockResolvedValueOnce(ok(FORM_STRUCTURE))
             .mockResolvedValueOnce(denied());
 
-        await expect(getFormResponses('token_1', 'form_abc'))
+        await expect(getFormResponses('token_1', 'form_abc', QUESTION_PAIRS))
             .rejects.toThrow('Failed to fetch responses');
+    });
+
+    it('익명 응답은 Google 응답 ID 별로 구분한다', async () => {
+        fetchMock
+            .mockResolvedValueOnce(ok(FORM_STRUCTURE))
+            .mockResolvedValueOnce(ok({
+                responses: [{
+                    responseId: 'response_1',
+                    lastSubmittedTime: '2026-08-27T00:00:00.000Z',
+                    answers: {
+                        q1: { textAnswers: { answers: [{ value: '마음에 든다' }] } },
+                        q2: { textAnswers: { answers: [{ value: '당연하다' }] } },
+                        q3: { textAnswers: { answers: [{ value: '하는수 없다' }] } },
+                        q4: { textAnswers: { answers: [{ value: '마음에 안든다' }] } },
+                    },
+                }],
+            }));
+
+        const result = await getFormResponses('token_1', 'form_abc', QUESTION_PAIRS);
+
+        expect(result.responses[0].respondentEmail).toBe('anonymous-response_1@google-forms.invalid');
+    });
+
+    it('폼에서 질문을 재정렬해도 발급 시 연결한 요구사항으로 매핑한다', async () => {
+        fetchMock
+            .mockResolvedValueOnce(ok({
+                items: [
+                    { questionItem: { question: { questionId: 'q3' } } },
+                    { questionItem: { question: { questionId: 'q4' } } },
+                    { questionItem: { question: { questionId: 'q1' } } },
+                    { questionItem: { question: { questionId: 'q2' } } },
+                ],
+            }))
+            .mockResolvedValueOnce(ok({
+                responses: [{
+                    respondentEmail: 'r@example.com',
+                    answers: {
+                        q1: { textAnswers: { answers: [{ value: '마음에 든다' }] } },
+                        q2: { textAnswers: { answers: [{ value: '당연하다' }] } },
+                        q3: { textAnswers: { answers: [{ value: '하는수 없다' }] } },
+                        q4: { textAnswers: { answers: [{ value: '마음에 안든다' }] } },
+                    },
+                }],
+            }));
+
+        const result = await getFormResponses('token_1', 'form_abc', QUESTION_PAIRS);
+
+        expect(result.responses[0].answers).toEqual([
+            { requirementId: 'req_1', functional: 'LIKE', dysfunctional: 'EXPECT' },
+            { requirementId: 'req_2', functional: 'TOLERATE', dysfunctional: 'DISLIKE' },
+        ]);
+    });
+
+    it('모든 Google Forms 응답 페이지를 가져온다', async () => {
+        fetchMock
+            .mockResolvedValueOnce(ok(FORM_STRUCTURE))
+            .mockResolvedValueOnce(ok({ responses: [], nextPageToken: 'page 2' }))
+            .mockResolvedValueOnce(ok({ responses: [] }));
+
+        await expect(getFormResponses('token_1', 'form_abc', QUESTION_PAIRS)).resolves.toEqual({ responses: [] });
+
+        expect(fetchMock.mock.calls[2][0]).toBe(`${FORMS_API_BASE}/form_abc/responses?pageToken=page%202`);
     });
 });

@@ -15,6 +15,14 @@ interface Requirement {
     order: number;
 }
 
+export interface KanoFormQuestionPair {
+    requirementId: string;
+    functionalQuestionId: string;
+    dysfunctionalQuestionId: string;
+}
+
+export class GoogleFormStructureError extends Error {}
+
 const KANO_CHOICES = [
     '마음에 든다',
     '당연하다',
@@ -43,7 +51,7 @@ export async function createKanoForm(
     accessToken: string,
     projectName: string,
     requirements: Requirement[]
-): Promise<{ formId: string; formUrl: string; editUrl: string }> {
+): Promise<{ formId: string; formUrl: string; editUrl: string; questionPairs: KanoFormQuestionPair[] }> {
     // Step 1: 빈 폼 생성
     const createRes = await fetch(FORMS_API_BASE, {
         method: 'POST',
@@ -151,11 +159,36 @@ export async function createKanoForm(
         throw new Error(`Form update failed: ${JSON.stringify(err)}`);
     }
 
+    const structureRes = await fetch(`${FORMS_API_BASE}/${formId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!structureRes.ok) throw new Error('Failed to fetch created form structure');
+    const questionIds = questionIdsFromForm(await structureRes.json());
+    if (questionIds.length !== requirements.length * 2) {
+        throw new GoogleFormStructureError('생성한 설문의 질문 구조를 확인할 수 없습니다.');
+    }
+
     return {
         formId,
         formUrl: form.responderUri || `https://docs.google.com/forms/d/${formId}/viewform`,
         editUrl: `https://docs.google.com/forms/d/${formId}/edit`,
+        questionPairs: requirements.map((requirement, index) => ({
+            requirementId: requirement.id,
+            functionalQuestionId: questionIds[index * 2],
+            dysfunctionalQuestionId: questionIds[index * 2 + 1],
+        })),
     };
+}
+
+function questionIdsFromForm(form: { items?: Array<{ questionItem?: { question?: { questionId?: string } } }> }): string[] {
+    return (form.items ?? []).flatMap((item) => {
+        const questionId = item.questionItem?.question?.questionId;
+        return questionId ? [questionId] : [];
+    });
+}
+
+function kanoAnswer(value: unknown): string | null {
+    return typeof value === 'string' ? ANSWER_MAP[value] ?? null : null;
 }
 
 /**
@@ -163,12 +196,13 @@ export async function createKanoForm(
  */
 export async function getFormResponses(
     accessToken: string,
-    formId: string
+    formId: string,
+    questionPairs: KanoFormQuestionPair[]
 ): Promise<{
     responses: Array<{
         respondentEmail?: string;
         answers: Array<{
-            requirementIndex: number;
+            requirementId: string;
             functional: string;
             dysfunctional: string;
         }>;
@@ -184,52 +218,54 @@ export async function getFormResponses(
         throw new Error('Failed to fetch form structure');
     }
 
-    // 응답 가져오기
-    const responsesRes = await fetch(`${FORMS_API_BASE}/${formId}/responses`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!responsesRes.ok) {
-        throw new Error('Failed to fetch responses');
-    }
-
-    const responsesData = await responsesRes.json();
     const formData = await formRes.json();
 
-    // 질문 ID 매핑 (짝수 인덱스 = 긍정, 홀수 인덱스 = 부정)
-    const questionIds: string[] = [];
-    if (formData.items) {
-        for (const item of formData.items) {
-            if (item.questionItem?.question?.questionId) {
-                questionIds.push(item.questionItem.question.questionId);
-            }
-        }
+    const availableQuestionIds = new Set(questionIdsFromForm(formData));
+    if (questionPairs.some((pair) => !availableQuestionIds.has(pair.functionalQuestionId)
+        || !availableQuestionIds.has(pair.dysfunctionalQuestionId))) {
+        throw new GoogleFormStructureError('설문 문항이 변경되었습니다. 새 설문을 생성해 주세요.');
     }
 
-    const parsedResponses = (responsesData.responses || []).map((response: any) => {
+    const rawResponses: any[] = [];
+    let pageToken: string | undefined;
+    do {
+        const query = pageToken ? `?pageToken=${encodeURIComponent(pageToken)}` : '';
+        const responsesRes = await fetch(`${FORMS_API_BASE}/${formId}/responses${query}`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!responsesRes.ok) throw new Error('Failed to fetch responses');
+        const page = await responsesRes.json();
+        rawResponses.push(...(page.responses ?? []));
+        pageToken = typeof page.nextPageToken === 'string' ? page.nextPageToken : undefined;
+    } while (pageToken);
+
+    const parsedResponses = rawResponses.map((response: any) => {
+        const respondentEmail = response.respondentEmail
+            ?? (response.responseId ? `anonymous-${response.responseId}@google-forms.invalid` : undefined);
+        if (!respondentEmail) {
+            throw new GoogleFormStructureError('응답자 식별 정보를 확인할 수 없습니다.');
+        }
         const answers: Array<{
-            requirementIndex: number;
+            requirementId: string;
             functional: string;
             dysfunctional: string;
         }> = [];
 
-        // 질문을 쌍으로 그룹화 (긍정/부정)
-        for (let i = 0; i < questionIds.length; i += 2) {
-            const functionalQId = questionIds[i];
-            const dysfunctionalQId = questionIds[i + 1];
-
-            const functionalAnswer = response.answers?.[functionalQId]?.textAnswers?.answers?.[0]?.value || '';
-            const dysfunctionalAnswer = response.answers?.[dysfunctionalQId]?.textAnswers?.answers?.[0]?.value || '';
-
+        for (const pair of questionPairs) {
+            const functionalAnswer = kanoAnswer(response.answers?.[pair.functionalQuestionId]?.textAnswers?.answers?.[0]?.value);
+            const dysfunctionalAnswer = kanoAnswer(response.answers?.[pair.dysfunctionalQuestionId]?.textAnswers?.answers?.[0]?.value);
+            if (!functionalAnswer || !dysfunctionalAnswer) {
+                throw new GoogleFormStructureError('설문 응답 형식을 확인할 수 없습니다.');
+            }
             answers.push({
-                requirementIndex: Math.floor(i / 2),
-                functional: ANSWER_MAP[functionalAnswer] || 'NEUTRAL',
-                dysfunctional: ANSWER_MAP[dysfunctionalAnswer] || 'NEUTRAL',
+                requirementId: pair.requirementId,
+                functional: functionalAnswer,
+                dysfunctional: dysfunctionalAnswer,
             });
         }
 
         return {
-            respondentEmail: response.respondentEmail,
+            respondentEmail,
             answers,
             submittedAt: response.lastSubmittedTime || new Date().toISOString(),
         };

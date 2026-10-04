@@ -96,6 +96,7 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
             projectId: PROJECT_ID,
             invitedBy: USER.userId,
             writePolicy: 'append',
+            replaceExistingRespondents: false,
             requirements: REQUIREMENTS,
             answers: [
                 {

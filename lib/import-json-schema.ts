@@ -10,6 +10,7 @@
 // 쓴다. createdAt·respondedAt 은 신원·소유권 열이 아니라 실제 설문·기록 시각이므로
 // 값이 있으면 그대로 복원한다.
 import { z } from 'zod';
+import { hasDuplicateTechnicalNames } from './qfd-technical-sync';
 
 // 한 컬렉션에 한 번에 넣을 수 있는 행수 상한.
 //
@@ -125,6 +126,112 @@ const technicalBenchmarkRow = z.object({
     value: z.string(),
 }).strict();
 
+// ── 독립 워크시트 ─────────────────────────────────────────────
+// 다른 행을 참조하지 않는 워크시트는 원본 ID 대신 새 ID로 바로 복원할 수 있다.
+const techTreeRow = z.object({
+    ...identity,
+    customerVoice: z.string().nullable().optional(),
+    coreSpec: z.string().nullable().optional(),
+    subSpec: z.string().nullable().optional(),
+    techCharacteristic: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const improvementRow = z.object({
+    ...identity,
+    type: z.enum(['need', 'feature']),
+    content: z.string().nullable().optional(),
+    improvementRate: z.string().nullable().optional(),
+    devProportion: z.string().nullable().optional(),
+    priority: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const targetSpecRow = z.object({
+    ...identity,
+    category: z.string().nullable().optional(),
+    subCategory: z.string().nullable().optional(),
+    specItem: z.string().nullable().optional(),
+    unit: z.string().nullable().optional(),
+    currentValue: z.string().nullable().optional(),
+    competitorValue: z.string().nullable().optional(),
+    targetValue: z.string().nullable().optional(),
+    note: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const techRoadmapRow = z.object({
+    ...identity,
+    category: z.string().nullable().optional(),
+    techItem: z.string().nullable().optional(),
+    currentLevel: z.string().nullable().optional(),
+    q1: z.string().nullable().optional(),
+    q2: z.string().nullable().optional(),
+    q3: z.string().nullable().optional(),
+    q4: z.string().nullable().optional(),
+    targetLevel: z.string().nullable().optional(),
+    owner: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const devPlanRow = z.object({
+    ...identity,
+    phase: z.string().nullable().optional(),
+    task: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+    startDate: z.string().nullable().optional(),
+    endDate: z.string().nullable().optional(),
+    owner: z.string().nullable().optional(),
+    status: z.string().default('미시작'),
+    order: z.number().int().default(0),
+}).strict();
+
+const salesEstimateRow = z.object({
+    ...identity,
+    period: z.string().default('Y'),
+    customer: z.string().nullable().optional(),
+    amount: z.number().finite().default(0),
+    futureAmount: z.number().finite().default(0),
+    competitor: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const assetRow = z.object({
+    ...identity,
+    type: z.enum(['CORE', 'COMPLEMENTARY']),
+    category: z.string().nullable().optional(),
+    content: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const fundingPlanRow = z.object({
+    ...identity,
+    category: z.string().nullable().optional(),
+    item: z.string().nullable().optional(),
+    year1: z.number().finite().default(0),
+    year2: z.number().finite().nullable().optional(),
+    year3: z.number().finite().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const fundingSourceRow = z.object({
+    ...identity,
+    category: z.string().nullable().optional(),
+    year1: z.string().nullable().optional(),
+    year2: z.string().nullable().optional(),
+    year3: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const fitnessMatrixRow = z.object({
+    ...identity,
+    marketsJson: z.string(),
+    matrixJson: z.string(),
+    managerComment: z.string().nullable().optional(),
+    consultantNote: z.string().nullable().optional(),
+    updatedAt: z.string().datetime().optional(),
+}).strict();
+
 export const importJsonSchema = z.object({
     // export 는 '1.0-prisma' 를 쓴다. 옛 파일에는 숫자가 들어 있을 수 있다.
     version: z.union([z.string(), z.number()]).optional(),
@@ -135,9 +242,14 @@ export const importJsonSchema = z.object({
         name: z.string().optional(),
         description: z.string().nullable().optional(),
         detailedDescription: z.string().nullable().optional(),
+        additionalMarketData: z.string().max(20_000).nullable().optional(),
+        includeAdditionalMarketDataInReport: z.boolean().optional(),
     }).strict().optional(),
     customerRequirements: rows(requirementRow).optional(),
-    technicalCharacteristics: rows(technicalRow).optional(),
+    technicalCharacteristics: rows(technicalRow).refine(
+        technicals => !hasDuplicateTechnicalNames(technicals.map(tech => tech.name)),
+        '중복된 기술특성이 있습니다. 기술특성 이름을 확인해 주세요.'
+    ).optional(),
     specFunctions: rows(specRow).optional(),
     productAttributes: rows(attributeRow).optional(),
     attributeFitnesses: rows(fitnessRow).optional(),
@@ -146,6 +258,18 @@ export const importJsonSchema = z.object({
     techCorrelations: rows(correlationRow).optional(),
     benchmarks: rows(benchmarkRow).optional(),
     technicalBenchmarks: rows(technicalBenchmarkRow).optional(),
+    techTreeEntries: rows(techTreeRow).optional(),
+    improvementItems: rows(improvementRow).optional(),
+    targetSpecs: rows(targetSpecRow).optional(),
+    techRoadmaps: rows(techRoadmapRow).optional(),
+    devPlans: rows(devPlanRow).optional(),
+    salesEstimates: rows(salesEstimateRow).optional(),
+    assetItems: rows(assetRow).optional(),
+    fundingPlans: rows(fundingPlanRow).optional(),
+    fundingSources: rows(fundingSourceRow).optional(),
+    // 전체 백업은 행이 없다는 사실도 보존해야 한다. null 은 대상 프로젝트의
+    // 기존 적합도 매트릭스를 지우라는 의미이고, 키가 없으면 부분 복원이다.
+    fitnessMatrix: fitnessMatrixRow.nullable().optional(),
 }).strict();
 
 export type ImportJsonPayload = z.infer<typeof importJsonSchema>;

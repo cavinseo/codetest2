@@ -16,6 +16,7 @@ export interface PersistKanoUploadInput {
     writePolicy: 'append' | 'replace';
     requirements: { id: string }[];
     answers: ParsedKanoUploadAnswer[];
+    replaceExistingRespondents?: boolean;
 }
 
 export interface PersistKanoUploadResult {
@@ -25,6 +26,12 @@ export interface PersistKanoUploadResult {
 
 const EXCEL_INVITATION_DURATION_MS = 1000 * 60 * 60 * 24 * 365;
 
+export class KanoUploadConflictError extends Error {
+    constructor() {
+        super('이미 저장된 응답이 있습니다. 같은 응답자의 데이터를 바꾸려면 응답 교체를 선택하세요.');
+    }
+}
+
 function uniqueRespondentEmails(answers: ParsedKanoUploadAnswer[]) {
     return Array.from(new Set(answers.map((answer) => answer.respondentEmail)));
 }
@@ -33,7 +40,8 @@ async function clearPreviousUploadResponses(
     tx: Prisma.TransactionClient,
     projectId: string,
     writePolicy: PersistKanoUploadInput['writePolicy'],
-    respondentEmails: string[]
+    respondentEmails: string[],
+    replaceExistingRespondents: boolean
 ) {
     if (writePolicy === 'replace') {
         await tx.kanoResponse.deleteMany({ where: { projectId } });
@@ -41,9 +49,14 @@ async function clearPreviousUploadResponses(
         return;
     }
 
-    await tx.kanoResponse.deleteMany({
+    const existingResponses = await tx.kanoResponse.findMany({
         where: { projectId, respondentEmail: { in: respondentEmails } },
+        select: { respondentEmail: true },
     });
+    if (existingResponses.length === 0) return;
+    if (!replaceExistingRespondents) throw new KanoUploadConflictError();
+
+    await tx.kanoResponse.deleteMany({ where: { projectId, respondentEmail: { in: respondentEmails } } });
 }
 
 async function getStoredInvitationIds(
@@ -105,12 +118,14 @@ function buildKanoResponseRows(
 export async function persistKanoUploadAnswers(
     input: PersistKanoUploadInput
 ): Promise<PersistKanoUploadResult> {
-    const { projectId, invitedBy, writePolicy, requirements, answers } = input;
+    const { projectId, invitedBy, writePolicy, requirements, answers, replaceExistingRespondents = false } = input;
     const respondentEmails = uniqueRespondentEmails(answers);
     const respondedAt = new Date();
 
     await prisma.$transaction(async (tx) => {
-        await clearPreviousUploadResponses(tx, projectId, writePolicy, respondentEmails);
+        await clearPreviousUploadResponses(
+            tx, projectId, writePolicy, respondentEmails, replaceExistingRespondents
+        );
         const invitationIdsByEmail = await getStoredInvitationIds(
             tx, projectId, invitedBy, respondentEmails, respondedAt
         );

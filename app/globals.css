@@ -15,6 +15,7 @@
 .light {
   --background: #f1f5f9;
   --foreground: #0f172a;
+  color-scheme: light;
 }
 
 body {
@@ -312,6 +313,11 @@ body {
   background-color: #ffffff !important;
 }
 
+/* WS-2 입력의 포커스 클래스는 기본 bg-gray-800 보정에 포함되지 않는다. */
+.light .focus\:bg-gray-800:focus {
+  background-color: #ffffff !important;
+}
+
 .light [class*="bg-gray-950/"],
 .light [class*="bg-gray-900/"],
 .light [class*="bg-gray-800/"],
@@ -541,6 +547,14 @@ body {
 .light .card-hover:hover {
   background-color: #ffffff !important;
   border-color: rgba(99, 102, 241, 0.26) !important;
+}
+
+/* 그림을 만드는 동안 색상 전환과 커서 표시를 멈춘다. */
+.worksheet-image-capture,
+.worksheet-image-capture * {
+  transition: none !important;
+  animation: none !important;
+  caret-color: transparent !important;
 }
 
 .light .input {

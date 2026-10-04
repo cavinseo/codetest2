@@ -101,7 +101,7 @@ it('embeds JPEG report images as JPEG media without mislabeling them as PNG', as
     expect(contentTypes).toMatch(/<Default(?=[^>]*\bExtension="jpe?g")(?=[^>]*\bContentType="image\/jpeg")[^>]*\/>/);
 });
 
-it('serializes overview fields and all eight worksheet analyses into the corresponding Word sections', async () => {
+it('serializes overview fields and worksheet analyses while keeping WS-4 table-only', async () => {
     const worksheets: FinalReportWorksheetData = {
         salesEstimates: [], specFunctions: [], productAttributes: [], requirements: [], kanoAggregation: [],
         competitiveAssessment: [], improvementNeeds: [], improvementFeatures: [], techTree: [], targetSpecs: [],
@@ -124,12 +124,12 @@ it('serializes overview fields and all eight worksheet analyses into the corresp
     const { xml } = await unpack(document);
     for (const text of ['검수 기업', '검수 제품', '교육 서비스 시장', '현장 교사']) expect(xml).toContain(text);
     const orderedTexts = [
-        '(AS-IS) 스펙표', '기능분석 본문 &amp; &lt;근거&gt;',
-        '제품속성서', '제품속성 분석 본문', '제품/서비스 속성 적합도', '적합도 분석 본문',
-        '최종 제품/서비스 제공 스펙 List', '정확도 항목', '목표 정확도 근거',
-        '핵심자산 도출표', '핵심자산 분석 본문', '보완자산 도출표', '보완자산 분석 본문',
-        '개선 학습지원 서비스', '개선 서비스의 구현 방향', 'KS-QFD 개선 방향성',
-        '자금소요계획표', '소요자금 분석 본문', '자금조달계획표', '조달자금 분석 본문',
+        '(AS-IS) 제품/서비스 스펙표', '기능분석 본문 &amp; &lt;근거&gt;',
+        '제품속성표', '제품속성 분석 본문', '제품/서비스 속성 적합도',
+        'Ⅳ. (To-Be) 최종 고객요구사항기반 제품정의서', '정확도 항목', '목표 정확도 근거', '최종 제품/서비스 제공 스펙',
+        '개선 학습지원 서비스', '개선 서비스의 구현 방향', 'KS-QFD를 활용한 제품/서비스 개선 방향성',
+        'Ⅴ. 자산 및 자금계획', '핵심자산 및 보완자산', '핵심자산 분석 본문', '보완자산 분석 본문',
+        '자금소요계획 (WS-15)', '소요자금 분석 본문', '자금조달계획 (WS-16)', '조달자금 분석 본문',
     ];
     let previous = -1;
     for (const text of orderedTexts) {
@@ -137,5 +137,5 @@ it('serializes overview fields and all eight worksheet analyses into the corresp
         expect(index, text).toBeGreaterThan(previous);
         previous = index;
     }
-    for (const text of ['이전 시장', '이전 고객', '이전 통합 설명', '이전 개선 제품명', '이전 개선 설명']) expect(xml).not.toContain(text);
+    for (const text of ['적합도 분석 본문', '이전 시장', '이전 고객', '이전 통합 설명', '이전 개선 제품명', '이전 개선 설명']) expect(xml).not.toContain(text);
 });

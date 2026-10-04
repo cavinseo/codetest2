@@ -7,7 +7,7 @@ const m = vi.hoisted(() => ({ access: vi.fn(), update: vi.fn(), find: vi.fn(), c
 vi.mock('../lib/authorization', () => ({ requireProjectAccess: m.access }));
 vi.mock('../lib/prisma', () => ({ prisma: {
     project: { findUnique: m.find, update: m.update },
-    ...Object.fromEntries(['salesEstimate', 'specFunction', 'productAttribute', 'attributeFitness', 'customerRequirement', 'kanoResponse', 'technicalCharacteristic', 'qFDMatrix', 'techTreeEntry', 'improvementItem', 'targetSpec', 'techRoadmap', 'devPlan', 'assetItem', 'fundingPlan', 'fundingSource'].map(key => [key, { count: m.count }])),
+    ...Object.fromEntries(['salesEstimate', 'specFunction', 'productAttribute', 'attributeFitness', 'customerRequirement', 'kanoResponse', 'technicalCharacteristic', 'qFDMatrix', 'techTreeEntry', 'improvementItem', 'targetSpec', 'techRoadmap', 'assetItem', 'fundingPlan', 'fundingSource'].map(key => [key, { count: m.count }])),
     fitnessMatrix: { findUnique: m.fitness },
 } }));
 import { GET, PATCH } from '../app/api/projects/[id]/overview/route';
@@ -18,7 +18,7 @@ const request = (body?: unknown) => new NextRequest('http://localhost/api/projec
 let stored: Record<string, unknown>;
 beforeEach(() => {
     vi.clearAllMocks();
-    stored = { id: 'p', name: '기존 프로젝트', description: '기존 설명', detailedDescription: '상세', createdAt: new Date(), updatedAt: new Date(), ...details };
+    stored = { id: 'p', name: '기존 프로젝트', companyName: null, owner: { profile: { companyName: '가입 회사' } }, description: '기존 설명', detailedDescription: '상세', createdAt: new Date(), updatedAt: new Date(), ...details };
     m.access.mockResolvedValue({ role: 'OWNER', user: { userId: 'mentee', role: 'MENTEE' } });
     m.update.mockImplementation(async ({ data }) => (stored = { ...stored, ...data }));
     m.find.mockImplementation(async () => stored);
@@ -31,6 +31,45 @@ it('제품명·이미지·시장·고객을 저장하고 새 요청으로 조회
     const loaded = await GET(request(), params);
     expect((await loaded.json()).project).toMatchObject({ ...details, name: '프로젝트' });
     expect(m.find.mock.calls[0][0].select).toMatchObject({ productName: true, productImageDataUrl: true, marketDefinition: true, targetCustomer: true });
+});
+it('Markdown 들여쓰기와 HTML을 변환하지 않고 저장·조회한다', async () => {
+    const richText = {
+        detailedDescription: '    <code>들여쓴 코드</code>\n\n# 제품\n\n<strong>특징</strong>\n',
+        marketDefinition: '    시장 코드\n\n## 시장\n\n<table><tr><td>규모</td></tr></table>\n',
+    };
+    const saved = await PATCH(request({ name: '프로젝트', ...richText }), params);
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).project).toMatchObject(richText);
+    expect((await (await GET(request(), params)).json()).project).toMatchObject(richText);
+});
+it('서식 입력칸을 공백만 남겨 지우면 기존 빈 값 규칙으로 저장한다', async () => {
+    await PATCH(request({ name: '프로젝트', detailedDescription: ' \n ', marketDefinition: ' \n ' }), params);
+    expect(stored).toMatchObject({ detailedDescription: null, marketDefinition: '' });
+});
+it('개요 기업명이 없으면 회원가입 시 입력한 회사명을 기본값으로 표시한다', async () => {
+    const loaded = await GET(request(), params);
+    expect((await loaded.json()).project.companyName).toBe('가입 회사');
+    expect(m.find.mock.calls[0][0].select).toMatchObject({ companyName: true, owner: { select: { profile: { select: { companyName: true } } } } });
+});
+it('개요에서 수정한 기업명을 저장하고 회원가입 값보다 우선 표시한다', async () => {
+    const saved = await PATCH(request({ name: '프로젝트', companyName: '수정한 회사' }), params);
+    expect(saved.status).toBe(200);
+    expect(m.update.mock.calls[0][0].data.companyName).toBe('수정한 회사');
+    expect((await (await GET(request(), params)).json()).project.companyName).toBe('수정한 회사');
+});
+it('기업명이 빠진 기존 저장 요청은 저장된 기업명을 변경하지 않는다', async () => {
+    stored.companyName = '기존 기업';
+    await PATCH(request({ name: '이름만 변경' }), params);
+    expect(m.update.mock.calls[0][0].data).not.toHaveProperty('companyName');
+    expect(stored.companyName).toBe('기존 기업');
+});
+it('기업명을 지우면 회원가입 값으로 다시 채우지 않는다', async () => {
+    await PATCH(request({ name: '프로젝트', companyName: '  ' }), params);
+    expect((await (await GET(request(), params)).json()).project.companyName).toBe('');
+});
+it('기업명이 너무 길면 저장하지 않는다', async () => {
+    expect((await PATCH(request({ name: '프로젝트', companyName: '가'.repeat(301) }), params)).status).toBe(400);
+    expect(m.update).not.toHaveBeenCalled();
 });
 it('기존 저장 요청이 신규 필드를 생략하면 저장된 제품 정보를 보존한다', async () => {
     await PATCH(request({ name: '이름만 변경', description: '기존 설명' }), params);
@@ -66,4 +105,66 @@ it('제품 정보 검증은 입력 객체를 변경하지 않는다', () => {
     const input = { ...details, productName: '  제품  ' };
     expect(validateProductOverview(input).productName).toBe('제품');
     expect(input.productName).toBe('  제품  ');
+});
+
+it('관련이미지 3개를 저장·조회하고 첫 이미지는 기존 단일 이미지 필드에도 보존한다', async () => {
+    const relatedImages = [1, 2, 3].map(widthPx => ({ dataUrl: png, widthPx, heightPx: 1 }));
+    const response = await PATCH(request({ name: '프로젝트', relatedImages }), params);
+    expect(response.status).toBe(200);
+    expect((await response.json()).project).toMatchObject({ relatedImages, productImageDataUrl: png, productImageWidthPx: 1 });
+    expect((await (await GET(request(), params)).json()).project.relatedImages).toEqual(relatedImages);
+    expect(m.find.mock.calls[0][0].select.relatedImages).toBe(true);
+    await PATCH(request({ name: '이름만 변경' }), params);
+    expect(stored.relatedImages).toEqual(relatedImages);
+});
+
+it('기존 단일 이미지를 목록으로 조회하며 전체 삭제 후 다시 나타나지 않는다', async () => {
+    expect((await (await GET(request(), params)).json()).project.relatedImages).toEqual([{ dataUrl: png, widthPx: 1, heightPx: 1 }]);
+    await PATCH(request({ name: '프로젝트', relatedImages: [] }), params);
+    expect(stored).toMatchObject({ relatedImages: [], productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null });
+    expect((await (await GET(request(), params)).json()).project.relatedImages).toEqual([]);
+});
+
+it.each([
+    { relatedImages: Array.from({ length: 4 }, () => ({ dataUrl: png, widthPx: 1, heightPx: 1 })) },
+    { relatedImages: [{ dataUrl: 'data:image/svg+xml;base64,PHN2Zz4=', widthPx: 1, heightPx: 1 }] },
+    { relatedImages: [{ dataUrl: png, widthPx: 0, heightPx: 1 }] },
+    { relatedImages: [{ dataUrl: png }] },
+    { relatedImages: [{ dataUrl: 'data:image/png;base64,' + 'a'.repeat(1_000_000), widthPx: 1, heightPx: 1 }] },
+])('잘못된 관련이미지 목록과 3개 초과 요청을 서버에서 거절한다 %#', async ({ relatedImages }) => {
+    expect((await PATCH(request({ name: '프로젝트', relatedImages }), params)).status).toBe(400);
+    expect(m.update).not.toHaveBeenCalled();
+    expect(stored.productImageDataUrl).toBe(png);
+});
+
+it('추가 시장 자료의 줄바꿈과 들여쓰기를 저장·재조회하고 생략 요청에서는 보존한다', async () => {
+    const additionalMarketData = '시장 규모 120억원\n  출처: 시장 조사 보고서';
+    const saved = await PATCH(request({ name: '프로젝트', additionalMarketData }), params);
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).project.additionalMarketData).toBe(additionalMarketData);
+    expect((await (await GET(request(), params)).json()).project.additionalMarketData).toBe(additionalMarketData);
+    expect(m.find.mock.calls[0][0].select.additionalMarketData).toBe(true);
+    await PATCH(request({ name: '이름만 변경' }), params);
+    expect(stored.additionalMarketData).toBe(additionalMarketData);
+    expect(m.update.mock.calls[1][0].data).not.toHaveProperty('additionalMarketData');
+});
+
+it('추가 시장 자료의 보고서 반영 체크를 저장하고 조회한다', async () => {
+    expect((await PATCH(request({ name: '프로젝트', includeAdditionalMarketDataInReport: true }), params)).status).toBe(200);
+    expect(stored.includeAdditionalMarketDataInReport).toBe(true);
+    expect((await (await GET(request(), params)).json()).project.includeAdditionalMarketDataInReport).toBe(true);
+    expect(m.find.mock.calls[0][0].select.includeAdditionalMarketDataInReport).toBe(true);
+});
+
+it.each(['', null])('추가 시장 자료의 명시적 삭제를 보존한다 (%s)', async additionalMarketData => {
+    stored.additionalMarketData = '기존 자료';
+    expect((await PATCH(request({ name: '프로젝트', additionalMarketData }), params)).status).toBe(200);
+    expect((await (await GET(request(), params)).json()).project.additionalMarketData).toBe(additionalMarketData);
+});
+
+it('추가 시장 자료가 제한을 초과하면 기존 내용을 덮어쓰지 않는다', async () => {
+    stored.additionalMarketData = '기존 자료';
+    expect((await PATCH(request({ name: '프로젝트', additionalMarketData: '가'.repeat(20_001) }), params)).status).toBe(400);
+    expect(m.update).not.toHaveBeenCalled();
+    expect(stored.additionalMarketData).toBe('기존 자료');
 });

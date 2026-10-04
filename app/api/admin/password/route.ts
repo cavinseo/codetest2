@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
         }
 
         const rateKey = `password-change:${authResult.userId}:${clientIpFrom(request.headers)}`;
-        const limit = consumeRateLimit(rateKey, LOGIN_RATE_LIMIT);
+        const limit = await consumeRateLimit(rateKey, LOGIN_RATE_LIMIT);
         if (!limit.allowed) {
             return NextResponse.json({ error: `확인 시도가 너무 많습니다. ${limit.retryAfterSeconds}초 후 다시 시도하세요.` }, {
                 status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) },
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
             }
         );
 
-        resetRateLimit(rateKey);
+        await resetRateLimit(rateKey);
         log.info('비밀번호 변경 완료', { userId: user.id });
         return NextResponse.json({
             success: true,

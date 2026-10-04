@@ -51,7 +51,7 @@ it('배정 해제되어 접근이 거절되면 코멘트를 조회하거나 저�
     expect((await POST(req('POST', { content: '의견' }), params)).status).toBe(403);
     expect(m.project).not.toHaveBeenCalled(); expect(m.create).not.toHaveBeenCalled();
 });
-it.each(['', 'import', 'unknown'])('워크시트 ID %s는 거절한다', async worksheetId => {
+it.each(['', 'import', 'unknown', 'dev-plan'])('워크시트 ID %s는 거절한다', async worksheetId => {
     expect((await POST(req('POST', { content: '의견' }, worksheetId), params)).status).toBe(400);
     expect(m.create).not.toHaveBeenCalled();
 });

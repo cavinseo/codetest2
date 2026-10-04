@@ -6,6 +6,10 @@
 // 남고 워크시트로 돌아가지 않는다 — 원본이 틀렸다면 그 워크시트에서 고치는 것이 맞다.
 import type { FinalReportBlock } from '@/lib/final-report-document';
 import type { BlockEdit } from '@/lib/final-report-edit';
+import { worksheetImageFileName } from '@/lib/worksheet-capture';
+import FinalReportPages from './FinalReportPages';
+import { getFitnessReportExcludedIndexes } from '@/lib/final-report-fitness';
+import { normalizeReportLabels } from '@/lib/final-report-labels';
 
 interface Props {
     blocks: FinalReportBlock[];
@@ -124,6 +128,7 @@ function ImageBlockView({ block }: { block: Extract<FinalReportBlock, { kind: 'i
             <figcaption className="mt-1 text-xs text-slate-500">
                 {block.title} · {Math.round(block.widthMm)}×{Math.round(block.heightMm)}mm
                 {block.landscape ? ' · 가로 페이지' : ''}
+                <a href={block.pngDataUrl} download={worksheetImageFileName(block.title, block.pngDataUrl)} className="ml-3 text-blue-700 underline">그림 다운로드</a>
             </figcaption>
         </figure>
     );
@@ -145,10 +150,13 @@ function BlockView({ block, ...props }: { block: FinalReportBlock; blockIndex: n
 }
 
 export default function FinalReportPreview({ blocks, onEdit, readOnly = false, disabled = false }: Props) {
+    if (blocks.some(block => block.kind === 'cover' || (block.kind === 'dataTable' && (block.headerGroups || block.columnSpans)))) return <FinalReportPages blocks={blocks} onEdit={onEdit} readOnly={readOnly} disabled={disabled} />;
+    blocks = normalizeReportLabels(blocks);
+    const excluded = getFitnessReportExcludedIndexes(blocks);
     return (
         // 인쇄면을 흉내 낸 흰 바탕이다. 문서가 흰 종이에 찍히므로 여기서도 같은 대비로 본다.
         <div className="rounded-lg bg-white p-8 text-slate-900 shadow-inner">
-            {blocks.map((block, blockIndex) => (
+            {blocks.map((block, blockIndex) => excluded.has(blockIndex) ? null : (
                 <BlockView key={blockIndex} block={block} blockIndex={blockIndex} onEdit={onEdit} readOnly={readOnly || !onEdit} disabled={disabled} />
             ))}
         </div>

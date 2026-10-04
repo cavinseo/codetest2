@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { calculateWorksheetCompleteness } from '@/lib/worksheet-completeness';
-import { validateProductOverview } from '@/lib/product-overview';
+import { getProductOverviewImages, validateProductOverview } from '@/lib/product-overview';
 import {
     BusinessPlanFileValidationError,
     validateBusinessPlanFileStorageValue,
@@ -14,6 +14,7 @@ const log = createLogger('api/project/overview');
 
 const updateOverviewSchema = z.object({
     name: z.string().min(1, '프로젝트명을 입력하세요.'),
+    companyName: z.string().trim().max(300).optional(),
     description: z.string().optional(),
     detailedDescription: z.string().optional(),
     businessPlanFile: z.string().nullable().optional(),
@@ -42,7 +43,6 @@ export async function GET(
             improvementItems,
             targetSpecs,
             techRoadmaps,
-            devPlans,
             assetItems,
             fundingPlans,
             fundingSources,
@@ -53,14 +53,19 @@ export async function GET(
                 select: {
                     id: true,
                     name: true,
+                    companyName: true,
+                    owner: { select: { profile: { select: { companyName: true } } } },
                     description: true,
                     detailedDescription: true,
                     productName: true,
+                    relatedImages: true,
                     productImageDataUrl: true,
                     productImageWidthPx: true,
                     productImageHeightPx: true,
                     marketDefinition: true,
                     targetCustomer: true,
+                    additionalMarketData: true,
+                    includeAdditionalMarketDataInReport: true,
                     businessPlanFile: true,
                     createdAt: true,
                     updatedAt: true,
@@ -78,7 +83,6 @@ export async function GET(
             prisma.improvementItem.count({ where: { projectId } }),
             prisma.targetSpec.count({ where: { projectId } }),
             prisma.techRoadmap.count({ where: { projectId } }),
-            prisma.devPlan.count({ where: { projectId } }),
             prisma.assetItem.count({ where: { projectId } }),
             prisma.fundingPlan.count({ where: { projectId } }),
             prisma.fundingSource.count({ where: { projectId } }),
@@ -105,7 +109,6 @@ export async function GET(
             improvementItems,
             targetSpecs,
             techRoadmaps,
-            devPlans,
             assetItems,
             fundingPlans,
             fundingSources,
@@ -117,9 +120,12 @@ export async function GET(
             hasFitnessMatrix: Boolean(fitnessMatrix),
         });
 
+        const { owner, ...projectOverview } = project;
         return NextResponse.json({
             project: {
-                ...project,
+                ...projectOverview,
+                companyName: project.companyName ?? owner.profile?.companyName ?? '',
+                relatedImages: getProductOverviewImages(project),
                 role: accessResult.role,
                 createdAt: project.createdAt.toISOString(),
                 updatedAt: project.updatedAt.toISOString(),
@@ -146,18 +152,20 @@ export async function PATCH(
         const data = updateOverviewSchema.parse(body);
         let productDetails;
         try { productDetails = validateProductOverview(body); }
-        catch { return NextResponse.json({ error: '제품 정보나 이미지를 확인하세요. 이미지는 PNG/JPEG, 최적화 후 1MB 이하만 저장할 수 있습니다.' }, { status: 400 }); }
+        catch { return NextResponse.json({ error: '제품 정보나 이미지를 확인하세요. 관련이미지는 최대 3개, 각각 PNG/JPEG, 최적화 후 1MB 이하만 저장할 수 있습니다.' }, { status: 400 }); }
         const businessPlanFile = data.businessPlanFile === undefined
             ? undefined
             : validateBusinessPlanFileStorageValue(data.businessPlanFile);
 
         const project = await prisma.project.update({
             where: { id: projectId },
+            include: { owner: { select: { profile: { select: { companyName: true } } } } },
             data: {
                 ...productDetails,
                 name: data.name.trim(),
+                ...(data.companyName !== undefined ? { companyName: data.companyName } : {}),
                 description: data.description?.trim() || null,
-                detailedDescription: data.detailedDescription?.trim() || null,
+                detailedDescription: data.detailedDescription?.trim() ? data.detailedDescription : null,
                 ...(businessPlanFile !== undefined ? { businessPlanFile } : {}),
             },
         });
@@ -166,14 +174,18 @@ export async function PATCH(
             project: {
                 id: project.id,
                 name: project.name,
+                companyName: project.companyName ?? project.owner.profile?.companyName ?? '',
                 description: project.description,
                 detailedDescription: project.detailedDescription,
                 productName: project.productName,
+                relatedImages: getProductOverviewImages(project),
                 productImageDataUrl: project.productImageDataUrl,
                 productImageWidthPx: project.productImageWidthPx,
                 productImageHeightPx: project.productImageHeightPx,
                 marketDefinition: project.marketDefinition,
                 targetCustomer: project.targetCustomer,
+                additionalMarketData: project.additionalMarketData,
+                includeAdditionalMarketDataInReport: project.includeAdditionalMarketDataInReport,
                 createdAt: project.createdAt.toISOString(),
                 updatedAt: project.updatedAt.toISOString(),
             },

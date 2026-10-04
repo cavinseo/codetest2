@@ -5,9 +5,10 @@ import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import WorksheetLoadError from './WorksheetLoadError';
+import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import {
-    shouldShowPrimaryGroup,
-    shouldShowSecondaryGroup,
+    groupRequirementsByCategory,
+    getRequirementGroupSpans,
     sortRequirementsByWorksheetOrder,
 } from '@/lib/requirements-table-utils';
 
@@ -53,6 +54,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
+    const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValues, setEditValues] = useState<Partial<Requirement>>({});
 
@@ -161,16 +163,35 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         loadRequirements();
     }, [loadRequirements]);
 
+    const createNewRequirement = (): Requirement | null => {
+        if (!newRow.category.trim() || !newRow.requirement.trim()) {
+            showToast('카테고리와 요구사항을 입력하세요.', 'error');
+            return null;
+        }
+        return {
+            id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            category: newRow.category.trim(),
+            subcategory: newRow.subcategory.trim(),
+            requirement: newRow.requirement.trim(),
+            order: Math.max(-1, ...requirements.map(row => row.order)) + 1,
+        };
+    };
+
     const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
-        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
+        if (isSaving || isLoading || loadFailed || loadedProjectId !== projectId) return;
         // 열려 있는 인라인 편집을 먼저 반영한다. 예전에는 editValues 를 둔 채
         // requirements 만 보내고 성공하면 editValues 를 버려서, 항목을 고치는
         // 중에 저장을 누르면 "저장되었습니다" 가 뜨는데도 방금 친 글자가 원래
         // 값으로 되돌아갔다 — 저장된 줄 알고 화면을 떠나면 그대로 유실된다.
-        const requirementsToSave = editingId
+        const editedRequirements = editingId
             ? requirements.map((item) => (item.id === editingId ? { ...item, ...editValues } : item))
             : requirements;
-        if (editingId) setRequirements(requirementsToSave);
+        const hasNewRowInput = isAddingNew && Object.values(newRow).some(value => value.trim());
+        const newRequirement = hasNewRowInput ? createNewRequirement() : null;
+        if (hasNewRowInput && !newRequirement) return;
+        const requirementsToSave = groupRequirementsByCategory(
+            newRequirement ? [...editedRequirements, newRequirement] : editedRequirements
+        );
 
         setIsSaving(true);
         try {
@@ -197,8 +218,13 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
             if (res.ok) {
                 showToast('저장되었습니다.', 'success');
+                setRequirements(requirementsToSave);
                 setEditingId(null);
                 setEditValues({});
+                if (newRequirement) {
+                    setNewRow({ category: '', subcategory: '', requirement: '' });
+                    setIsAddingNew(false);
+                }
             } else {
                 showToast('저장에 실패했습니다.', 'error');
             }
@@ -209,23 +235,16 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         }
     };
 
-    const handleExcelUpload = async (file: File | null) => {
+    const handleExcelUpload = (file: File | null) => {
         if (!file) return;
         const fileName = file.name.toLowerCase();
         if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
             showToast('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', 'error');
+            if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }
 
-        const uploadPolicy = window.prompt('업로드 방식을 선택하세요.\n\n1: 기존 데이터에 추가\n2: 기존 데이터를 지우고 새롭게 업로드', '1');
-        if (uploadPolicy === null) return;
-        const shouldReplace = uploadPolicy.trim() === '2';
-        if (!shouldReplace && uploadPolicy.trim() !== '1') {
-            showToast('업로드 방식은 1 또는 2로 선택해주세요.', 'error');
-            return;
-        }
-
-        await uploadExcel(file, shouldReplace ? 'replace' : 'append');
+        setPendingExcelFile(file);
     };
 
     const uploadExcel = async (
@@ -253,7 +272,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             // replace 로 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다. 서버가
             // 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받은 뒤
             // 같은 파일을 confirmCascade 와 함께 다시 보낸다.
-            if (res.status === 409 && data?.needsCascadeConfirm) {
+            if (res.status === 409 && data?.needsCascadeConfirm && !options.confirmCascade) {
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
                     await uploadExcel(file, writePolicy, { confirmCascade: true });
                     return;
@@ -277,24 +296,16 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             showToast(error instanceof Error ? error.message : '고객요구사항도출표 엑셀 업로드에 실패했습니다.', 'error');
         } finally {
             setIsUploadingExcel(false);
+            setPendingExcelFile(null);
             if (excelInputRef.current) excelInputRef.current.value = '';
         }
     };
 
     // 새 행 추가
     const handleAddNew = () => {
-        if (!newRow.category.trim() || !newRow.requirement.trim()) {
-            showToast('카테고리와 요구사항을 입력하세요.', 'error');
-            return;
-        }
-        const newReq: Requirement = {
-            id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            category: newRow.category.trim(),
-            subcategory: newRow.subcategory.trim(),
-            requirement: newRow.requirement.trim(),
-            order: requirements.length + 1,
-        };
-        setRequirements(prev => [...prev, newReq]);
+        const newReq = createNewRequirement();
+        if (!newReq) return;
+        setRequirements(prev => groupRequirementsByCategory([...prev, newReq]));
         setNewRow({ category: '', subcategory: '', requirement: '' });
         setIsAddingNew(false);
     };
@@ -320,7 +331,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     // 편집 확정
     const commitEdit = (id: string) => {
         setRequirements(prev =>
-            prev.map(r => r.id === id ? { ...r, ...editValues } : r)
+            groupRequirementsByCategory(prev.map(r => r.id === id ? { ...r, ...editValues } : r))
         );
         setEditingId(null);
         setEditValues({});
@@ -336,8 +347,9 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         setRequirements(prev => prev.filter(r => r.id !== id));
     };
 
-    // 워크시트 행 순서를 보존한다. 1차/2차 그룹 값으로 항목 순서를 재정렬하지 않는다.
+    // 편집·추가·저장 시 그룹별로 정리한 행 순서를 표시한다.
     const sorted = sortRequirementsByWorksheetOrder(requirements);
+    const groupSpans = getRequirementGroupSpans(sorted, editingId);
 
     const groupedCategories = [...new Set(sorted.map(r => r.category))];
 
@@ -354,9 +366,22 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     }
 
     return (
-        <div className="space-y-4 relative">
+        <fieldset disabled={isSaving} aria-busy={isSaving} className="space-y-4 relative min-w-0">
             {/* 토스트 */}
             {toast && <HeaderToast message={toast.message} type={toast.type} />}
+
+            {pendingExcelFile && (
+                <UploadWritePolicyPrompt
+                    fileName={pendingExcelFile.name}
+                    targetLabel="고객요구사항도출표"
+                    isUploading={isUploadingExcel}
+                    onSelect={policy => uploadExcel(pendingExcelFile, policy)}
+                    onCancel={() => {
+                        setPendingExcelFile(null);
+                        if (excelInputRef.current) excelInputRef.current.value = '';
+                    }}
+                />
+            )}
 
             {/* 헤더 */}
             <div className="flex items-center justify-between">
@@ -447,7 +472,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                     </button>
                     <button
                         onClick={() => handleSave()}
-                        disabled={isSaving || requirements.length === 0}
+                        disabled={isSaving || (requirements.length === 0 && (!isAddingNew || !newRow.category.trim() || !newRow.requirement.trim()))}
                         className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -489,10 +514,9 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
                         {(() => {
                             let no = 1;
-                            return sorted.map((req, idx) => {
+                            return sorted.map((req, index) => {
                                 const isEditing = editingId === req.id;
-                                const showCategory = shouldShowPrimaryGroup(sorted, idx);
-                                const showSubcategory = shouldShowSecondaryGroup(sorted, idx);
+                                const { primary, secondary } = groupSpans[index];
 
                                 return (
                                     <tr
@@ -520,7 +544,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                         </td>
 
                                         {/* 1차 그룹 */}
-                                        <td className="px-2 py-1.5">
+                                        {primary > 0 && <td data-group-level="primary" rowSpan={primary} className="px-2 py-1.5 align-top">
                                             {isEditing ? (
                                                 <>
                                                     <input
@@ -537,13 +561,13 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                 </>
                                             ) : (
                                                 <span className="text-red-300 text-xs font-medium">
-                                                    {showCategory ? (req.category || <span className="text-gray-700">—</span>) : ''}
+                                                    {req.category || <span className="text-gray-700">—</span>}
                                                 </span>
                                             )}
-                                        </td>
+                                        </td>}
 
                                         {/* 2차 그룹 */}
-                                        <td className="px-2 py-1.5">
+                                        {secondary > 0 && <td data-group-level="secondary" rowSpan={secondary} className="px-2 py-1.5 align-top">
                                             {isEditing ? (
                                                 <>
                                                     <input
@@ -561,10 +585,10 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                 </>
                                             ) : (
                                                 <span className="text-blue-300/80 text-xs">
-                                                    {showSubcategory ? (req.subcategory || <span className="text-gray-700">—</span>) : ''}
+                                                    {req.subcategory || <span className="text-gray-700">—</span>}
                                                 </span>
                                             )}
-                                        </td>
+                                        </td>}
 
                                         {/* 삭제 */}
                                         <td className="px-2 py-2 text-center">
@@ -741,6 +765,6 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                     </ul>
                 </div>
             )}
-        </div>
+        </fieldset>
     );
 }

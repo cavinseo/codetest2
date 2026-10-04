@@ -5,6 +5,9 @@ import {
     type ISectionOptions,
 } from 'docx';
 import type { FinalReportBlock, FinalReportModel } from './final-report-document';
+import { renderTemplateReportDocx } from './final-report-template-docx';
+import { getFitnessReportExcludedIndexes } from './final-report-fitness';
+import { normalizeReportLabels } from './final-report-labels';
 
 const PAGE = {
     size: { orientation: PageOrientation.PORTRAIT, width: convertMillimetersToTwip(210), height: convertMillimetersToTwip(297) },
@@ -27,6 +30,9 @@ function cell(text: string, options: { bold?: boolean; align?: (typeof Alignment
 
 function renderBlock(block: FinalReportBlock): Paragraph | Table {
     switch (block.kind) {
+        case 'cover':
+        case 'pageBreak':
+            return new Paragraph({ pageBreakBefore: true });
         case 'heading':
             return new Paragraph({
                 heading: block.level === 1 ? HeadingLevel.HEADING_1 : HeadingLevel.HEADING_2,
@@ -70,7 +76,10 @@ function renderBlock(block: FinalReportBlock): Paragraph | Table {
     }
 }
 
-export async function renderFinalReportDocx(model: FinalReportModel): Promise<Blob> {
+export async function renderFinalReportDocx(reportModel: FinalReportModel): Promise<Blob> {
+    reportModel = { ...reportModel, blocks: normalizeReportLabels(reportModel.blocks) };
+    if (reportModel.blocks.some(block => block.kind === 'cover' || (block.kind === 'dataTable' && (block.headerGroups || block.columnSpans)))) return renderTemplateReportDocx(reportModel);
+    const excluded = getFitnessReportExcludedIndexes(reportModel.blocks);
     const sections: ISectionOptions[] = [];
     let portrait: Array<Paragraph | Table> = [];
     const flushPortrait = () => {
@@ -79,7 +88,8 @@ export async function renderFinalReportDocx(model: FinalReportModel): Promise<Bl
             portrait = [];
         }
     };
-    for (const block of model.blocks) {
+    for (const [index, block] of reportModel.blocks.entries()) {
+        if (excluded.has(index)) continue;
         const child = renderBlock(block);
         if (block.kind === 'image' && block.landscape) {
             flushPortrait();
@@ -98,7 +108,7 @@ export async function renderFinalReportDocx(model: FinalReportModel): Promise<Bl
     flushPortrait();
     if (sections.length === 0) sections.push({ properties: { page: PAGE }, children: [] });
     const doc = new Document({
-        title: model.title,
+        title: reportModel.title,
         styles: { default: { document: { run: { font: '맑은 고딕', size: 20 } } } },
         sections,
     });

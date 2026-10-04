@@ -6,11 +6,13 @@ import {
     buildAttributeDraftPrompts,
     buildMentorQuestionsPrompts,
     buildSpecDraftPrompts,
+    buildValueAnalysisPrompts,
 } from './prompts';
 import {
     attributeDraftResultSchema,
     mentorQuestionsResultSchema,
     specDraftTreeSchema,
+    valueAnalysisResultSchema,
     type AiProvider,
     type AiProviderId,
     type AttributeDraftInput,
@@ -247,6 +249,11 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
         async attributeDraft(input: AttributeDraftInput): Promise<AttributeDraftResult> {
             const prompts = buildAttributeDraftPrompts(input);
             return complete(prompts.system, prompts.user, attributeDraftResultSchema);
+        },
+
+        async valueAnalysis(input) {
+            const prompts = buildValueAnalysisPrompts(input);
+            return complete(prompts.system, prompts.user, valueAnalysisResultSchema);
         },
 
         async specDraft(input: SpecDraftInput): Promise<SpecDraftTree> {

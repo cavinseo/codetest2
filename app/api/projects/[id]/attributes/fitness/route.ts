@@ -64,14 +64,23 @@ export async function POST(
 
         const { fitnesses: newFitnesses } = fitnessBodySchema.parse(await request.json());
 
-        const updatedFitnesses = await prisma.$transaction(async (tx: any) => {
+        const attributeIds = [...new Set(newFitnesses.map((fitness) => fitness.attributeId))];
+        const projectAttributes = await prisma.productAttribute.findMany({
+            where: { projectId, id: { in: attributeIds } },
+            select: { id: true },
+        });
+        if (projectAttributes.length !== attributeIds.length) {
+            return NextResponse.json({ error: '다른 프로젝트의 제품 속성은 적합도에 연결할 수 없습니다.' }, { status: 400 });
+        }
+
+        const updatedFitnesses = await prisma.$transaction(async (tx) => {
             await tx.attributeFitness.deleteMany({
                 where: { projectId },
             });
 
             if (newFitnesses.length > 0) {
                 await tx.attributeFitness.createMany({
-                    data: newFitnesses.map((f: any) => ({
+                    data: newFitnesses.map((f) => ({
                         ...f,
                         projectId,
                         id: f.id || generateId('fitness'),

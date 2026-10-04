@@ -312,9 +312,22 @@ describe('저장', () => {
         expect(res.status).toBe(200);
         expect(upsertConn.mock.calls[0][0].update).toEqual({
             mode: 'mcp',
+            apiKey: null,
             mcpBaseUrl: 'https://mcp.example.com/v1',
             mcpModel: 'remote-model',
         });
+    });
+
+    it('API 키를 입력하지 않고 MCP로 전환하면 이전 벤더 키를 지운다', async () => {
+        findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'api', vendor: 'openai' }));
+
+        const response = await PUT(jsonRequest('PUT', {
+            mode: 'mcp',
+            mcpBaseUrl: 'https://mcp.example.com/v1',
+        }));
+
+        expect(response.status).toBe(200);
+        expect(upsertConn.mock.calls[0][0].update.apiKey).toBeNull();
     });
 });
 

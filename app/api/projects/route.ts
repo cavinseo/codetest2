@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
             orderBy: { updatedAt: 'desc' },
         });
         return NextResponse.json({
-            projects: userProjects.map((p: any) => ({
+            projects: userProjects.map((p) => ({
                 id: p.id,
                 name: p.name,
                 description: p.description,

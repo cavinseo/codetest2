@@ -147,6 +147,7 @@ describe('buildWorksheetData', () => {
         const data = buildWorksheetData(payloads);
         expect(data.salesEstimates[0].customer).toBe('매출처');
         expect(data.specFunctions[0].name).toBe('스펙');
+        expect(data.specDetailCollapsed).toBe(false);
         expect(data.productAttributes[0].productName).toBe('속성');
         expect(data.requirements[0].requirement).toBe('요구');
         expect(data.kanoAggregation[0].better).toBe(1);
@@ -166,15 +167,21 @@ describe('buildWorksheetData', () => {
         expect(data.techTree).toEqual([]);
     });
 
+    it('프로젝트의 세세부기술 접기 선택을 보고서 입력으로 옮긴다', () => {
+        expect(buildWorksheetData({ ...payloads, exportData: { ...payloads.exportData, specDetailCollapsed: true } }).specDetailCollapsed).toBe(true);
+    });
+
     it('자금 두 표는 한 응답의 서로 다른 키에서 온다', () => {
         const data = buildWorksheetData(payloads);
         expect(data.fundingPlans).not.toEqual(data.fundingSources);
     });
 
-    it('응답이 모두 비어도 14개 절이 빈 배열로 채워진다', () => {
+    it('빈 응답은 빈 배열과 미작성 적합도 행렬로 유지한다', () => {
         const empty = Object.fromEntries(Object.keys(payloads).map((key) => [key, null])) as unknown as WorksheetPayloads;
         const data = buildWorksheetData(empty);
-        expect(Object.values(data).every((value) => Array.isArray(value) && value.length === 0)).toBe(true);
-        expect(Object.keys(data)).toHaveLength(14);
+        expect(data.fitnessMatrix).toBeNull();
+        expect(data.specDetailCollapsed).toBe(false);
+        expect(Object.entries(data).filter(([key]) => key !== 'fitnessMatrix' && key !== 'specDetailCollapsed').every(([, value]) => Array.isArray(value) && value.length === 0)).toBe(true);
+        expect(Object.keys(data)).toHaveLength(21);
     });
 });

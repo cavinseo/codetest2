@@ -85,9 +85,16 @@ export async function POST(
             );
         }
 
+        if (allowedIds.size === 0 || submittedIds.length !== allowedIds.size) {
+            return NextResponse.json(
+                { error: '모든 설문 문항에 답변해 주세요.' },
+                { status: 400 }
+            );
+        }
+
         const now = new Date();
 
-        const result = await prisma.$transaction(async (tx: any) => {
+        const responseCount = await prisma.$transaction(async (tx: any) => {
             // 1. 초대를 선점한다. 위 respondedAt 검사는 트랜잭션 밖이라, 제출을
             // 두 번 누르거나 느린 네트워크에서 재시도하면 두 요청이 모두 그 검사를
             // 통과해 응답 세트가 두 벌 저장되고 Kano 분석의 응답 수·비율이 그대로
@@ -130,13 +137,13 @@ export async function POST(
 
         // 선점에 진 요청이다. 먼저 도착한 제출이 이미 저장됐으므로 응답자에게는
         // 트랜잭션 밖 검사와 같은 안내를 준다.
-        if (result === null) {
+        if (responseCount === null) {
             return NextResponse.json({ error: '이미 응답을 완료하셨습니다.' }, { status: 400 });
         }
 
-        log.info('설문 응답 제출 성공', { invitationId: invitation.id, responseCount: result });
+        log.info('설문 응답 제출 성공', { invitationId: invitation.id, responseCount });
 
-        return NextResponse.json({ success: true, responseCount: result });
+        return NextResponse.json({ success: true, responseCount });
     } catch (error: unknown) {
         if (error instanceof z.ZodError) {
             log.warn('응답 검증 오류 (Zod)', { firstIssue: error.errors[0]?.message });

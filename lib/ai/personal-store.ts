@@ -59,7 +59,8 @@ export async function upsertPersonalConnection(
     input: {
         mode?: PersonalAiConnection['mode'];
         vendor?: PersonalAiConnection['vendor'];
-        apiKey?: string;
+        // undefined 는 기존 키를 유지하고, null 은 저장된 키를 지운다.
+        apiKey?: string | null;
         model?: string | null;
         mcpBaseUrl?: string | null;
         mcpModel?: string | null;
@@ -67,7 +68,9 @@ export async function upsertPersonalConnection(
         localModel?: string | null;
     }
 ): Promise<void> {
-    const encrypted = input.apiKey ? encryptSettingsValue(input.apiKey) : undefined;
+    const encrypted = typeof input.apiKey === 'string'
+        ? encryptSettingsValue(input.apiKey)
+        : undefined;
     const mode = input.mode ?? 'api';
     await prisma.userAiConnection.upsert({
         where: { userId },
@@ -90,7 +93,7 @@ export async function upsertPersonalConnection(
             ...(input.mcpModel !== undefined ? { mcpModel: input.mcpModel } : {}),
             ...(input.localBaseUrl !== undefined ? { localBaseUrl: input.localBaseUrl } : {}),
             ...(input.localModel !== undefined ? { localModel: input.localModel } : {}),
-            ...(encrypted ? { apiKey: encrypted } : {}),
+            ...(input.apiKey !== undefined ? { apiKey: encrypted ?? null } : {}),
         },
     });
 }

@@ -175,6 +175,7 @@ async function renderAdmin(role = 'ADMIN', members: User[] = []) {
         if (url === '/api/admin/stats') return response({ totalProjects: 1, totalUsers: 2, totalRequirements: 4, totalResponses: 5, kanoDistribution: {}, recentProjects: [] });
         if (url === '/api/admin/users') return response({ users: members });
         if (url === '/api/programs') return response({ programs: [] });
+        if (url === '/api/admin/projects' && options?.method === 'DELETE') return response({ success: true, deletedProject: '이관할 프로젝트' });
         if (url === '/api/admin/projects') return response({
             projects: [{ id: 'project', name: '이관할 프로젝트', ownerId: transferred ? 'target' : 'source', programId: transferred ? 'new-program' : 'old-program', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', ownerEmail: transferred ? candidate.email : 'source@example.test', ownerName: transferred ? null : '원본 멘티', reqCount: 4, responseCount: 5, memberCount: 2 }],
             programs: [{ id: 'old-program', name: '원본 프로그램', organization: '기관' }, { id: 'new-program', name: '대상 프로그램', organization: '기관' }],
@@ -204,6 +205,20 @@ it('프로그램 매니저에게는 프로젝트 이관 버튼을 노출하지 �
     await renderAdmin('PROGRAM_MANAGER');
     expect(container.querySelector('#admin-transfer-project-project')).toBeNull();
     expect(button('멘토 배정')).not.toBeNull();
+});
+
+it('프로젝트 삭제는 두 번째 확인 뒤에만 연쇄 삭제 확인값을 전송한다', async () => {
+    await renderAdmin();
+    await act(async () => container.querySelector<HTMLButtonElement>('#admin-delete-project-project')!.click());
+
+    expect(fetchMock.mock.calls.filter(([, options]) => options?.method === 'DELETE')).toHaveLength(0);
+    await click('계속');
+    expect(fetchMock.mock.calls.filter(([, options]) => options?.method === 'DELETE')).toHaveLength(0);
+    await click('삭제');
+
+    const deletes = fetchMock.mock.calls.filter(([, options]) => options?.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(JSON.parse(deletes[0][1].body)).toEqual({ projectId: 'project', confirmCascade: true });
 });
 
 it('멘티 삭제는 마지막으로 확인한 미리보기 토큰을 전송하고 충돌 시 갱신한다', async () => {

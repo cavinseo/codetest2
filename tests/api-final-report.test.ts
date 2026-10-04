@@ -161,6 +161,12 @@ describe('프로젝트 접근과 멘토 보고서 권한', () => {
 });
 
 describe('초안과 공개본 조회 분리', () => {
+    it('보고서 표지용 기업명은 저장된 개요 값을 우선하고 없으면 가입 정보를 사용한다', async () => {
+        m.project.mockResolvedValue({ companyName: '개요 기업', owner: { profile: { companyName: '가입 기업' }, mentorAssignment: { mentorId: MENTOR, mentor: { name: '배정 멘토' } } } });
+        expect((await read()).companyName).toBe('개요 기업');
+        m.project.mockResolvedValue({ companyName: null, owner: { profile: { companyName: '가입 기업' }, mentorAssignment: { mentorId: MENTOR, mentor: { name: '배정 멘토' } } } });
+        expect((await read()).companyName).toBe('가입 기업');
+    });
     it.each([
         ['MENTOR', MENTOR, true], ['PROGRAM_MANAGER', MENTOR, true],
     ])('%s는 초안을 읽으며 배정 여부에 따라 편집 권한을 받는다', async (role, id, canEdit) => {

@@ -8,6 +8,7 @@ const tx = {
     kanoResponse: {
         deleteMany: vi.fn(),
         createMany: vi.fn(),
+        findMany: vi.fn(),
     },
     kanoSurveyInvitation: {
         deleteMany: vi.fn(),
@@ -55,12 +56,26 @@ function kanoTemplateFile(responseRows: unknown[][] = []): File {
 
 function uploadRequest(
     writePolicy: 'append' | 'replace' = 'append',
-    responseRows: unknown[][] = [['respondent@example.test', 1, 5, 2, 4]]
+    responseRows: unknown[][] = [['respondent@example.test', 1, 5, 2, 4]],
+    replaceExistingRespondents = false
 ): NextRequest {
     const formData = new FormData();
     formData.append('file', kanoTemplateFile(responseRows));
     formData.append('format', 'template');
     formData.append('writePolicy', writePolicy);
+    if (replaceExistingRespondents) formData.append('replaceExistingRespondents', 'true');
+    return new NextRequest(`http://localhost/api/projects/${PROJECT_ID}/kano/upload-excel`, {
+        method: 'POST',
+        body: formData,
+    });
+}
+
+function googleFormsCsvRequest(format = 'googleForms'): NextRequest {
+    const csv = '\uFEFF타임스탬프,이메일 주소,[1-1] 빠른 주문,[1-2] 빠른 주문,[2-1] 안전한 보관,[2-2] 안전한 보관\n2026-10-02,respondent@example.test,마음에 든다,마음에 안든다,당연하다,하는수 없다';
+    const formData = new FormData();
+    formData.append('file', new File([csv], 'Google Forms responses.csv', { type: 'text/csv' }));
+    formData.append('format', format);
+    formData.append('writePolicy', 'append');
     return new NextRequest(`http://localhost/api/projects/${PROJECT_ID}/kano/upload-excel`, {
         method: 'POST',
         body: formData,
@@ -70,6 +85,7 @@ function uploadRequest(
 beforeEach(() => {
     requireProjectAccess.mockResolvedValue({ user: USER, role: 'OWNER' });
     findManyRequirement.mockResolvedValue(REQUIREMENTS);
+    tx.kanoResponse.findMany.mockResolvedValue([]);
     tx.kanoSurveyInvitation.findMany.mockImplementation(async ({ where }) =>
         where.email.in.map((email: string) => ({ id: `invitation_${email}`, email }))
     );
@@ -80,6 +96,25 @@ afterEach(() => {
 });
 
 describe('POST /api/projects/[id]/kano/upload-excel', () => {
+    it('Google Forms에서 내려받은 CSV 응답을 질문 순서대로 저장한다', async () => {
+        const response = await POST(googleFormsCsvRequest(), params);
+
+        expect(response.status).toBe(200);
+        expect(tx.kanoResponse.createMany).toHaveBeenCalledWith({
+            data: [
+                expect.objectContaining({ requirementId: 'requirement_1', positiveAnswer: 1, negativeAnswer: 5 }),
+                expect.objectContaining({ requirementId: 'requirement_2', positiveAnswer: 2, negativeAnswer: 4 }),
+            ],
+        });
+    });
+
+    it('전용 Excel 양식 경로에서는 CSV를 받지 않는다', async () => {
+        const response = await POST(googleFormsCsvRequest('template'), params);
+
+        expect(response.status).toBe(400);
+        expect(tx.kanoResponse.createMany).not.toHaveBeenCalled();
+    });
+
     it('요구사항이 없으면 기존 400 오류를 반환한다', async () => {
         findManyRequirement.mockResolvedValue([]);
 
@@ -117,7 +152,7 @@ describe('POST /api/projects/[id]/kano/upload-excel', () => {
         );
     });
 
-    it('append 정책은 초대를 보존하고 해당 이메일의 응답만 삭제한다', async () => {
+    it('append 정책은 기존 응답이 없을 때 초대를 보존하고 삭제 없이 저장한다', async () => {
         const response = await POST(uploadRequest('append', [
             ['first@example.test', 1, 5, 2, 4],
             ['second@example.test', 2, 5, 3, 4],
@@ -125,17 +160,45 @@ describe('POST /api/projects/[id]/kano/upload-excel', () => {
 
         expect(response.status).toBe(200);
         expect(tx.kanoSurveyInvitation.deleteMany).not.toHaveBeenCalled();
-        expect(tx.kanoResponse.deleteMany).toHaveBeenCalledWith({
+        expect(tx.kanoResponse.findMany).toHaveBeenCalledWith({
             where: {
                 projectId: PROJECT_ID,
                 respondentEmail: {
                     in: ['first@example.test', 'second@example.test'],
                 },
             },
+            select: { respondentEmail: true },
         });
+        expect(tx.kanoResponse.deleteMany).not.toHaveBeenCalled();
         expect(tx.kanoSurveyInvitation.updateMany).toHaveBeenCalledTimes(1);
         expect(tx.kanoSurveyInvitation.createMany).toHaveBeenCalledTimes(1);
         expect(tx.kanoSurveyInvitation.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('append 정책은 같은 응답자의 기존 응답을 명시적 확인 없이 덮어쓰지 않는다', async () => {
+        tx.kanoResponse.findMany.mockResolvedValue([{ respondentEmail: 'respondent@example.test' }]);
+
+        const response = await POST(uploadRequest(), params);
+
+        expect(response.status).toBe(409);
+        await expect(response.json()).resolves.toEqual({
+            error: '이미 저장된 응답이 있습니다. 같은 응답자의 데이터를 바꾸려면 응답 교체를 선택하세요.',
+            code: 'KANO_RESPONSES_EXIST',
+        });
+        expect(tx.kanoResponse.deleteMany).not.toHaveBeenCalled();
+        expect(tx.kanoResponse.createMany).not.toHaveBeenCalled();
+    });
+
+    it('같은 응답자 교체를 명시하면 해당 응답만 삭제하고 다시 저장한다', async () => {
+        tx.kanoResponse.findMany.mockResolvedValue([{ respondentEmail: 'respondent@example.test' }]);
+
+        const response = await POST(uploadRequest('append', undefined, true), params);
+
+        expect(response.status).toBe(200);
+        expect(tx.kanoResponse.deleteMany).toHaveBeenCalledWith({
+            where: { projectId: PROJECT_ID, respondentEmail: { in: ['respondent@example.test'] } },
+        });
+        expect(tx.kanoResponse.createMany).toHaveBeenCalledTimes(1);
     });
 
     it('성공 응답에 기존 메시지와 집계 결과를 담는다', async () => {

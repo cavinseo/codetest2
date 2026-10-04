@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { parseWritePolicy, type WritePolicy } from '@/lib/write-policy';
+import { checkExcelArchiveSafety } from '@/lib/upload-guard';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -346,7 +347,12 @@ export async function POST(
             return NextResponse.json({ error: '.xlsx 또는 .xls 파일만 업로드할 수 있습니다.' }, { status: 400 });
         }
 
-        const workbook = XLSX.read(Buffer.from(await file.arrayBuffer()), {
+        const bytes = Buffer.from(await file.arrayBuffer());
+        const archiveFailure = checkExcelArchiveSafety(file.name, bytes);
+        if (archiveFailure) {
+            return NextResponse.json({ error: archiveFailure.error }, { status: archiveFailure.status });
+        }
+        const workbook = XLSX.read(bytes, {
             type: 'buffer',
             cellFormula: true,
         });

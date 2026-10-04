@@ -8,6 +8,8 @@ import { createLogger } from '@/lib/logger';
 import { classifyKano } from '@/lib/kano';
 import { toErrorResponse } from '@/lib/api-error';
 import { GOOGLE_FORMS_DISABLED_MESSAGE, GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';
+import { z } from 'zod';
+import { GoogleFormBindingError, verifyGoogleFormBinding } from '@/lib/google-form-binding';
 
 const log = createLogger('api/kano/form-responses');
 const SYSTEM_INVITATION_EMAIL = 'google-forms-system@internal';
@@ -42,8 +44,8 @@ function collectLatestGoogleKanoResponses(
         const respondedAt = new Date(formResponse.submittedAt);
 
         for (const answer of formResponse.answers) {
-            if (!(answer.requirementIndex < requirements.length)) continue;
-            const requirement = requirements[answer.requirementIndex];
+            const requirement = requirements.find((item) => item.id === answer.requirementId);
+            if (!requirement) continue;
 
             const response = {
                 requirementId: requirement.id,
@@ -63,6 +65,11 @@ function collectLatestGoogleKanoResponses(
 
     return [...responsesByKey.values()];
 }
+
+const formResponseSchema = z.object({
+    formId: z.string().trim().min(1),
+    formBinding: z.string().trim().min(1),
+});
 
 async function saveGoogleKanoResponses(
     projectId: string,
@@ -135,14 +142,22 @@ export async function POST(
             );
         }
 
-        const body = await request.json();
-        const formId = body.formId;
-
-        if (!formId) {
+        const parsed = formResponseSchema.safeParse(await request.json().catch(() => null));
+        if (!parsed.success) {
             return NextResponse.json(
-                { error: 'formId가 필요합니다.' },
+                { error: '생성한 설문 정보가 필요합니다.' },
                 { status: 400 }
             );
+        }
+        const { formId, formBinding } = parsed.data;
+        let binding;
+        try {
+            binding = verifyGoogleFormBinding(formBinding, projectId, formId);
+        } catch (error) {
+            if (error instanceof GoogleFormBindingError) {
+                return NextResponse.json({ error: error.message }, { status: 400 });
+            }
+            throw error;
         }
 
         const requirements = await prisma.customerRequirement.findMany({
@@ -157,7 +172,7 @@ export async function POST(
             );
         }
 
-        const { responses } = await getFormResponses(token.accessToken, formId);
+        const { responses } = await getFormResponses(token.accessToken, formId, binding.questionPairs);
         const kanoResponses = collectLatestGoogleKanoResponses(responses, requirements);
         await saveGoogleKanoResponses(projectId, accessResult.user.userId, kanoResponses);
         const importedCount = kanoResponses.length;

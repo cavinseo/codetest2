@@ -4,6 +4,7 @@ import { worksheetAnalysisSchema } from '@/lib/mentor-worksheet-analysis';
 
 // Vercel 요청·응답 한도보다 여유를 두고 메타데이터를 함께 반환한다.
 export const REPORT_MAX_BYTES = 3_500_000;
+const REPORT_MAX_TABLE_CELLS = 10_000;
 const text = z.string().max(100_000);
 const image = z.string().max(REPORT_MAX_BYTES).regex(/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/)
     .refine(value => value.slice(value.indexOf(',') + 1).length % 4 === 0, '이미지 데이터의 Base64 길이가 올바르지 않습니다.');
@@ -26,10 +27,18 @@ export const EMPTY_REPORT_FREE_INPUT: z.infer<typeof freeSchema> = {
 };
 
 const blockSchema = z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('cover'), title: text, projectName: text, companyName: text, coachName: text, outputDate: text }).strict(),
+    z.object({ kind: z.literal('pageBreak') }).strict(),
     z.object({ kind: z.literal('heading'), text, level: z.union([z.literal(1), z.literal(2)]) }).strict(),
-    z.object({ kind: z.literal('paragraph'), text }).strict(),
+    z.object({ kind: z.literal('paragraph'), text, tone: z.enum(['analysis', 'notice', 'caption']).optional() }).strict(),
     z.object({ kind: z.literal('keyValueTable'), rows: z.array(z.object({ label: text, value: text }).strict()).min(1).max(5000) }).strict(),
-    z.object({ kind: z.literal('dataTable'), headers: z.array(text).min(1).max(100), rows: z.array(z.array(text).max(100)).max(5000) }).strict(),
+    z.object({ kind: z.literal('dataTable'), headers: z.array(text).min(1).max(100), rows: z.array(z.array(text).max(100)).max(5000),
+        title: text.optional(), columnWidths: z.array(z.number().finite().positive().max(10000)).min(1).max(100).optional(),
+        mergeColumns: z.array(z.number().int().min(0).max(99)).max(100).optional(),
+        headerGroups: z.array(text.nullable()).min(1).max(100).optional(),
+        columnSpans: z.array(z.object({ row: z.number().int().min(0), column: z.number().int().min(0), span: z.number().int().min(2) }).strict()).max(10000).optional(),
+        highlightRows: z.array(z.number().int().min(0)).max(5000).optional(),
+    }).strict(),
     z.object({ kind: z.literal('image'), title: text, pngDataUrl: image,
         widthMm: z.number().finite().positive().max(1000), heightMm: z.number().finite().positive().max(1000), landscape: z.boolean(),
     }).strict(),
@@ -40,11 +49,36 @@ export const reportDocumentSchema = z.object({
     fileName: z.string().max(255).regex(/^[^\\/\u0000-\u001f]+\.docx$/i),
     blocks: z.array(blockSchema).max(500),
 }).strict().superRefine((document, context) => {
+    let tableCells = 0;
     document.blocks.forEach((block, index) => {
+        if (block.kind === 'keyValueTable') tableCells += block.rows.length * 2;
         if (block.kind === 'dataTable' && block.rows.some(row => row.length !== block.headers.length)) {
             context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'rows'], message: '표의 열 수가 일치하지 않습니다.' });
         }
+        if (block.kind === 'dataTable') tableCells += block.headers.length * (block.rows.length + 1);
+        if (block.kind === 'dataTable') {
+            if (block.headerGroups && block.headerGroups.length !== block.headers.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'headerGroups'], message: '다단 머리글의 열 수가 일치하지 않습니다.' });
+            const occupied = new Set<string>();
+            for (const merge of block.columnSpans ?? []) {
+                if (merge.row >= block.rows.length || merge.column + merge.span > block.headers.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'columnSpans'], message: '가로 병합 범위가 표를 벗어났습니다.' });
+                for (let column = merge.column; column < Math.min(merge.column + merge.span, block.headers.length); column++) {
+                    const key = `${merge.row}:${column}`;
+                    if (occupied.has(key) || (column > merge.column && block.rows[merge.row]?.[column])) context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'columnSpans'], message: '병합 범위가 겹치거나 입력된 셀을 가립니다.' });
+                    occupied.add(key);
+                }
+            }
+            if (block.highlightRows?.some(row => row >= block.rows.length)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'highlightRows'], message: '강조할 행이 표 범위를 벗어났습니다.' });
+        }
+        if (block.kind === 'dataTable' && block.columnWidths && block.columnWidths.length !== block.headers.length) {
+            context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'columnWidths'], message: '표의 열 너비 개수가 일치하지 않습니다.' });
+        }
+        if (block.kind === 'dataTable' && block.mergeColumns?.some(column => column >= block.headers.length)) {
+            context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'mergeColumns'], message: '병합할 열이 표 범위를 벗어났습니다.' });
+        }
     });
+    if (tableCells > REPORT_MAX_TABLE_CELLS) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks'], message: '보고서의 표 셀이 너무 많습니다.' });
+    }
 });
 
 export const reportDraftSchema = z.object({

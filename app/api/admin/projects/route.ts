@@ -5,6 +5,36 @@ import { requireAdmin } from '@/lib/authorization';
 
 const log = createLogger('api/admin/projects');
 
+const PROJECT_CASCADE_COUNT_FIELDS = {
+    attributeFitnesses: true,
+    benchmarks: true,
+    requirements: true,
+    kanoResponses: true,
+    kanoInvitations: true,
+    migrations: true,
+    productAttributes: true,
+    members: true,
+    qfdMatrices: true,
+    specFunctions: true,
+    techCorrelations: true,
+    technicalCharacteristics: true,
+    technicalBenchmarks: true,
+    techTreeEntries: true,
+    improvementItems: true,
+    targetSpecs: true,
+    techRoadmaps: true,
+    devPlans: true,
+    salesEstimates: true,
+    assetItems: true,
+    fundingPlans: true,
+    fundingSources: true,
+    worksheetComments: true,
+} as const;
+
+function countProjectCascadeRecords(counts: Record<string, number>, hasFinalReport: boolean) {
+    return Object.values(counts).reduce((total, count) => total + count, hasFinalReport ? 1 : 0);
+}
+
 // ─── GET: 모든 프로젝트 목록 (통계 포함) ──────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -31,7 +61,7 @@ export async function GET(request: NextRequest) {
             orderBy: [{ name: 'asc' }, { id: 'asc' }],
         })]);
 
-        const formattedProjects = projects.map((p: any) => ({
+        const formattedProjects = projects.map((p) => ({
             id: p.id,
             name: p.name,
             description: p.description,
@@ -62,6 +92,7 @@ export async function DELETE(request: NextRequest) {
     try {
         const body = await request.json();
         const projectId: string | undefined = body?.projectId;
+        const confirmCascade = body?.confirmCascade === true;
 
         if (!projectId) {
             return NextResponse.json({ error: 'projectId가 필요합니다.' }, { status: 400 });
@@ -69,11 +100,24 @@ export async function DELETE(request: NextRequest) {
 
         const target = await prisma.project.findUnique({
             where: { id: projectId },
-            select: { name: true },
+            select: {
+                name: true,
+                finalReport: { select: { projectId: true } },
+                _count: { select: PROJECT_CASCADE_COUNT_FIELDS },
+            },
         });
 
         if (!target) {
             return NextResponse.json({ error: '프로젝트를 찾을 수 없습니다.' }, { status: 404 });
+        }
+
+        const relatedRecords = countProjectCascadeRecords(target._count, Boolean(target.finalReport));
+        if (!confirmCascade) {
+            return NextResponse.json({
+                error: `"${target.name}" 프로젝트와 연결된 데이터 ${relatedRecords}건이 함께 삭제됩니다. 계속하려면 다시 확인하세요.`,
+                needsCascadeConfirm: true,
+                preview: { relatedRecords },
+            }, { status: 409 });
         }
 
         // schema.prisma에 onDelete: Cascade가 설정되어 있으므로 project 삭제만으로 관련 데이터 모두 삭제됨

@@ -91,7 +91,9 @@ function fixture() {
                         }
                         if (method === 'POST' || method === 'PATCH') {
                             const tech = (payload as { technicalCharacteristic: typeof technicalRows[number] }).technicalCharacteristic;
-                            if (tech) technicalRows = [...technicalRows.filter(item => item.id !== tech.id), tech];
+                            const all = (payload as { technicalCharacteristics?: typeof technicalRows }).technicalCharacteristics;
+                            if (all) technicalRows = all;
+                            else if (tech) technicalRows = [...technicalRows.filter(item => item.id !== tech.id), tech];
                         }
                     }
                     resolve(json(payload));
@@ -129,8 +131,10 @@ let container: HTMLDivElement;
 let root: Root;
 let server: ReturnType<typeof fixture>;
 
-async function mount(onDirtyChange?: (dirty: boolean) => void) {
+async function mount(onDirtyChange?: (dirty: boolean) => void, expandTechnicals = true) {
     await act(async () => { root.render(createElement(QFDMatrix, { projectId: 'fixture-project', onDirtyChange })); });
+    const expandButton = [...container.querySelectorAll('button')].find((item) => item.textContent?.trim() === '기술상태펼치기');
+    if (expandTechnicals && expandButton) await click(expandButton);
 }
 
 function cell(row = 0, column = 0) {
@@ -204,6 +208,43 @@ afterEach(async () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     expect(unexpectedErrors, '예상한 fixture 오류 외에 React나 런타임 오류가 없어야 합니다.').toEqual([]);
+});
+
+describe('WS-9 기술특성 접기와 펼치기', () => {
+    it('처음에는 기술특성을 접고 버튼을 누르면 펼치기와 접기 문구를 전환한다', async () => {
+        await mount(undefined, false);
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).toBeNull();
+        expect(button('기술상태펼치기').getAttribute('aria-expanded')).toBe('false');
+
+        await click(button('기술상태펼치기'));
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).not.toBeNull();
+        expect(button('기술상태 접기').getAttribute('aria-expanded')).toBe('true');
+
+        await click(button('기술상태 접기'));
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).toBeNull();
+        expect(button('기술상태펼치기').getAttribute('aria-expanded')).toBe('false');
+        expect(server.requests.every((request) => request.method === 'GET')).toBe(true);
+    });
+
+    it('예전에 펼침 상태를 저장했어도 다시 들어오면 접힌 상태로 시작한다', async () => {
+        localStorage.setItem('qfd-collapsed-groups:fixture-project', '[]');
+        await mount(undefined, false);
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).toBeNull();
+        await click(button('기술상태펼치기'));
+        await act(async () => { root.unmount(); });
+        root = createRoot(container);
+
+        await mount(undefined, false);
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).toBeNull();
+        expect(button('기술상태펼치기').getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('같은 화면에서 데이터를 새로 조회해도 사용자가 펼친 상태를 유지한다', async () => {
+        await mount();
+        await click(button('새로고침'));
+        expect(container.querySelector('[aria-label="처리 속도 세부기능"]')).not.toBeNull();
+        expect(button('기술상태 접기').getAttribute('aria-expanded')).toBe('true');
+    });
 });
 
 describe('QFD 관계 강도 자동 저장', () => {
@@ -558,6 +599,24 @@ async function enterTechnicalName(value: string) {
 }
 
 describe('WS-9 그룹 구성', () => {
+    it('다른 열에서 사용 중인 세부기능은 선택 목록과 추가 추천에서 제외한다', async () => {
+        await mount();
+        const select = container.querySelector<HTMLSelectElement>('thead select')!;
+        expect([...select.options].map(option => option.value)).toEqual(['처리 속도', '가용성']);
+        const suggestions = container.querySelector<HTMLDataListElement>('#qfd-technical-name-options-fixture-project')!;
+        expect([...suggestions.options].map(option => option.value)).toEqual(['가용성']);
+    });
+
+    it('공백만 바꿔 같은 세부기능을 직접 추가해도 요청을 보내지 않는다', async () => {
+        await mount();
+        await click(button('+ 그룹'));
+        await enterTechnicalName(' 처리   속도 ');
+        await click(button('추가'));
+        expect(server.pending('qfd/technical', 'POST')).toHaveLength(0);
+        expect(container.textContent).toContain('이미 추가된 세부기능입니다.');
+        expect(container.querySelectorAll('thead select')).toHaveLength(2);
+    });
+
     it('실제 세부기능만 표시하고 그룹의 핵심기능을 중복 없이 표시한다', async () => {
         await mount();
         const headers = [...container.querySelectorAll('thead select')];
@@ -588,17 +647,51 @@ describe('WS-9 그룹 구성', () => {
         expect(getCount).toBe(1);
     });
 
-    it('선택한 그룹에 세부기능을 추가하고 핵심기능 제목을 갱신한다', async () => {
+    it('다른 핵심스펙의 기능을 추가하면 서버가 정한 소속 그룹에 표시한다', async () => {
         await mount();
         await click(button('그룹 1 세부기능 추가'));
         await enterTechnicalName('가용성');
         await click(button('추가'));
         const request = server.pending('qfd/technical', 'POST')[0];
         expect(request.body.groupIndex).toBe(0);
-        await finish(request, 'success', { technicalCharacteristic: { id: 't3', name: '가용성', groupIndex: 0, columnOrder: 2 } });
+        const added = { id: 't3', name: '가용성', groupIndex: 1, columnOrder: 2 };
+        await finish(request, 'success', { technicalCharacteristic: added, technicalCharacteristics: [
+            ...technicals.map((tech, index) => ({ ...tech, groupIndex: 0, columnOrder: index })), added,
+        ] });
         const header = button('그룹 1 세부기능 추가').closest('th')!;
-        expect(header.colSpan).toBe(3);
-        expect(header.textContent).toContain('성능 · 안정성');
+        expect(header.colSpan).toBe(2);
+        expect(header.textContent).toContain('성능');
+        expect(header.textContent).not.toContain('안정성');
+        const addedHeader = button('그룹 2 세부기능 추가').closest('th')!;
+        expect(addedHeader.colSpan).toBe(1);
+        expect(addedHeader.textContent).toContain('안정성');
+    });
+
+    it('소속 핵심스펙이 달라지는 이름 변경에도 관계 점수와 입력값을 유지한다', async () => {
+        await mount();
+        await selectValue(cell(), 'STRONG');
+        await drainSaves();
+        await selectValue(container.querySelector<HTMLSelectElement>('thead select')!, '가용성');
+        const changed = { ...technicals[0], name: '가용성', groupIndex: 1, columnOrder: 2 };
+        await finish(server.pending('qfd/technical', 'PATCH')[0], 'success', {
+            technicalCharacteristic: changed, technicalCharacteristics: [{ ...technicals[1], groupIndex: 0, columnOrder: 1 }, changed],
+        });
+        expect(button('그룹 2 세부기능 추가').closest('th')?.textContent).toContain('안정성');
+        expect(cell(0, 1).value).toBe('STRONG');
+        expect(server.saved.get('r1:t1')?.strength).toBe('STRONG');
+        expect(container.querySelector<HTMLInputElement>('[aria-label="가용성 측정단위"]')?.value).toBe('ms');
+    });
+
+    it('그룹 재배치 저장 중에는 겹치는 변경을 막고 실패하면 다시 편집할 수 있다', async () => {
+        await mount();
+        const selects = [...container.querySelectorAll<HTMLSelectElement>('thead select')];
+        await selectValue(selects[0], '가용성');
+        expect(selects[1].matches(':disabled')).toBe(true);
+        await selectValue(selects[1], '가용성');
+        expect(server.pending('qfd/technical', 'PATCH')).toHaveLength(1);
+        await finish(server.pending('qfd/technical', 'PATCH')[0], 'http');
+        expect(selects[1].matches(':disabled')).toBe(false);
+        expect(container.querySelector<HTMLSelectElement>('thead select')?.value).toBe('처리 속도');
     });
 
     it('그룹 추가를 취소하면 빈 열과 그룹이 생기지 않는다', async () => {

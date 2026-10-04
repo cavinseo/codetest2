@@ -12,7 +12,7 @@ describe('Google Forms 기능 플래그', () => {
 
     it('개발 중 안내문 전문을 유지한다', () => {
         expect(GOOGLE_FORMS_DISABLED_MESSAGE).toBe(
-            'Google Forms 연동은 개발 중입니다. 응답 파일 업로드 또는 오프라인 응답파일 업로드를 사용해 주세요.'
+            'Google Forms 자동 연동은 개발 중입니다. Apps Script 파일로 설문지를 직접 만들고 응답 시트를 업로드해 주세요.'
         );
         expect(GOOGLE_FORMS_DISABLED_MESSAGE).toContain('개발 중');
     });

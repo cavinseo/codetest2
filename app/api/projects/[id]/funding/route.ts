@@ -15,14 +15,20 @@ const INITIAL_FUNDING_PLANS = [
     { category: '소요자금', item: '소요자금 합계', order: 6 },
 ];
 
-const INITIAL_FUNDING_SOURCES = [
-    { category: '정부자금', order: 0 },
-    { category: '엔젤투자금', order: 1 },
-    { category: '연구개발 지원금(R&D)', order: 2 },
-    { category: '민간투자주도형 기술창업지원(TIPS)', order: 3 },
-    { category: '벤처캐피털(VC)', order: 4 },
-    { category: '기타', order: 5 },
-];
+// 처음 여는 화면에는 저장 전에도 입력할 기본행이 필요하다. 조회가 DB를 바꾸지
+// 않도록, 저장될 때까지는 화면에서만 쓸 행을 만든다.
+function createInitialFundingPlans(projectId: string) {
+    return INITIAL_FUNDING_PLANS.map((plan) => ({
+        id: `initial-funding-plan-${plan.order}`,
+        projectId,
+        category: plan.category,
+        item: plan.item,
+        year1: 0,
+        year2: plan.year2 === null ? null : 0,
+        year3: plan.year3 === null ? null : 0,
+        order: plan.order,
+    }));
+}
 
 // GET: 자금소요 및 조달 계획
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -31,28 +37,18 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     if (accessResult instanceof NextResponse) return accessResult;
     try {
         let plans = await prisma.fundingPlan.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
-        let sources = await prisma.fundingSource.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
+        const sources = await prisma.fundingSource.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
         const salesEstimates = await prisma.salesEstimate.findMany({ where: { projectId } });
 
-        // 기본행 자동 채움은 조회 도중의 쓰기라, 쓰기 권한을 따로 확인해야 한다.
-        // 위 requireProjectAccess 는 GET 이라 write:false 로 통과하므로 그것만
-        // 믿으면 VIEWER·COACH 가 탭을 열기만 해도 행이 생긴다(lib/authorization.ts
-        // 의 isProjectWriteRole 주석이 경고하는 그 경계 붕괴다).
-        const canCreateDefaults = isProjectWriteRole(accessResult.role);
-        const createMissingDefaults = canCreateDefaults ? [
-            ...(plans.length === 0 ? [prisma.fundingPlan.createMany({ data: INITIAL_FUNDING_PLANS.map(p => ({ ...p, projectId })) })] : []),
-            ...(sources.length === 0 ? [prisma.fundingSource.createMany({ data: INITIAL_FUNDING_SOURCES.map(s => ({ ...s, projectId })) })] : []),
-        ] : [];
-
-        if (createMissingDefaults.length > 0) {
-            await prisma.$transaction(createMissingDefaults);
-            plans = await prisma.fundingPlan.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
-            sources = await prisma.fundingSource.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
+        // 저장 권한이 있는 사람에게만, 아직 저장되지 않은 기본행을 화면용으로
+        // 돌려준다. GET은 어떤 경우에도 DB에 기본행을 쓰지 않는다.
+        if (isProjectWriteRole(accessResult.role)) {
+            if (plans.length === 0) plans = createInitialFundingPlans(projectId);
         }
 
         plans = buildFundingPlansWithSales({ plans, salesEstimates }) as typeof plans;
 
-        return NextResponse.json({ plans, sources });
+        return NextResponse.json({ plans, sources, canWrite: isProjectWriteRole(accessResult.role) });
     } catch (error) {
         console.error('Funding GET error:', error);
         return NextResponse.json({ error: '자금계획 데이터를 불러오지 못했습니다.' }, { status: 500 });

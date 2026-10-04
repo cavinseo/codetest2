@@ -176,6 +176,46 @@ export function resolveRelatedTechnology(
     return '';
 }
 
+export function getAppliedTechnologiesForAttributes(
+    specs: AttributeSpecFunctionLike[],
+    attributes: string[]
+): string[] {
+    const technologies = new Set<string>();
+    const sortedSpecs = [...specs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    for (const attribute of attributes) {
+        const selectedSpecs = sortedSpecs.filter(spec => spec.name.trim() === attribute.trim());
+        for (const selected of selectedSpecs) {
+            const relevantSpecs = selected.technology?.trim()
+                ? [selected]
+                : sortedSpecs.filter(spec => {
+                    let parentId = spec.parentId;
+                    while (parentId) {
+                        if (parentId === selected.id) return true;
+                        parentId = sortedSpecs.find(parent => parent.id === parentId)?.parentId;
+                    }
+                    return false;
+                });
+            for (const spec of relevantSpecs) {
+                const technology = spec.technology?.trim();
+                if (technology) technologies.add(technology);
+            }
+        }
+    }
+
+    return [...technologies];
+}
+
+export function getAdditionalTechnologies(saved: string, automatic: string[]): string {
+    const automaticSet = new Set(automatic);
+    return saved.split(/\r?\n/).filter(line => !automaticSet.has(line.trim())).join('\n').trim();
+}
+
+export function combineTechnologies(automatic: string[], additional: string): string {
+    const additionalLines = getAdditionalTechnologies(additional, automatic);
+    return [automatic.join('\n'), additionalLines].filter(Boolean).join('\n');
+}
+
 export function getMarketSegmentSpan(rows: AttributeGroupingRowLike[], index: number): number {
     const segment = rows[index]?.marketSegment.trim();
     if (!segment) return 1;
@@ -189,8 +229,7 @@ export function getMarketSegmentSpan(rows: AttributeGroupingRowLike[], index: nu
     return count;
 }
 
-// 같은 세분시장 안에서 값이 연속으로 같으면 첫 행만 남기고 병합한다.
-// 고객명이 달라도 값이 같으면 하나로 표기한다.
+// 같은 세분시장 안에서 연속된 값을 병합하되, 제공혜택은 같은 고객니즈 안에서만 묶는다.
 function getSegmentScopedSpan(
     rows: AttributeSegmentValueRowLike[],
     index: number,
@@ -201,16 +240,22 @@ function getSegmentScopedSpan(
 
     const segment = current.marketSegment.trim();
     const value = current[field].trim();
-    if (!value) return 1;
+    const customerNeed = current.customerNeed.trim();
+    if (!value || (field === 'benefit' && !customerNeed)) return 1;
+
+    const matchesGroup = (row: AttributeSegmentValueRowLike) =>
+        row.marketSegment.trim() === segment &&
+        row[field].trim() === value &&
+        (field !== 'benefit' || row.customerNeed.trim() === customerNeed);
 
     const previous = rows[index - 1];
-    if (index > 0 && previous.marketSegment.trim() === segment && previous[field].trim() === value) {
+    if (previous && matchesGroup(previous)) {
         return 0;
     }
 
     let count = 1;
     for (let i = index + 1; i < rows.length; i++) {
-        if (rows[i].marketSegment.trim() !== segment || rows[i][field].trim() !== value) break;
+        if (!matchesGroup(rows[i])) break;
         count++;
     }
     return count;
