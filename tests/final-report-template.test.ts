@@ -91,8 +91,8 @@ it('멘토 분석 원문을 해당 표보다 앞에 놓고 WS-3 제공혜택을 
         expect(prose).toBeGreaterThan(-1); expect(prose).toBeLessThan(table);
     }
     expect(JSON.stringify(model)).toContain('시간 단축');
-    const funding = model.blocks.find(b => b.kind === 'dataTable' && b.headers.includes('1차년도(원)'));
-    expect(funding).toMatchObject({ rows: [['소요자금', '설비', '0', '미입력', '미입력']] });
+    const funding = model.blocks.find(b => b.kind === 'dataTable' && b.headers.includes('1차년도(Y+1)'));
+    expect(funding).toMatchObject({ rows: [['소요자금', '설비', '0', '', '']] });
 });
 
 it('기업명이 없을 때 프로젝트명을 기업명으로 대체하거나 미작성 결과를 만들지 않는다', () => {

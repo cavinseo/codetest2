@@ -2,6 +2,7 @@
 import type { FinalReportBlock, FinalReportModel } from './final-report-document';
 import { getFitnessReportExcludedIndexes } from './final-report-fitness';
 import { getGroupedCellSpans } from './final-report-table-merge';
+import { reportHeaderRows, reportColumnSpans, type ReportHeaderCell } from './final-report-table-structure';
 import { parseReportMarkdown, reportRunsText, type ReportMarkdownBlock, type ReportTextRun } from './final-report-markdown';
 
 export const REPORT_PAPER = { width: 595.28, height: 841.89, margin: 42, top: 53, bottom: 787, body: 511.28 };
@@ -13,7 +14,7 @@ export type CoverBlock = Extract<FinalReportBlock, { kind: 'cover' }>;
 export const REPORT_BOX = { padding: 8, headerHeight: 28 };
 type ReportLeafLayoutItem =
     | { kind: 'text'; blockIndex: number; lines: string[]; richLines?: ReportTextRun[][]; code?: boolean; quote?: boolean; top: number; height: number; left: number; width: number; marker?: string; markerWidth: number; fontSize: number; lineHeight: number; bold: boolean; color: string; chapter: boolean }
-    | { kind: 'table'; blockIndex: number; top: number; height: number; fontSize: number; lineHeight: number; widths: number[]; headers: string[][]; richHeaders?: ReportTextRun[][][]; headerHeight: number; mergeSpans?: number[][]; rows: Array<{ index: number; lines: string[][]; richLines?: ReportTextRun[][][]; height: number }> }
+    | { kind: 'table'; blockIndex: number; top: number; height: number; fontSize: number; lineHeight: number; widths: number[]; headers: string[][]; richHeaders?: ReportTextRun[][][]; structuredHeaders?: Array<{ height: number; cells: Array<ReportHeaderCell & { lines: string[] }> }>; headerHeight: number; mergeSpans?: number[][]; rows: Array<{ index: number; lines: string[][]; richLines?: ReportTextRun[][][]; height: number }> }
     | { kind: 'image'; blockIndex: number; top: number; height: number; width: number; block: Extract<FinalReportBlock, { kind: 'image' }> };
 export type ReportLayoutItem = ReportLeafLayoutItem | { kind: 'box'; blockIndex: number; title: string; top: number; height: number; width: number; items: ReportLeafLayoutItem[] };
 export interface ReportPageLayout { cover?: CoverBlock; items: ReportLayoutItem[] }
@@ -224,12 +225,18 @@ function prepareTableLayout(block: TableBlock, width: number, rich?: Extract<Rep
     const wrapRichCells = (cells: ReportTextRun[][]) => cells.map((cell, column) => wrapReportRuns(cell, Math.max(fontSize, widths[column] - 8), fontSize));
     const richHeaders = rich ? wrapRichCells(rich.headers.map(cell => cell.map(run => ({ ...run, bold: true })))) : undefined;
     const headerLines = richHeaders ? richHeaders.map(lines => lines.map(reportRunsText)) : wrapCells(headers, true);
-    const headerHeight = headerLines.length ? Math.max(...headerLines.map(lines => lines.length)) * lineHeight + TABLE_CELL_INSET : 0;
+    const structuredHeaders = !keyValue && block.headerGroups ? reportHeaderRows(block).map(cells => {
+        const wrapped = cells.map(cell => ({ ...cell, lines: wrapReportText(cell.text, Math.max(fontSize, widths.slice(cell.column, cell.column + cell.span).reduce((sum, value) => sum + value, 0) - 8), fontSize * 1.08) }));
+        return { cells: wrapped, height: Math.max(1, ...wrapped.map(cell => cell.lines.length)) * lineHeight + TABLE_CELL_INSET };
+    }) : undefined;
+    const headerHeight = structuredHeaders ? structuredHeaders.reduce((sum, row) => sum + row.height, 0) : headerLines.length ? Math.max(...headerLines.map(lines => lines.length)) * lineHeight + TABLE_CELL_INSET : 0;
     const rows = sourceRows.map((row, index) => {
         const richLines = rich ? wrapRichCells(rich.rows[index]) : undefined;
-        return { index, lines: richLines ? richLines.map(lines => lines.map(reportRunsText)) : wrapCells(row), ...(richLines ? { richLines } : {}) };
+        const spans = keyValue ? row.map(() => 1) : reportColumnSpans(block, index);
+        const lines = richLines ? richLines.map(lines => lines.map(reportRunsText)) : row.map((cell, column) => spans[column] === 0 ? [] : wrapReportText(cell, Math.max(fontSize, widths.slice(column, column + spans[column]).reduce((sum, value) => sum + value, 0) - 8), fontSize));
+        return { index, lines, ...(richLines ? { richLines } : {}) };
     });
-    return { widths, fontSize, lineHeight, headerLines, richHeaders, headerHeight, rows };
+    return { widths, fontSize, lineHeight, headerLines, richHeaders, structuredHeaders, headerHeight, rows };
 }
 
 function layoutMergedTableRows(rows: TableLayoutItem['rows'], block: TableBlock, mergeCells: boolean[][], lineHeight: number) {
@@ -253,11 +260,12 @@ function layoutMergedTableRows(rows: TableLayoutItem['rows'], block: TableBlock,
 function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: number, rich?: Extract<ReportMarkdownBlock, { kind: 'table' }>) {
     const prepared = prepareTableLayout(block, cursor.bounds.tableWidth, rich);
     const { widths, fontSize, lineHeight, rows } = prepared;
-    let { headerLines, richHeaders, headerHeight } = prepared;
+    let { headerLines, richHeaders, structuredHeaders, headerHeight } = prepared;
     // 한 페이지보다 긴 머리글도 일반 행처럼 나눠 표시한다.
     if (headerHeight + lineHeight + TABLE_CELL_INSET + 1 > cursor.bounds.bottom - cursor.bounds.top) {
         rows.unshift({ index: -1, lines: headerLines, richLines: richHeaders?.map(cell => cell.map(line => line.map(run => ({ ...run, bold: true })))) });
-        headerLines = []; richHeaders = []; headerHeight = 0;
+        if (block.kind === 'dataTable' && block.headerGroups) rows[0].lines = block.headers.map((header, column) => wrapReportText([block.headerGroups?.[column], header].filter(Boolean).join('\n'), Math.max(fontSize, widths[column] - 8), fontSize));
+        headerLines = []; richHeaders = []; structuredHeaders = undefined; headerHeight = 0;
     }
     const sourceRows = block.kind === 'dataTable' ? block.rows : block.rows.map(row => [row.label, row.value]);
     const wrappedRows = new Map(rows.map(row => [row.index, row]));
@@ -274,7 +282,7 @@ function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: nu
         }
         pendingTable = null; pendingRows = [];
     };
-    const newTable = (): TableLayoutItem => ({ kind: 'table', blockIndex, top: cursor.top, height: headerHeight + 1, fontSize, lineHeight, widths, headers: headerLines, richHeaders, headerHeight, rows: [] });
+    const newTable = (): TableLayoutItem => ({ kind: 'table', blockIndex, top: cursor.top, height: headerHeight + 1, fontSize, lineHeight, widths, headers: headerLines, richHeaders, structuredHeaders, headerHeight, rows: [] });
     if (!rows.length && headerLines.length) {
         if (cursor.top + headerHeight + 1 > cursor.bounds.bottom) startNextPage(cursor);
         pendingTable = newTable();

@@ -2,6 +2,7 @@
 import { AlignmentType, BorderStyle, Document, ExternalHyperlink, Footer, Header, HeightRule, ImageRun, LineRuleType, Packer, Paragraph, SectionType, ShadingType, Table, TableCell, TableLayoutType, TableRow, Tab, TabStopType, TextRun, VerticalAlign, VerticalMergeType, WidthType, type ISectionOptions } from 'docx';
 import type { FinalReportModel } from './final-report-document';
 import { getTableMergeSpans } from './final-report-table-merge';
+import { reportColumnSpans } from './final-report-table-structure';
 import { layoutReportPages, reportCoverElements, withReportOutputDate, wrapReportText, REPORT_CHAPTER_PADDING, REPORT_BOX, REPORT_PAPER, REPORT_TABLE_LEFT, REPORT_VISUAL_LEFT, REPORT_VISUAL_WIDTH, type CoverBlock, type ReportLayoutItem, type ReportPageLayout } from './final-report-layout';
 import type { ReportTextRun } from './final-report-markdown';
 
@@ -72,15 +73,18 @@ function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: 
     const mergeSpans = getTableMergeSpans(item, block);
     const row = (cells: string[][], height: number, header: boolean, rowIndex = -1) => new TableRow({
         tableHeader: header, cantSplit: true, height: { value: pointsToTwips(height), rule: HeightRule.ATLEAST },
-        children: cells.map((lines, index) => {
+        children: cells.flatMap((lines, index) => {
+            const columnSpan = !header && block.kind === 'dataTable' ? reportColumnSpans(block, item.rows[rowIndex].index)[index] : 1;
+            if (!columnSpan) return [];
             const span = rowIndex < 0 ? 1 : mergeSpans[rowIndex][index];
             const displayedLines = lines;
             return new TableCell({
-            width: { size: pointsToTwips(item.widths[index]), type: WidthType.DXA },
+            width: { size: pointsToTwips(item.widths.slice(index, index + columnSpan).reduce((sum, width) => sum + width, 0)), type: WidthType.DXA },
+            columnSpan,
             margins: { top: pointsToTwips(6), bottom: pointsToTwips(6), left: pointsToTwips(3), right: pointsToTwips(3) },
             verticalAlign: header || index === 0 || span > 1 ? VerticalAlign.CENTER : VerticalAlign.TOP,
             ...(span > 1 ? { verticalMerge: VerticalMergeType.RESTART } : span === 0 ? { verticalMerge: VerticalMergeType.CONTINUE } : {}),
-            shading: { type: ShadingType.CLEAR, fill: header ? 'E7ECF1' : 'FFFFFF' },
+            shading: { type: ShadingType.CLEAR, fill: header ? 'E7ECF1' : block.kind === 'dataTable' && block.highlightRows?.includes(item.rows[rowIndex].index) ? 'DCFCE7' : 'FFFFFF' },
             children: [createWordParagraph(span === 0 ? [''] : displayedLines.length ? displayedLines : [''], item.fontSize, item.lineHeight, { bold: header, center: header || index === 0 || span > 1 }, header ? item.richHeaders?.[index] : item.rows[rowIndex].richLines?.[index])],
         }); }),
     });
@@ -88,7 +92,14 @@ function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: 
         width: { size: pointsToTwips(item.widths.reduce((sum, width) => sum + width, 0)), type: WidthType.DXA },
         indent: { size: pointsToTwips(indent), type: WidthType.DXA }, layout: TableLayoutType.FIXED,
         columnWidths: item.widths.map(pointsToTwips), borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
-        rows: [...(item.headers.length ? [row(item.headers, item.headerHeight, true)] : []), ...item.rows.map((r, index) => row(r.lines, r.height, false, index))],
+        rows: [...(item.structuredHeaders ? item.structuredHeaders.map((header, headerIndex) => new TableRow({ tableHeader: true, cantSplit: true, height: { value: pointsToTwips(header.height), rule: HeightRule.ATLEAST },
+            children: [...header.cells, ...(headerIndex === 1 ? item.structuredHeaders![0].cells.filter(cell => cell.rowSpan === 2).map(cell => ({ ...cell, lines: [''], rowSpan: 0 })) : [])].sort((a, b) => a.column - b.column).map(cell => new TableCell({
+                columnSpan: cell.span, width: { size: pointsToTwips(item.widths.slice(cell.column, cell.column + cell.span).reduce((sum, width) => sum + width, 0)), type: WidthType.DXA },
+                ...(cell.rowSpan === 2 ? { verticalMerge: VerticalMergeType.RESTART } : cell.rowSpan === 0 ? { verticalMerge: VerticalMergeType.CONTINUE } : {}),
+                verticalAlign: VerticalAlign.CENTER, shading: { type: ShadingType.CLEAR, fill: 'E7ECF1' }, margins: { top: 120, bottom: 120, left: 60, right: 60 },
+                children: [createWordParagraph(cell.lines, item.fontSize, item.lineHeight, { bold: true, center: true })],
+            })),
+        })) : item.headers.length ? [row(item.headers, item.headerHeight, true)] : []), ...item.rows.map((r, index) => row(r.lines, r.height, false, index))],
     });
 }
 

@@ -35,6 +35,9 @@ const blockSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('dataTable'), headers: z.array(text).min(1).max(100), rows: z.array(z.array(text).max(100)).max(5000),
         title: text.optional(), columnWidths: z.array(z.number().finite().positive().max(10000)).min(1).max(100).optional(),
         mergeColumns: z.array(z.number().int().min(0).max(99)).max(100).optional(),
+        headerGroups: z.array(text.nullable()).min(1).max(100).optional(),
+        columnSpans: z.array(z.object({ row: z.number().int().min(0), column: z.number().int().min(0), span: z.number().int().min(2) }).strict()).max(10000).optional(),
+        highlightRows: z.array(z.number().int().min(0)).max(5000).optional(),
     }).strict(),
     z.object({ kind: z.literal('image'), title: text, pngDataUrl: image,
         widthMm: z.number().finite().positive().max(1000), heightMm: z.number().finite().positive().max(1000), landscape: z.boolean(),
@@ -53,6 +56,19 @@ export const reportDocumentSchema = z.object({
             context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'rows'], message: '표의 열 수가 일치하지 않습니다.' });
         }
         if (block.kind === 'dataTable') tableCells += block.headers.length * (block.rows.length + 1);
+        if (block.kind === 'dataTable') {
+            if (block.headerGroups && block.headerGroups.length !== block.headers.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'headerGroups'], message: '다단 머리글의 열 수가 일치하지 않습니다.' });
+            const occupied = new Set<string>();
+            for (const merge of block.columnSpans ?? []) {
+                if (merge.row >= block.rows.length || merge.column + merge.span > block.headers.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'columnSpans'], message: '가로 병합 범위가 표를 벗어났습니다.' });
+                for (let column = merge.column; column < Math.min(merge.column + merge.span, block.headers.length); column++) {
+                    const key = `${merge.row}:${column}`;
+                    if (occupied.has(key) || (column > merge.column && block.rows[merge.row]?.[column])) context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'columnSpans'], message: '병합 범위가 겹치거나 입력된 셀을 가립니다.' });
+                    occupied.add(key);
+                }
+            }
+            if (block.highlightRows?.some(row => row >= block.rows.length)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'highlightRows'], message: '강조할 행이 표 범위를 벗어났습니다.' });
+        }
         if (block.kind === 'dataTable' && block.columnWidths && block.columnWidths.length !== block.headers.length) {
             context.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', index, 'columnWidths'], message: '표의 열 너비 개수가 일치하지 않습니다.' });
         }

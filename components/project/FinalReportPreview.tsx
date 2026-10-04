@@ -150,7 +150,7 @@ function BlockView({ block, ...props }: { block: FinalReportBlock; blockIndex: n
 }
 
 export default function FinalReportPreview({ blocks, onEdit, readOnly = false, disabled = false }: Props) {
-    if (blocks.some(block => block.kind === 'cover')) return <FinalReportPages blocks={blocks} onEdit={onEdit} readOnly={readOnly} disabled={disabled} />;
+    if (blocks.some(block => block.kind === 'cover' || (block.kind === 'dataTable' && (block.headerGroups || block.columnSpans)))) return <FinalReportPages blocks={blocks} onEdit={onEdit} readOnly={readOnly} disabled={disabled} />;
     blocks = normalizeReportLabels(blocks);
     const excluded = getFitnessReportExcludedIndexes(blocks);
     return (

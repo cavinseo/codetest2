@@ -12,12 +12,12 @@ export function getTableMergeSpans(item: TableLayout, block: FinalReportBlock): 
 
 export function getGroupedCellSpans(rows: string[][], columns: number[]): number[][] {
     const spans = rows.map(row => row.map(() => 1));
-    const mergeColumns = [...columns].sort((a, b) => a - b);
+    const mergeColumns = [...columns];
     const sourceCell = (rowIndex: number, column: number) => rows[rowIndex]?.[column]?.trim() ?? '';
     const mergeable = (value: string) => Boolean(value && value !== '미입력' && value !== '—');
     const sameGroup = (start: number, next: number, column: number) =>
         sourceCell(start, column) === sourceCell(next, column) &&
-        mergeColumns.filter(parent => parent < column).every(parent =>
+        mergeColumns.slice(0, mergeColumns.indexOf(column)).every(parent =>
             mergeable(sourceCell(start, parent)) && sourceCell(start, parent) === sourceCell(next, parent));
 
     for (const column of mergeColumns) {

@@ -78,7 +78,7 @@ function renderBlock(block: FinalReportBlock): Paragraph | Table {
 
 export async function renderFinalReportDocx(model: FinalReportModel): Promise<Blob> {
     model = { ...model, blocks: normalizeReportLabels(model.blocks) };
-    if (model.blocks.some(block => block.kind === 'cover')) return renderTemplateReportDocx(model);
+    if (model.blocks.some(block => block.kind === 'cover' || (block.kind === 'dataTable' && (block.headerGroups || block.columnSpans)))) return renderTemplateReportDocx(model);
     const excluded = getFitnessReportExcludedIndexes(model.blocks);
     const sections: ISectionOptions[] = [];
     let portrait: Array<Paragraph | Table> = [];

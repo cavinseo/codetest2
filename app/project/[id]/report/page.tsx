@@ -16,6 +16,7 @@ import { REPORT_MAX_BYTES, type ReportDraft } from '@/lib/final-report-payload';
 import { optimizeReportImage } from '@/lib/final-report-image';
 import { captureWorksheetNode, waitForWorksheetReady } from '@/lib/worksheet-capture';
 import { reportOutputDate, withReportOutputDate } from '@/lib/final-report-layout';
+import { refreshWorksheetTables } from '@/lib/final-report-table-refresh';
 
 const CAPTURE_TARGETS = Object.entries(CAPTURED_WORKSHEET_TITLES) as Array<[CapturedWorksheetImage['worksheetId'], string]>;
 const EMPTY_FREE_INPUT: FinalReportFreeInput = {
@@ -180,9 +181,11 @@ export default function FinalReportPage() {
             results.push(...done);
         }
         if (generation !== worksheetLoad.current) return;
-        setPayloads(Object.fromEntries(keys.map((key, index) => [key, results[index]])));
+        const loaded = Object.fromEntries(keys.map((key, index) => [key, results[index]]));
+        setPayloads(loaded);
         setFailedKeys(keys.filter((_, index) => results[index] === null));
         setWorksheetsLoading(false);
+        return results.some(value => value === null) ? null : loaded;
     }, [projectId]);
 
     useEffect(() => {
@@ -354,6 +357,21 @@ export default function FinalReportPage() {
         } catch (error) { fail(error, '미리보기 생성에 실패했습니다.'); }
         finally { finish(); }
     }
+    async function handleRefreshTables() {
+        if (!draft || !report?.canEdit || !begin('워크시트 표 불러오는 중...')) return;
+        try {
+            const latest = await requestReport(reportUrl);
+            if (!latest.canEdit || latest.version !== report.version) throw new Error('다른 화면에서 보고서가 변경되었습니다. 새로 불러온 뒤 표를 반영해 주세요.');
+            const loaded = await loadWorksheets();
+            if (!loaded) throw new Error('워크시트 일부를 불러오지 못했습니다. 기존 보고서는 유지됩니다.');
+            const generated = buildFinalReportModel({ projectName: '', description: null, coachName: null, generatedAt: reportOutputDate() }, buildWorksheetData(loaded as unknown as WorksheetPayloads), free, []);
+            setDraft(refreshWorksheetTables(draft, generated));
+            setModel(previous => previous ? refreshWorksheetTables(previous, generated) : generated);
+            setHasLocalChanges(true);
+            showToast('작성용 워크시트의 표를 반영했습니다. 설명 문단은 유지됩니다. 확인 후 초안을 저장해 주세요.');
+        } catch (error) { fail(error, '워크시트 표 반영에 실패했습니다.'); }
+        finally { finish(); }
+    }
     function handleEdit(edit: BlockEdit) {
         if (busy.current || !editing) return;
         setDraft(previous => previous ? withEditedBlocks(previous, applyBlockEdit(previous.blocks, edit)) : previous);
@@ -523,6 +541,7 @@ export default function FinalReportPage() {
             {previewNeedsRefresh && <p role="status" className="text-sm text-amber-300">입력 항목이 변경되었습니다. 미리보기를 다시 만들어야 완료할 수 있습니다. 기존 교정 내용은 재생성 전까지 유지됩니다.</p>}
             <div className="flex flex-wrap items-center gap-3">
                 <button onClick={() => draft ? setConfirmation('rebuild') : void handleBuildPreview()} disabled={progress !== null || worksheetsLoading || !worksheets || failedKeys.length > 0} className="btn-secondary text-sm disabled:opacity-50">{draft ? '미리보기 다시 만들기' : '미리보기 만들기'}</button>
+                {draft && <button onClick={() => void handleRefreshTables()} disabled={progress !== null || worksheetsLoading} title="표의 교정 내용은 작성용 워크시트의 저장값으로 갱신하고 설명 문단은 유지합니다." className="btn-secondary text-sm disabled:opacity-50">워크시트 표 반영</button>}
                 {draft && <button onClick={() => void handleBuildPreview(true)} disabled={progress !== null || worksheetsLoading || !worksheets || failedKeys.length > 0} className="btn-secondary text-sm disabled:opacity-50">워크시트 그림 반영</button>}
                 <button disabled={progress !== null || worksheetsLoading} onClick={() => void reloadSources()} className="btn-secondary text-sm disabled:opacity-50">워크시트 다시 불러오기</button>
                 {worksheetsLoading && <p role="status" className="text-sm text-gray-400">워크시트 불러오는 중 {loadedCount}/11</p>}

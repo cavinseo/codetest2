@@ -94,6 +94,8 @@ export function buildWorksheetData(payloads: WorksheetPayloads): FinalReportWork
     return {
         fitnessMatrix: (payloads.exportData as { fitnessMatrix?: FinalReportWorksheetData['fitnessMatrix'] } | null)?.fitnessMatrix ?? null,
         technicalCharacteristics: pickArray<Row<'technicalCharacteristics'>>(payloads.exportData, 'technicalCharacteristics'),
+        benchmarks: pickArray<Row<'benchmarks'>>(payloads.exportData, 'benchmarks'),
+        technicalBenchmarks: pickArray<Row<'technicalBenchmarks'>>(payloads.exportData, 'technicalBenchmarks'),
         qfdRelationships: pickArray<Row<'qfdRelationships'>>(payloads.exportData, 'qfdRelationships'),
         qfdTechnicals: pickArray<Row<'qfdTechnicals'>>(payloads.qfdAnalysis, 'technicals'),
         salesEstimates: pickArray<Row<'salesEstimates'>>(payloads.sales, 'rows'),

@@ -13,6 +13,7 @@ export type BlockEdit =
     | { kind: 'text'; blockIndex: number; text: string }
     | { kind: 'keyValue'; blockIndex: number; row: number; value: string }
     | { kind: 'tableHeader'; blockIndex: number; col: number; value: string }
+    | { kind: 'tableGroup'; blockIndex: number; col: number; value: string }
     | { kind: 'tableCell'; blockIndex: number; row: number; col: number; value: string };
 
 /**
@@ -38,6 +39,13 @@ export function applyBlockEdit(blocks: FinalReportBlock[], edit: BlockEdit): Fin
             ...block,
             rows: block.rows.map((row, index) => (index === edit.row ? { ...row, value: edit.value } : row)),
         });
+    }
+    if (edit.kind === 'tableGroup') {
+        if (block.kind !== 'dataTable' || !block.headerGroups || block.headerGroups[edit.col] == null) return blocks;
+        const previous = block.headerGroups[edit.col];
+        let end = edit.col + 1;
+        while (end < block.headerGroups.length && block.headerGroups[end] === previous) end++;
+        return replaceEditedBlock({ ...block, headerGroups: block.headerGroups.map((text, column) => column >= edit.col && column < end ? edit.value : text) });
     }
     if (edit.kind === 'tableHeader') {
         if (block.kind !== 'dataTable' || edit.col >= block.headers.length || edit.col < 0) return blocks;

@@ -19,6 +19,7 @@ export function getFitnessReportExcludedIndexes(blocks: FinalReportBlock[]): Set
         if (block.kind === 'pageBreak' || block.kind === 'cover') inFitness = false;
         if (!inFitness) continue;
         if (block.kind === 'image' && block.title === '제품/서비스 속성 적합도') continue;
+        if (block.kind === 'dataTable' && block.title === 'WS-4 제품속성적합도') continue;
         if (block.kind === 'paragraph' && block.text === '속성 적합도 행렬이 저장되어 있지 않습니다. 평가 결과 그림은 미작성 상태입니다.') continue;
         excluded.add(index);
     }

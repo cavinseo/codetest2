@@ -8,6 +8,7 @@ import { layoutReportPages, reportCoverElements, reportOutputDate, REPORT_CHAPTE
 import { getTableMergeSpans } from '@/lib/final-report-table-merge';
 import type { ReportTextRun } from '@/lib/final-report-markdown';
 import { normalizeReportLabels } from '@/lib/final-report-labels';
+import { reportColumnSpans } from '@/lib/final-report-table-structure';
 
 interface Props { blocks: FinalReportBlock[]; onEdit?: (edit: BlockEdit) => void; readOnly?: boolean; disabled?: boolean }
 interface EditTarget { label: string; value: string; edit: BlockEdit; ariaLabel?: string }
@@ -93,14 +94,16 @@ function ReportTable({ item, block, onRequestEdit, left = REPORT_PAPER.margin + 
     const mergeSpans = getTableMergeSpans(item, block);
     return <table data-report-block={item.blockIndex} style={{ ...pagePosition(item.top), left: pt(left), width: pt(item.widths.reduce((sum, width) => sum + width, 0)), tableLayout: 'fixed', borderCollapse: 'collapse', color: '#1b1b1b' }}>
         <colgroup>{item.widths.map((width, i) => <col key={i} style={{ width: pt(width) }} />)}</colgroup>
-        {!!item.headers.length && <thead><tr style={{ height: pt(item.headerHeight) }}>{item.headers.map((lines, col) => <th key={col} style={{ ...cellStyle, background: '#e7ecf1', fontWeight: 700, textAlign: 'center', verticalAlign: 'middle' }}>
+        {item.structuredHeaders && block.kind === 'dataTable' ? <thead>{item.structuredHeaders.map((row, index) => <tr key={index} style={{ height: pt(row.height) }}>{row.cells.map(cell => <th key={cell.column} colSpan={cell.span} rowSpan={cell.rowSpan} style={{ ...cellStyle, background: '#e7ecf1', fontWeight: 700, textAlign: 'center', verticalAlign: 'middle' }}>
+            <EditableReportValue text={cell.lines.join('\n')} onRequestEdit={onRequestEdit} target={{ label: '표 머리글 교정', value: cell.text, ariaLabel: `${cell.group ? '그룹 ' : ''}머리글 ${cell.column + 1} 교정`, edit: { kind: cell.group ? 'tableGroup' : 'tableHeader', blockIndex: item.blockIndex, col: cell.column, value: cell.text } }} />
+        </th>)}</tr>)}</thead> : !!item.headers.length && <thead><tr style={{ height: pt(item.headerHeight) }}>{item.headers.map((lines, col) => <th key={col} style={{ ...cellStyle, background: '#e7ecf1', fontWeight: 700, textAlign: 'center', verticalAlign: 'middle' }}>
             <EditableReportValue text={lines.join('\n')} richLines={item.richHeaders?.[col]} onRequestEdit={onRequestEdit} target={block.kind === 'dataTable' ? {
                 label: '표 머리글 교정', value: block.headers[col], ariaLabel: `머리글 ${col + 1} 교정`, edit: { kind: 'tableHeader', blockIndex: item.blockIndex, col, value: block.headers[col] },
             } : textEditTarget(block, item.blockIndex)} />
         </th>)}</tr></thead>}
-        <tbody>{item.rows.map((row, index) => <tr key={index} style={{ height: pt(row.height) }}>{row.lines.map((lines, col) => mergeSpans[index][col] === 0 ? null : <td key={col} rowSpan={mergeSpans[index][col] > 1 ? mergeSpans[index][col] : undefined} style={col === 0 || mergeSpans[index][col] > 1 ? { ...cellStyle, verticalAlign: 'middle', textAlign: 'center' } : cellStyle}>
+        <tbody>{item.rows.map((row, index) => { const columnSpans = block.kind === 'dataTable' ? reportColumnSpans(block, row.index) : row.lines.map(() => 1); return <tr key={index} style={{ height: pt(row.height), background: block.kind === 'dataTable' && block.highlightRows?.includes(row.index) ? '#dcfce7' : undefined }}>{row.lines.map((lines, col) => mergeSpans[index][col] === 0 || columnSpans[col] === 0 ? null : <td key={col} colSpan={columnSpans[col] > 1 ? columnSpans[col] : undefined} rowSpan={mergeSpans[index][col] > 1 ? mergeSpans[index][col] : undefined} style={col === 0 || mergeSpans[index][col] > 1 ? { ...cellStyle, verticalAlign: 'middle', textAlign: 'center' } : cellStyle}>
             <EditableReportValue text={lines.join('\n') || '\u00a0'} richLines={row.richLines?.[col]} target={tableCellEditTarget(block, item.blockIndex, row.index, col)} onRequestEdit={onRequestEdit} />
-        </td>)}</tr>)}</tbody>
+        </td>)}</tr>; })}</tbody>
     </table>;
 }
 

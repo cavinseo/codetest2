@@ -27,15 +27,17 @@ export interface FinalReportOverviewInput extends ProductOverview {
 
 export interface FinalReportWorksheetData {
     fitnessMatrix?: { marketsJson: string; matrixJson: string } | null;
-    technicalCharacteristics?: Array<{ id: string; name: string; groupIndex?: number; columnOrder?: number }>;
+    technicalCharacteristics?: Array<{ id: string; name: string; groupIndex?: number; columnOrder?: number; unit?: string | null; targetValue?: string | null }>;
+    benchmarks?: Array<{ requirementId: string; company: string; score: number }>;
+    technicalBenchmarks?: Array<{ technicalCharId: string; company: string; value: string }>;
     qfdRelationships?: Array<{ requirementId: string; technicalCharId: string; strength: string }>;
     qfdTechnicals?: Array<{ technicalCharId: string; totalScore: number; importancePercent: number; rank: number | null }>;
     salesEstimates: Array<{ period: string; customer: string | null; amount: number; futureAmount: number; competitor: string | null }>;
     specFunctions: Array<{ id: string; level: string; parentId: string | null; name: string; technology: string | null }>;
     specDetailCollapsed?: boolean;
-    productAttributes: Array<{ productName: string | null; customerName: string | null; marketSegment: string | null; customerNeed: string | null; benefit: string | null; attribute: string | null; techCapability: string | null }>;
+    productAttributes: Array<{ id?: string; productName: string | null; customerName: string | null; marketSegment: string | null; customerNeed: string | null; benefit: string | null; attribute: string | null; techCapability: string | null }>;
     requirements: Array<{ id: string; category: string; subcategory: string | null; requirement: string }>;
-    kanoAggregation: Array<{ requirementId: string; responseCount: number; better: number; worse: number; kanoWeight: number; autoKanoWeight: number; timkoCategory: string; quadrant: string; aggregated?: { A: number; O: number; M: number; I: number; R: number; Q: number; dominantCategory: string } }>;
+    kanoAggregation: Array<{ requirementId: string; requirementName?: string; responseCount: number; better: number; worse: number; kanoWeight: number; autoKanoWeight: number; timkoCategory: string; quadrant: string; aggregated?: { A: number; O: number; M: number; I: number; R: number; Q: number; total?: number; dominantCategory: string } }>;
     competitiveAssessment: Array<{ requirementId: string; requirement: string; weight: number; weightPercent: number; selfScore: number; competitorScore: number; planQuality: number; improvementRate: number; absoluteImportance: number; qualityImportancePercent: number; rank: number | null }>;
     improvementNeeds: Array<{
         content: string | null;
@@ -74,7 +76,8 @@ export type FinalReportBlock =
     | { kind: 'heading'; text: string; level: 1 | 2 }
     | { kind: 'paragraph'; text: string; tone?: 'analysis' | 'notice' | 'caption' }
     | { kind: 'keyValueTable'; rows: Array<{ label: string; value: string }> }
-    | { kind: 'dataTable'; headers: string[]; rows: string[][]; columnWidths?: number[]; mergeColumns?: number[]; title?: string }
+    | { kind: 'dataTable'; headers: string[]; rows: string[][]; columnWidths?: number[]; mergeColumns?: number[]; title?: string;
+        headerGroups?: Array<string | null>; columnSpans?: Array<{ row: number; column: number; span: number }>; highlightRows?: number[] }
     | { kind: 'image'; title: string; pngDataUrl: string; widthMm: number; heightMm: number; landscape: boolean };
 
 export interface FinalReportModel {
@@ -107,6 +110,7 @@ function worksheetImageBlock(image: CapturedWorksheetImage, portraitOnly: boolea
 }
 
 function worksheetImageSlot(blocks: FinalReportBlock[], worksheetId: CapturedWorksheetImage['worksheetId']) {
+    if (worksheetId === 'fitness' && blocks.some(block => block.kind === 'dataTable' && block.title === 'WS-4 제품속성적합도')) return null;
     const title = CAPTURED_WORKSHEET_TITLES[worksheetId];
     const imageIndex = blocks.findIndex(block => block.kind === 'image' && block.title === title);
     if (imageIndex >= 0) return { index: imageIndex, replaceCount: 1 };

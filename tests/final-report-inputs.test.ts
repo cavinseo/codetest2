@@ -182,6 +182,6 @@ describe('buildWorksheetData', () => {
         expect(data.fitnessMatrix).toBeNull();
         expect(data.specDetailCollapsed).toBe(false);
         expect(Object.entries(data).filter(([key]) => key !== 'fitnessMatrix' && key !== 'specDetailCollapsed').every(([, value]) => Array.isArray(value) && value.length === 0)).toBe(true);
-        expect(Object.keys(data)).toHaveLength(19);
+        expect(Object.keys(data)).toHaveLength(21);
     });
 });
