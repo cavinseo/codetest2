@@ -2,8 +2,10 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ProjectDetailPage from '../app/project/[id]/page';
+import ProductOverviewContent from '../components/project/ProductOverviewContent';
 import { hasProductOverviewSource } from '../lib/final-report-document';
 import { WORKSHEET_LINKS } from '../lib/worksheet-pages';
 
@@ -22,6 +24,17 @@ const optimizeImage = vi.hoisted(() => vi.fn());
 vi.mock('../lib/final-report-image', () => ({ optimizeReportImage: optimizeImage }));
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jx1cAAAAASUVORK5CYII=';
 const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
+
+it('개요 Markdown 미리보기에서 취소선 구문이 내용에 가운데 줄을 그리지 않는다', () => {
+    const markup = renderToStaticMarkup(createElement(ProductOverviewContent, {
+        value: '| 단계 | 목표 |\n| --- | --- |\n| MVP (~~06개월~~) | ~~핵심 가치 검증~~ |',
+    }));
+    const preview = new DOMParser().parseFromString(markup, 'text/html');
+
+    expect(preview.querySelector('del')).toBeNull();
+    expect(preview.body.textContent).toContain('06개월');
+    expect(preview.body.textContent).toContain('핵심 가치 검증');
+});
 
 beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
