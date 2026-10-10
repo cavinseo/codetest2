@@ -36,6 +36,7 @@ function json(payload: unknown, status = 200) {
 
 function fixture() {
     let technicalRows = technicals.map((tech, index) => ({ ...tech, groupIndex: 0, columnOrder: index }));
+    let technicalBenchmarkRows: Array<{ technicalCharId: string; company: string; value: string }> = [];
     let canWrite = true;
     const entries = [{ subSpec: '처리 속도', coreSpec: '성능' }, { subSpec: '백업 주기', coreSpec: '성능' }, { subSpec: '가용성', coreSpec: '안정성' }];
     const saved = new Map<string, Relationship>();
@@ -63,7 +64,7 @@ function fixture() {
             case 'qfd/analysis': return analysis();
             case 'qfd/benchmarks': return { benchmarks: [] };
             case 'tech-tree': return { entries };
-            case 'qfd/technical-benchmarks': return { technicalBenchmarks: [] };
+            case 'qfd/technical-benchmarks': return { technicalBenchmarks: technicalBenchmarkRows };
             default: throw new Error(`허용하지 않은 fixture 조회: ${path}`);
         }
     };
@@ -83,6 +84,12 @@ function fixture() {
                     if (path === 'qfd/relationships' && method === 'POST') {
                         const relationship = body as Relationship;
                         saved.set(`${relationship.requirementId}:${relationship.technicalCharId}`, { ...relationship });
+                    }
+                    if (path === 'qfd/technical-benchmarks' && method === 'POST') {
+                        const benchmark = body as typeof technicalBenchmarkRows[number];
+                        technicalBenchmarkRows = [...technicalBenchmarkRows.filter(item => (
+                            item.technicalCharId !== benchmark.technicalCharId || item.company !== benchmark.company
+                        )), benchmark];
                     }
                     if (path === 'qfd/technical') {
                         if (method === 'DELETE') {
@@ -117,6 +124,7 @@ function fixture() {
     });
     return {
         saved, requests, analysis, fetchMock,
+        setTechnicals(rows: typeof technicalRows) { technicalRows = rows; },
         empty() { technicalRows = []; },
         readOnly() { canWrite = false; },
         hold(path: string, count = 1) { heldReads.set(path, (heldReads.get(path) || 0) + count); },
@@ -597,6 +605,54 @@ async function enterTechnicalName(value: string) {
         input.dispatchEvent(new Event('input', { bubbles: true }));
     });
 }
+
+describe('WS-9 세부기능 표시와 빈 스펙 입력', () => {
+    it('긴 세부기능 이름을 선택창의 한 줄 영역과 별도로 모두 표시한다', async () => {
+        const name = 'F2.4 · 잔여수명 예측 및 설비 부품 교체와 예방정비 시점 안내';
+        server.setTechnicals([{ ...technicals[0], name, groupIndex: 0, columnOrder: 0 }]);
+        await mount();
+        const select = container.querySelector<HTMLSelectElement>(`[aria-label="${name} 세부기능"]`)!;
+        const label = select.parentElement?.querySelector('span');
+        expect(label?.textContent).toBe(name);
+        expect(select.value).toBe(name);
+        expect(select.disabled).toBe(false);
+    });
+
+    it.each([
+        { label: '측정단위', value: '초', path: 'qfd/technical', method: 'PATCH', field: 'unit' },
+        { label: '설계 목표치', value: '10 이내', path: 'qfd/technical', method: 'PATCH', field: 'targetValue' },
+        { label: '자사 값', value: '12', path: 'qfd/technical-benchmarks', method: 'POST', company: 'self' },
+        { label: '경쟁사 값', value: '15', path: 'qfd/technical-benchmarks', method: 'POST', company: 'competitor' },
+    ])('$label 빈칸은 포커스 시 안내를 숨기고 입력한 값만 저장한다', async ({ label, value, path, method, field, company }) => {
+        const tech = { ...technicals[0], unit: '', targetValue: '', groupIndex: 0, columnOrder: 0 };
+        server.setTechnicals([tech]);
+        await mount();
+        const input = container.querySelector<HTMLInputElement>(`[aria-label="처리 속도 ${label}"]`)!;
+        expect(input.value).toBe('');
+        expect(input.placeholder).toBe('-');
+        await act(async () => input.focus());
+        expect(document.activeElement).toBe(input);
+        expect(input.placeholder).toBe('');
+        await act(async () => input.blur());
+        expect(input.placeholder).toBe('-');
+        expect(server.pending(path, method)).toHaveLength(0);
+
+        await act(async () => {
+            input.focus();
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        expect(input.value).toBe(value);
+        expect(server.pending(path, method)).toHaveLength(0);
+        await act(async () => input.blur());
+        const request = server.pending(path, method)[0];
+        expect(request.body).toEqual(field
+            ? { id: tech.id, name: tech.name, unit: field === 'unit' ? value : '', targetValue: field === 'targetValue' ? value : '' }
+            : { technicalCharId: tech.id, company, value });
+        await finish(request, 'success', field ? { technicalCharacteristic: { ...tech, [field]: value } } : undefined);
+        expect(container.querySelector<HTMLInputElement>(`[aria-label="처리 속도 ${label}"]`)!.value).toBe(value);
+    });
+});
 
 describe('WS-9 그룹 구성', () => {
     it('다른 열에서 사용 중인 세부기능은 선택 목록과 추가 추천에서 제외한다', async () => {

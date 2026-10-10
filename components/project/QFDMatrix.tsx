@@ -982,7 +982,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                             <col className="w-[190px]" />
                             <col className="w-[190px]" />
                             <col className="w-[330px]" />
-                            {visibleTechnicalColumns.map(({ tech }) => <col key={`col-${tech.id}`} className="w-[88px]" />)}
+                            {visibleTechnicalColumns.map(({ tech }) => <col key={`col-${tech.id}`} className="w-[240px]" />)}
                             <col className="w-[80px]" />
                             <col className="w-[88px]" />
                             <col className="w-[74px]" />
@@ -1023,7 +1023,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                 <th className="border border-white/[0.08] bg-cyan-500/10 px-2 py-2 text-center font-semibold text-red-200">1차 그룹</th>
                                 <th className="border border-white/[0.08] bg-cyan-500/10 px-2 py-2 text-center font-semibold text-white">항목</th>
                                 {visibleTechnicalColumns.map(({ tech }) => (
-                                    <th key={tech.id} className="h-[104px] border border-white/[0.08] bg-indigo-500/10 p-1 text-center align-bottom font-semibold">
+                                    <th key={tech.id} className="h-[104px] min-w-[240px] border border-white/[0.08] bg-indigo-500/10 p-1 text-center align-bottom font-semibold">
                                         <div className="flex h-full flex-col justify-end gap-1">
                                             <div className="flex items-center justify-center gap-1">
                                                 <span className="text-[10px] font-semibold text-indigo-200/70">세부기능</span>
@@ -1040,19 +1040,23 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                     </button>
                                                 )}
                                             </div>
-                                            <select
-                                                value={tech.name}
-                                                disabled={!canWriteTechnicals}
-                                                aria-label={`${tech.name} 세부기능`}
-                                                onChange={(event) => setTechnicalSubFunction(tech, event.target.value)}
-                                                className="min-h-9 w-full rounded-md border border-indigo-200/15 bg-slate-950/80 px-1 text-center text-[11px] font-semibold leading-tight text-cyan-50 outline-none focus:border-cyan-300"
-                                                title="세부기능 선택"
-                                            >
-                                                <option value={tech.name}>{tech.name}</option>
-                                                {technicalNameOptions.map((name) => (
-                                                    <option key={name} value={name}>{name}</option>
-                                                ))}
-                                            </select>
+                                            <div className="relative flex min-h-9 items-center rounded-md border border-indigo-200/15 bg-slate-950/80 px-2 py-2 text-cyan-50 focus-within:border-cyan-300" title={tech.name}>
+                                                <span className="min-w-0 flex-1 whitespace-normal break-words text-[11px] font-semibold leading-snug">{tech.name}</span>
+                                                {canWriteTechnicals && <span aria-hidden="true" className="ml-1 shrink-0 text-[10px]">▾</span>}
+                                                <select
+                                                    value={tech.name}
+                                                    disabled={!canWriteTechnicals}
+                                                    aria-label={`${tech.name} 세부기능`}
+                                                    onChange={(event) => setTechnicalSubFunction(tech, event.target.value)}
+                                                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
+                                                    title={tech.name}
+                                                >
+                                                    <option value={tech.name}>{tech.name}</option>
+                                                    {technicalNameOptions.map((name) => (
+                                                        <option key={name} value={name}>{name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
                                         </div>
                                     </th>
                                 ))}
@@ -1233,11 +1237,13 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                     <input
                                                         type="text"
                                                         value={getTechBenchmarkValue(tech, company)}
+                                                        onFocus={(event) => { event.currentTarget.placeholder = ''; }}
                                                         onChange={(event) => setTechFieldDrafts((drafts) => ({
                                                             ...drafts,
                                                             [techBenchmarkKey(tech.id, company)]: event.target.value,
                                                         }))}
                                                         onBlur={(event) => {
+                                                            event.currentTarget.placeholder = '-';
                                                             if (!(event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-worksheet-save'))) {
                                                                 commitTechBenchmark(tech, company, label);
                                                             }
@@ -1245,7 +1251,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                         onKeyDown={(event) => {
                                                             if (event.key === 'Enter') event.currentTarget.blur();
                                                         }}
-                                                        className="h-[30px] w-full border-none bg-transparent px-1 text-center text-[11px] text-gray-100 outline-none placeholder:text-gray-600 focus:bg-white/[0.06]"
+                                                        className="h-[30px] w-full cursor-text border-none bg-transparent px-1 text-center text-[11px] text-gray-100 outline-none placeholder:text-gray-600 focus:bg-white/[0.06] focus:ring-1 focus:ring-inset focus:ring-cyan-400"
                                                         placeholder="-"
                                                         title={`${tech.name || '세부기능'} ${label} 값`}
                                                         aria-label={`${tech.name || '세부기능'} ${label} 값`}
@@ -1260,11 +1266,13 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                     <input
                                                         type="text"
                                                         value={getTechFieldValue(tech, editableField)}
+                                                        onFocus={(event) => { event.currentTarget.placeholder = ''; }}
                                                         onChange={(event) => setTechFieldDrafts((drafts) => ({
                                                             ...drafts,
                                                             [techFieldKey(tech.id, editableField)]: event.target.value,
                                                         }))}
                                                         onBlur={(event) => {
+                                                            event.currentTarget.placeholder = '-';
                                                             if (!(event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-worksheet-save'))) {
                                                                 commitTechField(tech, editableField);
                                                             }
@@ -1272,7 +1280,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                         onKeyDown={(event) => {
                                                             if (event.key === 'Enter') event.currentTarget.blur();
                                                         }}
-                                                        className="h-[30px] w-full border-none bg-transparent px-1 text-center text-[11px] text-gray-100 outline-none placeholder:text-gray-600 focus:bg-white/[0.06]"
+                                                        className="h-[30px] w-full cursor-text border-none bg-transparent px-1 text-center text-[11px] text-gray-100 outline-none placeholder:text-gray-600 focus:bg-white/[0.06] focus:ring-1 focus:ring-inset focus:ring-cyan-400"
                                                         placeholder="-"
                                                         title={`${tech.name || '세부기능'} ${TECHNICAL_FIELD_LABELS[editableField]}`}
                                                         aria-label={`${tech.name || '세부기능'} ${TECHNICAL_FIELD_LABELS[editableField]}`}
