@@ -982,7 +982,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                             <col className="w-[190px]" />
                             <col className="w-[190px]" />
                             <col className="w-[330px]" />
-                            {visibleTechnicalColumns.map(({ tech }) => <col key={`col-${tech.id}`} className="w-[240px]" />)}
+                            {visibleTechnicalColumns.map(({ tech }) => <col key={`col-${tech.id}`} className="w-[132px]" />)}
                             <col className="w-[80px]" />
                             <col className="w-[88px]" />
                             <col className="w-[74px]" />
@@ -1023,7 +1023,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                 <th className="border border-white/[0.08] bg-cyan-500/10 px-2 py-2 text-center font-semibold text-red-200">1차 그룹</th>
                                 <th className="border border-white/[0.08] bg-cyan-500/10 px-2 py-2 text-center font-semibold text-white">항목</th>
                                 {visibleTechnicalColumns.map(({ tech }) => (
-                                    <th key={tech.id} className="h-[104px] min-w-[240px] border border-white/[0.08] bg-indigo-500/10 p-1 text-center align-bottom font-semibold">
+                                    <th key={tech.id} className="h-[104px] min-w-[132px] border border-white/[0.08] bg-indigo-500/10 p-1 text-center align-bottom font-semibold">
                                         <div className="flex h-full flex-col justify-end gap-1">
                                             <div className="flex items-center justify-center gap-1">
                                                 <span className="text-[10px] font-semibold text-indigo-200/70">세부기능</span>
@@ -1041,7 +1041,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                 )}
                                             </div>
                                             <div className="relative flex min-h-9 items-center rounded-md border border-indigo-200/15 bg-slate-950/80 px-2 py-2 text-cyan-50 focus-within:border-cyan-300" title={tech.name}>
-                                                <span className="min-w-0 flex-1 whitespace-normal break-words text-[11px] font-semibold leading-snug">{tech.name}</span>
+                                                <span className="min-w-0 flex-1 whitespace-normal break-words text-[8.8px] font-semibold leading-snug">{tech.name}</span>
                                                 {canWriteTechnicals && <span aria-hidden="true" className="ml-1 shrink-0 text-[10px]">▾</span>}
                                                 <select
                                                     value={tech.name}
