@@ -223,6 +223,8 @@ export async function POST(request: NextRequest) {
                 aiMode: newProject.aiMode,
                 createdAt: newProject.createdAt.toISOString(),
                 updatedAt: newProject.updatedAt.toISOString(),
+                // 대시보드가 프로그램별로 묶을 때 쓰므로 목록 응답과 같은 모양으로 맞춘다.
+                programId: targetProgramId,
                 programName,
                 memberCount: 1,
                 // 갓 만든 프로젝트라 설문도 QFD 도 아직 없다.

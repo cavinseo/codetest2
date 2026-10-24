@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { groupProjectsByProgram } from '@/lib/project-grouping';
 import Link from 'next/link';
 import {
     getBusinessPlanFileValidationError,
@@ -15,6 +16,7 @@ interface Project {
     name: string;
     description?: string;
     updatedAt: string;
+    programId: string;
     programName: string;
     memberCount: number;
     surveyCount: number;
@@ -42,6 +44,8 @@ interface MentorMenteeOption extends MenteeOption {
 
 export default function DashboardPage() {
     const [projects, setProjects] = useState<Project[]>([]);
+    // 여러 프로그램의 프로젝트에 참여하는 회원이 프로그램 단위로 훑어볼 수 있게 한다.
+    const [projectView, setProjectView] = useState<'all' | 'program'>('all');
     const [role, setRole] = useState<MemberRole | null>(null);
     const [mentorProjectCreationEnabled, setMentorProjectCreationEnabled] = useState(false);
     const [mentorMentees, setMentorMentees] = useState<MentorMenteeOption[]>([]);
@@ -241,6 +245,54 @@ export default function DashboardPage() {
     const selectedMentorMentee = mentorMentees.find(mentee => mentee.id === newProjectOwnerMenteeId);
 
     const displayProjects = projects;
+    const programGroups = groupProjectsByProgram(displayProjects);
+
+    const renderProjectCard = (project: Project, i: number) => (
+        <Link
+            key={project.id}
+            href={`/project/${project.id}`}
+            className="card-hover group"
+            style={{ animationDelay: `${i * 0.1}s` }}
+        >
+            {/* Top Accent */}
+            <div className="h-0.5 bg-gradient-to-r from-primary-500 to-accent-500 rounded-full mb-5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
+            <div className="flex items-start justify-between mb-3">
+                <div className="flex-1">
+                    <h3 className="text-lg font-display font-semibold text-white group-hover:text-primary-400 transition-colors duration-200">
+                        {project.name}
+                    </h3>
+                    <span className="inline-block mt-1 text-[11px] text-primary-400/80">
+                        {project.programName}
+                    </span>
+                    {project.description && (
+                        <p className="text-sm text-gray-500 mt-1.5 line-clamp-2 leading-relaxed">
+                            {project.description}
+                        </p>
+                    )}
+                </div>
+                <svg className="w-5 h-5 text-gray-600 group-hover:text-primary-400 group-hover:translate-x-0.5 transition-all duration-200 ml-3 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </div>
+
+            <div className="divider my-4" />
+
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4 text-xs text-gray-500">
+                    <span className="flex items-center gap-1.5">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                        {project.memberCount}명
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        {new Date(project.updatedAt).toLocaleDateString('ko-KR')}
+                    </span>
+                </div>
+                <span className={getRoleBadge(project.role).cls}>
+                    {getRoleBadge(project.role).label}
+                </span>
+            </div>
+        </Link>
+    );
 
     // 상단 통계는 전부 이 회원에게 보이는 프로젝트에서만 뽑는다. Kano 설문과
     // QFD 매트릭스는 예전에 12·3 으로 박혀 있어, 프로젝트가 하나도 없는 회원에게도
@@ -346,7 +398,22 @@ export default function DashboardPage() {
                         <h2 className="text-2xl font-display font-bold text-white">내 프로젝트</h2>
                         <p className="text-sm text-gray-500 mt-1">
                             {displayProjects.length}개의 활성 프로젝트
+                            {programGroups.length > 1 && ` · ${programGroups.length}개 프로그램`}
                         </p>
+                        {/* 프로그램이 하나뿐이면 묶어도 같은 목록이라 전환 버튼을 감춘다. */}
+                        {programGroups.length > 1 && <div className="mt-3 inline-flex rounded-lg border border-white/10 p-0.5 text-xs" role="group" aria-label="프로젝트 보기 방식">
+                            {([['all', '전체'], ['program', '프로그램별']] as const).map(([view, label]) => (
+                                <button
+                                    key={view}
+                                    type="button"
+                                    aria-pressed={projectView === view}
+                                    onClick={() => setProjectView(view)}
+                                    className={`px-3 py-1 rounded-md transition-colors ${projectView === view ? 'bg-primary-500/20 text-primary-300' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>}
                     </div>
                     {role === 'MENTOR' && !creationAllowed && (
                         <button disabled className="btn-secondary opacity-60" title="관리자가 멘토별로 프로젝트 생성을 활성화할 수 있습니다.">새 프로젝트 (사용중지)</button>
@@ -364,51 +431,17 @@ export default function DashboardPage() {
 
                 {/* Project Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {displayProjects.map((project, i) => (
-                        <Link
-                            key={project.id}
-                            href={`/project/${project.id}`}
-                            className="card-hover group"
-                            style={{ animationDelay: `${i * 0.1}s` }}
-                        >
-                            {/* Top Accent */}
-                            <div className="h-0.5 bg-gradient-to-r from-primary-500 to-accent-500 rounded-full mb-5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
-                            <div className="flex items-start justify-between mb-3">
-                                <div className="flex-1">
-                                    <h3 className="text-lg font-display font-semibold text-white group-hover:text-primary-400 transition-colors duration-200">
-                                        {project.name}
-                                    </h3>
-                                    <span className="inline-block mt-1 text-[11px] text-primary-400/80">
-                                        {project.programName}
-                                    </span>
-                                    {project.description && (
-                                        <p className="text-sm text-gray-500 mt-1.5 line-clamp-2 leading-relaxed">
-                                            {project.description}
-                                        </p>
-                                    )}
-                                </div>
-                                <svg className="w-5 h-5 text-gray-600 group-hover:text-primary-400 group-hover:translate-x-0.5 transition-all duration-200 ml-3 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    {(projectView === 'all' || programGroups.length <= 1) && displayProjects.map(renderProjectCard)}
+                    {projectView === 'program' && programGroups.length > 1 && programGroups.map(group => (
+                        <section key={group.programId} className="col-span-full" aria-label={`${group.programName} 프로젝트`}>
+                            <h3 className="mb-3 flex items-baseline gap-2 text-sm font-semibold text-gray-300">
+                                {group.programName}
+                                <span className="text-xs font-normal text-gray-500">{group.projects.length}개</span>
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                                {group.projects.map(renderProjectCard)}
                             </div>
-
-                            <div className="divider my-4" />
-
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-4 text-xs text-gray-500">
-                                    <span className="flex items-center gap-1.5">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                        {project.memberCount}명
-                                    </span>
-                                    <span className="flex items-center gap-1.5">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                        {new Date(project.updatedAt).toLocaleDateString('ko-KR')}
-                                    </span>
-                                </div>
-                                <span className={getRoleBadge(project.role).cls}>
-                                    {getRoleBadge(project.role).label}
-                                </span>
-                            </div>
-                        </Link>
+                        </section>
                     ))}
 
                     {/* Empty State */}

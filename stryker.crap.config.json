@@ -35,7 +35,8 @@
         "lib/final-report-inputs.ts",
         "lib/final-report-edit.ts",
         "lib/final-report-document.ts",
-        "lib/report-image-fit.ts"
+        "lib/report-image-fit.ts",
+        "lib/project-grouping.ts"
     ],
     "ignorePatterns": [
         ".claude/**",
