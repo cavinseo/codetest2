@@ -40,9 +40,11 @@ export function applyBlockEdit(blocks: FinalReportBlock[], edit: BlockEdit): Fin
             rows: block.rows.map((row, index) => (index === edit.row ? { ...row, value: edit.value } : row)),
         });
     }
+    // 남은 세 종류는 모두 표를 고친다. 표 종류 검사를 한곳에 모으는 이유: 묶음 머리글
+    // 편집 안에서만 검사하면 headerGroups 가 표에만 있어 검사를 빼도 결과가 같아지고,
+    // 그 회귀를 어떤 테스트로도 잡을 수 없다. 여기 두면 머리글·칸 편집이 검사를 지킨다.
+    if (block.kind !== 'dataTable') return blocks;
     if (edit.kind === 'tableGroup') {
-        // Stryker disable next-line ConditionalExpression: 표가 아닌 블록에는 headerGroups 가 없어, 이 검사를 건너뛰어도 바로 아래 !groups 검사에서 같은 결과로 돌아간다.
-        if (block.kind !== 'dataTable') return blocks;
         const groups = block.headerGroups;
         if (!groups || groups[edit.col] == null) return blocks;
         const previous = groups[edit.col];
@@ -52,14 +54,13 @@ export function applyBlockEdit(blocks: FinalReportBlock[], edit: BlockEdit): Fin
         return replaceEditedBlock({ ...block, headerGroups: groups.map((text, column) => column >= edit.col && column < end ? edit.value : text) });
     }
     if (edit.kind === 'tableHeader') {
-        if (block.kind !== 'dataTable' || edit.col >= block.headers.length || edit.col < 0) return blocks;
+        if (edit.col >= block.headers.length || edit.col < 0) return blocks;
         return replaceEditedBlock({
             ...block,
             headers: block.headers.map((text, index) => (index === edit.col ? edit.value : text)),
         });
     }
     // 남은 종류는 tableCell 하나다 — 표의 한 칸을 바꾼다.
-    if (block.kind !== 'dataTable') return blocks;
     const row = block.rows[edit.row];
     if (!row || edit.col >= row.length || edit.col < 0) return blocks;
     return replaceEditedBlock({
