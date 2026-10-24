@@ -22,7 +22,12 @@ type OfflineUploadFileResult = {
     status: 'ok' | 'failed';
     answerCount?: number;
     reason?: string;
+    warning?: string;
 };
+
+// 이메일 없는 응답지도 예전처럼 받되, 응답자를 구분할 수 없다는 사실은 알린다.
+// 설문지 저장 단계는 이메일을 요구하지만 그 전에 배포된 파일이 남아 있다.
+const ANONYMOUS_WARNING = '이메일이 없어 익명 응답자로 저장했습니다.';
 
 export async function POST(
     request: NextRequest,
@@ -86,10 +91,11 @@ export async function POST(
             }
 
             const html = await guarded.file.text();
+            const fallbackEmail = `offline-html-${index + 1}@import.local`;
             const parsed = parseKanoOfflineResponseHtml(html, {
                 requirementCount: requirements.length,
                 projectId,
-                fallbackEmail: `offline-html-${index + 1}@import.local`,
+                fallbackEmail,
             });
             if (!parsed.ok) {
                 results.push({ fileName, status: 'failed', reason: parsed.error });
@@ -107,7 +113,12 @@ export async function POST(
 
             respondentEmails.add(parsed.respondentEmail);
             answers.push(...parsed.answers);
-            results.push({ fileName, status: 'ok', answerCount: parsed.answers.length });
+            results.push({
+                fileName,
+                status: 'ok',
+                answerCount: parsed.answers.length,
+                ...(parsed.respondentEmail === fallbackEmail ? { warning: ANONYMOUS_WARNING } : {}),
+            });
         }
 
         const okCount = results.filter((result) => result.status === 'ok').length;

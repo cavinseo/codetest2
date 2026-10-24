@@ -1,7 +1,7 @@
 // WS-6 오프라인 응답지(자체 완결형 HTML)를 문자열로 만든다.
 //
-// 응답자는 인터넷 없이 파일 하나만 열어 답하고 「응답 저장」 을 눌러 답변이 박힌 HTML 을
-// 다시 받는다. 관리자는 그 파일을 업로드한다. 답변은 화면 상태가 아니라 JSON 블록에
+// 응답자는 인터넷 없이 파일 하나만 열어 답하고 「응답 저장」 을 눌러 답변을 그 설문지 파일에
+// 덮어쓴다. 관리자는 그 파일을 업로드한다. 답변은 화면 상태가 아니라 JSON 블록에
 // 박히므로 kano-offline-response.ts 가 정규식 하나로 읽을 수 있다.
 import { escapeHtml } from './html-escape';
 import {
@@ -100,6 +100,8 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
     var saveButton = document.getElementById('kano-save');
     var saveFormButton = document.getElementById('kano-save-form');
     var payload = JSON.parse(payloadElement.textContent || '{}');
+    // 첫 저장에서 고른 설문지 파일. 이후 저장은 같은 파일을 덮어써 결과지가 늘지 않는다.
+    var responseFileHandle = null;
     var introductionFields = ${JSON.stringify(KANO_INTRODUCTION_FIELDS)};
 
     function updateIntroduction() {
@@ -122,7 +124,59 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         if (negative) negative.checked = true;
     });
 
+    function isValidEmail(value) {
+        return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value);
+    }
+
+    function downloadHtml(html, fileName) {
+        var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+    }
+
+    // 파일을 고를 수 있는 브라우저(Chrome·Edge)는 원본 설문지에 덮어쓴다. 그렇지 못한 브라우저는
+    // 페이지가 자기 파일에 쓸 방법이 없어, 원본과 같은 이름으로 내려받게 해 덮어쓰기를 유도한다.
+    function saveIntoSurveyFile(html) {
+        var fileName = document.body.dataset.surveyFileName;
+        if (typeof showSaveFilePicker !== 'function') {
+            downloadHtml(html, fileName);
+            return;
+        }
+        var handlePromise = responseFileHandle
+            ? Promise.resolve(responseFileHandle)
+            : showSaveFilePicker({
+                suggestedName: fileName,
+                types: [{ description: 'HTML 설문지', accept: { 'text/html': ['.html'] } }]
+            });
+        handlePromise.then(function (handle) {
+            responseFileHandle = handle;
+            return handle.createWritable().then(function (writable) {
+                return writable.write(new Blob([html], { type: 'text/html;charset=utf-8' }))
+                    .then(function () { return writable.close(); });
+            });
+        }).then(function () {
+            alert('설문지 파일에 응답을 저장했습니다.');
+        }, function (error) {
+            if (error && error.name === 'AbortError') return;
+            responseFileHandle = null;
+            alert('설문지 파일에 저장하지 못했습니다. 다시 시도해 주세요.');
+        });
+    }
+
     function saveHtml(formOnly) {
+        // 응답자를 구분할 수 없는 응답지는 업로드 때 익명 처리되므로 저장 단계에서 막는다.
+        var respondentEmail = emailInput.value.trim();
+        if (!formOnly && !isValidEmail(respondentEmail)) {
+            alert('이메일 주소를 입력해야 응답을 저장할 수 있습니다.');
+            if (emailInput.focus) emailInput.focus();
+            return;
+        }
         var answers = payload.answers.map(function (answer) {
             var positive = document.querySelector('input[name="q' + answer.index + '-positive"]:checked');
             var negative = document.querySelector('input[name="q' + answer.index + '-negative"]:checked');
@@ -143,7 +197,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
             kind: '${KANO_OFFLINE_PAYLOAD_KIND}',
             version: ${KANO_OFFLINE_PAYLOAD_VERSION},
             projectId: payload.projectId,
-            respondentEmail: emailInput.value,
+            respondentEmail: formOnly ? emailInput.value : respondentEmail,
             answers: answers
         };
         payloadElement.textContent = JSON.stringify(nextPayload).replace(/</g, '\\\\u003c');
@@ -151,9 +205,10 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         updateIntroduction();
 
         var html = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
-        var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-        var url = URL.createObjectURL(blob);
-        var anchor = document.createElement('a');
+        if (!formOnly) {
+            saveIntoSurveyFile(html);
+            return;
+        }
         var date = new Date();
         var pad = function (value) { return String(value).padStart(2, '0'); };
         var timestamp = String(date.getFullYear())
@@ -163,12 +218,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
             + pad(date.getHours())
             + pad(date.getMinutes())
             + pad(date.getSeconds());
-        anchor.href = url;
-        anchor.download = (formOnly ? 'Kano_오프라인_응답지_' : 'Kano_오프라인_응답_') + document.body.dataset.downloadStem + '_' + timestamp + '.html';
-        document.body.appendChild(anchor);
-        anchor.click();
-        document.body.removeChild(anchor);
-        URL.revokeObjectURL(url);
+        downloadHtml(html, 'Kano_오프라인_응답지_' + document.body.dataset.downloadStem + '_' + timestamp + '.html');
     }
     saveButton.addEventListener('click', function () { saveHtml(false); });
     saveFormButton.addEventListener('click', function () { saveHtml(true); });
@@ -207,7 +257,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         @media print { body { background: white; } main { width: 100%; margin: 0; padding: 0; } .respondent, button, .introduction-editor { display: none; } }
     </style>
 </head>
-<body data-download-stem="${escapeHtml(kanoSurveyFileNameStem(input.projectName))}">
+<body data-download-stem="${escapeHtml(kanoSurveyFileNameStem(input.projectName))}" data-survey-file-name="${escapeHtml(kanoOfflineFormFileName(input.projectName))}">
 <main>
     <header>
         <h1>${escapeHtml(KANO_SURVEY_TITLE)}</h1>
@@ -219,8 +269,8 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
     <form id="kano-survey-form">
 ${questions}
         <label class="respondent" for="kano-respondent-email">
-            <span>이메일 (선택 사항)</span>
-            <input id="kano-respondent-email" type="email">
+            <span>이메일 (필수)</span>
+            <input id="kano-respondent-email" type="email" required>
         </label>
         <button type="button" id="kano-save">응답 저장</button>
     </form>

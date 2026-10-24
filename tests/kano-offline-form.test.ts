@@ -48,6 +48,8 @@ function executeBrowserScript(
         confirm?: boolean;
         checked?: Record<string, number>;
         date?: { year: number; month: number; day: number; hour: number; minute: number; second: number };
+        email?: string;
+        showSaveFilePicker?: (options: unknown) => Promise<unknown>;
     } = {}
 ) {
     const payloadMatch = html.match(new RegExp(
@@ -72,7 +74,7 @@ function executeBrowserScript(
     });
 
     const listeners = new Map<string, () => void>();
-    const emailInput = { value: '' };
+    const emailInput = { value: '', focus: vi.fn() };
     const payloadElement = { textContent: payloadMatch[1] };
     const introductionElement = { textContent: '' };
     const introductionInput = { value: '', setAttribute: vi.fn(), addEventListener: vi.fn() };
@@ -107,7 +109,8 @@ function executeBrowserScript(
         },
         body: {
             dataset: {
-                downloadStem: html.match(/<body data-download-stem="([^"]+)">/)?.[1] ?? '',
+                downloadStem: html.match(/<body data-download-stem="([^"]+)"/)?.[1] ?? '',
+                surveyFileName: html.match(/data-survey-file-name="([^"]+)"/)?.[1] ?? '',
             },
             appendChild: vi.fn(),
             removeChild: vi.fn(),
@@ -125,6 +128,7 @@ function executeBrowserScript(
         }
     }
     const confirm = vi.fn(() => options.confirm ?? true);
+    const alert = vi.fn();
     const createObjectURL = vi.fn(() => 'blob:offline-response');
     const revokeObjectURL = vi.fn();
     const date = options.date ?? { year: 2026, month: 9, day: 5, hour: 12, minute: 34, second: 56 };
@@ -139,6 +143,9 @@ function executeBrowserScript(
     vm.runInNewContext(extractExecutableScript(html), {
         document,
         confirm,
+        alert,
+        Promise,
+        ...(options.showSaveFilePicker ? { showSaveFilePicker: options.showSaveFilePicker } : {}),
         Blob: FakeBlob,
         URL: { createObjectURL, revokeObjectURL },
         Date: FakeDate,
@@ -146,7 +153,11 @@ function executeBrowserScript(
         JSON,
     });
 
+    // 저장본 복원이 끝난 뒤 응답자가 입력한 것처럼 이메일을 채운다.
+    if (options.email !== undefined) emailInput.value = options.email;
+
     return {
+        alert,
         anchors,
         blobs,
         confirm,
@@ -230,7 +241,7 @@ describe('buildKanoOfflineFormHtml 정적 계약', () => {
         const html = buildHtml({ projectName: '<img src=x onerror=alert(1)>' });
         expect(html).not.toContain('<img');
         expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
-        expect(html).toContain('<body data-download-stem="_img src=x onerror=alert(1)_">');
+        expect(html).toContain('<body data-download-stem="_img src=x onerror=alert(1)_" data-survey-file-name="Kano_오프라인_응답지__img src=x onerror=alert(1)_.html">');
     });
 
     it('script 종료 문자열을 주입해도 페이로드가 종료되지 않고 원문이 복원된다', () => {
@@ -265,10 +276,11 @@ describe('buildKanoOfflineFormHtml 정적 계약', () => {
         });
     });
 
-    it('응답자 이메일과 저장 제어를 표시한다', () => {
+    it('응답자 이메일을 필수로 표시하고 저장 제어를 둔다', () => {
         const html = buildHtml();
-        expect(html).toContain('<input id="kano-respondent-email" type="email">');
-        expect(html).toContain('이메일 (선택 사항)');
+        expect(html).toContain('<input id="kano-respondent-email" type="email" required>');
+        expect(html).toContain('이메일 (필수)');
+        expect(html).not.toContain('선택 사항');
         expect(html).toContain('<button type="button" id="kano-save">');
         expect(html).toContain('응답 저장');
         const script = extractExecutableScript(html);
@@ -313,6 +325,7 @@ describe('인라인 브라우저 스크립트', () => {
     it('긍정이나 부정 중 하나라도 빈 요구사항 수로 confirm하고 취소하면 무동작한다', () => {
         const browser = executeBrowserScript(buildHtml(), {
             confirm: false,
+            email: 'tester@example.com',
             checked: { 'q0-positive': 1, 'q1-positive': 2, 'q1-negative': 3 },
         });
         browser.listeners.get('click')!();
@@ -322,13 +335,13 @@ describe('인라인 브라우저 스크립트', () => {
         expect(browser.anchors).toHaveLength(0);
     });
 
-    it('승인한 미완료 답변을 JSON에 갱신하고 UTF-8 HTML로 내려받는다', () => {
+    it('파일을 고를 수 없는 브라우저는 승인한 답변을 원본 설문지와 같은 이름으로 내려받는다', () => {
         const browser = executeBrowserScript(buildHtml(), {
             confirm: true,
             checked: { 'q0-positive': 1, 'q1-positive': 2, 'q1-negative': 3 },
             date: { year: 2026, month: 9, day: 5, hour: 12, minute: 34, second: 56 },
         });
-        browser.emailInput.value = 'Test.User<unsafe>@example.com';
+        browser.emailInput.value = '  Test.User<unsafe>@example.com  ';
         browser.listeners.get('click')!();
         expect(browser.payloadElement.textContent).not.toContain('<');
         expect(JSON.parse(browser.payloadElement.textContent)).toEqual({
@@ -345,7 +358,8 @@ describe('인라인 브라우저 스크립트', () => {
             parts: [expect.stringMatching(/^<!DOCTYPE html>\n<html>/)],
             options: { type: 'text/html;charset=utf-8' },
         }]);
-        expect(browser.anchors[0].download).toBe('Kano_오프라인_응답_스마트팜_20260905-123456.html');
+        // 결과지를 따로 만들지 않는다 — 타임스탬프 없이 원본 설문지 파일명을 쓴다.
+        expect(browser.anchors[0].download).toBe('Kano_오프라인_응답지_스마트팜.html');
         expect(browser.anchors[0].href).toBe('blob:offline-response');
         expect(browser.anchors[0].click).toHaveBeenCalledOnce();
         expect(browser.createObjectURL).toHaveBeenCalledOnce();
@@ -354,6 +368,7 @@ describe('인라인 브라우저 스크립트', () => {
 
     it('완전한 답변은 confirm 없이 저장한다', () => {
         const browser = executeBrowserScript(buildHtml(), {
+            email: 'tester@example.com',
             checked: {
                 'q0-positive': 1,
                 'q0-negative': 2,
@@ -365,5 +380,104 @@ describe('인라인 브라우저 스크립트', () => {
         expect(browser.confirm).not.toHaveBeenCalled();
         expect(browser.blobs).toHaveLength(1);
         expect(browser.anchors[0].click).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        ['비어 있으면', ''],
+        ['공백뿐이면', '   '],
+        ['형식이 틀리면', 'tester@example'],
+        ['@ 가 없으면', 'tester.example.com'],
+    ])('이메일이 %s 저장하지 않고 입력을 요구한다', (_case, email) => {
+        const browser = executeBrowserScript(buildHtml(), {
+            email,
+            checked: { 'q0-positive': 1, 'q0-negative': 2, 'q1-positive': 3, 'q1-negative': 4 },
+        });
+        browser.listeners.get('click')!();
+        expect(browser.alert).toHaveBeenCalledWith('이메일 주소를 입력해야 응답을 저장할 수 있습니다.');
+        expect(browser.emailInput.focus).toHaveBeenCalledOnce();
+        expect(browser.confirm).not.toHaveBeenCalled();
+        expect(browser.payloadElement.textContent).toBe(JSON.stringify(extractPayload(buildHtml())));
+        expect(browser.blobs).toHaveLength(0);
+        expect(browser.anchors).toHaveLength(0);
+    });
+});
+
+describe('설문지 파일 덮어쓰기', () => {
+    const COMPLETE = { 'q0-positive': 1, 'q0-negative': 2, 'q1-positive': 3, 'q1-negative': 4 };
+
+    function fakePicker(options: { rejectWith?: unknown } = {}) {
+        const writes: unknown[] = [];
+        const close = vi.fn(() => Promise.resolve());
+        const handle = {
+            createWritable: vi.fn(() => Promise.resolve({
+                write: (data: unknown) => { writes.push(data); return Promise.resolve(); },
+                close,
+            })),
+        };
+        const picker = vi.fn((_options: unknown) => (options.rejectWith
+            ? Promise.reject(options.rejectWith)
+            : Promise.resolve(handle)));
+        return { picker, handle, writes, close };
+    }
+
+    it('처음 저장할 때 원본 설문지 이름을 제안하고 그 파일에 쓴다', async () => {
+        const fake = fakePicker();
+        const browser = executeBrowserScript(buildHtml(), {
+            email: 'tester@example.com', checked: COMPLETE, showSaveFilePicker: fake.picker,
+        });
+        browser.listeners.get('click')!();
+        await vi.waitFor(() => expect(browser.alert).toHaveBeenCalledWith('설문지 파일에 응답을 저장했습니다.'));
+        expect(fake.picker).toHaveBeenCalledWith({
+            suggestedName: 'Kano_오프라인_응답지_스마트팜.html',
+            types: [{ description: 'HTML 설문지', accept: { 'text/html': ['.html'] } }],
+        });
+        expect(fake.writes).toHaveLength(1);
+        expect(fake.close).toHaveBeenCalledOnce();
+        expect(browser.blobs.at(-1)).toEqual({
+            parts: [expect.stringMatching(/^<!DOCTYPE html>\n<html>/)],
+            options: { type: 'text/html;charset=utf-8' },
+        });
+        expect(browser.anchors).toHaveLength(0);
+    });
+
+    it('다시 저장하면 파일을 또 묻지 않고 같은 파일을 덮어쓴다', async () => {
+        const fake = fakePicker();
+        const browser = executeBrowserScript(buildHtml(), {
+            email: 'tester@example.com', checked: COMPLETE, showSaveFilePicker: fake.picker,
+        });
+        browser.listeners.get('click')!();
+        await vi.waitFor(() => expect(browser.alert).toHaveBeenCalledTimes(1));
+        browser.listeners.get('click')!();
+        await vi.waitFor(() => expect(browser.alert).toHaveBeenCalledTimes(2));
+        expect(fake.picker).toHaveBeenCalledOnce();
+        expect(fake.handle.createWritable).toHaveBeenCalledTimes(2);
+        expect(fake.writes).toHaveLength(2);
+    });
+
+    it('파일 선택을 취소하면 아무것도 알리지 않는다', async () => {
+        const fake = fakePicker({ rejectWith: { name: 'AbortError' } });
+        const browser = executeBrowserScript(buildHtml(), {
+            email: 'tester@example.com', checked: COMPLETE, showSaveFilePicker: fake.picker,
+        });
+        browser.listeners.get('click')!();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(fake.picker).toHaveBeenCalledOnce();
+        expect(browser.alert).not.toHaveBeenCalled();
+        expect(browser.anchors).toHaveLength(0);
+    });
+
+    it('쓰기에 실패하면 알리고 다음 저장에서 파일을 다시 고르게 한다', async () => {
+        const fake = fakePicker();
+        fake.handle.createWritable
+            .mockImplementationOnce(() => Promise.reject(new Error('denied')));
+        const browser = executeBrowserScript(buildHtml(), {
+            email: 'tester@example.com', checked: COMPLETE, showSaveFilePicker: fake.picker,
+        });
+        browser.listeners.get('click')!();
+        await vi.waitFor(() => expect(browser.alert).toHaveBeenCalledWith('설문지 파일에 저장하지 못했습니다. 다시 시도해 주세요.'));
+        browser.listeners.get('click')!();
+        await vi.waitFor(() => expect(browser.alert).toHaveBeenCalledWith('설문지 파일에 응답을 저장했습니다.'));
+        expect(fake.picker).toHaveBeenCalledTimes(2);
+        expect(fake.writes).toHaveLength(1);
     });
 });

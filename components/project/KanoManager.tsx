@@ -57,6 +57,7 @@ interface OfflineUploadFileResult {
     status: 'ok' | 'failed';
     answerCount?: number;
     reason?: string;
+    warning?: string;
 }
 
 interface AnalysisResult {
@@ -1049,6 +1050,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                                     <span>{result.status === 'ok' ? '●' : '×'}</span>
                                                     <span>{result.fileName}</span>
                                                     <span>— {result.status === 'ok' ? `${result.answerCount ?? 0}개 응답` : result.reason}</span>
+                                                    {result.warning && <span className="text-amber-300">⚠ {result.warning}</span>}
                                                 </div>
                                             ))}
                                         </div>
