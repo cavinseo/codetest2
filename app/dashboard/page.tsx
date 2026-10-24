@@ -8,7 +8,7 @@ import {
 } from '@/lib/business-plan-file';
 import { canCreateProject, canCreateProjectForOthers, type MemberRole } from '@/lib/member-roles';
 import ThemeToggle from '@/components/ThemeToggle';
-import ProjectRequestsPanel from '@/components/ProjectRequestsPanel';
+import ProjectRequestsPanel, { ProjectApprovalRequestBox } from '@/components/ProjectRequestsPanel';
 
 interface Project {
     id: string;
@@ -51,6 +51,9 @@ export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [showNewProjectModal, setShowNewProjectModal] = useState(false);
     const [approvalRequestId, setApprovalRequestId] = useState('');
+    // 서버가 승인 필요로 거절했다는 사실. 목록의 소유 수가 오래됐어도 신청 칸을 띄운다.
+    const [approvalNeeded, setApprovalNeeded] = useState(false);
+    const [requestsVersion, setRequestsVersion] = useState(0);
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectDesc, setNewProjectDesc] = useState('');
     const [newProjectDetailDesc, setNewProjectDetailDesc] = useState('');
@@ -183,6 +186,11 @@ export default function DashboardPage() {
                 return;
             }
             const data = await response.json().catch(() => null);
+            // 멘티는 이 창에서 바로 신청하게 한다. 오류 문구만 남기면 신청이 접수된 줄 안다.
+            if (!response.ok && data?.approvalRequired && role === 'MENTEE') {
+                setApprovalNeeded(true);
+                return;
+            }
             if (!response.ok) throw new Error(data?.error || '프로젝트 생성에 실패했습니다.');
             setProjects([...projects, data.project]);
             setShowNewProjectModal(false);
@@ -227,6 +235,9 @@ export default function DashboardPage() {
     // 선택을 보여줄지 정한다.
     const createsForOthers = role !== null && canCreateProjectForOthers(role);
     const creationAllowed = role !== null && canCreateProject(role, mentorProjectCreationEnabled);
+    // 서버(lib/project-creation-approval.ts)와 같은 기준 — 소유 프로젝트가 있으면 승인이 있어야 만든다.
+    const menteeNeedsApproval = role === 'MENTEE' && !approvalRequestId
+        && (approvalNeeded || projects.some(p => p.role === 'OWNER'));
     const selectedMentorMentee = mentorMentees.find(mentee => mentee.id === newProjectOwnerMenteeId);
 
     const displayProjects = projects;
@@ -307,7 +318,7 @@ export default function DashboardPage() {
             {/* Main Content */}
             <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 page-enter">
                 {/* Stats */}
-                {role === 'MENTEE' && <div className="mb-8"><ProjectRequestsPanel key={projects.length} onCreate={id => {
+                {role === 'MENTEE' && <div className="mb-8"><ProjectRequestsPanel key={`${projects.length}-${requestsVersion}`} onCreate={id => {
                     setApprovalRequestId(id);
                     setNewProjectError('');
                     setShowNewProjectModal(true);
@@ -446,6 +457,17 @@ export default function DashboardPage() {
                                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                                     {newProjectError}
                                 </div>
+                            )}
+                            {menteeNeedsApproval && (
+                                <ProjectApprovalRequestBox
+                                    defaultReason={newProjectName ? `「${newProjectName}」 프로젝트를 추가로 개설하고자 합니다.` : ''}
+                                    onRequested={() => {
+                                        // 입력한 이름·설명은 남겨 둔다. 승인 후 다시 열면 그대로 이어 쓴다.
+                                        setApprovalNeeded(false);
+                                        setRequestsVersion(v => v + 1);
+                                        setShowNewProjectModal(false);
+                                    }}
+                                />
                             )}
                             <div>
                                 <label className="block text-sm font-medium text-gray-400 mb-2">
@@ -625,7 +647,7 @@ export default function DashboardPage() {
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={isLoading || !creationAllowed || (role === 'MENTOR' && (loadingCreationOptions || !selectedMentorMentee || (selectedMentorMentee.ownedProjectCount > 0 && !approvalRequestId)))}
+                                    disabled={isLoading || !creationAllowed || menteeNeedsApproval || (role === 'MENTOR' && (loadingCreationOptions || !selectedMentorMentee || (selectedMentorMentee.ownedProjectCount > 0 && !approvalRequestId)))}
                                     className="flex-1 btn-primary py-3 disabled:opacity-50"
                                 >
                                     {isLoading ? (
