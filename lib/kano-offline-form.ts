@@ -243,7 +243,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         .introduction-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
         .introduction-fields label { display: grid; gap: 6px; }
         .introduction-fields input { width: 100%; padding: 10px; border: 1px solid #9ca3af; border-radius: 6px; font: inherit; }
-        ${input.preview ? '.respondent, button { display: none; }' : ''}
+        ${input.preview ? '.respondent, .save-hint, button { display: none; }' : ''}
         .requirement { margin: 28px 0; padding-top: 8px; border-top: 1px solid #d1d5db; }
         fieldset { margin: 18px 0; padding: 16px; border: 1px solid #d1d5db; border-radius: 10px; }
         legend { padding: 0 8px; font-weight: 500; }
@@ -252,9 +252,10 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         .answer { display: flex; gap: 6px; align-items: flex-start; padding: 8px; border: 1px solid #e5e7eb; border-radius: 8px; }
         .respondent { display: grid; gap: 6px; margin: 28px 0 16px; }
         .respondent input { width: 100%; padding: 10px 12px; border: 1px solid #9ca3af; border-radius: 8px; font: inherit; }
+        .save-hint { margin: 8px 0 0; font-size: 13px; color: #4b5563; }
         button { padding: 12px 20px; border: 0; border-radius: 8px; background: #2563eb; color: white; font: inherit; font-weight: 700; cursor: pointer; }
         @media (max-width: 720px) { main { padding: 22px; } .answers { grid-template-columns: 1fr; } }
-        @media print { body { background: white; } main { width: 100%; margin: 0; padding: 0; } .respondent, button, .introduction-editor { display: none; } }
+        @media print { body { background: white; } main { width: 100%; margin: 0; padding: 0; } .respondent, .save-hint, button, .introduction-editor { display: none; } }
     </style>
 </head>
 <body data-download-stem="${escapeHtml(kanoSurveyFileNameStem(input.projectName))}" data-survey-file-name="${escapeHtml(kanoOfflineFormFileName(input.projectName))}">
@@ -273,6 +274,7 @@ ${questions}
             <input id="kano-respondent-email" type="email" required>
         </label>
         <button type="button" id="kano-save">응답 저장</button>
+        <p class="save-hint">처음 저장할 때 저장 위치를 묻는 창이 뜨면, 받은 설문지 파일을 골라 덮어쓰세요. 설문지를 연 채로 다시 저장할 때는 묻지 않고 같은 파일에 저장합니다.</p>
     </form>
     <p class="closing">${escapeHtml(KANO_SURVEY_CLOSING)}</p>
 </main>

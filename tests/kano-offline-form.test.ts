@@ -493,7 +493,7 @@ describe('미리보기와 배포본의 마크업 경계', () => {
     });
 
     it('미리보기는 응답·저장 컨트롤을 숨기고 실행 스크립트를 싣지 않는다', () => {
-        expect(preview).toContain('.respondent, button { display: none; }');
+        expect(preview).toContain('.respondent, .save-hint, button { display: none; }');
         expect(preview).toMatch(/<\/script>\s*<\/body>/);
         expect(preview.match(/<script>/g)).toBeNull();
     });
@@ -505,5 +505,19 @@ describe('미리보기와 배포본의 마크업 경계', () => {
     it('배포본 편집기의 입력 칸은 구분 문자 없이 이어 붙인다', () => {
         const fields = form.match(/<div class="introduction-fields">([\s\S]*?)<\/div>/)?.[1] ?? '';
         expect(fields).toMatch(/^(<label for="kano-intro-[a-zA-Z]+">[^<]*<input [^>]*><\/label>)+$/);
+    });
+});
+
+describe('저장 안내 문구', () => {
+    it('첫 저장 때 뜨는 저장 창에서 받은 설문지 파일을 고르라고 안내한다', () => {
+        // 브라우저가 페이지의 자기 파일 쓰기를 막아 첫 저장은 반드시 파일을 묻는다.
+        // 안내가 없으면 응답자가 새 파일로 저장해 결과지가 따로 생긴다.
+        const html = buildHtml();
+        expect(html).toMatch(/<button type="button" id="kano-save">응답 저장<\/button>\s*<p class="save-hint">처음 저장할 때 저장 위치를 묻는 창이 뜨면, 받은 설문지 파일을 골라 덮어쓰세요\./);
+    });
+
+    it('미리보기와 인쇄에서는 안내를 숨긴다', () => {
+        expect(buildHtml({ preview: true })).toContain('.respondent, .save-hint, button { display: none; }');
+        expect(buildHtml()).toContain('@media print { body { background: white; } main { width: 100%; margin: 0; padding: 0; } .respondent, .save-hint, button, .introduction-editor { display: none; } }');
     });
 });
