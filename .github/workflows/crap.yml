@@ -13,6 +13,9 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # 바뀐 파일만 도는 push·PR 로는 전체 점수가 보이지 않으므로 주 1회 전체를 잰다.
+  schedule:
+    - cron: '17 18 * * 0'
 
 permissions:
   contents: read
@@ -21,7 +24,9 @@ jobs:
   crap:
     name: CRAP index / Mutation score
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # perTest 전체 실행이 83분 걸렸다(PR #43). 전체는 주간·수동·설정 변경 때만 돌고,
+    # push·PR 은 바뀐 파일만 돌려 대개 수 분이면 끝난다.
+    timeout-minutes: 120
 
     # ci.yml 과 같은 더미 값이다. 테스트는 Prisma 를 mock 하므로 실제 DB 에 접속하지 않는다.
     env:
@@ -32,7 +37,10 @@ jobs:
       POSTGRES_URL_NON_POOLING: postgresql://ci:ci@localhost:5432/ci?schema=public
 
     steps:
+      # PR 은 머지 커밋과 첫 부모(base)를, push 는 이전 끝(before)과 비교한다.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       # StrykerJS 10 은 Node >= 22 를 요구한다. ci.yml 의 20 을 그대로 쓰면
       # 뮤테이션 단계가 시작조차 못 하고 죽는다.
@@ -58,9 +66,57 @@ jobs:
         continue-on-error: true
         run: npx vitest run --pool=threads --coverage.enabled --coverage.provider=v8 --coverage.reporter=json --coverage.reporter=text-summary --coverage.include='lib/**/*.ts' --coverage.reportsDirectory=coverage
 
+      # 1521개 뮤턴트를 매번 전부 돌리면 60분 제한을 넘겨 점수가 아예 나오지 않았다
+      # (2026-10 main·PR 연속 취소). push·PR 에서는 바뀐 mutate 대상 파일만 돌린다 —
+      # 회귀는 바뀐 파일에서 생기고, 감리 규칙도 "수정한 파일에 stryker 재실행" 이다.
+      # 설정이나 이 워크플로가 바뀌면 전 파일이 영향받으므로 전체를 돌린다.
+      - name: Select mutation targets
+        id: targets
+        run: |
+          case "${{ github.event_name }}" in
+            pull_request)
+              changed=$(git diff --name-only HEAD^1 HEAD) ;;
+            push)
+              before="${{ github.event.before }}"
+              # 새 브랜치 push 는 before 가 0 이라 비교 대상이 없다.
+              if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] \
+                || ! git fetch --no-tags --depth=1 origin "$before"; then
+                echo "mode=full" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              changed=$(git diff --name-only "$before" HEAD) ;;
+            *)
+              echo "mode=full" >> "$GITHUB_OUTPUT"
+              exit 0 ;;
+          esac
+          echo "--- changed files ---"
+          echo "$changed"
+          if echo "$changed" | grep -qxE 'stryker\.crap\.config\.json|\.github/workflows/crap\.yml|vitest\.config\.ts|package-lock\.json'; then
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          targets=$(CHANGED="$changed" node -e "
+            const mutate = require('./stryker.crap.config.json').mutate;
+            const changed = new Set(process.env.CHANGED.split('\\n'));
+            process.stdout.write(mutate.filter((file) => changed.has(file)).join(','));
+          ")
+          if [ -z "$targets" ]; then
+            echo "mode=skip" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=partial" >> "$GITHUB_OUTPUT"
+            echo "files=$targets" >> "$GITHUB_OUTPUT"
+          fi
+          echo "--- mutation targets: ${targets:-(none)} ---"
+
       - name: Mutation testing
+        if: steps.targets.outputs.mode != 'skip'
         continue-on-error: true
-        run: npm run test:mutation
+        run: |
+          if [ "${{ steps.targets.outputs.mode }}" = "partial" ]; then
+            npm run test:mutation -- --mutate "${{ steps.targets.outputs.files }}"
+          else
+            npm run test:mutation
+          fi
 
       - name: Locate inputs
         if: always()
