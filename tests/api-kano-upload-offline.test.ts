@@ -129,7 +129,12 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
             fileCount: 2,
             results: [
                 { fileName: 'saved-complete.html', status: 'ok', answerCount: 2 },
-                { fileName: 'saved-partial-no-email.html', status: 'ok', answerCount: 1 },
+                {
+                    fileName: 'saved-partial-no-email.html',
+                    status: 'ok',
+                    answerCount: 1,
+                    warning: '이메일이 없어 익명 응답자로 저장했습니다.',
+                },
             ],
         });
         expect(JSON.stringify(body)).not.toContain('@');
