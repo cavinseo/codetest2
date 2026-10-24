@@ -41,6 +41,18 @@ describe('countCascadeImpact', () => {
         expect(db.kanoResponse.count).toHaveBeenCalledWith({ where: { projectId: 'project_1' } });
     });
 
+    it('모든 집계를 해당 프로젝트로 좁힌다', async () => {
+        // 조건이 빠지면 다른 프로젝트의 건수까지 더해져 경고가 부풀거나, 반대로
+        // 이 프로젝트의 삭제 규모를 가린다.
+        const db = counterWith({ kano: 1, benchmark: 1, qfd: 1 });
+        await countCascadeImpact(db, 'project_1', {
+            replacesCustomerRequirements: true, replacesProductAttributes: true, replacesTechnicalCharacteristics: true,
+        });
+        for (const counter of Object.values(db)) {
+            expect(counter.count).toHaveBeenCalledWith({ where: { projectId: 'project_1' } });
+        }
+    });
+
     it('고객요구사항을 건드리지 않으면 세지 않는다', async () => {
         const db = counterWith({ kano: 42, benchmark: 3, qfd: 17 });
 
@@ -69,6 +81,15 @@ describe('describeCascadeImpact', () => {
         expect(text).toContain('Kano 설문 응답 12건');
         expect(text).toContain('QFD 관계 4건');
         expect(text).not.toContain('벤치마크');
+    });
+
+    it('설문 응답이 지워지지 않으면 복구 불가 안내를 붙이지 않는다', () => {
+        // 재수집 불가 경고는 설문 응답에만 해당한다. 다른 자료에 붙이면 경고가
+        // 늘 따라붙는 문구가 되어 정작 응답이 지워질 때 눈에 띄지 않는다.
+        expect(describeCascadeImpact({ ...EMPTY_CASCADE_IMPACT, benchmarks: 7 }))
+            .toBe('데이터를 덮어쓰면 벤치마크 7건이 함께 삭제됩니다.');
+        expect(describeCascadeImpact({ ...EMPTY_CASCADE_IMPACT, kanoResponses: 3 }))
+            .toBe('데이터를 덮어쓰면 Kano 설문 응답 3건이 함께 삭제됩니다. 설문 응답은 다시 모을 수 없습니다.');
     });
 
     it('벤치마크 건수도 문구에 담는다', () => {

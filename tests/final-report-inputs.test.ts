@@ -131,10 +131,11 @@ describe('buildWorksheetData', () => {
             specFunctions: [{ name: '스펙' }],
             productAttributes: [{ productName: '속성' }],
             customerRequirements: [{ id: 'r1', requirement: '요구' }],
+            technicalBenchmarks: [{ technicalCharId: 't1', company: 'self', value: '기술벤치' }],
         },
         sales: { rows: [{ period: 'Y', customer: '매출처' }] },
         kanoAnalysis: { requirements: [{ requirementId: 'r1', better: 1, worse: -1 }] },
-        qfdAnalysis: { requirements: [{ requirementId: 'r1', selfScore: 3 }] },
+        qfdAnalysis: { requirements: [{ requirementId: 'r1', selfScore: 3 }], technicals: [{ technicalCharId: 't1', totalScore: 9 }] },
         improvements: { items: [{ type: 'need', content: '니즈' }, { type: 'feature', content: '기능' }] },
         techTree: { entries: [{ customerVoice: '고객의소리' }] },
         targetSpec: { rows: [{ specItem: '목표스펙' }] },
@@ -152,6 +153,8 @@ describe('buildWorksheetData', () => {
         expect(data.requirements[0].requirement).toBe('요구');
         expect(data.kanoAggregation[0].better).toBe(1);
         expect(data.competitiveAssessment[0].selfScore).toBe(3);
+        expect(data.technicalBenchmarks?.[0].value).toBe('기술벤치');
+        expect(data.qfdTechnicals?.[0].totalScore).toBe(9);
         expect(data.improvementNeeds[0].content).toBe('니즈');
         expect(data.improvementFeatures[0].content).toBe('기능');
         expect(data.techTree[0].customerVoice).toBe('고객의소리');

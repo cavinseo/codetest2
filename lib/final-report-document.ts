@@ -122,13 +122,16 @@ function worksheetImageSlot(blocks: FinalReportBlock[], worksheetId: CapturedWor
     if (worksheetId !== 'fitness') return null;
     const fitnessHeading = blocks.findIndex(block => block.kind === 'heading' && block.text === '제품/서비스 속성 적합도 (WS-4)');
     if (fitnessHeading < 0) return null;
+    // 누락 안내 판정을 절 끝 판정보다 먼저 둔다. 절 끝을 먼저 보면 안내와 같은 글의
+    // 제목은 판정에 닿지도 못해 "문단인가" 검사가 군더더기가 되고, 그 검사가 빠지는
+    // 회귀를 어떤 테스트로도 잡을 수 없다.
     let sectionEnd = fitnessHeading + 1;
-    while (sectionEnd < blocks.length && blocks[sectionEnd].kind !== 'heading' && blocks[sectionEnd].kind !== 'pageBreak') {
+    for (; sectionEnd < blocks.length; sectionEnd++) {
         const block = blocks[sectionEnd];
         if (block.kind === 'paragraph' && block.text === '속성 적합도 행렬이 저장되어 있지 않습니다. 평가 결과 그림은 미작성 상태입니다.') {
             return { index: sectionEnd, replaceCount: 1 };
         }
-        sectionEnd++;
+        if (block.kind === 'heading' || block.kind === 'pageBreak') break;
     }
     // 누락 안내를 교정한 경우 해당 문단을 보존하고 WS-4 절 끝에 그림을 넣는다.
     return { index: sectionEnd, replaceCount: 0 };

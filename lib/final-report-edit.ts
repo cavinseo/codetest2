@@ -40,22 +40,27 @@ export function applyBlockEdit(blocks: FinalReportBlock[], edit: BlockEdit): Fin
             rows: block.rows.map((row, index) => (index === edit.row ? { ...row, value: edit.value } : row)),
         });
     }
+    // 남은 세 종류는 모두 표를 고친다. 표 종류 검사를 한곳에 모으는 이유: 머리글 묶음
+    // 편집만 따로 검사하면, headerGroups 가 표에만 있어 "표인가" 검사가 빠져도 결과가
+    // 같아지고 그 회귀를 어떤 테스트로도 잡을 수 없다.
+    if (block.kind !== 'dataTable') return blocks;
     if (edit.kind === 'tableGroup') {
-        if (block.kind !== 'dataTable' || !block.headerGroups || block.headerGroups[edit.col] == null) return blocks;
+        if (!block.headerGroups || block.headerGroups[edit.col] == null) return blocks;
         const previous = block.headerGroups[edit.col];
         let end = edit.col + 1;
-        while (end < block.headerGroups.length && block.headerGroups[end] === previous) end++;
+        // 길이 검사를 두지 않는다. previous 는 null 이 아니고 배열 밖은 undefined 라
+        // 끝에 닿으면 저절로 멈춘다 — 검사를 두면 결과가 같은 군더더기 조건이 된다.
+        while (block.headerGroups[end] === previous) end++;
         return replaceEditedBlock({ ...block, headerGroups: block.headerGroups.map((text, column) => column >= edit.col && column < end ? edit.value : text) });
     }
     if (edit.kind === 'tableHeader') {
-        if (block.kind !== 'dataTable' || edit.col >= block.headers.length || edit.col < 0) return blocks;
+        if (edit.col >= block.headers.length || edit.col < 0) return blocks;
         return replaceEditedBlock({
             ...block,
             headers: block.headers.map((text, index) => (index === edit.col ? edit.value : text)),
         });
     }
     // 남은 종류는 tableCell 하나다 — 표의 한 칸을 바꾼다.
-    if (block.kind !== 'dataTable') return blocks;
     const row = block.rows[edit.row];
     if (!row || edit.col >= row.length || edit.col < 0) return blocks;
     return replaceEditedBlock({
@@ -67,11 +72,11 @@ export function applyBlockEdit(blocks: FinalReportBlock[], edit: BlockEdit): Fin
 
 /** 원본과 견줘 내용이 달라진 블록 수. 화면이 "n곳 교정함"을 보여 주는 데 쓴다. */
 export function countEditedBlocks(original: FinalReportBlock[], current: FinalReportBlock[]): number {
-    let count = 0;
-    for (let index = 0; index < Math.max(original.length, current.length); index += 1) {
-        if (JSON.stringify(original[index]) !== JSON.stringify(current[index])) count += 1;
-    }
-    return count;
+    // 길이만큼 만든 칸을 거른다. 인덱스 반복문으로 쓰면 끝 경계(< 와 <=)가 결과를
+    // 바꾸지 않아(양쪽 다 undefined 라 같다고 본다) 경계 회귀를 테스트로 잡을 수 없다.
+    const length = Math.max(original.length, current.length);
+    return Array.from({ length }, (_, index) => JSON.stringify(original[index]) !== JSON.stringify(current[index]))
+        .filter(Boolean).length;
 }
 
 /** 편집된 블록으로 문서 모델을 다시 만든다. 제목과 파일명은 원본을 유지한다. */

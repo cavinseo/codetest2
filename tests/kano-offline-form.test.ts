@@ -481,3 +481,23 @@ describe('설문지 파일 덮어쓰기', () => {
         expect(fake.writes).toHaveLength(1);
     });
 });
+
+describe('미리보기 양식', () => {
+    // 미리보기는 화면 안 iframe 에 그리는 읽기 전용 사본이다. 편집기·저장 스크립트를
+    // 빼고 입력 영역을 숨기되, 빠진 자리에 엉뚱한 글이 끼어들지 않아야 한다.
+    it('편집기와 실행 스크립트를 빼고 응답 입력 영역을 숨긴다', () => {
+        const html = buildHtml({ preview: true });
+        expect(html).toMatch(/<p class="introduction">[^<]*<\/p>\s*<\/header>/);
+        expect(html).toMatch(/\.introduction-fields input \{[^}]*\}\s*\.respondent, button \{ display: none; \}\s*\.requirement \{/);
+        expect(html).toMatch(/type="application\/json">[^<]*<\/script>\s*<\/body>/);
+        expect(html).not.toContain('<script>');
+    });
+
+    it('편집용 양식은 숨김 규칙 자리를 비우고 소개문 칸을 구분자 없이 잇는다', () => {
+        const html = buildHtml();
+        expect(html).toMatch(/\.introduction-fields input \{[^}]*\}\s*\.requirement \{/);
+        const fields = html.match(/<div class="introduction-fields">([\s\S]*?)<\/div>/);
+        expect(fields).not.toBeNull();
+        expect(fields![1]).toMatch(/^(<label for="kano-intro-[^"]+">[^<]*<input [^>]*><\/label>)+$/);
+    });
+});

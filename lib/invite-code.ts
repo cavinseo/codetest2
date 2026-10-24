@@ -32,7 +32,9 @@ export function generateInviteCode(): string {
 
 /** 사용자가 붙여넣은 값을 조회용으로 정규화한다. 공백·소문자·구분자 차이를 흡수한다. */
 export function normalizeInviteCode(value: string): string {
-    const cleaned = value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    // trim 을 따로 하지 않는다. 영숫자가 아닌 글자는 공백을 포함해 전부 지우므로
+    // 앞뒤 공백도 여기서 사라진다.
+    const cleaned = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const body = cleaned.startsWith('KSQF') ? cleaned.slice(4) : cleaned;
 
     const groups: string[] = [];

@@ -289,3 +289,10 @@ describe('canTransitionRole', () => {
         });
     });
 });
+
+it('목록에 없는 역할은 프로젝트를 만들지 못한다', () => {
+    // 오늘의 네 역할로는 마지막 줄의 허용 목록이 "나머지 전부 참"과 결과가 같다.
+    // 그래도 목록으로 적은 까닭은 MEMBER_ROLES 에 역할이 늘 때 생성 권한이 조용히
+    // 따라붙지 않게(닫힌 기본값) 하려는 것이므로, 그 약속을 미래 역할로 고정한다.
+    expect(canCreateProject('AUDITOR' as MemberRole)).toBe(false);
+});

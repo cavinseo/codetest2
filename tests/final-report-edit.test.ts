@@ -37,6 +37,17 @@ describe('applyBlockEdit', () => {
         expect(next[3]).toEqual({ kind: 'dataTable', headers: ['A', '새B'], rows: [['a1', 'b1'], ['a2', 'b2']] });
     });
 
+    it('표의 첫 열 머리글도 바꾼다', () => {
+        const next = applyBlockEdit(blocks, { kind: 'tableHeader', blockIndex: 3, col: 0, value: '새A' });
+        expect(next[3]).toEqual({ kind: 'dataTable', headers: ['새A', 'B'], rows: [['a1', 'b1'], ['a2', 'b2']] });
+    });
+
+    it('머리글 묶음은 같은 이름이 이어진 칸을 함께 바꾸고 끝 칸까지 닿아도 멈춘다', () => {
+        const grouped: FinalReportBlock[] = [{ kind: 'dataTable', headers: ['A', 'B', 'C'], rows: [], headerGroups: [null, '계획', '계획'] }];
+        expect(applyBlockEdit(grouped, { kind: 'tableGroup', blockIndex: 0, col: 1, value: '첫해' })[0])
+            .toEqual({ kind: 'dataTable', headers: ['A', 'B', 'C'], rows: [], headerGroups: [null, '첫해', '첫해'] });
+    });
+
     it('표의 한 칸만 바꾼다', () => {
         const next = applyBlockEdit(blocks, { kind: 'tableCell', blockIndex: 3, row: 1, col: 0, value: '고침' });
         expect(next[3]).toEqual({ kind: 'dataTable', headers: ['A', 'B'], rows: [['a1', 'b1'], ['고침', 'b2']] });
@@ -61,6 +72,18 @@ describe('applyBlockEdit', () => {
     ];
     it.each(noop)('없는 자리나 맞지 않는 종류면 그대로 둔다 (%s)', (edit) => {
         expect(applyBlockEdit(blocks, edit)).toBe(blocks);
+    });
+
+    // 머리글 묶음이 있는 표를 하나 덧붙여, 묶음이 없는 표·묶음이 빈 칸·범위 밖 칸을 함께 본다.
+    const withGroups: FinalReportBlock[] = [...blocks, { kind: 'dataTable', headers: ['A', 'B'], rows: [], headerGroups: [null, '묶음'] }];
+    const groupNoop: BlockEdit[] = [
+        { kind: 'tableGroup', blockIndex: 2, col: 0, value: 'x' },
+        { kind: 'tableGroup', blockIndex: 3, col: 0, value: 'x' },
+        { kind: 'tableGroup', blockIndex: 5, col: 0, value: 'x' },
+        { kind: 'tableGroup', blockIndex: 5, col: 9, value: 'x' },
+    ];
+    it.each(groupNoop)('머리글 묶음 자리가 없으면 그대로 둔다 (%s)', (edit) => {
+        expect(applyBlockEdit(withGroups, edit)).toBe(withGroups);
     });
 });
 
