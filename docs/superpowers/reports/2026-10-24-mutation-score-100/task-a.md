@@ -2,10 +2,12 @@
 
 ## RESULT
 
-**부분 완료 — 감리 판정 전 게이트 실행 필요.** 코드·테스트 변경은 끝났지만, 이 세션의
-네트워크 정책이 npm 레지스트리(registry.npmjs.org)와 사내 미러(artifactory.infra.ant.dev)를
-모두 막아 `npm ci` 가 실패했다. 그래서 **tsc·vitest·next lint·stryker 를 한 번도 실행하지
-못했다.** 아래 VERIFIED BY 는 대체 검증이며, 게이트 출력이 아니다.
+**완료.** PR #45 의 CI 에서 게이트 3종이 통과했고, 같은 커밋(`27a7906`)에 대한 전체 뮤테이션
+실행(workflow_dispatch, run 40086632784)에서 `mutate` 목록 27개 파일 **전부 100%**
+(1390 killed, 99 timeout, 0 survived, 0 no coverage)다. 대상 8개 파일 모두 100% 다.
+
+작업 세션에서는 네트워크 정책(registry.npmjs.org·artifactory.infra.ant.dev 차단)으로
+`npm ci` 를 할 수 없어 게이트를 로컬에서 돌리지 못했고, 검증은 전부 GitHub Actions 에서 했다.
 
 생존 뮤턴트 51개(run 40072394201 의 clear-text 로그에서 전부 복원)를 다음처럼 처리했다.
 
@@ -41,37 +43,61 @@
 
 ## VERIFIED BY
 
-**실행하지 못한 게이트 (감리자가 실행해야 함):**
+모두 GitHub Actions, 헤드 커밋 `27a7906` 기준. 로그 원문의 마지막 줄을 옮긴다.
 
-```sh
-npx tsc --noEmit && npx vitest run && npx next lint
-npx stryker run stryker.crap.config.json --mutate lib/final-report-document.ts,lib/kano-offline-form.ts,lib/import-cascade-guard.ts,lib/final-report-edit.ts,lib/technical-benchmark-guards.ts,lib/final-report-inputs.ts,lib/invite-code.ts,lib/member-roles.ts
+**게이트 — CI run 40085743432 (pull_request)**
+
+- `npm run lint` — 단계 success
+- `npx tsc --noEmit` — 단계 success
+- `npm test` (`vitest run`) — ` Test Files  220 passed (220)` / `      Tests  3091 passed (3091)`
+- `npm run build` — ` ✓ Compiled successfully in 25.6s`
+
+**뮤테이션 — 변경 파일 부분 실행, CRAP / Mutation run 40085743487 (pull_request)**
+
+crap.yml 은 소스가 바뀐 mutate 대상만 고르므로 lib 를 고친 4개만 돌았다.
+
+```
+All files                      | 100.00 |  100.00 |      360 |        10 |          0 |        0 |        0 |
+ final-report-document.ts      | 100.00 |  100.00 |      145 |         1 |          0 |        0 |        0 |
+ final-report-edit.ts          | 100.00 |  100.00 |      122 |         0 |          0 |        0 |        0 |
+ invite-code.ts                | 100.00 |  100.00 |       63 |         9 |          0 |        0 |        0 |
+ technical-benchmark-guards.ts | 100.00 |  100.00 |       30 |         0 |          0 |        0 |        0 |
 ```
 
-`npm ci` 마지막 줄: `npm error Exit handler never called!` (로그: `getaddrinfo ENOTFOUND registry.npmjs.org`,
-미러는 `403` / `connect_rejected`). 점수는 **미측정**이다.
+**뮤테이션 — 전체 실행, CRAP / Mutation run 40086632784 (workflow_dispatch)**
 
-**대체 검증 (게이트 대용이 아님):**
+테스트만 더한 4개 파일까지 재려고 전체를 돌렸다(64분). 열: score / covered / killed / timeout /
+survived / no cov / errors.
 
-1. 타입: 전역 TypeScript 6.0.2 로 바꾼 lib 8개를 strict 검사. 의존성 부재로 나는 오류 26건이
-   변경 전후 같다(새 오류 0).
-2. 테스트: Node 22 + 전역 TypeScript 트랜스파일 + 최소 vitest 대역(describe/it/expect/vi.fn)으로
-   직접 관련된 8개 파일 실행 — 전부 통과.
-   `worksheet-image-replacement 19/19, final-report-edit 30/30, import-cascade-guard 15/15,
-   final-report-inputs 36/36, member-roles 83/83, technical-benchmark-guards 9/9,
-   invite-code 26/26, kano-offline-form 24/24`.
-   변경 모듈을 import 하는 나머지 25개 파일 중 22개는 docx 등 패키지 부재로 실행 불가,
-   3개(final-report-document·kano-offline-response·member-create-payload)는 대역 한계로 일부
-   실패하나 **변경 전과 실패 목록이 같다**.
-3. 뮤턴트 수동 재생: 원래 생존 51개 중 코드가 남아 있는 것 전부와, 재구성한 줄에서 stryker 가
-   만들 뮤턴트(ConditionalExpression·EqualityOperator·LogicalOperator·StringLiteral·
-   ObjectLiteral·UpdateOperator·MethodExpression·BlockStatement·ArrowFunction)를 손으로 넣어
-   87개 재생 → **87개 모두 테스트 실패(killed)**. 재생 목록은 stryker 의 실제 생성 목록과
-   같다는 보장이 없으므로 stryker 실행으로 확인해야 한다.
+```
+All files                      | 100.00 |  100.00 |     1390 |        99 |          0 |        0 |        0 |
+ final-report-document.ts      | 100.00 |  100.00 |      144 |         2 |          0 |        0 |        0 |
+ final-report-edit.ts          | 100.00 |  100.00 |      122 |         0 |          0 |        0 |        0 |
+ final-report-inputs.ts        | 100.00 |  100.00 |       78 |         0 |          0 |        0 |        0 |
+ import-cascade-guard.ts       | 100.00 |  100.00 |       74 |         1 |          0 |        0 |        0 |
+ invite-code.ts                | 100.00 |  100.00 |       63 |         9 |          0 |        0 |        0 |
+ kano-offline-form.ts          | 100.00 |  100.00 |       34 |         0 |          0 |        0 |        0 |
+ member-roles.ts               | 100.00 |  100.00 |      140 |         3 |          0 |        0 |        0 |
+ technical-benchmark-guards.ts | 100.00 |  100.00 |       30 |         0 |          0 |        0 |        0 |
+```
+
+나머지 19개 파일도 전부 100.00 (보고서 끝줄: `| 전체 뮤테이션 점수 | 100.00% |`).
+
+**분모 변화 확인.** 직전 전체 실행(run 40072394201)은 1462 killed + 51 survived = 1513,
+이번은 1390 + 99 = 1489 로 24개 줄었다. 줄어든 곳은 소스를 걷어낸 파일뿐이다
+(직전 점수·생존 수로 역산한 총계 → 이번 총계):
+final-report-edit ≈141 → 122, technical-benchmark-guards ≈34 → 30, final-report-document ≈148 → 146,
+invite-code ≈72 → 72. 지운 조건(표 종류 중복 검사·길이 검사·인덱스 반복문·typeof·trim)이
+만들던 뮤턴트가 사라진 것이고, `Stryker disable` 은 하나도 없으므로 분모 축소로 만든 100% 가 아니다.
+테스트만 더한 4개 파일은 총계가 그대로다(kano-offline-form 34, import-cascade-guard 75,
+final-report-inputs 78, member-roles 143).
+
+**참고 — 로컬 대체 검증(CI 이전).** 최소 vitest 대역으로 관련 테스트 8개 파일 통과, 손으로 넣은
+뮤턴트 87개 전부 killed. CI 결과와 일치했다.
 
 ## DEVIATIONS
 
-- 게이트 3종과 stryker 를 실행하지 못했다(위 사유). 완료 기준 미충족.
+- 게이트·stryker 를 로컬이 아니라 CI 에서 실행했다(위 네트워크 사유). PR #45 는 검증용으로 연 것이다.
 - 계획서 없이 진행했다 — 기능이 아니라 기존 모듈의 테스트 보강이라 위임 프롬프트가 곧 정본이다.
 - 등가 뮤턴트 9개는 disable 대신 소스를 바꿨다. 각 변경은 런타임 동작이 같다(이유는 커밋 본문과
   각 위치의 주석).
@@ -87,10 +113,7 @@ npx stryker run stryker.crap.config.json --mutate lib/final-report-document.ts,l
 - `final-report-document.ts` 의 반복문 재구성은 순서만 바꿨다. 절 안에서 누락 안내 문단보다
   앞에 제목/쪽 나눔이 오면 예전처럼 거기서 멈춘다. 같은 글의 **제목**이 오는 경우만 판정 순서가
   달라지지만, 제목은 문단이 아니므로 결과는 같다(테스트로 고정).
-- 대역 러너의 `toEqual` 은 vitest 와 세부 동작이 다를 수 있다.
 
 ## QUESTIONS
 
-- 이 환경에서 Allowed domains 에 `registry.npmjs.org` 를 더해 주면 게이트와 stryker 를 직접 돌려
-  이 보고서를 갱신하겠다. 아니면 main 대상 PR 을 열어 CI(ci.yml + crap.yml 의 변경 파일 부분
-  실행)로 확인해도 된다 — PR 생성은 지시가 있을 때만 한다.
+- `member-roles.ts:89` 처리(RISKS 첫 항목)를 이대로 둘지, disable 로 바꿀지 감리 판정이 필요하다.
