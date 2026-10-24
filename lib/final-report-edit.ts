@@ -41,11 +41,15 @@ export function applyBlockEdit(blocks: FinalReportBlock[], edit: BlockEdit): Fin
         });
     }
     if (edit.kind === 'tableGroup') {
-        if (block.kind !== 'dataTable' || !block.headerGroups || block.headerGroups[edit.col] == null) return blocks;
-        const previous = block.headerGroups[edit.col];
+        // Stryker disable next-line ConditionalExpression: 표가 아닌 블록에는 headerGroups 가 없어, 이 검사를 건너뛰어도 바로 아래 !groups 검사에서 같은 결과로 돌아간다.
+        if (block.kind !== 'dataTable') return blocks;
+        const groups = block.headerGroups;
+        if (!groups || groups[edit.col] == null) return blocks;
+        const previous = groups[edit.col];
+        // previous 가 null 이 아니므로 표 끝을 지나 읽은 undefined 에서 반복이 멈춘다.
         let end = edit.col + 1;
-        while (end < block.headerGroups.length && block.headerGroups[end] === previous) end++;
-        return replaceEditedBlock({ ...block, headerGroups: block.headerGroups.map((text, column) => column >= edit.col && column < end ? edit.value : text) });
+        while (groups[end] === previous) end++;
+        return replaceEditedBlock({ ...block, headerGroups: groups.map((text, column) => column >= edit.col && column < end ? edit.value : text) });
     }
     if (edit.kind === 'tableHeader') {
         if (block.kind !== 'dataTable' || edit.col >= block.headers.length || edit.col < 0) return blocks;
@@ -67,11 +71,10 @@ export function applyBlockEdit(blocks: FinalReportBlock[], edit: BlockEdit): Fin
 
 /** 원본과 견줘 내용이 달라진 블록 수. 화면이 "n곳 교정함"을 보여 주는 데 쓴다. */
 export function countEditedBlocks(original: FinalReportBlock[], current: FinalReportBlock[]): number {
-    let count = 0;
-    for (let index = 0; index < Math.max(original.length, current.length); index += 1) {
-        if (JSON.stringify(original[index]) !== JSON.stringify(current[index])) count += 1;
-    }
-    return count;
+    // 짧은 쪽의 빈 자리는 undefined 끼리 비교돼 같다고 나오므로, 긴 쪽 길이만큼 견준다.
+    return Array.from({ length: Math.max(original.length, current.length) }, (_, index) => index)
+        .filter(index => JSON.stringify(original[index]) !== JSON.stringify(current[index]))
+        .length;
 }
 
 /** 편집된 블록으로 문서 모델을 다시 만든다. 제목과 파일명은 원본을 유지한다. */

@@ -64,6 +64,41 @@ describe('applyBlockEdit', () => {
     });
 });
 
+describe('applyBlockEdit 머리글 묶음과 경계', () => {
+    const grouped: FinalReportBlock[] = [
+        { kind: 'paragraph', text: '본문' },
+        { kind: 'dataTable', headers: ['A', 'B', 'C', 'D'], headerGroups: ['1차', '1차', null, '2차'], rows: [['a', 'b', 'c', 'd']] },
+    ];
+
+    it('묶음 머리글은 같은 이름이 이어지는 칸까지 한꺼번에 바꾼다', () => {
+        const next = applyBlockEdit(grouped, { kind: 'tableGroup', blockIndex: 1, col: 0, value: '첫해' });
+        expect((next[1] as Extract<FinalReportBlock, { kind: 'dataTable' }>).headerGroups).toEqual(['첫해', '첫해', null, '2차']);
+    });
+
+    it('마지막 칸의 묶음도 표 끝에서 멈춰 바꾼다', () => {
+        const next = applyBlockEdit(grouped, { kind: 'tableGroup', blockIndex: 1, col: 3, value: '둘째해' });
+        expect((next[1] as Extract<FinalReportBlock, { kind: 'dataTable' }>).headerGroups).toEqual(['1차', '1차', null, '둘째해']);
+    });
+
+    const groupNoop: BlockEdit[] = [
+        { kind: 'tableGroup', blockIndex: 0, col: 0, value: 'x' },
+        { kind: 'tableGroup', blockIndex: 3, col: 0, value: 'x' },
+        { kind: 'tableGroup', blockIndex: 1, col: 2, value: 'x' },
+        { kind: 'tableGroup', blockIndex: 1, col: 9, value: 'x' },
+    ];
+    it.each(groupNoop)('묶음이 없거나 빈 칸·없는 칸이면 그대로 둔다 (%s)', (edit) => {
+        // blockIndex 3 은 묶음 머리글이 없는 표다.
+        const source = edit.blockIndex === 3 ? blocks : grouped;
+        expect(applyBlockEdit(source, edit)).toBe(source);
+    });
+
+    it('첫 번째 머리글도 바꿀 수 있다', () => {
+        // 음수 검사가 0 까지 막으면 첫 열 머리글이 고쳐지지 않는다.
+        const next = applyBlockEdit(blocks, { kind: 'tableHeader', blockIndex: 3, col: 0, value: '새A' });
+        expect((next[3] as Extract<FinalReportBlock, { kind: 'dataTable' }>).headers).toEqual(['새A', 'B']);
+    });
+});
+
 describe('countEditedBlocks', () => {
     it('바뀐 블록 수를 센다', () => {
         const once = applyBlockEdit(blocks, { kind: 'text', blockIndex: 1, text: '고침' });

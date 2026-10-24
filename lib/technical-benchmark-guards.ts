@@ -12,8 +12,9 @@ const MISSING_TABLE_CODES = ['P2021', '42P01'];
 export function isMissingTechnicalBenchmarkTable(error: unknown): boolean {
     if (typeof error !== 'object' || error === null) return false;
 
+    // 목록에 든 값은 문자열뿐이라 includes 하나로 문자열 여부까지 함께 걸러진다.
     const code = (error as { code?: unknown }).code;
-    if (typeof code !== 'string' || !MISSING_TABLE_CODES.includes(code)) return false;
+    if (!(MISSING_TABLE_CODES as unknown[]).includes(code)) return false;
 
     // 다른 테이블이 없어서 난 오류까지 삼키면 진짜 결함이 빈 화면으로 숨는다.
     // Prisma 는 meta.table 에, 드라이버는 메시지에 테이블 이름을 담는다.

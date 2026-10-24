@@ -481,3 +481,29 @@ describe('설문지 파일 덮어쓰기', () => {
         expect(fake.writes).toHaveLength(1);
     });
 });
+
+describe('미리보기와 배포본의 마크업 경계', () => {
+    // 미리보기는 화면 안에서 설문지 모양만 보여 주므로 편집기·저장 스크립트가 없어야 하고,
+    // 배포본에는 그 자리에 다른 글자가 끼어들면 안 된다.
+    const preview = buildHtml({ preview: true });
+    const form = buildHtml();
+
+    it('미리보기는 소개문 뒤에 편집기 없이 머리말을 닫는다', () => {
+        expect(preview).toMatch(/<p class="introduction">[^<]*<\/p>\s*<\/header>/);
+    });
+
+    it('미리보기는 응답·저장 컨트롤을 숨기고 실행 스크립트를 싣지 않는다', () => {
+        expect(preview).toContain('.respondent, button { display: none; }');
+        expect(preview).toMatch(/<\/script>\s*<\/body>/);
+        expect(preview.match(/<script>/g)).toBeNull();
+    });
+
+    it('배포본 스타일에는 미리보기 전용 규칙이 끼지 않는다', () => {
+        expect(form).toMatch(/\.introduction-fields input \{[^}]*\}\s*\.requirement \{/);
+    });
+
+    it('배포본 편집기의 입력 칸은 구분 문자 없이 이어 붙인다', () => {
+        const fields = form.match(/<div class="introduction-fields">([\s\S]*?)<\/div>/)?.[1] ?? '';
+        expect(fields).toMatch(/^(<label for="kano-intro-[a-zA-Z]+">[^<]*<input [^>]*><\/label>)+$/);
+    });
+});

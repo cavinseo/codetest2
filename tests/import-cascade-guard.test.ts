@@ -124,3 +124,36 @@ describe('describeAttributeCascadeImpact', () => {
         expect(describeAttributeCascadeImpact({ fitnesses: 0 })).toBe('');
     });
 });
+
+describe('countCascadeImpact 조회 범위', () => {
+    it('모든 건수를 그 프로젝트로 좁혀 센다', async () => {
+        // where 가 빠지면 다른 프로젝트의 데이터까지 세어 경고가 과장된다.
+        const db = counterWith({ kano: 1, benchmark: 2, qfd: 3 });
+        await countCascadeImpact(db, 'project_1', {
+            replacesCustomerRequirements: true,
+            replacesProductAttributes: true,
+            replacesTechnicalCharacteristics: true,
+        });
+
+        const expected = { where: { projectId: 'project_1' } };
+        expect(db.kanoResponse.count).toHaveBeenCalledWith(expected);
+        expect(db.benchmark.count).toHaveBeenCalledWith(expected);
+        expect(db.qFDMatrix.count).toHaveBeenCalledWith(expected);
+        expect(db.attributeFitness.count).toHaveBeenCalledWith(expected);
+        expect(db.techCorrelation.count).toHaveBeenCalledWith(expected);
+        expect(db.technicalBenchmark.count).toHaveBeenCalledWith(expected);
+    });
+});
+
+describe('describeCascadeImpact 복구 불가 안내', () => {
+    it('설문 응답이 없으면 복구 불가 문장을 붙이지 않는다', () => {
+        // 재수집 경고는 설문 응답이 실제로 지워질 때만 의미가 있다.
+        expect(describeCascadeImpact({ ...EMPTY_CASCADE_IMPACT, benchmarks: 7 }))
+            .toBe('데이터를 덮어쓰면 벤치마크 7건이 함께 삭제됩니다.');
+    });
+
+    it('설문 응답이 있으면 문장 끝에 복구 불가 안내를 붙인다', () => {
+        expect(describeCascadeImpact({ ...EMPTY_CASCADE_IMPACT, kanoResponses: 1 }))
+            .toBe('데이터를 덮어쓰면 Kano 설문 응답 1건이 함께 삭제됩니다. 설문 응답은 다시 모을 수 없습니다.');
+    });
+});
