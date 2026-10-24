@@ -3,7 +3,7 @@
     "_comment": "뮤테이션 테스트 설정. npm run test:mutation 으로 실행한다. 커버리지는 '실행됐는가'만 말하지만 뮤테이션은 '단언했는가'를 말한다. 대상은 Prisma 를 mock 하지 않는 순수 lib 모듈로 한정한다. 라우트 핸들러는 mock 이 뮤턴트를 흡수해 점수가 실제보다 좋게 나오므로 넣지 않는다.",
     "packageManager": "npm",
     "testRunner": "vitest",
-    "vitest_comment": "related 를 끈 이유: 이 러너는 기본적으로 뮤테이션 대상 파일을 import 하는 테스트만 골라 돌리는데, 새로 추가한 모듈에서 그 탐색이 실패해 'No tests were found' 로 죽는 일이 있었다. coverageAnalysis 가 이미 all 이라 어차피 전체 테스트를 한 번 돌리므로, 탐색에 기대는 대신 전체를 넘긴다.",
+    "vitest_comment": "related 를 끈 이유: 이 러너는 기본적으로 뮤테이션 대상 파일을 import 하는 테스트만 골라 돌리는데, 새로 추가한 모듈에서 그 탐색이 실패해 'No tests were found' 로 죽는 일이 있었다. 첫 실행(dry run)에서 전체 테스트를 한 번 돌려 perTest 커버리지를 얻으므로, import 탐색에 기대지 않는다.",
     "vitest": {
         "configFile": "vitest.config.ts",
         "related": false
@@ -56,5 +56,6 @@
     },
     "concurrency": 4,
     "timeoutMS": 15000,
-    "coverageAnalysis": "all"
+    "coverageAnalysis_comment": "perTest 인 이유: all 이면 뮤턴트마다 테스트 3천여 개 전체를 다시 돌려 1521개 뮤턴트가 60분을 넘겼다. perTest 는 그 뮤턴트를 실행한 테스트만 돌린다. 모듈 최상위 값(static 뮤턴트)은 어떤 테스트가 덮는지 알 수 없어 여전히 전체를 돌리지만, ignoreStatic 으로 빼지는 않는다 — 분모가 줄어 점수가 부풀기 때문이다.",
+    "coverageAnalysis": "perTest"
 }
