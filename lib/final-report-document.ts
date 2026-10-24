@@ -124,8 +124,8 @@ function worksheetImageSlot(blocks: FinalReportBlock[], worksheetId: CapturedWor
     if (fitnessHeading < 0) return null;
     let sectionEnd = fitnessHeading + 1;
     while (sectionEnd < blocks.length && blocks[sectionEnd].kind !== 'heading' && blocks[sectionEnd].kind !== 'pageBreak') {
-        const block = blocks[sectionEnd];
-        if (block.kind === 'paragraph' && block.text === '속성 적합도 행렬이 저장되어 있지 않습니다. 평가 결과 그림은 미작성 상태입니다.') {
+        // 제목에서 반복이 멈추므로 여기서 text 를 가진 블록은 문단뿐이다.
+        if ((blocks[sectionEnd] as { text?: unknown }).text === '속성 적합도 행렬이 저장되어 있지 않습니다. 평가 결과 그림은 미작성 상태입니다.') {
             return { index: sectionEnd, replaceCount: 1 };
         }
         sectionEnd++;

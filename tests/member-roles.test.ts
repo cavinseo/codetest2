@@ -289,3 +289,11 @@ describe('canTransitionRole', () => {
         });
     });
 });
+
+describe('canCreateProject 알 수 없는 역할', () => {
+    it('목록에 없는 역할은 만들 수 없다', () => {
+        // 세션의 역할 문자열은 DB 에서 오므로 옛 값이 섞일 수 있다. 허용 목록에 없는
+        // 값은 거부해야 한다 — "멘토가 아니면 허용"으로 바뀌면 그런 계정이 과제를 연다.
+        expect(canCreateProject('USER' as MemberRole)).toBe(false);
+    });
+});

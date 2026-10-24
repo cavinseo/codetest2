@@ -185,3 +185,20 @@ describe('buildWorksheetData', () => {
         expect(Object.keys(data)).toHaveLength(21);
     });
 });
+
+describe('buildWorksheetData 기술 절 출처', () => {
+    it('기술 벤치마크는 내보내기 응답에서, QFD 기술특성은 QFD 분석 응답에서 가져온다', () => {
+        // 두 절은 앞선 출처 검증 묶음에 없어, 키를 잘못 적어도 보고서 표가 조용히 비었다.
+        const empty: WorksheetPayloads = {
+            exportData: null, sales: null, kanoAnalysis: null, qfdAnalysis: null, improvements: null,
+            techTree: null, targetSpec: null, techRoadmap: null, assets: null, funding: null,
+        };
+        const data = buildWorksheetData({
+            ...empty,
+            exportData: { technicalBenchmarks: [{ id: 'tb1' }] },
+            qfdAnalysis: { technicals: [{ id: 'qt1' }] },
+        });
+        expect(data.technicalBenchmarks).toEqual([{ id: 'tb1' }]);
+        expect(data.qfdTechnicals).toEqual([{ id: 'qt1' }]);
+    });
+});
