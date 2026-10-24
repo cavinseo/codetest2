@@ -1,7 +1,7 @@
 // WS-6 오프라인 응답지(자체 완결형 HTML)를 문자열로 만든다.
 //
-// 응답자는 인터넷 없이 파일 하나만 열어 답하고 「응답 저장」 을 눌러 답변을 그 설문지 파일에
-// 덮어쓴다. 관리자는 그 파일을 업로드한다. 답변은 화면 상태가 아니라 JSON 블록에
+// 응답자는 인터넷 없이 파일 하나만 열어 답하고 「응답 저장」 을 눌러 답변을 자기 이메일이 붙은
+// 파일 하나에 저장한다. 관리자는 그 파일들을 모아 업로드한다. 답변은 화면 상태가 아니라 JSON 블록에
 // 박히므로 kano-offline-response.ts 가 정규식 하나로 읽을 수 있다.
 import { escapeHtml } from './html-escape';
 import {
@@ -100,8 +100,9 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
     var saveButton = document.getElementById('kano-save');
     var saveFormButton = document.getElementById('kano-save-form');
     var payload = JSON.parse(payloadElement.textContent || '{}');
-    // 첫 저장에서 고른 설문지 파일. 이후 저장은 같은 파일을 덮어써 결과지가 늘지 않는다.
+    // 첫 저장에서 고른 파일과 그때의 이메일. 이후 저장은 같은 파일을 덮어써 결과지가 늘지 않는다.
     var responseFileHandle = null;
+    var responseFileEmail = null;
     var introductionFields = ${JSON.stringify(KANO_INTRODUCTION_FIELDS)};
 
     function updateIntroduction() {
@@ -140,10 +141,19 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         URL.revokeObjectURL(url);
     }
 
-    // 파일을 고를 수 있는 브라우저(Chrome·Edge)는 원본 설문지에 덮어쓴다. 그렇지 못한 브라우저는
-    // 페이지가 자기 파일에 쓸 방법이 없어, 원본과 같은 이름으로 내려받게 해 덮어쓰기를 유도한다.
-    function saveIntoSurveyFile(html) {
-        var fileName = document.body.dataset.surveyFileName;
+    // 응답자마다 파일 이름이 달라야 관리자가 여러 사람의 응답지를 한 폴더에 모아도 겹치지 않는다.
+    // 파일 이름에 쓸 수 없는 문자만 밑줄로 바꾼다.
+    function responseFileName(respondentEmail) {
+        return 'Kano_오프라인_응답지_' + document.body.dataset.downloadStem + '_'
+            + respondentEmail.replace(/[\\\\/:*?"<>|\\s]+/g, '_') + '.html';
+    }
+
+    // 파일을 고를 수 있는 브라우저(Chrome·Edge)는 처음 고른 파일에 계속 덮어쓴다. 그렇지 못한
+    // 브라우저는 페이지가 파일에 직접 쓸 방법이 없어 같은 이름으로 내려받게 한다.
+    function saveIntoSurveyFile(html, respondentEmail) {
+        var fileName = responseFileName(respondentEmail);
+        // 이메일을 바꿨다면 다른 응답자의 파일이므로 이전 파일에 덮어쓰지 않는다.
+        if (responseFileEmail !== respondentEmail) responseFileHandle = null;
         if (typeof showSaveFilePicker !== 'function') {
             downloadHtml(html, fileName);
             return;
@@ -156,6 +166,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
             });
         handlePromise.then(function (handle) {
             responseFileHandle = handle;
+            responseFileEmail = respondentEmail;
             return handle.createWritable().then(function (writable) {
                 return writable.write(new Blob([html], { type: 'text/html;charset=utf-8' }))
                     .then(function () { return writable.close(); });
@@ -206,7 +217,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
 
         var html = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
         if (!formOnly) {
-            saveIntoSurveyFile(html);
+            saveIntoSurveyFile(html, respondentEmail);
             return;
         }
         var date = new Date();
@@ -243,7 +254,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         .introduction-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
         .introduction-fields label { display: grid; gap: 6px; }
         .introduction-fields input { width: 100%; padding: 10px; border: 1px solid #9ca3af; border-radius: 6px; font: inherit; }
-        ${input.preview ? '.respondent, button { display: none; }' : ''}
+        ${input.preview ? '.respondent, .save-hint, button { display: none; }' : ''}
         .requirement { margin: 28px 0; padding-top: 8px; border-top: 1px solid #d1d5db; }
         fieldset { margin: 18px 0; padding: 16px; border: 1px solid #d1d5db; border-radius: 10px; }
         legend { padding: 0 8px; font-weight: 500; }
@@ -252,12 +263,13 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         .answer { display: flex; gap: 6px; align-items: flex-start; padding: 8px; border: 1px solid #e5e7eb; border-radius: 8px; }
         .respondent { display: grid; gap: 6px; margin: 28px 0 16px; }
         .respondent input { width: 100%; padding: 10px 12px; border: 1px solid #9ca3af; border-radius: 8px; font: inherit; }
+        .save-hint { margin: 8px 0 0; font-size: 13px; color: #4b5563; }
         button { padding: 12px 20px; border: 0; border-radius: 8px; background: #2563eb; color: white; font: inherit; font-weight: 700; cursor: pointer; }
         @media (max-width: 720px) { main { padding: 22px; } .answers { grid-template-columns: 1fr; } }
-        @media print { body { background: white; } main { width: 100%; margin: 0; padding: 0; } .respondent, button, .introduction-editor { display: none; } }
+        @media print { body { background: white; } main { width: 100%; margin: 0; padding: 0; } .respondent, .save-hint, button, .introduction-editor { display: none; } }
     </style>
 </head>
-<body data-download-stem="${escapeHtml(kanoSurveyFileNameStem(input.projectName))}" data-survey-file-name="${escapeHtml(kanoOfflineFormFileName(input.projectName))}">
+<body data-download-stem="${escapeHtml(kanoSurveyFileNameStem(input.projectName))}">
 <main>
     <header>
         <h1>${escapeHtml(KANO_SURVEY_TITLE)}</h1>
@@ -273,6 +285,7 @@ ${questions}
             <input id="kano-respondent-email" type="email" required>
         </label>
         <button type="button" id="kano-save">응답 저장</button>
+        <p class="save-hint">처음 저장할 때 저장 위치를 묻는 창이 뜨면, 제안된 이름(설문지 이름 뒤에 이메일이 붙은 이름) 그대로 저장하세요. 설문지를 연 채로 다시 저장할 때는 묻지 않고 같은 파일에 저장합니다.</p>
     </form>
     <p class="closing">${escapeHtml(KANO_SURVEY_CLOSING)}</p>
 </main>

@@ -140,6 +140,26 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
         expect(JSON.stringify(body)).not.toContain('@');
     });
 
+    it('이메일이 든 파일 이름은 응답 본문에 싣지 않고 순번으로 바꿔 보인다', async () => {
+        // 설문지가 응답자 이메일을 붙인 이름으로 저장되므로, 이름을 그대로 돌려주면 이메일이 샌다.
+        // 이메일 앞부분에도 밑줄이 올 수 있어 일부만 가리면 앞부분이 남는다.
+        persistKanoUploadAnswers.mockResolvedValue({ respondentCount: 1, importedCount: 2 });
+        const saved = readFileSync(resolve(fixturesDirectory, 'saved-complete.html'), 'utf8');
+
+        const response = await POST(uploadRequest([
+            htmlFile('broken_hong_gil@example.com.html', '<html></html>'),
+            htmlFile('Kano_오프라인_응답지_스마트팜_hong_gil@example.com.html', saved),
+        ]), params);
+        const body = await response.json();
+
+        expect(body.results).toEqual([
+            expect.objectContaining({ fileName: '1번째 파일(이름에 이메일 포함)', status: 'failed' }),
+            { fileName: '2번째 파일(이름에 이메일 포함)', status: 'ok', answerCount: 2 },
+        ]);
+        expect(JSON.stringify(body)).not.toContain('hong_gil');
+        expect(JSON.stringify(body)).not.toContain('@');
+    });
+
     it('손상된 한 장만 실패시키고 정상 응답지는 한 번 저장한다', async () => {
         persistKanoUploadAnswers.mockResolvedValue({ respondentCount: 1, importedCount: 2 });
 
