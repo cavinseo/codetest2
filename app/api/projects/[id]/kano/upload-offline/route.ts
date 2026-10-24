@@ -29,6 +29,15 @@ type OfflineUploadFileResult = {
 // 설문지 저장 단계는 이메일을 요구하지만 그 전에 배포된 파일이 남아 있다.
 const ANONYMOUS_WARNING = '이메일이 없어 익명 응답자로 저장했습니다.';
 
+// 설문지는 응답자 이메일을 붙인 이름으로 저장되므로(Kano_오프라인_응답지_<프로젝트>_<이메일>.html),
+// 파일 이름을 그대로 돌려주면 응답 본문에 이메일이 실린다(lib/logger.ts 규칙 위반). 이메일의
+// 앞부분에도 밑줄이 올 수 있어 이름 안에서 이메일만 정확히 잘라낼 수 없으므로, '@' 가 든 이름은
+// 통째로 순번 표시로 바꾼다. 결과 목록이 업로드 순서를 따르므로 어느 파일인지는 알아볼 수 있다.
+function displayFileName(name: string, index: number): string {
+    if (name.includes('@')) return `${index + 1}번째 파일(이름에 이메일 포함)`;
+    return (name || '(이름 없음)').slice(0, 100);
+}
+
 export async function POST(
     request: NextRequest,
     props: { params: Promise<{ id: string }> }
@@ -76,10 +85,8 @@ export async function POST(
             const uploadValue = uploadedFiles[index];
             const guarded = guardUploadedOfflineHtml(uploadValue);
             const fileName = guarded.ok
-                ? (guarded.file.name || '(이름 없음)').slice(0, 100)
-                : (uploadValue instanceof File
-                    ? (uploadValue.name || '(이름 없음)').slice(0, 100)
-                    : '(이름 없음)');
+                ? displayFileName(guarded.file.name, index)
+                : (uploadValue instanceof File ? displayFileName(uploadValue.name, index) : '(이름 없음)');
 
             if (!guarded.ok) {
                 results.push({

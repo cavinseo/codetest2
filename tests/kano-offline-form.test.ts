@@ -241,7 +241,7 @@ describe('buildKanoOfflineFormHtml 정적 계약', () => {
         const html = buildHtml({ projectName: '<img src=x onerror=alert(1)>' });
         expect(html).not.toContain('<img');
         expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
-        expect(html).toContain('<body data-download-stem="_img src=x onerror=alert(1)_" data-survey-file-name="Kano_오프라인_응답지__img src=x onerror=alert(1)_.html">');
+        expect(html).toContain('<body data-download-stem="_img src=x onerror=alert(1)_">');
     });
 
     it('script 종료 문자열을 주입해도 페이로드가 종료되지 않고 원문이 복원된다', () => {
@@ -335,7 +335,7 @@ describe('인라인 브라우저 스크립트', () => {
         expect(browser.anchors).toHaveLength(0);
     });
 
-    it('파일을 고를 수 없는 브라우저는 승인한 답변을 원본 설문지와 같은 이름으로 내려받는다', () => {
+    it('파일을 고를 수 없는 브라우저는 승인한 답변을 이메일이 붙은 이름으로 내려받는다', () => {
         const browser = executeBrowserScript(buildHtml(), {
             confirm: true,
             checked: { 'q0-positive': 1, 'q1-positive': 2, 'q1-negative': 3 },
@@ -358,12 +358,21 @@ describe('인라인 브라우저 스크립트', () => {
             parts: [expect.stringMatching(/^<!DOCTYPE html>\n<html>/)],
             options: { type: 'text/html;charset=utf-8' },
         }]);
-        // 결과지를 따로 만들지 않는다 — 타임스탬프 없이 원본 설문지 파일명을 쓴다.
-        expect(browser.anchors[0].download).toBe('Kano_오프라인_응답지_스마트팜.html');
+        // 응답자마다 이름이 달라야 모아도 겹치지 않는다. 파일 이름에 못 쓰는 < > 는 밑줄로 바꾼다.
+        expect(browser.anchors[0].download).toBe('Kano_오프라인_응답지_스마트팜_Test.User_unsafe_@example.com.html');
         expect(browser.anchors[0].href).toBe('blob:offline-response');
         expect(browser.anchors[0].click).toHaveBeenCalledOnce();
         expect(browser.createObjectURL).toHaveBeenCalledOnce();
         expect(browser.revokeObjectURL).toHaveBeenCalledWith('blob:offline-response');
+    });
+
+    it('파일 이름에 쓸 수 없는 문자는 밑줄로 바꿔 내려받는다', () => {
+        const browser = executeBrowserScript(buildHtml(), {
+            email: 'a:b/c*d\\e@example.com',
+            checked: { 'q0-positive': 1, 'q0-negative': 2, 'q1-positive': 3, 'q1-negative': 4 },
+        });
+        browser.listeners.get('click')!();
+        expect(browser.anchors[0].download).toBe('Kano_오프라인_응답지_스마트팜_a_b_c_d_e@example.com.html');
     });
 
     it('완전한 답변은 confirm 없이 저장한다', () => {
@@ -420,7 +429,7 @@ describe('설문지 파일 덮어쓰기', () => {
         return { picker, handle, writes, close };
     }
 
-    it('처음 저장할 때 원본 설문지 이름을 제안하고 그 파일에 쓴다', async () => {
+    it('처음 저장할 때 이메일이 붙은 이름을 제안하고 그 파일에 쓴다', async () => {
         const fake = fakePicker();
         const browser = executeBrowserScript(buildHtml(), {
             email: 'tester@example.com', checked: COMPLETE, showSaveFilePicker: fake.picker,
@@ -428,7 +437,7 @@ describe('설문지 파일 덮어쓰기', () => {
         browser.listeners.get('click')!();
         await vi.waitFor(() => expect(browser.alert).toHaveBeenCalledWith('설문지 파일에 응답을 저장했습니다.'));
         expect(fake.picker).toHaveBeenCalledWith({
-            suggestedName: 'Kano_오프라인_응답지_스마트팜.html',
+            suggestedName: 'Kano_오프라인_응답지_스마트팜_tester@example.com.html',
             types: [{ description: 'HTML 설문지', accept: { 'text/html': ['.html'] } }],
         });
         expect(fake.writes).toHaveLength(1);
@@ -452,6 +461,22 @@ describe('설문지 파일 덮어쓰기', () => {
         expect(fake.picker).toHaveBeenCalledOnce();
         expect(fake.handle.createWritable).toHaveBeenCalledTimes(2);
         expect(fake.writes).toHaveLength(2);
+    });
+
+    it('이메일을 바꾸면 이전 파일에 덮어쓰지 않고 새 이름으로 다시 묻는다', async () => {
+        const fake = fakePicker();
+        const browser = executeBrowserScript(buildHtml(), {
+            email: 'first@example.com', checked: COMPLETE, showSaveFilePicker: fake.picker,
+        });
+        browser.listeners.get('click')!();
+        await vi.waitFor(() => expect(browser.alert).toHaveBeenCalledTimes(1));
+        browser.emailInput.value = 'second@example.com';
+        browser.listeners.get('click')!();
+        await vi.waitFor(() => expect(browser.alert).toHaveBeenCalledTimes(2));
+        expect(fake.picker).toHaveBeenCalledTimes(2);
+        expect(fake.picker).toHaveBeenLastCalledWith(expect.objectContaining({
+            suggestedName: 'Kano_오프라인_응답지_스마트팜_second@example.com.html',
+        }));
     });
 
     it('파일 선택을 취소하면 아무것도 알리지 않는다', async () => {
@@ -509,11 +534,11 @@ describe('미리보기와 배포본의 마크업 경계', () => {
 });
 
 describe('저장 안내 문구', () => {
-    it('첫 저장 때 뜨는 저장 창에서 받은 설문지 파일을 고르라고 안내한다', () => {
-        // 브라우저가 페이지의 자기 파일 쓰기를 막아 첫 저장은 반드시 파일을 묻는다.
-        // 안내가 없으면 응답자가 새 파일로 저장해 결과지가 따로 생긴다.
+    it('첫 저장 때 뜨는 저장 창에서 제안된 이름 그대로 저장하라고 안내한다', () => {
+        // 브라우저가 페이지의 파일 쓰기를 막아 첫 저장은 반드시 위치를 묻는다. 안내가 없으면
+        // 응답자가 이름을 바꿔 저장해 응답자별 구분이 흐트러진다.
         const html = buildHtml();
-        expect(html).toMatch(/<button type="button" id="kano-save">응답 저장<\/button>\s*<p class="save-hint">처음 저장할 때 저장 위치를 묻는 창이 뜨면, 받은 설문지 파일을 골라 덮어쓰세요\./);
+        expect(html).toMatch(/<button type="button" id="kano-save">응답 저장<\/button>\s*<p class="save-hint">처음 저장할 때 저장 위치를 묻는 창이 뜨면, 제안된 이름\(설문지 이름 뒤에 이메일이 붙은 이름\) 그대로 저장하세요\./);
     });
 
     it('미리보기와 인쇄에서는 안내를 숨긴다', () => {
