@@ -6,6 +6,7 @@ import { useToast } from '@/components/useToast';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { dedupeByAttributeName } from '@/lib/product-attributes-utils';
+import { ReadOnlyNotice, useProjectEditAccess } from '@/components/project/WorksheetEditGuard';
 
 interface ProductAttribute {
     id: string;
@@ -131,6 +132,9 @@ function GapBadge({ current, target }: { current: number; target: number }) {
 export default function AttributeFitnessPage() {
     const params = useParams();
     const projectId = params.id as string;
+    // 조회 전용 회원이 슬라이더를 옮기고 저장하면 403 으로 입력을 잃었다(B16). 권한 확인 전에도 잠근다.
+    const editAccess = useProjectEditAccess(projectId);
+    const canEdit = editAccess === 'edit';
 
     const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
     const [fitnessMap, setFitnessMap] = useState<Record<string, AttributeFitness>>({});
@@ -195,7 +199,7 @@ export default function AttributeFitnessPage() {
     };
 
     const handleSave = async () => {
-        if (loadFailed) return;
+        if (loadFailed || !canEdit) return;
         setIsSaving(true);
         try {
             // 화면에 보이는 모든 속성을 보낸다(건드리지 않은 것은 기본값으로).
@@ -278,7 +282,7 @@ export default function AttributeFitnessPage() {
                             )}
                             <button
                                 onClick={handleSave}
-                                disabled={isSaving || attributes.length === 0}
+                                disabled={isSaving || attributes.length === 0 || !canEdit}
                                 className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50"
                             >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -302,6 +306,8 @@ export default function AttributeFitnessPage() {
 
             {/* 메인 */}
             <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 page-enter">
+                <ReadOnlyNotice access={editAccess} />
+                <fieldset disabled={!canEdit} className="min-w-0">
 
                 {/* 안내 + 범례 */}
                 <div className="card mb-6 bg-pink-500/[0.04] border-pink-500/15">
@@ -454,6 +460,7 @@ export default function AttributeFitnessPage() {
                         </Link>
                     </div>
                 )}
+                </fieldset>
             </main>
         </div>
     );

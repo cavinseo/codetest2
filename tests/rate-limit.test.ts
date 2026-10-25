@@ -4,6 +4,7 @@ import {
     clearAllRateLimits,
     clientIpFrom,
     consumeRateLimit,
+    rateLimitKeyCount,
     resetRateLimit,
 } from '../lib/rate-limit';
 
@@ -73,6 +74,37 @@ describe('consumeRateLimit', () => {
     });
 });
 
+describe('저장 키 정리 (B14)', () => {
+    it('키가 많이 쌓이면 윈도가 지난 키를 치운다', () => {
+        const start = 1_000_000;
+        for (let index = 0; index < 5_000; index++) consumeRateLimit(`old-${index}`, RULE, start);
+        expect(rateLimitKeyCount()).toBe(5_000);
+
+        consumeRateLimit('new', RULE, start + RULE.windowMs + 1);
+
+        expect(rateLimitKeyCount()).toBe(1);
+        expect(consumeRateLimit('new', RULE, start + RULE.windowMs + 1).remaining).toBe(1);
+    });
+
+    it('살아 있는 키만으로도 상한을 넘으면 가장 오래된 키부터 버린다', () => {
+        const longRule = { windowMs: 60_000, max: 3 };
+        for (let index = 0; index <= 10_000; index++) consumeRateLimit(`k-${index}`, longRule, 1_000);
+
+        expect(rateLimitKeyCount()).toBe(10_000);
+        // 가장 먼저 생긴 키가 버려져 새로 시작한다.
+        expect(consumeRateLimit('k-0', longRule, 1_000).remaining).toBe(2);
+    });
+
+    it('막힌 키는 마지막 시도에서 윈도가 지날 때까지 남는다', () => {
+        const start = 1_000_000;
+        for (let attempt = 0; attempt < RULE.max; attempt++) consumeRateLimit('blocked', RULE, start);
+        consumeRateLimit('blocked', RULE, start + 500);
+        for (let index = 0; index < 5_000; index++) consumeRateLimit(`other-${index}`, RULE, start + 900);
+
+        expect(consumeRateLimit('blocked', RULE, start + 900).allowed).toBe(false);
+    });
+});
+
 describe('resetRateLimit', () => {
     it('로그인 성공 후 카운터를 비운다', () => {
         for (let attempt = 0; attempt < RULE.max; attempt++) consumeRateLimit('k', RULE);
@@ -85,14 +117,28 @@ describe('resetRateLimit', () => {
 });
 
 describe('clientIpFrom', () => {
-    it('x-forwarded-for 의 첫 항목을 쓴다', () => {
-        const headers = new Headers({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1' });
+    // 첫 항목은 클라이언트가 위조할 수 있어, 그 값을 바꿔 가며 제한을 우회할 수 있었다(B14).
+    it('x-forwarded-for 는 가까운 프록시가 붙인 마지막 항목을 쓴다', () => {
+        const headers = new Headers({ 'x-forwarded-for': 'spoofed-by-client, 203.0.113.9' });
 
         expect(clientIpFrom(headers)).toBe('203.0.113.9');
     });
 
-    it('x-real-ip 로 폴백한다', () => {
-        expect(clientIpFrom(new Headers({ 'x-real-ip': '198.51.100.4' }))).toBe('198.51.100.4');
+    it('프록시가 채우는 x-real-ip 를 x-forwarded-for 보다 먼저 쓴다', () => {
+        const headers = new Headers({ 'x-real-ip': '198.51.100.4', 'x-forwarded-for': '1.2.3.4' });
+
+        expect(clientIpFrom(headers)).toBe('198.51.100.4');
+    });
+
+    it('x-forwarded-for 첫 항목을 바꿔도 같은 키가 된다', () => {
+        const first = clientIpFrom(new Headers({ 'x-forwarded-for': '1.1.1.1, 203.0.113.9' }));
+        const second = clientIpFrom(new Headers({ 'x-forwarded-for': '2.2.2.2, 203.0.113.9' }));
+
+        expect(first).toBe(second);
+    });
+
+    it('비어 있는 헤더 값은 unknown', () => {
+        expect(clientIpFrom(new Headers({ 'x-real-ip': ' ', 'x-forwarded-for': ' , ' }))).toBe('unknown');
     });
 
     it('아무 헤더도 없으면 unknown', () => {

@@ -42,7 +42,7 @@ beforeEach(() => {
     exchangeCodeForToken.mockResolvedValue({ accessToken: 'tok' });
     setGoogleToken.mockResolvedValue(undefined);
     // 기본은 관리자. 개별 테스트가 비관리자로 재정의한다.
-    findUniqueUser.mockResolvedValue({ isAdmin: true });
+    findUniqueUser.mockResolvedValue({ isAdmin: true, email: 'admin@example.test', role: 'ADMIN' });
 });
 
 afterEach(() => {
@@ -79,13 +79,47 @@ describe('google callback 인증', () => {
         // 서명이 유효해도 콜백이 관리자 여부를 다시 보지 않으면, 비관리자가 자기
         // nonce 로 서비스 Google 계정을 탈취할 수 있다.
         const nonce = issueOAuthNonce('mentee_42');
-        findUniqueUser.mockResolvedValue({ isAdmin: false });
+        findUniqueUser.mockResolvedValue({ isAdmin: false, email: 'mentee@example.test', role: 'MENTEE' });
 
         const res = await GET(callbackRequest(nonce));
 
         expect(res.status).toBe(307);
         expect(res.headers.get('location') ?? '').toContain('error=invalid_state');
         expect(exchangeCodeForToken).not.toHaveBeenCalled();
+        expect(setGoogleToken).not.toHaveBeenCalled();
+    });
+
+    // 2026-10-25 코드 리뷰 B15: isAdmin 플래그만 봐서 ADMIN_EMAILS 관리자가 막혔다.
+    it('ADMIN_EMAILS 로 지정된 관리자는 isAdmin 플래그가 없어도 통과한다', async () => {
+        vi.stubEnv('ADMIN_EMAILS', 'other@example.test, Env-Admin@Example.test');
+        findUniqueUser.mockResolvedValue({ isAdmin: false, email: 'env-admin@example.test', role: 'ADMIN' });
+
+        const res = await GET(callbackRequest(issueOAuthNonce('env_admin')));
+
+        expect(findUniqueUser).toHaveBeenCalledWith({
+            where: { id: 'env_admin' },
+            select: { isAdmin: true, email: true, role: true },
+        });
+        expect(setGoogleToken).toHaveBeenCalledTimes(1);
+        expect(res.headers.get('location') ?? '').not.toContain('error=');
+    });
+
+    it('ADMIN_EMAILS 에 있어도 관리자 역할이 아니면 막는다(requireAdmin 과 같은 판정)', async () => {
+        vi.stubEnv('ADMIN_EMAILS', 'mentee@example.test');
+        findUniqueUser.mockResolvedValue({ isAdmin: true, email: 'mentee@example.test', role: 'MENTEE' });
+
+        const res = await GET(callbackRequest(issueOAuthNonce('mentee_42')));
+
+        expect(res.headers.get('location') ?? '').toContain('error=invalid_state');
+        expect(setGoogleToken).not.toHaveBeenCalled();
+    });
+
+    it('nonce 를 받은 회원이 지워졌으면 막는다', async () => {
+        findUniqueUser.mockResolvedValue(null);
+
+        const res = await GET(callbackRequest(issueOAuthNonce('deleted_user')));
+
+        expect(res.headers.get('location') ?? '').toContain('error=invalid_state');
         expect(setGoogleToken).not.toHaveBeenCalled();
     });
 

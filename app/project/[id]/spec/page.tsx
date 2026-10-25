@@ -2,6 +2,7 @@
 
 import { useParams } from 'next/navigation';
 import SpecTable from '@/components/project/SpecTable';
+import WorksheetEditGuard from '@/components/project/WorksheetEditGuard';
 import Link from 'next/link';
 
 export default function SpecPage() {
@@ -29,7 +30,9 @@ export default function SpecPage() {
             </header>
 
             <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <SpecTable projectId={projectId} />
+                <WorksheetEditGuard projectId={projectId}>
+                    <SpecTable projectId={projectId} />
+                </WorksheetEditGuard>
             </main>
         </div>
     );
