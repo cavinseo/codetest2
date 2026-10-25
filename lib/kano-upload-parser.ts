@@ -55,7 +55,8 @@ export function separateAnonymousRespondents(
 }
 
 export function normalizeKanoUploadAnswer(value: unknown): KanoAnswer | null {
-    if (typeof value === 'number' && value >= 1 && value <= 5) return value as KanoAnswer;
+    // 2.5 같은 소수는 응답이 아니다. 그대로 넘기면 정수 열에 저장하다 업로드 전체가 실패했다.
+    if (typeof value === 'number') return Number.isInteger(value) && value >= 1 && value <= 5 ? value as KanoAnswer : null;
     const text = String(value ?? '').trim();
     if (!text) return null;
     return ANSWER_TEXT.find(([pattern]) => pattern.test(text))?.[1] ?? null;

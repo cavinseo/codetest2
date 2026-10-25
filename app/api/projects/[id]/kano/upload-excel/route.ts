@@ -24,7 +24,8 @@ const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
 ];
 
 function normalizeAnswer(value: unknown): KanoAnswer | null {
-    if (typeof value === 'number' && value >= 1 && value <= 5) return value as KanoAnswer;
+    // 소수(2.5 등)는 정수 열 저장에서 업로드 전체를 실패시키므로 받지 않는다.
+    if (typeof value === 'number') return Number.isInteger(value) && value >= 1 && value <= 5 ? value as KanoAnswer : null;
     const text = String(value ?? '').trim();
     if (!text) return null;
     return ANSWER_TEXT.find(([pattern]) => pattern.test(text))?.[1] ?? null;

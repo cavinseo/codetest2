@@ -329,3 +329,78 @@ it('imports empty future revenue separately from explicit zero and cost defaults
     expect(parsed.records.fundingPlans[0]).toMatchObject({year2:null,year3:0});
     expect(parsed.records.fundingPlans[1]).toMatchObject({year2:0,year3:0});
 });
+
+// 2026-10-25 코드 리뷰 B6: 서식 문자열로 읽힌 금액·비율이 0 이 되던 문제.
+describe('서식이 붙은 숫자 칸 (B6)', () => {
+    function fundingRow(year1: unknown, year2: unknown = 0, year3: unknown = 0) {
+        return parseWorkbookImport(workbook([sheet('자금소요계획표', [
+            ['구분', '항목', '1차년도', '2차년도', '3차년도'],
+            ['소요자금', '생산비용', year1, year2, year3],
+        ])])).records.fundingPlans[0];
+    }
+
+    it.each([
+        ['₩1,200,000', 1200000],
+        ['$1,500', 1500],
+        ['1,200,000원', 1200000],
+        ['12%', 12],
+        ['(500)', -500],
+        ['(₩1,000)', -1000],
+        ['△500', -500],
+        ['▲ 1,000', -1000],
+        ['-300', -300],
+        ['1,234.5', 1234.5],
+    ])('%s → %d', (input, expected) => {
+        expect(fundingRow(input).year1).toBe(expected);
+    });
+
+    it('숫자로 읽을 수 없는 칸은 예전처럼 0 이다', () => {
+        expect(fundingRow('미정').year1).toBe(0);
+        expect(fundingRow('()').year1).toBe(0);
+    });
+
+    it('매출 표의 통화 서식 금액도 행을 잃지 않고 가져온다', () => {
+        const result = parseWorkbookImport(workbook([sheet('자사매출추정표', [
+            ['구분', '매출처', '현재(Y) 매출액', '미래(Y+1) 매출액', '경쟁사명'],
+            [1, '', '₩1,200', '(₩300)', ''],
+        ])]), { sheetNames: ['자사매출추정표'] });
+
+        expect(result.records.salesEstimates.map((item) => item.amount)).toEqual([1200, -300]);
+    });
+});
+
+// 2026-10-25 코드 리뷰 B7: 병합된 핵심·세부 칸 아래 행이 상위 없이 들어오던 문제.
+describe('병합된 스펙 칸 (B7)', () => {
+    it('빈 핵심·세부 칸은 위 병합 셀의 값을 이어받아 하위 기능을 잇는다', () => {
+        const result = parseWorkbookImport(workbook([sheet('AS-IS스펙표', [
+            ['핵심스펙(기능)', '세부스펙(기능)', '세세부스펙', '기술적 특성'],
+            ['주문', '빠른 결제', '간편 인증', '생체 인증'],
+            [null, null, '자동 채움', '토큰화'],
+            [null, '배송 조회', null, '실시간 위치'],
+            ['정산', '수수료 계산', null, '규칙 엔진'],
+            [null, null, '세금 계산', '세율표'],
+        ])]), { sheetNames: ['AS-IS스펙표'] });
+
+        const specs = result.records.specFunctions;
+        const byName = (name: string) => specs.find((item) => item.name === name)!;
+        expect(byName('빠른 결제').parentId).toBe(byName('주문').id);
+        expect(byName('자동 채움').parentId).toBe(byName('빠른 결제').id);
+        expect(byName('배송 조회').parentId).toBe(byName('주문').id);
+        expect(byName('수수료 계산').parentId).toBe(byName('정산').id);
+        // 새 핵심이 시작되면 앞 핵심의 세부 기능에 잇지 않는다.
+        expect(byName('세금 계산').parentId).toBe(byName('수수료 계산').id);
+        expect(specs.filter((item) => item.level !== 'CORE').every((item) => item.parentId)).toBe(true);
+    });
+
+    it('새 핵심 행의 세세부 칸은 그 핵심에 바로 잇는다', () => {
+        const result = parseWorkbookImport(workbook([sheet('AS-IS스펙표', [
+            ['핵심스펙(기능)', '세부스펙(기능)', '세세부스펙', '기술적 특성'],
+            ['주문', '빠른 결제', null, ''],
+            ['정산', null, '세금 계산', '세율표'],
+        ])]), { sheetNames: ['AS-IS스펙표'] });
+
+        const specs = result.records.specFunctions;
+        const byName = (name: string) => specs.find((item) => item.name === name)!;
+        expect(byName('세금 계산').parentId).toBe(byName('정산').id);
+    });
+});

@@ -191,3 +191,30 @@ describe('업로드별 익명 응답자 분리 (B4)', () => {
         expect(first).toMatch(/^excel-row-1-[0-9a-f]{12}@import\.local$/);
     });
 });
+
+// 2026-10-25 코드 리뷰 B8: 2.5 같은 소수 응답이 통과해 정수 열 저장에서 업로드 전체가 실패했다.
+describe('소수 응답 (B8)', () => {
+    it.each([2.5, 1.0001, 0, 6, Number.NaN])('%d 는 응답으로 받지 않는다', (value) => {
+        expect(normalizeKanoUploadAnswer(value)).toBeNull();
+    });
+
+    it('1~5 정수는 그대로 받는다', () => {
+        expect([1, 2, 3, 4, 5].map(normalizeKanoUploadAnswer)).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('소수 응답이 섞인 행은 그 요구사항만 빼고 나머지를 가져온다', () => {
+        const answers = parseGoogleFormsResponseRows([
+            {
+                'Email Address': 'respondent@example.com',
+                '[Positive] A': 2.5,
+                '[Negative] A': 5,
+                '[Positive] B': 1,
+                '[Negative] B': 4,
+            },
+        ], 2);
+
+        expect(answers).toEqual([
+            { respondentEmail: 'respondent@example.com', requirementIndex: 1, positiveAnswer: 1, negativeAnswer: 4 },
+        ]);
+    });
+});
