@@ -5,6 +5,8 @@ import { createLogger } from '@/lib/logger';
 import { safeReturnUrl } from '@/lib/safe-return-url';
 import { verifyOAuthNonce } from '@/lib/oauth-nonce';
 import { prisma } from '@/lib/prisma';
+import { hasAdminAccess } from '@/lib/authorization';
+import { parseMemberRole } from '@/lib/member-roles';
 
 const log = createLogger('api/auth/google/callback');
 const OAUTH_NONCE_COOKIE = 'google_oauth_nonce';
@@ -47,11 +49,15 @@ export async function GET(request: NextRequest) {
     // 관리자 게이트 재확인. start 라우트의 requireAdmin 은 교차 사이트 콜백에
     // 실리지 않으므로, nonce 서명이 유효해도 여기서 다시 확인하지 않으면
     // 비관리자가 자기 nonce 로 서비스 Google 계정을 탈취할 수 있다.
+    // 판정은 start 라우트의 requireAdmin 과 같은 hasAdminAccess 로 한다. isAdmin 플래그만
+    // 보면 ADMIN_EMAILS 로 지정된 관리자가 start 는 통과하고 여기서 막혀 구글 연결이 늘
+    // 실패했다(2026-10-25 코드 리뷰 B15).
     const issuer = await prisma.user.findUnique({
         where: { id: issuedTo.userId },
-        select: { isAdmin: true },
+        select: { isAdmin: true, email: true, role: true },
     });
-    if (!issuer?.isAdmin) {
+    const issuerRole = parseMemberRole(issuer?.role);
+    if (!issuer || !issuerRole || !hasAdminAccess({ email: issuer.email, isAdmin: issuer.isAdmin, role: issuerRole })) {
         log.error('OAuth 콜백 관리자 재확인 실패');
         return NextResponse.redirect(new URL(`/?error=invalid_state`, request.url));
     }

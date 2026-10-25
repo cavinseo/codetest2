@@ -3,6 +3,7 @@
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import ProductAttributesTable from '@/components/project/ProductAttributesTable';
+import WorksheetEditGuard from '@/components/project/WorksheetEditGuard';
 
 export default function AttributesPage() {
     const params = useParams();
@@ -34,7 +35,9 @@ export default function AttributesPage() {
             </header>
 
             <main className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <ProductAttributesTable projectId={projectId} />
+                <WorksheetEditGuard projectId={projectId}>
+                    <ProductAttributesTable projectId={projectId} />
+                </WorksheetEditGuard>
             </main>
         </div>
     );

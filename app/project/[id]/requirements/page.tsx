@@ -2,6 +2,7 @@
 
 import { useParams } from 'next/navigation';
 import RequirementsTable from '@/components/project/RequirementsTable';
+import WorksheetEditGuard from '@/components/project/WorksheetEditGuard';
 import Link from 'next/link';
 
 export default function RequirementsPage() {
@@ -29,7 +30,9 @@ export default function RequirementsPage() {
             </header>
 
             <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <RequirementsTable projectId={projectId} />
+                <WorksheetEditGuard projectId={projectId}>
+                    <RequirementsTable projectId={projectId} />
+                </WorksheetEditGuard>
             </main>
         </div>
     );
