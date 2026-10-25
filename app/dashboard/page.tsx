@@ -42,13 +42,15 @@ interface MentorMenteeOption extends MenteeOption {
     approvals: { id: string; reason: string }[];
 }
 
-type ProjectView = 'all' | 'program';
-const PROJECT_VIEW_OPTIONS: ReadonlyArray<[ProjectView, string]> = [['all', '전체'], ['program', '프로그램별']];
+// 프로그램 선택 드롭다운의 "전체" 값. 실제 programId 와 겹치지 않는 빈 문자열을 쓴다.
+const ALL_PROGRAMS = '';
 
 export default function DashboardPage() {
     const [projects, setProjects] = useState<Project[]>([]);
-    // 여러 프로그램의 프로젝트에 참여하는 회원이 프로그램 단위로 훑어볼 수 있게 한다.
-    const [projectView, setProjectView] = useState<ProjectView>('all');
+    // 관리자·프로그램 매니저·멘토처럼 여러 프로그램의 프로젝트를 보는 회원이 한 프로그램만
+    // 골라 볼 수 있게 한다. 전환 버튼(전체/프로그램별 묶음)은 프로그램이 많아지면 한 화면에
+    // 다 펼쳐져 찾기 어려워, "전체·프로그램1·프로그램2…" 드롭다운으로 바꿨다.
+    const [selectedProgramId, setSelectedProgramId] = useState(ALL_PROGRAMS);
     const [role, setRole] = useState<MemberRole | null>(null);
     const [mentorProjectCreationEnabled, setMentorProjectCreationEnabled] = useState(false);
     const [mentorMentees, setMentorMentees] = useState<MentorMenteeOption[]>([]);
@@ -262,6 +264,9 @@ export default function DashboardPage() {
 
     const displayProjects = projects;
     const programGroups = groupProjectsByProgram(displayProjects);
+    // 고른 프로그램이 목록에서 사라졌으면(다시 불러온 뒤 등) 전체로 되돌린다.
+    const selectedProgram = programGroups.find((group) => group.programId === selectedProgramId) ?? null;
+    const visibleProjects = selectedProgram ? selectedProgram.projects : displayProjects;
 
     const renderProjectCard = (project: Project, i: number) => (
         <Link
@@ -416,20 +421,23 @@ export default function DashboardPage() {
                             {displayProjects.length}개의 활성 프로젝트
                             {programGroups.length > 1 && ` · ${programGroups.length}개 프로그램`}
                         </p>
-                        {/* 프로그램이 하나뿐이면 묶어도 같은 목록이라 전환 버튼을 감춘다. */}
-                        {programGroups.length > 1 && <div className="mt-3 inline-flex rounded-lg border border-white/10 p-0.5 text-xs" role="group" aria-label="프로젝트 보기 방식">
-                            {PROJECT_VIEW_OPTIONS.map(([view, label]) => (
-                                <button
-                                    key={view}
-                                    type="button"
-                                    aria-pressed={projectView === view}
-                                    onClick={() => setProjectView(view)}
-                                    className={`px-3 py-1 rounded-md transition-colors ${projectView === view ? 'bg-primary-500/20 text-primary-300' : 'text-gray-400 hover:text-white'}`}
-                                >
-                                    {label}
-                                </button>
-                            ))}
-                        </div>}
+                        {/* 프로그램이 하나뿐이면 골라도 같은 목록이라 드롭다운을 감춘다. */}
+                        {programGroups.length > 1 && <label className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+                            프로그램
+                            <select
+                                className="input w-auto py-1 text-sm"
+                                value={selectedProgram ? selectedProgram.programId : ALL_PROGRAMS}
+                                onChange={(event) => setSelectedProgramId(event.target.value)}
+                                id="dashboard-program-filter"
+                            >
+                                <option value={ALL_PROGRAMS}>전체 ({displayProjects.length}개)</option>
+                                {programGroups.map((group) => (
+                                    <option key={group.programId} value={group.programId}>
+                                        {group.programName} ({group.projects.length}개)
+                                    </option>
+                                ))}
+                            </select>
+                        </label>}
                     </div>
                     {role === 'MENTOR' && !creationAllowed && (
                         <button disabled className="btn-secondary opacity-60" title="관리자가 멘토별로 프로젝트 생성을 활성화할 수 있습니다.">새 프로젝트 (사용중지)</button>
@@ -447,18 +455,7 @@ export default function DashboardPage() {
 
                 {/* Project Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {(projectView === 'all' || programGroups.length <= 1) && displayProjects.map(renderProjectCard)}
-                    {projectView === 'program' && programGroups.length > 1 && programGroups.map(group => (
-                        <section key={group.programId} className="col-span-full" aria-label={`${group.programName} 프로젝트`}>
-                            <h3 className="mb-3 flex items-baseline gap-2 text-sm font-semibold text-gray-300">
-                                {group.programName}
-                                <span className="text-xs font-normal text-gray-500">{group.projects.length}개</span>
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                                {group.projects.map(renderProjectCard)}
-                            </div>
-                        </section>
-                    ))}
+                    {visibleProjects.map(renderProjectCard)}
 
                     {projectsStatus === 'failed' && (
                         <div className="col-span-full text-center py-16" role="alert">

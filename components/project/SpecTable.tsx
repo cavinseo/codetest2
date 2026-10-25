@@ -577,8 +577,11 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         const byId = new Map(aiDraftSpecs.map((spec) => [spec.id, spec]));
         for (const spec of aiDraftSpecs) {
             if (!selected.has(spec.id)) continue;
+            // AI 초안은 부모가 순환할 수 있다. 지나온 부모를 다시 만나면 멈춰 화면이 멈추지 않게 한다(B27과 같은 이유).
+            const visited = new Set<string>();
             let parentId = spec.parentId;
-            while (parentId) {
+            while (parentId && !visited.has(parentId)) {
+                visited.add(parentId);
                 selected.add(parentId);
                 parentId = byId.get(parentId)?.parentId;
             }

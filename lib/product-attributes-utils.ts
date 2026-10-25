@@ -189,9 +189,14 @@ export function getAppliedTechnologiesForAttributes(
             const relevantSpecs = selected.technology?.trim()
                 ? [selected]
                 : sortedSpecs.filter(spec => {
+                    // 자기 자신이나 서로를 부모로 가리키는 스펙(가져오기·수동 편집으로 생길 수 있다)이
+                    // 있으면 부모를 따라 오르는 반복이 끝나지 않아 화면이 멈췄다(2026-10-25 코드 리뷰
+                    // B27). 이미 지나온 스펙을 다시 만나면 거기서 멈춘다.
+                    const visited = new Set<string>();
                     let parentId = spec.parentId;
-                    while (parentId) {
+                    while (parentId && !visited.has(parentId)) {
                         if (parentId === selected.id) return true;
+                        visited.add(parentId);
                         parentId = sortedSpecs.find(parent => parent.id === parentId)?.parentId;
                     }
                     return false;

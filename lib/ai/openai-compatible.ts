@@ -75,11 +75,30 @@ function joinUrl(baseUrl: string, path: string): string {
     return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, transport: (url: string, init: RequestInit) => Promise<Response> = fetch): Promise<Response> {
+interface TimedJsonResponse {
+    ok: boolean;
+    status: number;
+    /** 성공 응답의 JSON 본문. 실패 응답이거나 본문이 JSON 이 아니면 null. */
+    payload: unknown;
+}
+
+// 요청과 본문 읽기를 한 시간 제한 안에서 끝낸다. 예전에는 응답 헤더를 받는 순간 타이머를
+// 풀어, 헤더만 보내고 본문을 끝내지 않는 서버를 만나면 response.json() 이 끝없이 기다렸다
+// (2026-10-25 코드 리뷰 B26). transport 가 signal 을 본문에까지 적용하지 않을 수 있어
+// 본문 읽기를 중단 신호와 경주시킨다.
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number, transport: (url: string, init: RequestInit) => Promise<Response> = fetch): Promise<TimedJsonResponse> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timedOut = new Promise<never>((_, reject) => {
+        controller.signal.addEventListener('abort', () => reject(new AiProviderError('응답 시간이 초과되었습니다.')), { once: true });
+    });
+    // 경주에서 진 쪽의 거부가 처리되지 않은 거부로 남지 않게 한다.
+    timedOut.catch(() => undefined);
     try {
-        return await transport(url, { ...init, signal: controller.signal });
+        const response = await Promise.race([transport(url, { ...init, signal: controller.signal }), timedOut]);
+        if (!response.ok) return { ok: false, status: response.status, payload: null };
+        const payload = await Promise.race([response.json().catch(() => null), timedOut]);
+        return { ok: true, status: response.status, payload };
     } finally {
         clearTimeout(timer);
     }
@@ -131,26 +150,26 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
         const probeTimeout = Math.min(timeoutMs, 5_000);
 
         try {
-            const response = await fetchWithTimeout(
+            const response = await fetchJsonWithTimeout(
                 joinUrl(baseUrl, 'models'),
                 { method: 'GET', headers: headers() },
                 probeTimeout, config.fetch
             );
             if (response.ok) {
-                return extractModelIds(await response.json().catch(() => null));
+                return extractModelIds(response.payload);
             }
         } catch {
             // OpenAI 호환 경로가 없을 수 있으므로 네이티브 경로로 한 번 더 시도한다.
         }
 
         try {
-            const response = await fetchWithTimeout(
+            const response = await fetchJsonWithTimeout(
                 nativeTagsUrl(baseUrl),
                 { method: 'GET', headers: headers() },
                 probeTimeout, config.fetch
             );
             if (response.ok) {
-                return extractModelIds(await response.json().catch(() => null));
+                return extractModelIds(response.payload);
             }
         } catch {
             return null;
@@ -180,7 +199,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
 
         // 1차 시도 후, 스키마 검증에 실패하면 오류를 알려주고 한 번만 다시 요청한다.
         for (let attempt = 0; attempt < 2; attempt++) {
-            const response = await fetchWithTimeout(
+            const response = await fetchJsonWithTimeout(
                 url,
                 {
                     method: 'POST',
@@ -204,7 +223,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
                 throw new AiProviderError(`${config.label} 응답 오류 (HTTP ${response.status})`);
             }
 
-            const payload = await response.json().catch(() => null);
+            const payload = response.payload as { choices?: Array<{ message?: { content?: unknown } }> } | null;
             const content = payload?.choices?.[0]?.message?.content;
             if (typeof content !== 'string') {
                 lastError = '본문이 비어 있음';
