@@ -118,13 +118,16 @@ export async function POST(
             });
 
             for (const req of requirements) {
+                // Kano 질문·가중치는 보낸 경우에만 바꾼다. 요구사항 표는 이 값을 다루지 않아
+                // 보내지 않는데, 빠진 값을 null 로 쓰면 오타 하나 고쳐 저장할 때마다 Kano
+                // 화면에서 입력한 질문과 가중치가 전부 지워졌다. 명시적 null 은 그대로 지운다.
                 const data = {
                     category: req.category,
                     subcategory: req.subcategory ?? null,
                     requirement: req.requirement,
-                    kanoPositiveQ: req.kanoPositiveQ ?? null,
-                    kanoNegativeQ: req.kanoNegativeQ ?? null,
-                    kanoWeight: req.kanoWeight ?? null,
+                    ...(req.kanoPositiveQ !== undefined ? { kanoPositiveQ: req.kanoPositiveQ } : {}),
+                    ...(req.kanoNegativeQ !== undefined ? { kanoNegativeQ: req.kanoNegativeQ } : {}),
+                    ...(req.kanoWeight !== undefined ? { kanoWeight: req.kanoWeight } : {}),
                     order: req.order,
                 };
 
