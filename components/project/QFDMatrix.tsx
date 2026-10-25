@@ -149,6 +149,9 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
     const [collapsedTechnicalGroups, setCollapsedTechnicalGroups] = useState<Record<number, boolean> | null>(null);
     const [removingCompetitor, setRemovingCompetitor] = useState<string | null>(null);
     const [techFieldDrafts, setTechFieldDrafts] = useState<Record<string, string>>({});
+    // 저장 요청을 보냈지만 아직 화면 데이터(tech)에 반영되지 않은 값. 측정단위를 고치고 바로
+    // 목표치를 고치면, 목표치 요청이 아직 옛 단위를 담은 tech 로 단위를 덮어써 되돌렸다(B21).
+    const pendingTechValues = useRef<Record<string, string>>({});
     const [deletingTech, setDeletingTech] = useState<DisplayTechnical | null>(null);
     const [deletingGroup, setDeletingGroup] = useState<TechnicalGroup | null>(null);
     const [isDeletingTech, setIsDeletingTech] = useState(false);
@@ -371,12 +374,18 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
         return (field === 'unit' ? tech.unit : tech.targetValue) || '';
     };
 
+    // 같은 기술특성의 다른 칸 값. 보내 놓고 아직 반영되지 않은 값이 있으면 그것이 최신이다.
+    const latestTechFieldValue = (tech: DisplayTechnical, field: TechnicalTextField) => {
+        const pending = pendingTechValues.current[techFieldKey(tech.id, field)];
+        return pending ?? ((field === 'unit' ? tech.unit : tech.targetValue) || '');
+    };
+
     const commitTechField = async (tech: DisplayTechnical, field: TechnicalTextField) => {
         const key = techFieldKey(tech.id, field);
         if (!(key in techFieldDrafts)) return;
 
         const nextValue = techFieldDrafts[key].trim();
-        const currentValue = ((field === 'unit' ? tech.unit : tech.targetValue) || '').trim();
+        const currentValue = latestTechFieldValue(tech, field).trim();
 
         // 초안을 먼저 지운다. 남겨 두면 저장 뒤 서버가 돌려준 값 대신 초안이 계속 보인다.
         setTechFieldDrafts((drafts) => {
@@ -387,24 +396,42 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
 
         if (nextValue === currentValue) return;
 
-        const res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                id: tech.id,
-                name: tech.name,
-                unit: field === 'unit' ? nextValue : (tech.unit || ''),
-                targetValue: field === 'targetValue' ? nextValue : (tech.targetValue || ''),
-            }),
-        });
+        pendingTechValues.current[key] = nextValue;
+        // 저장이 실패하면 입력한 값을 칸에 되돌려 놓는다. 초안을 이미 지웠기 때문에 그대로 두면
+        // 사용자가 친 값이 사라지고 옛 값만 남았다(B21). 그사이 새로 친 초안이 있으면 그것을 둔다.
+        const restoreDraft = () => {
+            if (pendingTechValues.current[key] === nextValue) delete pendingTechValues.current[key];
+            setTechFieldDrafts((drafts) => (key in drafts ? drafts : { ...drafts, [key]: nextValue }));
+        };
+
+        let res: Response;
+        try {
+            res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: tech.id,
+                    name: tech.name,
+                    unit: field === 'unit' ? nextValue : latestTechFieldValue(tech, 'unit'),
+                    targetValue: field === 'targetValue' ? nextValue : latestTechFieldValue(tech, 'targetValue'),
+                }),
+            });
+        } catch {
+            restoreDraft();
+            showToast(`${TECHNICAL_FIELD_LABELS[field]}을(를) 저장하지 못했습니다. 연결을 확인하세요.`, 'error');
+            return;
+        }
 
         if (!res.ok) {
+            restoreDraft();
             const errorData = await res.json().catch(() => null);
             showToast(errorData?.error || `${TECHNICAL_FIELD_LABELS[field]}을(를) 저장하지 못했습니다.`, 'error');
             return;
         }
 
         await loadData();
+        // 다시 불러온 tech 가 이 값을 담았으니 보류 값을 치운다. 그사이 더 새 값을 보냈으면 둔다.
+        if (pendingTechValues.current[key] === nextValue) delete pendingTechValues.current[key];
         showToast(`${TECHNICAL_FIELD_LABELS[field]}을(를) 저장했습니다.`);
     };
 
