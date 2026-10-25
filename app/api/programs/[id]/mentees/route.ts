@@ -48,6 +48,9 @@ export async function GET(
         // ?candidates=1 은 "이 프로그램에 배정할 수 있는 멘티"를 준다. 아직 이
         // 프로그램에 없는 승인된 멘티 전부이며, 지금 어디 소속인지도 함께 준다
         // (다른 프로그램 소속이면 화면이 재확인을 받아야 하므로).
+        // 후보에는 다른 프로그램 멘티가 섞여 있어 이메일을 싣지 않는다. 어느 매니저든
+        // 남의 프로그램 멘티의 연락처를 모아 갈 수 있었다(2026-10-25 코드 리뷰 B12).
+        // 배정에는 id·이름·현재 소속이면 충분하다.
         if (new URL(request.url).searchParams.get('candidates') === '1') {
             const rows = await prisma.user.findMany({
                 // NOT: { programId } 을 쓰면 안 된다. programId 는 nullable 이라
@@ -58,7 +61,7 @@ export async function GET(
                     role: 'MENTEE', status: 'APPROVED',
                     OR: [{ programId: null }, { programId: { not: programId } }],
                 },
-                select: { id: true, name: true, email: true, programId: true, program: { select: { name: true } } },
+                select: { id: true, name: true, programId: true, program: { select: { name: true } } },
                 orderBy: { name: 'asc' },
             });
 

@@ -141,8 +141,8 @@ describe('배정 후보 조회 (?candidates=1)', () => {
 
     it('현재 소속 프로그램명을 함께 준다', async () => {
         findManyUser.mockResolvedValue([
-            { id: 'm1', name: '멘티1', email: 'm1@x.com', programId: 'prog_9', program: { name: '다른 프로그램' } },
-            { id: 'm2', name: '멘티2', email: 'm2@x.com', programId: null, program: null },
+            { id: 'm1', name: '멘티1', programId: 'prog_9', program: { name: '다른 프로그램' } },
+            { id: 'm2', name: '멘티2', programId: null, program: null },
         ]);
 
         const res = await call('?candidates=1');
@@ -151,6 +151,18 @@ describe('배정 후보 조회 (?candidates=1)', () => {
         expect(body.candidates[0].programName).toBe('다른 프로그램');
         // 소속이 없으면 null 이어야 한다. 화면이 "소속 없음" 으로 구분해 보여준다.
         expect(body.candidates[1].programName).toBeNull();
+    });
+
+    it('다른 프로그램 멘티가 섞인 후보 목록에 이메일을 싣지 않는다 (B12)', async () => {
+        findManyUser.mockResolvedValue([
+            { id: 'm1', name: '멘티1', programId: 'prog_9', program: { name: '다른 프로그램' } },
+        ]);
+
+        const res = await call('?candidates=1');
+        const body = await res.json();
+
+        expect(findManyUser.mock.calls[0][0].select).not.toHaveProperty('email');
+        expect(body.candidates).toEqual([{ id: 'm1', name: '멘티1', programId: 'prog_9', programName: '다른 프로그램' }]);
     });
 });
 
