@@ -28,7 +28,6 @@ interface ProjectOption {
 interface MenteeCandidate {
     id: string;
     name: string;
-    email: string;
     programId: string | null;
     /** 아직 어느 프로그램에도 안 속한 멘티는 null 이다. */
     programName: string | null;
@@ -464,7 +463,7 @@ export default function ProgramsTab({ canCreate = false, canDelete = false, onDe
                                                         <option value="">선택하세요</option>
                                                         {menteeCandidates[p.id]!.map((m) => (
                                                             <option key={m.id} value={m.id}>
-                                                                {m.name} ({m.email})
+                                                                {m.name}
                                                                 {m.programName ? ` — 현재: ${m.programName}` : ' — 소속 없음'}
                                                             </option>
                                                         ))}
