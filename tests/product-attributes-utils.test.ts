@@ -190,3 +190,36 @@ describe('product attribute technology linking', () => {
         expect(dedupeByAttributeName(rows).map((row) => row.id)).toEqual(['a1', 'a3']);
     });
 });
+
+// 2026-10-25 코드 리뷰 B27: 자기 자신이나 서로를 부모로 가리키는 스펙에서 무한 반복에 빠졌다.
+describe('순환하는 스펙 부모 (B27)', () => {
+    it('자기 자신을 부모로 가리키는 스펙이 있어도 끝나고 나머지 기술을 모은다', () => {
+        const specs = [
+            { id: 'core', name: '진단', level: 'CORE', parentId: null, technology: '', order: 0 },
+            { id: 'sub', name: '원인 분석', level: 'SUB', parentId: 'core', technology: '로그 분석', order: 1 },
+            { id: 'self', name: '고장 난 행', level: 'SUB', parentId: 'self', technology: '엉뚱한 기술', order: 2 },
+        ];
+
+        expect(getAppliedTechnologiesForAttributes(specs, ['진단'])).toEqual(['로그 분석']);
+    });
+
+    it('서로를 부모로 가리키는 두 스펙이 있어도 끝난다', () => {
+        const specs = [
+            { id: 'core', name: '진단', level: 'CORE', parentId: null, technology: '', order: 0 },
+            { id: 'a', name: '가', level: 'SUB', parentId: 'b', technology: '가 기술', order: 1 },
+            { id: 'b', name: '나', level: 'SUB', parentId: 'a', technology: '나 기술', order: 2 },
+            { id: 'child', name: '자식', level: 'DETAIL', parentId: 'core', technology: '자식 기술', order: 3 },
+        ];
+
+        expect(getAppliedTechnologiesForAttributes(specs, ['진단'])).toEqual(['자식 기술']);
+    });
+
+    it('순환 고리 안의 스펙을 고르면 고리 안의 기술만 모은다', () => {
+        const specs = [
+            { id: 'a', name: '가', level: 'SUB', parentId: 'b', technology: '', order: 0 },
+            { id: 'b', name: '나', level: 'SUB', parentId: 'a', technology: '나 기술', order: 1 },
+        ];
+
+        expect(getAppliedTechnologiesForAttributes(specs, ['가'])).toEqual(['나 기술']);
+    });
+});
