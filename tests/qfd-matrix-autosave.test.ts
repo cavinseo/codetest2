@@ -665,14 +665,18 @@ describe('WS-9 세부기능 표시와 빈 스펙 입력', () => {
     }
     const fieldValue = (label: string) => container.querySelector<HTMLInputElement>(`[aria-label="처리 속도 ${label}"]`)!.value;
 
-    it.each(['http', 'network'] as const)('측정단위 저장이 %s 오류로 실패하면 입력한 값을 칸에 남긴다 (B21)', async (outcome) => {
+    it.each([
+        // 서버가 이유를 주면 그 문구를, 연결이 끊기면 기본 문구를 보인다.
+        { outcome: 'http' as const, message: 'fixture 저장 또는 조회 실패' },
+        { outcome: 'network' as const, message: '측정단위을(를) 저장하지 못했습니다. 연결을 확인하세요.' },
+    ])('측정단위 저장이 $outcome 오류로 실패하면 입력한 값을 칸에 남긴다 (B21)', async ({ outcome, message }) => {
         await mount();
         await typeAndBlur('측정단위', '초');
 
         await finish(server.pending('qfd/technical', 'PATCH')[0], outcome);
 
         expect(fieldValue('측정단위')).toBe('초');
-        expect(container.textContent).toContain('측정단위을(를) 저장하지 못했습니다');
+        expect(container.textContent).toContain(message);
     });
 
     it('측정단위 저장을 기다리는 중에 목표치를 고쳐도 새 단위를 되돌리지 않는다 (B21)', async () => {

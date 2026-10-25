@@ -28,6 +28,8 @@ beforeEach(() => {
             return response({ success: true, mentee: { id: 'm1', name: '멘티1', programName: '첫 프로그램' } });
         }
         if (url === '/api/programs') return response({ programs: [program('p1', '첫 프로그램'), program('p2', '둘째 프로그램')] });
+        // 프로그램 탭 안의 추가 개설 승인 패널이 함께 불러온다.
+        if (url === '/api/project-requests') return response({ requests: [], ownedProjectCount: 0 });
         if (url === '/api/programs/p1/mentees?candidates=1') {
             return response({ candidates: assigned ? [] : [{ id: 'm1', name: '멘티1', programId: null, programName: null }] });
         }
