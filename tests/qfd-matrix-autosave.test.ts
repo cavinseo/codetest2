@@ -652,6 +652,50 @@ describe('WS-9 세부기능 표시와 빈 스펙 입력', () => {
         await finish(request, 'success', field ? { technicalCharacteristic: { ...tech, [field]: value } } : undefined);
         expect(container.querySelector<HTMLInputElement>(`[aria-label="처리 속도 ${label}"]`)!.value).toBe(value);
     });
+
+    // 2026-10-25 코드 리뷰 B21: 저장 실패 시 입력이 사라지고, 연달아 고치면 단위가 되돌아갔다.
+    async function typeAndBlur(label: string, value: string) {
+        const input = container.querySelector<HTMLInputElement>(`[aria-label="처리 속도 ${label}"]`)!;
+        await act(async () => {
+            input.focus();
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await act(async () => input.blur());
+    }
+    const fieldValue = (label: string) => container.querySelector<HTMLInputElement>(`[aria-label="처리 속도 ${label}"]`)!.value;
+
+    it.each(['http', 'network'] as const)('측정단위 저장이 %s 오류로 실패하면 입력한 값을 칸에 남긴다 (B21)', async (outcome) => {
+        await mount();
+        await typeAndBlur('측정단위', '초');
+
+        await finish(server.pending('qfd/technical', 'PATCH')[0], outcome);
+
+        expect(fieldValue('측정단위')).toBe('초');
+        expect(container.textContent).toContain('측정단위을(를) 저장하지 못했습니다');
+    });
+
+    it('측정단위 저장을 기다리는 중에 목표치를 고쳐도 새 단위를 되돌리지 않는다 (B21)', async () => {
+        await mount();
+        await typeAndBlur('측정단위', '초');
+        await typeAndBlur('설계 목표치', '10 이내');
+
+        const [unitRequest, targetRequest] = server.pending('qfd/technical', 'PATCH');
+        expect(unitRequest.body).toMatchObject({ unit: '초', targetValue: '100' });
+        // 옛 단위(ms)가 아니라 방금 보낸 단위를 함께 보낸다.
+        expect(targetRequest.body).toMatchObject({ unit: '초', targetValue: '10 이내' });
+    });
+
+    it('저장에 성공하면 다시 불러온 서버 값을 보인다 (B21 회귀 없음)', async () => {
+        await mount();
+        await typeAndBlur('측정단위', '초');
+
+        await finish(server.pending('qfd/technical', 'PATCH')[0], 'success', {
+            technicalCharacteristic: { ...technicals[0], unit: '초', groupIndex: 0, columnOrder: 0 },
+        });
+
+        expect(fieldValue('측정단위')).toBe('초');
+    });
 });
 
 describe('WS-9 그룹 구성', () => {

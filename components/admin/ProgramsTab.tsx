@@ -268,8 +268,16 @@ export default function ProgramsTab({ canCreate = false, canDelete = false, onDe
             setAssignSelection((prev) => ({ ...prev, [programId]: '' }));
             // 방금 배정한 멘티가 후보에서 빠져야 하고, 카드의 멘티 수도 늘어난다.
             // 다른 프로그램의 후보 목록에도 소속이 바뀐 것이 반영돼야 하므로 전부 비운다.
+            // 비우기만 하고 이 프로그램만 다시 불러오면, 열려 있던 다른 프로그램의 배정 패널은
+            // 다시 불러올 계기가 없어 "불러오는 중..."에 멈췄다(2026-10-25 코드 리뷰 B22).
+            // 열려 있는 패널은 모두 다시 불러오고, 닫힌 패널은 열 때 불러온다.
+            const openProgramIds = Object.keys(openAssign).filter((id) => openAssign[id] && id !== programId);
             setMenteeCandidates({});
-            await Promise.all([loadMenteeCandidates(programId), load()]);
+            await Promise.all([
+                loadMenteeCandidates(programId),
+                ...openProgramIds.map((id) => loadMenteeCandidates(id)),
+                load(),
+            ]);
         } catch (error) {
             setMessage({ type: 'error', text: error instanceof Error ? error.message : '멘티를 배정하지 못했습니다.' });
         } finally {

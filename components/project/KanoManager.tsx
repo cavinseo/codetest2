@@ -148,8 +148,13 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const excelInputRef = useRef<HTMLInputElement | null>(null);
     const offlineInputRef = useRef<HTMLInputElement | null>(null);
 
+    // 화면 전체 로딩은 처음 열 때만 쓴다. 저장·초대·업로드 뒤 다시 불러올 때마다 전체를
+    // 로딩으로 바꾸면 하위 화면이 통째로 내려갔다 올라와, 방금 뜬 완료 알림이 사라지고 스크롤이
+    // 맨 위로 튀었다(2026-10-25 코드 리뷰 B20). 다시 불러오기는 지금 화면을 둔 채 값만 바꾼다.
+    const hasLoadedRef = useRef(false);
+
     const loadData = useCallback(async () => {
-        setIsLoading(true);
+        if (!hasLoadedRef.current) setIsLoading(true);
         try {
             const projRes = await fetch(`/api/projects/${projectId}`);
             if (projRes.ok) {
@@ -205,6 +210,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         } catch (error) {
             console.error('데이터 로드 실패:', error);
         } finally {
+            hasLoadedRef.current = true;
             setIsLoading(false);
         }
     }, [projectId]);
@@ -369,7 +375,11 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         }
     };
 
-    useEffect(() => { loadData(); }, [loadData]);
+    // 다른 프로젝트로 바뀌면 이전 프로젝트 값이 보이지 않게 다시 전체 로딩부터 한다.
+    useEffect(() => {
+        hasLoadedRef.current = false;
+        loadData();
+    }, [loadData]);
     useEffect(() => { if (initialView) setActiveTab(initialView); }, [initialView]);
 
     const handleUploadExcelResponses = async (writePolicy: UploadWritePolicy, replaceExistingRespondents = false) => {
