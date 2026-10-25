@@ -22,6 +22,29 @@ interface SurveyData {
 
 type KanoAnswer = 'LIKE' | 'EXPECT' | 'NEUTRAL' | 'TOLERATE' | 'DISLIKE';
 
+interface SurveyLoadError {
+    title: string;
+    message: string;
+    /** 일시적인 실패라 다시 시도하면 열릴 수 있는가 */
+    retryable: boolean;
+}
+
+// 서버는 만료(410)·이미 응답(400)·없음(404)을 구분해 알려 주는데, 화면이 전부 "찾을 수
+// 없습니다"로 뭉개 응답자는 링크가 잘못된 줄 알고 다시 요청하거나, 이미 낸 응답을 못
+// 냈다고 생각했다(2026-10-25 코드 리뷰 B18). 상태별로 제목을 고르고 서버 문구를 보인다.
+function surveyLoadError(status: number, serverMessage: string | undefined): SurveyLoadError {
+    if (status === 410) {
+        return { title: '설문 링크가 만료되었습니다', message: serverMessage || '설문 링크가 만료되었습니다.', retryable: false };
+    }
+    if (status === 400) {
+        return { title: '이미 응답한 설문입니다', message: serverMessage || '이미 응답을 완료하셨습니다.', retryable: false };
+    }
+    if (status === 404) {
+        return { title: '설문을 찾을 수 없습니다', message: serverMessage || '유효하지 않은 설문 링크입니다.', retryable: false };
+    }
+    return { title: '설문을 불러오지 못했습니다', message: '잠시 후 다시 시도해 주세요.', retryable: true };
+}
+
 export default function SurveyPage() {
     const params = useParams();
     const router = useRouter();
@@ -32,18 +55,22 @@ export default function SurveyPage() {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [answers, setAnswers] = useState<Record<string, { functional: KanoAnswer; dysfunctional: KanoAnswer }>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [error, setError] = useState('');
+    const [loadError, setLoadError] = useState<SurveyLoadError | null>(null);
 
     const loadSurvey = useCallback(async () => {
+        setIsLoading(true);
+        setLoadError(null);
         try {
             const response = await fetch(`/api/survey/${token}`);
             if (!response.ok) {
-                throw new Error('설문을 찾을 수 없습니다. 링크가 만료되었거나 잘못되었습니다.');
+                const data = await response.json().catch(() => null);
+                setLoadError(surveyLoadError(response.status, data?.error));
+                return;
             }
             const data = await response.json();
             setSurveyData(data);
-        } catch (error: any) {
-            setError(error.message);
+        } catch {
+            setLoadError(surveyLoadError(0, undefined));
         } finally {
             setIsLoading(false);
         }
@@ -140,16 +167,24 @@ export default function SurveyPage() {
         );
     }
 
-    if (error || !surveyData) {
+    if (loadError || !surveyData) {
+        const shown = loadError ?? surveyLoadError(404, undefined);
         return (
             <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-                <div className="card max-w-md text-center">
+                <div className="card max-w-md text-center" role="alert">
                     <div className="text-6xl mb-4">⚠️</div>
-                    <h2 className="text-2xl font-bold text-white mb-4">설문을 찾을 수 없습니다</h2>
-                    <p className="text-gray-400 mb-6">{error || '유효하지 않은 링크입니다.'}</p>
-                    <Link href="/" className="btn-primary inline-block">
-                        홈으로 이동
-                    </Link>
+                    <h2 className="text-2xl font-bold text-white mb-4">{shown.title}</h2>
+                    <p className="text-gray-400 mb-6">{shown.message}</p>
+                    <div className="flex justify-center gap-3">
+                        {shown.retryable && (
+                            <button type="button" className="btn-secondary" onClick={() => void loadSurvey()}>
+                                다시 시도
+                            </button>
+                        )}
+                        <Link href="/" className="btn-primary inline-block">
+                            홈으로 이동
+                        </Link>
+                    </div>
                 </div>
             </div>
         );

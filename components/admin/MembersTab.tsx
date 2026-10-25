@@ -63,13 +63,15 @@ interface MembersTabProps {
     onRequestDelete: (user: { id: string; name: string }) => void;
     onSetRole: (userId: string, role: MemberRole) => void;
     onExtendAccess: (userId: string, days: number) => void;
+    /** 연장 요청을 처리 중인 회원. 그 회원의 연장 버튼을 잠가 연타로 기간이 두 번 늘지 않게 한다. */
+    extendingUserIds?: ReadonlySet<string>;
     onCreate: (payload: CreateMemberPayload) => Promise<boolean>;
     /** 멘티를 프로그램에 배정한 뒤 목록을 다시 받아오기 위해 부른다. */
     onReload: () => void;
 }
 
 export default function MembersTab({
-    members, onApprove, onRequestDelete, onSetRole, onExtendAccess, onCreate, onReload,
+    members, onApprove, onRequestDelete, onSetRole, onExtendAccess, extendingUserIds, onCreate, onReload,
 }: MembersTabProps) {
     const [searchMember, setSearchMember] = useState('');
     const [roleFilter, setRoleFilter] = useState<RoleFilter>('ALL');
@@ -404,7 +406,8 @@ export default function MembersTab({
                                             {m.accessExpiresAt && (
                                                 <button
                                                     onClick={() => onExtendAccess(m.id, DEFAULT_ACCESS_DURATION_DAYS)}
-                                                    className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] transition-colors"
+                                                    disabled={extendingUserIds?.has(m.id)}
+                                                    className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] transition-colors disabled:opacity-50"
                                                     id={`admin-extend-access-${m.id}`}
                                                 >
                                                     {DEFAULT_ACCESS_DURATION_DAYS}일 연장

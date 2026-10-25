@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-policy';
 import AdminLoginForm from '@/components/admin/AdminLoginForm';
@@ -72,7 +72,15 @@ export default function AdminModePage() {
         cascadeWarning?: string;
         error?: string;
     } | null>(null);
-    const [isDeletingUser, setIsDeletingUser] = useState(false);
+    // 사용자·프로젝트 삭제가 함께 쓴다. 확정 버튼을 연달아 누르면 삭제 요청이 두 번 나갔다(B17).
+    const [isDeleting, setIsDeleting] = useState(false);
+    // 렌더가 끝나기 전 같은 순간의 연타는 state 로 못 막아 ref 를 함께 둔다.
+    const deletingRef = useRef(false);
+    // 「N일 연장」을 처리 중인 회원. 응답 전에 한 번 더 누르면 서버가 현재 만료일에서 또 N일을
+    // 더해 2N일이 연장됐다(2026-10-25 코드 리뷰 B17). ref 는 같은 렌더 안의 연타까지 막고,
+    // state 는 버튼을 잠가 보여 준다.
+    const extendingRef = useRef(new Set<string>());
+    const [extendingUserIds, setExtendingUserIds] = useState<ReadonlySet<string>>(new Set());
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [accessDenied, setAccessDenied] = useState(false);
     const [needsLogin, setNeedsLogin] = useState(false);
@@ -140,8 +148,9 @@ export default function AdminModePage() {
         userId: string,
         options: { confirmCascade?: boolean; reason?: DeletionReason; previewToken?: string } = {}
     ) => {
-        if (isDeletingUser) return;
-        setIsDeletingUser(true);
+        if (deletingRef.current) return;
+        deletingRef.current = true;
+        setIsDeleting(true);
         setConfirmDelete((prev) => prev ? { ...prev, error: undefined } : prev);
         try {
             const res = await fetch('/api/admin/users', {
@@ -177,7 +186,8 @@ export default function AdminModePage() {
         } catch {
             setConfirmDelete((prev) => prev ? { ...prev, error: '삭제 결과를 확인하지 못했습니다. 연결 상태를 확인하고 목록을 새로고침하세요.' } : prev);
         } finally {
-            setIsDeletingUser(false);
+            deletingRef.current = false;
+            setIsDeleting(false);
         }
     };
 
@@ -216,19 +226,29 @@ export default function AdminModePage() {
     };
 
     const handleExtendAccess = async (userId: string, days: number) => {
-        const res = await fetch('/api/admin/users', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, action: 'extendAccess', days }),
-        });
-        const data = await res.json().catch(() => null);
-        if (res.ok) {
-            setUsers((prev) => prev.map((u) => (
-                u.id === userId ? { ...u, accessExpiresAt: data.user.accessExpiresAt } : u
-            )));
-            showMsg('success', `이용 기간을 ${days}일 연장했습니다.`);
-        } else {
-            showMsg('error', data?.error || '기간 연장에 실패했습니다.');
+        if (extendingRef.current.has(userId)) return;
+        extendingRef.current.add(userId);
+        setExtendingUserIds(new Set(extendingRef.current));
+        try {
+            const res = await fetch('/api/admin/users', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, action: 'extendAccess', days }),
+            });
+            const data = await res.json().catch(() => null);
+            if (res.ok) {
+                setUsers((prev) => prev.map((u) => (
+                    u.id === userId ? { ...u, accessExpiresAt: data.user.accessExpiresAt } : u
+                )));
+                showMsg('success', `이용 기간을 ${days}일 연장했습니다.`);
+            } else {
+                showMsg('error', data?.error || '기간 연장에 실패했습니다.');
+            }
+        } catch {
+            showMsg('error', '기간 연장에 실패했습니다. 연결을 확인하세요.');
+        } finally {
+            extendingRef.current.delete(userId);
+            setExtendingUserIds(new Set(extendingRef.current));
         }
     };
 
@@ -255,6 +275,9 @@ export default function AdminModePage() {
     };
 
     const handleDeleteProject = async (projectId: string) => {
+        if (deletingRef.current) return;
+        deletingRef.current = true;
+        setIsDeleting(true);
         try {
             const res = await fetch('/api/admin/projects', {
                 method: 'DELETE',
@@ -279,6 +302,8 @@ export default function AdminModePage() {
             // 통신 자체가 실패해도 모달은 닫아야 한다. 안 닫으면 화면이 잠긴다.
             showMsg('error', '프로젝트 삭제에 실패했습니다. 연결을 확인하세요.');
         } finally {
+            deletingRef.current = false;
+            setIsDeleting(false);
             setConfirmDelete(null);
         }
     };
@@ -610,7 +635,7 @@ export default function AdminModePage() {
                                 }
                                 className="btn-ghost flex-1"
                                 id="admin-cancel-delete-btn"
-                                disabled={isDeletingUser}
+                                disabled={isDeleting}
                             >
                                 {confirmDelete.stage === 2 ? '뒤로' : '취소'}
                             </button>
@@ -634,11 +659,11 @@ export default function AdminModePage() {
                                 }}
                                 // 사유를 고르기 전에는 확정할 수 없다. 서버도 400 으로 막지만,
                                 // 되돌릴 수 없는 조작이라 누르기 전에 알려 주는 편이 낫다.
-                                disabled={isDeletingUser || (confirmDelete.stage === 2 && Boolean(confirmDelete.preview) && !confirmDelete.reason)}
+                                disabled={isDeleting || (confirmDelete.stage === 2 && Boolean(confirmDelete.preview) && !confirmDelete.reason)}
                                 className="flex-1 px-4 py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-sm font-medium hover:bg-rose-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 id="admin-confirm-delete-btn"
                             >
-                                {isDeletingUser ? '처리 중...' : deleteActionFor(confirmDelete) === 'advance' ? '계속' : '삭제'}
+                                {isDeleting ? '처리 중...' : deleteActionFor(confirmDelete) === 'advance' ? '계속' : '삭제'}
                             </button>
                         </div>
                     </div>
@@ -809,6 +834,7 @@ export default function AdminModePage() {
                                 onRequestDelete={(user) => setConfirmDelete({ type: 'user', id: user.id, name: user.name, stage: 1 })}
                                 onSetRole={handleSetRole}
                                 onExtendAccess={handleExtendAccess}
+                                extendingUserIds={extendingUserIds}
                                 onCreate={handleCreateMember}
                                 onReload={load}
                             />
