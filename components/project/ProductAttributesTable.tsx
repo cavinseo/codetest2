@@ -452,7 +452,14 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const handleReset = async () => {
         if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         try {
-            await fetch(`/api/projects/${projectId}/attributes`, { method: 'DELETE' });
+            const res = await fetch(`/api/projects/${projectId}/attributes`, { method: 'DELETE' });
+            // 응답을 보지 않고 비우면, 서버가 거절(권한 없음·오류)해도 표가 비고 "초기화되었습니다"
+            // 가 떠서 지워진 줄 안다. 실패하면 표와 확인 창을 그대로 두고 서버 문구를 보인다.
+            if (!res.ok) {
+                const data = await res.json().catch(() => null);
+                showToast(data?.error || '초기화 중 오류가 발생했습니다.', 'error');
+                return;
+            }
             setRows([]);
             setAdditionalTechCapability('');
             setShowResetConfirm(false);
