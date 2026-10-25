@@ -59,7 +59,8 @@ export async function upsertPersonalConnection(
     input: {
         mode?: PersonalAiConnection['mode'];
         vendor?: PersonalAiConnection['vendor'];
-        apiKey?: string;
+        /** 문자열은 새 키로 바꾸고, null 은 저장된 키를 지우고, 생략하면 그대로 둔다. */
+        apiKey?: string | null;
         model?: string | null;
         mcpBaseUrl?: string | null;
         mcpModel?: string | null;
@@ -90,7 +91,7 @@ export async function upsertPersonalConnection(
             ...(input.mcpModel !== undefined ? { mcpModel: input.mcpModel } : {}),
             ...(input.localBaseUrl !== undefined ? { localBaseUrl: input.localBaseUrl } : {}),
             ...(input.localModel !== undefined ? { localModel: input.localModel } : {}),
-            ...(encrypted ? { apiKey: encrypted } : {}),
+            ...(encrypted ? { apiKey: encrypted } : input.apiKey === null ? { apiKey: null } : {}),
         },
     });
 }

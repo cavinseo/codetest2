@@ -64,6 +64,20 @@ export async function POST(
 
         const { fitnesses: newFitnesses } = fitnessBodySchema.parse(await request.json());
 
+        // attributeId 를 그대로 믿으면 다른 프로젝트의 속성에 적합도를 매달 수 있다.
+        // 이 프로젝트 속성만 허용하고, 다른 프로젝트에 있든 아예 없든 같은 400 으로 답해
+        // 남의 id 존재 여부를 떠볼 수 없게 한다.
+        const attributeIds = [...new Set(newFitnesses.map((f) => f.attributeId))];
+        const ownedAttributes = attributeIds.length > 0
+            ? await prisma.productAttribute.findMany({
+                where: { projectId, id: { in: attributeIds } },
+                select: { id: true },
+            })
+            : [];
+        if (ownedAttributes.length !== attributeIds.length) {
+            return NextResponse.json({ error: '유효하지 않은 적합도 데이터입니다.' }, { status: 400 });
+        }
+
         const updatedFitnesses = await prisma.$transaction(async (tx: any) => {
             await tx.attributeFitness.deleteMany({
                 where: { projectId },
@@ -71,10 +85,16 @@ export async function POST(
 
             if (newFitnesses.length > 0) {
                 await tx.attributeFitness.createMany({
-                    data: newFitnesses.map((f: any) => ({
-                        ...f,
+                    // 전체 교체라 id 를 이어 갈 이유가 없다. 클라이언트 id 를 쓰면 다른 프로젝트
+                    // 행의 id 와 부딪혀 500 이 나고, 그 차이로 id 존재 여부가 드러난다.
+                    data: newFitnesses.map((f) => ({
+                        id: generateId('fitness'),
                         projectId,
-                        id: f.id || generateId('fitness'),
+                        attributeId: f.attributeId,
+                        importance: f.importance,
+                        currentLevel: f.currentLevel,
+                        targetLevel: f.targetLevel,
+                        note: f.note,
                     })),
                 });
             }

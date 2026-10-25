@@ -67,7 +67,8 @@ export async function PUT(request: NextRequest) {
                 const existing = await getPersonalConnectionSummary(authResult.userId);
                 // 새 등록이거나 벤더를 바꿀 때는 그 벤더의 키가 반드시 필요하다.
                 // 이전 벤더의 키를 새 벤더에 이어 붙이면 인증만 조용히 깨진다.
-                if (!parsed.data.apiKey && (!existing || existing.vendor !== vendor)) {
+                // mcp 모드에서 넘어올 때도 저장된 키는 MCP 서버용이라 벤더로 보내면 안 된다.
+                if (!parsed.data.apiKey && (!existing || existing.vendor !== vendor || existing.mode === 'mcp')) {
                     return NextResponse.json({ error: 'API 키를 입력하세요.' }, { status: 400 });
                 }
 
@@ -94,9 +95,18 @@ export async function PUT(request: NextRequest) {
                     throw error;
                 }
 
+                // 저장된 키는 그 키를 입력한 곳(벤더 또는 같은 MCP 주소)에만 보낸다. 키 없이
+                // 다른 곳으로 바꾸면 예전 키가 사용자가 새로 적은 주소로 그대로 전송됐다.
+                // 벤더를 비워 두는 것은 "이 키는 MCP 용"이라는 표시다 — 이후 api 모드로
+                // 돌아가면 벤더가 달라 새 키를 요구한다.
+                const existing = await getPersonalConnectionSummary(authResult.userId);
+                const keepsStoredKey = existing?.mode === 'mcp'
+                    && existing.vendor === null
+                    && existing.mcpBaseUrl === mcpBaseUrl;
                 await upsertPersonalConnection(authResult.userId, {
                     mode,
-                    apiKey: parsed.data.apiKey,
+                    vendor: null,
+                    apiKey: parsed.data.apiKey ?? (keepsStoredKey ? undefined : null),
                     mcpBaseUrl,
                     mcpModel: parsed.data.mcpModel?.trim() || null,
                 });
