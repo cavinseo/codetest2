@@ -66,6 +66,9 @@ export default function TechTreeTable({ projectId }: Props) {
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [qfdTopRequirements, setQfdTopRequirements] = useState<RankedTechTreeRequirement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    // 저장된 체계도·스펙·요구사항을 못 불러온 채 편집을 열면 빈 표처럼 보이고, 자동 생성 후
+    // 저장하면 실제 체계도를 덮어쓴다. 실패하면 편집 대신 재시도를 보이고 쓰기를 막는다.
+    const [loadFailed, setLoadFailed] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [specPicker, setSpecPicker] = useState<{ rowIndex: number; rowIds: string[] } | null>(null);
@@ -78,6 +81,7 @@ export default function TechTreeTable({ projectId }: Props) {
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
+        setLoadFailed(false);
         try {
             const [specRes, reqRes, treeRes, qfdRes] = await Promise.all([
                 fetch(`/api/projects/${projectId}/spec`),
@@ -85,20 +89,17 @@ export default function TechTreeTable({ projectId }: Props) {
                 fetch(`/api/projects/${projectId}/tech-tree`),
                 fetch(`/api/projects/${projectId}/qfd/analysis`),
             ]);
+            // QFD 랭킹은 자동 생성의 우선순위에만 쓰여 없어도 편집할 수 있다.
+            if (!specRes.ok || !reqRes.ok || !treeRes.ok) throw new Error('기능기술체계도 데이터 조회 실패');
 
-            let nextSpecs: SpecFunction[] = [];
             let nextQfdTopRequirements: RankedTechTreeRequirement[] = [];
 
-            if (specRes.ok) {
-                const data = await specRes.json();
-                nextSpecs = data.specFunctions || [];
-                setSpecs(nextSpecs);
-            }
+            const specData = await specRes.json();
+            const nextSpecs: SpecFunction[] = specData.specFunctions || [];
+            setSpecs(nextSpecs);
 
-            if (reqRes.ok) {
-                const data = await reqRes.json();
-                setRequirements(data.requirements || []);
-            }
+            const requirementData = await reqRes.json();
+            setRequirements(requirementData.requirements || []);
 
             if (qfdRes.ok) {
                 const data = await qfdRes.json();
@@ -106,24 +107,23 @@ export default function TechTreeTable({ projectId }: Props) {
                 setQfdTopRequirements(nextQfdTopRequirements);
             }
 
-            if (treeRes.ok) {
-                const data = await treeRes.json();
-                const savedRows = normalizeRows(data.entries || []);
-                setRows(savedRows.length > 0 ? savedRows : buildGeneratedRows(nextQfdTopRequirements, nextSpecs));
-            }
+            const treeData = await treeRes.json();
+            const savedRows = normalizeRows(treeData.entries || []);
+            setRows(savedRows.length > 0 ? savedRows : buildGeneratedRows(nextQfdTopRequirements, nextSpecs));
         } catch (error) {
             console.error(error);
-            showToast('기능기술체계도 데이터를 불러오지 못했습니다.', 'error');
+            setLoadFailed(true);
         } finally {
             setIsLoading(false);
         }
-    }, [projectId, showToast]);
+    }, [projectId]);
 
     useEffect(() => {
         loadData();
     }, [loadData]);
 
     const save = async (data: TechTreeRow[]) => {
+        if (loadFailed) return false;
         const response = await fetch(`/api/projects/${projectId}/tech-tree`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -178,6 +178,7 @@ export default function TechTreeTable({ projectId }: Props) {
     };
 
     const autoGenerate = () => {
+        if (loadFailed) return;
         const sourceRequirements = qfdTopRequirements.length > 0
             ? qfdTopRequirements
             : requirements.map((req) => ({ id: req.id, requirement: req.requirement }));
@@ -352,6 +353,15 @@ export default function TechTreeTable({ projectId }: Props) {
 
     if (isLoading) {
         return <div className="flex items-center justify-center p-12"><div className="h-7 w-7 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" /></div>;
+    }
+
+    if (loadFailed) {
+        return (
+            <div className="flex flex-col items-center gap-4 p-12 text-center">
+                <p role="alert" className="text-gray-300">기능기술체계도 데이터를 불러오지 못했습니다. 저장된 체계도를 지키기 위해 편집을 막았습니다.</p>
+                <button type="button" className="btn-primary" onClick={() => void loadData()}>다시 불러오기</button>
+            </div>
+        );
     }
 
     const canAutoGenerate = specs.length > 0 || requirements.length > 0 || qfdTopRequirements.length > 0;
