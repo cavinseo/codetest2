@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
+import { useWorksheetLoad } from './useWorksheetLoad';
 import { buildImprovementSuggestionsFromQfd } from '@/lib/worksheet-links';
 
 interface ImprovementRow {
@@ -101,45 +102,30 @@ export default function ImprovementsTable({ projectId }: Props) {
     const [rows, setRows] = useState<ImprovementRow[]>([]);
     const [features, setFeatures] = useState<ImprovementFeature[]>([]);
     const [qfdData, setQfdData] = useState<any>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [loadFailed, setLoadFailed] = useState(false);
-    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
-    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     const getQfdSuggestions = (source = qfdData?.requirements || []) => buildImprovementSuggestionsFromQfd(source);
 
-    useEffect(() => {
-        let active = true;
-        setIsLoading(true);
-        setLoadFailed(false);
-        Promise.all([
+    const { loadFailed, isReady, retry } = useWorksheetLoad(projectId, async (isActive) => {
+        const [data, qfdAnalysis] = await Promise.all([
             fetch(`/api/projects/${projectId}/improvements`).then(response => { if (!response.ok) throw new Error('개선포인트 조회 실패'); return response.json(); }),
             fetch(`/api/projects/${projectId}/qfd/analysis`).then((response) => (response.ok ? response.json() : null)),
-        ])
-            .then(([data, qfdAnalysis]) => {
-                if (!active) return;
-                if (!Array.isArray(data?.items)) throw new Error('개선포인트 응답 형식 오류');
-                const savedRows = normalizeRows(data?.items || []);
-                const savedFeatures = normalizeFeatures(data?.items || []);
-                const blankFeatures = savedFeatures.length > 0 ? savedFeatures : createBlankFeatures();
+        ]);
+        if (!isActive()) return;
+        if (!Array.isArray(data?.items)) throw new Error('개선포인트 응답 형식 오류');
+        const savedRows = normalizeRows(data?.items || []);
+        const savedFeatures = normalizeFeatures(data?.items || []);
+        const blankFeatures = savedFeatures.length > 0 ? savedFeatures : createBlankFeatures();
 
-                setRows(savedRows);
-                setFeatures(syncFeaturesWithNeeds(savedRows, blankFeatures));
-                setQfdData(qfdAnalysis || data?.qfdAnalysis || null);
-                setLoadedProjectId(projectId);
-            })
-            .catch((error) => {
-                if (!active) return;
-                setLoadFailed(true);
-                console.error(error);
-                showToast('개선포인트 데이터를 불러오지 못했습니다.', 'error');
-            })
-            .finally(() => { if (active) setIsLoading(false); });
-        return () => { active = false; };
-    }, [projectId, showToast, loadAttempt]);
+        setRows(savedRows);
+        setFeatures(syncFeaturesWithNeeds(savedRows, blankFeatures));
+        setQfdData(qfdAnalysis || data?.qfdAnalysis || null);
+    }, (error) => {
+        console.error(error);
+        showToast('개선포인트 데이터를 불러오지 못했습니다.', 'error');
+    });
 
     useEffect(() => {
         setFeatures((currentFeatures) => {
@@ -274,7 +260,7 @@ export default function ImprovementsTable({ projectId }: Props) {
     };
 
     const handleSave = async () => {
-        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
+        if (!isReady) return;
         setIsSaving(true);
         try {
             const response = await fetch(`/api/projects/${projectId}/improvements`, {
@@ -300,7 +286,7 @@ export default function ImprovementsTable({ projectId }: Props) {
     };
 
     const handleReset = async () => {
-        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
+        if (!isReady) return;
         setIsSaving(true);
         try {
             const response = await fetch(`/api/projects/${projectId}/improvements`, {
@@ -367,8 +353,8 @@ export default function ImprovementsTable({ projectId }: Props) {
         </>
     );
 
-    if (loadFailed) return <WorksheetLoadError onRetry={() => setLoadAttempt(attempt => attempt + 1)} />;
-    if (isLoading || loadedProjectId !== projectId) {
+    if (loadFailed) return <WorksheetLoadError onRetry={retry} />;
+    if (!isReady) {
         return <div className="flex items-center justify-center p-12"><div className="h-7 w-7 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" /></div>;
     }
 

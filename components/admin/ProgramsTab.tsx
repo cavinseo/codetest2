@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ProgramMentors from './ProgramMentors';
 import ProjectRequestsPanel from '@/components/ProjectRequestsPanel';
+import { readJsonOrThrow } from '@/lib/client-fetch';
 
 interface ProgramRow {
     id: string;
@@ -78,8 +79,7 @@ export default function ProgramsTab({ canCreate = false, canDelete = false, onDe
     useEffect(() => {
         if (!canCreate) return;
         fetch('/api/programs?managers=1').then(async res => {
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || '담당자 목록 조회에 실패했습니다.');
+            const data = await readJsonOrThrow(res, '담당자 목록 조회에 실패했습니다.');
             setManagers(data.managers);
         }).catch(() => setMessage({ type: 'error', text: '담당자 목록을 불러오지 못했습니다.' }));
     }, [canCreate]);

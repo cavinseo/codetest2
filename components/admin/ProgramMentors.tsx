@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { MEMBER_ROLE_LABELS, type MemberRole } from '@/lib/member-roles';
 import { requestMentorAssignment } from '@/lib/mentor-assignment-client';
+import { readJsonOrThrow } from '@/lib/client-fetch';
 
 type Mentor = { id: string; name: string | null; email: string; role: MemberRole };
 type Mentee = {
@@ -32,8 +33,7 @@ export default function ProgramMentors({ programId }: { programId: string }) {
         setSelectedMentorId('');
         try {
             const res = await fetch(`/api/programs/${programId}/mentees`);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || '멘티 목록을 불러오지 못했습니다.');
+            const data = await readJsonOrThrow(res, '멘티 목록을 불러오지 못했습니다.');
             setMentees(data.mentees);
             if (data.mentees.length > 0) {
                 const candidateRes = await fetch(`/api/mentees/${data.mentees[0].id}/mentor?candidates=1`);

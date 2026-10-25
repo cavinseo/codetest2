@@ -10,6 +10,7 @@ import InvitesTab from '@/components/admin/InvitesTab';
 import ProgramsTab from '@/components/admin/ProgramsTab';
 import ProgramMentors from '@/components/admin/ProgramMentors';
 import ThemeToggle from '@/components/ThemeToggle';
+import { checkPageAccess } from '@/lib/client-fetch';
 
 interface ProgramRow {
     id: string;
@@ -30,11 +31,9 @@ export default function ManagePage() {
         try {
             // 미로그인은 로그인창으로, 로그인은 했지만 초대·배정 권한이 없으면 안내 화면으로 보낸다.
             const res = await fetch('/api/invites');
-            if (res.status === 401) {
-                window.location.replace('/login');
-                return;
-            }
-            if (res.status === 403) {
+            const access = checkPageAccess(res);
+            if (access === 'redirected') return;
+            if (access === 'denied') {
                 setDenied(true);
                 return;
             }

@@ -17,6 +17,7 @@ import {
     GOOGLE_FORMS_DISABLED_MESSAGE,
     GOOGLE_FORMS_INTEGRATION_ENABLED,
 } from '@/lib/feature-flags';
+import { readJsonOrThrow } from '@/lib/client-fetch';
 
 interface Requirement {
     id: string;
@@ -225,8 +226,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: inviteEmail }),
             });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || '초대 실패');
+            const data = await readJsonOrThrow(response, '초대 실패');
             await loadData();
             setShowInviteModal(false);
             setInviteEmail('');
@@ -280,8 +280,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 });
             }
 
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || '일괄 초대에 실패했습니다.');
+            const data = await readJsonOrThrow(response, '일괄 초대에 실패했습니다.');
 
             await loadData();
             setInviteResults(data.results || []);
@@ -401,8 +400,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 method: 'POST',
                 body: formData,
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || '엑셀 업로드에 실패했습니다.');
+            const data = await readJsonOrThrow(res, '엑셀 업로드에 실패했습니다.');
 
             setImportMessage(`success:${data.message}`);
             showToast(data.message, 'success');
@@ -479,8 +477,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             const res = await fetch(`/api/projects/${projectId}/kano/responses`, {
                 method: 'DELETE',
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || '응답 데이터 리셋에 실패했습니다.');
+            const data = await readJsonOrThrow(res, '응답 데이터 리셋에 실패했습니다.');
 
             setCreatedFormId('');
             setCreatedFormUrl('');
@@ -505,8 +502,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             const res = await fetch(`/api/projects/${projectId}/kano/responses?includeInvitations=true`, {
                 method: 'DELETE',
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || '초대 내역 리셋에 실패했습니다.');
+            const data = await readJsonOrThrow(res, '초대 내역 리셋에 실패했습니다.');
 
             setCreatedFormId('');
             setCreatedFormUrl('');

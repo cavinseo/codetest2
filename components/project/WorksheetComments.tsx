@@ -1,6 +1,7 @@
 'use client';
 // 코멘트 편집을 조회 전용 워크시트 밖에 두어 원본 편집 권한과 분리한다.
 import { useCallback, useEffect, useState } from 'react';
+import { readJsonOrThrow } from '@/lib/client-fetch';
 interface Comment { id: string; content: string; authorId: string | null; author: { name: string | null } | null; createdAt: string; }
 export default function WorksheetComments({ projectId, worksheetId }: { projectId: string; worksheetId: string }) {
     const [comments, setComments] = useState<Comment[]>([]);
@@ -13,8 +14,7 @@ export default function WorksheetComments({ projectId, worksheetId }: { projectI
     const url = `/api/projects/${projectId}/comments?worksheetId=${encodeURIComponent(worksheetId)}`;
     const load = useCallback(async () => {
         try {
-            const res = await fetch(url); const data = await res.json();
-            if (!res.ok) throw new Error(data.error || '의견을 불러오지 못했습니다.');
+            const data = await readJsonOrThrow(await fetch(url), '의견을 불러오지 못했습니다.');
             setComments(data.comments); setCanComment(data.canComment); setUserId(data.userId);
         } catch (cause) { setError(cause instanceof Error ? cause.message : '의견 조회 실패'); }
     }, [url]);
@@ -23,8 +23,7 @@ export default function WorksheetComments({ projectId, worksheetId }: { projectI
         setBusy(true); setError('');
         try {
             const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...(method === 'DELETE' ? {} : { content: text }) }) });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || '본인 의견만 변경할 수 있습니다.');
+            await readJsonOrThrow(res, '본인 의견만 변경할 수 있습니다.');
             // 삭제는 입력 칸과 무관하다. 지우면 작성 중이던 다른 의견이 사라졌다(B23). 고치던 의견을
             // 지웠다면 새 의견 작성으로 돌리되, 쓰던 내용은 그대로 둔다.
             if (method === 'DELETE') { if (editing === id) setEditing(null); } else { setText(''); setEditing(null); }
