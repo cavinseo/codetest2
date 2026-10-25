@@ -114,7 +114,8 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
                     negativeAnswer: 3,
                 },
                 {
-                    respondentEmail: 'offline-html-2@import.local',
+                    // 업로드마다 다른 표식이 붙어 다음 업로드의 2번 파일과 섞이지 않는다(B4).
+                    respondentEmail: expect.stringMatching(/^offline-html-2-[0-9a-f]{12}@import\.local$/),
                     requirementIndex: 0,
                     positiveAnswer: 4,
                     negativeAnswer: 2,
@@ -138,6 +139,16 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
             ],
         });
         expect(JSON.stringify(body)).not.toContain('@');
+    });
+
+    it('따로 올린 두 묶음의 같은 순번 익명 응답자를 같은 사람으로 보지 않는다 (B4)', async () => {
+        await POST(uploadRequest([fixtureFile('saved-partial-no-email.html')]), params);
+        await POST(uploadRequest([fixtureFile('saved-partial-no-email.html')]), params);
+
+        const emailOf = (call: number) => persistKanoUploadAnswers.mock.calls[call][0].answers[0].respondentEmail;
+        expect(emailOf(0)).toMatch(/^offline-html-1-[0-9a-f]{12}@import\.local$/);
+        expect(emailOf(1)).toMatch(/^offline-html-1-[0-9a-f]{12}@import\.local$/);
+        expect(emailOf(0)).not.toBe(emailOf(1));
     });
 
     it('이메일이 든 파일 이름은 응답 본문에 싣지 않고 순번으로 바꿔 보인다', async () => {

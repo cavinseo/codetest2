@@ -9,7 +9,7 @@ import {
     persistKanoUploadAnswers,
     KanoUploadConflictError,
 } from '@/lib/kano-response-store';
-import type { ParsedKanoUploadAnswer } from '@/lib/kano-upload-parser';
+import { newAnonymousBatchId, type ParsedKanoUploadAnswer } from '@/lib/kano-upload-parser';
 import {
     guardUploadedOfflineHtml,
     MAX_OFFLINE_HTML_FILES,
@@ -79,6 +79,8 @@ export async function POST(
         const results: OfflineUploadFileResult[] = [];
         const answers: ParsedKanoUploadAnswer[] = [];
         const respondentEmails = new Set<string>();
+        // 순번만 쓰면 다음 업로드의 1번 파일이 이번 1번 파일과 같은 응답자가 된다.
+        const anonymousBatchId = newAnonymousBatchId();
 
         // 파일별 오류를 해당 파일에 귀속하고 순번 기반 익명 이메일도 안정적으로 유지해야 한다.
         for (let index = 0; index < uploadedFiles.length; index += 1) {
@@ -98,7 +100,7 @@ export async function POST(
             }
 
             const html = await guarded.file.text();
-            const fallbackEmail = `offline-html-${index + 1}@import.local`;
+            const fallbackEmail = `offline-html-${index + 1}-${anonymousBatchId}@import.local`;
             const parsed = parseKanoOfflineResponseHtml(html, {
                 requirementCount: requirements.length,
                 projectId,

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import * as XLSX from 'xlsx';
 import type { KanoAnswer } from '@/lib/kano-algorithm';
 
@@ -8,8 +9,10 @@ export type ParsedKanoUploadAnswer = {
     negativeAnswer: KanoAnswer;
 };
 
+// 영문 like 는 단어 경계로 감싼다. 그냥 두면 "I dislike it" 의 dislike 안에서 먼저 걸려
+// 5점(싫다)이 1점(좋다)으로 읽히고, 영문 응답 파일의 Kano 분류가 뒤집힌다.
 const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
-    [/^\s*1\s*$|마음에\s*든다|like/i, 1],
+    [/^\s*1\s*$|마음에\s*든다|\blike\b/i, 1],
     [/^\s*2\s*$|당연|expect/i, 2],
     [/^\s*3\s*$|아무런\s*느낌|아무렇지\s*않다|중립|neutral/i, 3],
     [/^\s*4\s*$|하는수\s*없|참을\s*수\s*있다|tolerate/i, 4],
@@ -25,6 +28,31 @@ const META_HEADER_PATTERNS = [
     /응답자/,
     /respondent/i,
 ];
+
+const ANONYMOUS_EMAIL_SUFFIX = '@import.local';
+
+/** 업로드 한 번을 가리키는 짧은 무작위 표식. 익명 응답자 주소를 업로드마다 갈라 준다. */
+export function newAnonymousBatchId(): string {
+    return randomUUID().replace(/-/g, '').slice(0, 12);
+}
+
+/**
+ * 이메일 없는 응답자에게 붙인 행 번호 주소(`excel-row-1@import.local` 등)에 업로드 표식을
+ * 끼워 넣는다. 행 번호만으로는 업로드마다 1번부터 다시 매겨져, 두 번째 업로드의 익명
+ * 응답자가 첫 업로드의 다른 사람과 같은 사람이 됐다 — 충돌 오류가 나거나, "교체"를
+ * 고르면 다른 사람의 응답이 지워졌다.
+ */
+export function separateAnonymousRespondents(
+    answers: ParsedKanoUploadAnswer[],
+    batchId: string
+): ParsedKanoUploadAnswer[] {
+    return answers.map((answer) => answer.respondentEmail.endsWith(ANONYMOUS_EMAIL_SUFFIX)
+        ? {
+            ...answer,
+            respondentEmail: `${answer.respondentEmail.slice(0, -ANONYMOUS_EMAIL_SUFFIX.length)}-${batchId}${ANONYMOUS_EMAIL_SUFFIX}`,
+        }
+        : answer);
+}
 
 export function normalizeKanoUploadAnswer(value: unknown): KanoAnswer | null {
     if (typeof value === 'number' && value >= 1 && value <= 5) return value as KanoAnswer;

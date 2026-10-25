@@ -8,12 +8,15 @@ import {
     parseGoogleFormsResponseSheet,
     parseKanoTemplateResponseSheet,
     parseWorksheetMatrixSheet,
+    separateAnonymousRespondents,
+    newAnonymousBatchId,
     type ParsedKanoUploadAnswer,
 } from '@/lib/kano-upload-parser';
 import { KanoUploadConflictError, parseWritePolicy, persistKanoUploadAnswers } from '@/lib/kano-response-store';
 
+// like 를 단어 경계로 감싸야 "dislike" 가 1점(좋다)으로 읽히지 않는다(lib/kano-upload-parser.ts 와 같은 이유).
 const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
-    [/^\s*1\s*$|마음에\s*든다|like/i, 1],
+    [/^\s*1\s*$|마음에\s*든다|\blike\b/i, 1],
     [/^\s*2\s*$|당연|expect/i, 2],
     [/^\s*3\s*$|아무런\s*느낌|중립|neutral/i, 3],
     [/^\s*4\s*$|할\s*수\s*없|하는수\s*없|참을|tolerate/i, 4],
@@ -137,7 +140,10 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             return NextResponse.json({ error: '엑셀 파일에서 읽을 수 있는 시트를 찾지 못했습니다.' }, { status: 400 });
         }
 
-        const answers = parseByUploadFormat(sheet, requirements.length, uploadFormat);
+        const answers = separateAnonymousRespondents(
+            parseByUploadFormat(sheet, requirements.length, uploadFormat),
+            newAnonymousBatchId()
+        );
         if (answers.length === 0) {
             return NextResponse.json({ error: 'Kano 응답을 찾지 못했습니다. 전용 업로드 양식 또는 Google Forms 응답 시트의 1~5 점수/응답 텍스트를 확인하세요.' }, { status: 400 });
         }
