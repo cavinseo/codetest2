@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { parseGoogleFormsResponseRows, parseKanoTemplateResponseSheet, parseWorksheetMatrixRows } from '../lib/kano-upload-parser';
+import {
+    newAnonymousBatchId,
+    normalizeKanoUploadAnswer,
+    parseGoogleFormsResponseRows,
+    parseKanoTemplateResponseSheet,
+    parseWorksheetMatrixRows,
+    separateAnonymousRespondents,
+} from '../lib/kano-upload-parser';
 import { writeKanoUploadTemplateBuffer } from '../lib/kano-upload-template';
 
 describe('Kano Google Forms upload parser', () => {
@@ -133,5 +140,54 @@ describe('Kano Google Forms upload parser', () => {
                 negativeAnswer: 5,
             },
         ]);
+    });
+});
+
+// 2026-10-25 코드 리뷰 B3: dislike 안의 like 가 먼저 걸려 5점이 1점으로 읽혔다.
+describe('영문 Kano 응답 문구 (B3)', () => {
+    it.each([
+        ['I like it', 1],
+        ['I expect it', 2],
+        ['I am neutral', 3],
+        ['I can tolerate it', 4],
+        ['I dislike it', 5],
+        ['Dislike', 5],
+    ])('%s → %i', (text, expected) => {
+        expect(normalizeKanoUploadAnswer(text)).toBe(expected);
+    });
+
+    it('영문 Google Forms 응답 파일에서 dislike 를 싫다(5)로 분류한다', () => {
+        const answers = parseGoogleFormsResponseRows([
+            {
+                'Email Address': 'respondent@example.com',
+                '[Positive] Fast checkout': 'I like it',
+                '[Negative] Fast checkout': 'I dislike it',
+            },
+        ], 1);
+
+        expect(answers).toEqual([
+            { respondentEmail: 'respondent@example.com', requirementIndex: 0, positiveAnswer: 1, negativeAnswer: 5 },
+        ]);
+    });
+});
+
+// 2026-10-25 코드 리뷰 B4: 익명 행 번호 주소가 업로드마다 1번부터 다시 매겨졌다.
+describe('업로드별 익명 응답자 분리 (B4)', () => {
+    const anonymous = { respondentEmail: 'excel-row-1@import.local', requirementIndex: 0, positiveAnswer: 1, negativeAnswer: 5 } as const;
+    const named = { ...anonymous, respondentEmail: 'respondent@example.com' };
+
+    it('익명 주소에만 업로드 표식을 끼우고 실제 이메일은 그대로 둔다', () => {
+        expect(separateAnonymousRespondents([anonymous, named], 'batch1')).toEqual([
+            { ...anonymous, respondentEmail: 'excel-row-1-batch1@import.local' },
+            named,
+        ]);
+    });
+
+    it('두 업로드의 같은 행 번호 익명 응답자는 서로 다른 사람이 된다', () => {
+        const first = separateAnonymousRespondents([anonymous], newAnonymousBatchId())[0].respondentEmail;
+        const second = separateAnonymousRespondents([anonymous], newAnonymousBatchId())[0].respondentEmail;
+
+        expect(first).not.toBe(second);
+        expect(first).toMatch(/^excel-row-1-[0-9a-f]{12}@import\.local$/);
     });
 });
