@@ -28,10 +28,7 @@ afterEach(async () => {
 
 async function render() {
     await act(async () => {
-        root.render(createElement(WorksheetEditGuard, {
-            projectId: 'project',
-            children: createElement('button', { type: 'button' }, '저장'),
-        }));
+        root.render(createElement(WorksheetEditGuard, { projectId: 'project' }, createElement('button', { type: 'button' }, '저장')));
     });
 }
 

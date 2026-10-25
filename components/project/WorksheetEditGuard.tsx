@@ -46,7 +46,7 @@ export function ReadOnlyNotice({ access }: { access: ProjectEditAccess }) {
     return null;
 }
 
-export default function WorksheetEditGuard({ projectId, children }: { projectId: string; children: ReactNode }) {
+export default function WorksheetEditGuard({ projectId, children }: { projectId: string; children?: ReactNode }) {
     const access = useProjectEditAccess(projectId);
     return (
         <>
