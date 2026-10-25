@@ -5,6 +5,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { resolveBenchmarkDeleteScope } from '@/lib/qfd-benchmark-guards';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/qfd/benchmarks');
 
@@ -49,7 +50,7 @@ export async function POST(
         const projectId = params.id;
         const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
         if (accessResult instanceof NextResponse) return accessResult;
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const { requirementId, company, score } = benchmarkSchema.parse(body);
 
         const requirement = await prisma.customerRequirement.findFirst({
@@ -82,6 +83,8 @@ export async function POST(
         log.info('벤치마크 설정 완료', { projectId, reqId: requirementId, company, score });
         return NextResponse.json({ success: true, action: 'saved', benchmark });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }

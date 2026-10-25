@@ -12,6 +12,7 @@ import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { canManagePrograms } from '@/lib/member-roles';
 import { canManageThisProgram, programMoveOutcome } from '@/lib/program';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/programs/projects');
 
@@ -32,7 +33,7 @@ export async function POST(
     }
 
     try {
-        const parsed = importSchema.safeParse(await request.json());
+        const parsed = importSchema.safeParse(await readJsonBody(request));
         if (!parsed.success) {
             return NextResponse.json({ error: 'projectId가 필요합니다.' }, { status: 400 });
         }
@@ -91,6 +92,8 @@ export async function POST(
             project: { id: project.id, name: project.name, programName: program.name },
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         return toErrorResponse(error, { log, message: '프로젝트를 불러오지 못했습니다.', context: { programId } });
     }
 }

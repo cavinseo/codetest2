@@ -129,3 +129,24 @@ describe('스펙 전체 교체 저장 (B5)', () => {
         expect(deleteSpecs).not.toHaveBeenCalled();
     });
 });
+
+describe('깨진 JSON 본문 (B25)', () => {
+    it('요구사항 저장은 공통 오류 응답에서 400 으로 거절한다', async () => {
+        const res = await saveRequirements(new NextRequest('http://localhost/api/projects/proj_1/requirements', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"requirements":',
+        }), { params });
+
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: '요청 본문이 올바른 JSON 형식이 아닙니다.' });
+        expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('스펙 저장도 400 으로 거절한다', async () => {
+        const res = await saveSpecs(new NextRequest('http://localhost/api/projects/proj_1/spec', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'not-json',
+        }), { params });
+
+        expect(res.status).toBe(400);
+        expect(deleteSpecs).not.toHaveBeenCalled();
+    });
+});

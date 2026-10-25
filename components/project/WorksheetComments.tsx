@@ -25,7 +25,10 @@ export default function WorksheetComments({ projectId, worksheetId }: { projectI
             const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...(method === 'DELETE' ? {} : { content: text }) }) });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || '본인 의견만 변경할 수 있습니다.');
-            setText(''); setEditing(null); await load();
+            // 삭제는 입력 칸과 무관하다. 지우면 작성 중이던 다른 의견이 사라졌다(B23). 고치던 의견을
+            // 지웠다면 새 의견 작성으로 돌리되, 쓰던 내용은 그대로 둔다.
+            if (method === 'DELETE') { if (editing === id) setEditing(null); } else { setText(''); setEditing(null); }
+            await load();
         } catch (cause) { setError(cause instanceof Error ? cause.message : '의견 저장 실패'); }
         finally { setBusy(false); }
     };

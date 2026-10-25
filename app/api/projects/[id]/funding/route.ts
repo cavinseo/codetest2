@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { isProjectWriteRole, requireProjectAccess } from '@/lib/authorization';
 import { buildFundingPlansWithSales } from '@/lib/worksheet-links';
 import { fundingBodySchema } from '@/lib/bulk-save-schemas';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const INITIAL_FUNDING_PLANS = [
     { category: '매출액', item: '매출액', year2: null, year3: null, order: 0 },
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
-        const body = fundingBodySchema.parse(await request.json());
+        const body = fundingBodySchema.parse(await readJsonBody(request));
         const { plans, sources } = body;
 
         // 키가 없으면 그 컬렉션은 손대지 않는다. 빈 배열은 의도적 초기화로 본다.
@@ -104,6 +105,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
         return NextResponse.json({ plans: savedPlans, sources: savedSources });
     } catch (error) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }

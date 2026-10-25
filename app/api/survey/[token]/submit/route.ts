@@ -6,6 +6,7 @@ import { classifyKanoResponse } from '@/lib/kano-algorithm';
 import { KANO_ANSWER_SCORE } from '@/lib/constants';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/survey/submit');
 
@@ -39,7 +40,7 @@ export async function POST(
     let invitationId: string | undefined;
 
     try {
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const { answers } = submitSchema.parse(body);
 
         // 설문 초대 확인
@@ -138,6 +139,8 @@ export async function POST(
 
         return NextResponse.json({ success: true, responseCount: result });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             log.warn('응답 검증 오류 (Zod)', { firstIssue: error.errors[0]?.message });
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });

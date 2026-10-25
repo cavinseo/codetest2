@@ -7,6 +7,7 @@ import { createLogger } from '@/lib/logger';
 import { normalizeTechnicalName } from '@/lib/qfd-technical-sync';
 import { assignTechnicalCoreGroups } from '@/lib/qfd-technical-groups';
 import { synchronizeTechnicalCoreGroups, technicalOrderBy as orderBy } from '@/lib/qfd-technical-group-store';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/qfd/technical');
 const techSchema = z.object({
@@ -23,6 +24,8 @@ const techDeleteSchema = z.union([
 type Context = { params: Promise<{ id: string }> };
 
 function failure(error: unknown) {
+    const invalidBody = invalidJsonBodyResponse(error);
+    if (invalidBody) return invalidBody;
     if (error instanceof z.ZodError) {
         return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
     }
@@ -58,7 +61,7 @@ export async function POST(request: NextRequest, props: Context) {
         const { id: projectId } = await props.params;
         const access = await requireProjectAccess(request, projectId, { write: true });
         if (access instanceof NextResponse) return access;
-        const { groupIndex, ...data } = techCreateSchema.parse(await request.json());
+        const { groupIndex, ...data } = techCreateSchema.parse(await readJsonBody(request));
         return await prisma.$transaction(async (tx) => {
             await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
             const existing = await tx.technicalCharacteristic.findMany({ where: { projectId } });
@@ -90,7 +93,7 @@ export async function PATCH(request: NextRequest, props: Context) {
         const { id: projectId } = await props.params;
         const access = await requireProjectAccess(request, projectId, { write: true });
         if (access instanceof NextResponse) return access;
-        const { id, ...data } = techUpdateSchema.parse(await request.json());
+        const { id, ...data } = techUpdateSchema.parse(await readJsonBody(request));
         return await prisma.$transaction(async (tx) => {
             await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
             const existing = await tx.technicalCharacteristic.findFirst({ where: { id, projectId }, select: { id: true } });
@@ -115,7 +118,7 @@ export async function DELETE(request: NextRequest, props: Context) {
         const { id: projectId } = await props.params;
         const access = await requireProjectAccess(request, projectId, { write: true });
         if (access instanceof NextResponse) return access;
-        const data = techDeleteSchema.parse(await request.json());
+        const data = techDeleteSchema.parse(await readJsonBody(request));
         return await prisma.$transaction(async (tx) => {
             await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
             let deletedIds: string[];

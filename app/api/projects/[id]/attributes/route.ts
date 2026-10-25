@@ -8,6 +8,7 @@ import {
     countAttributeCascadeImpact,
     describeAttributeCascadeImpact,
 } from '@/lib/import-cascade-guard';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/attributes');
 
@@ -68,7 +69,7 @@ export async function POST(
 
         // 스키마가 strict 가 아니라 모르는 키를 버린다. confirmCascade 를 살리려면
         // 원본 본문을 따로 들고 있어야 한다.
-        const rawBody = await request.json();
+        const rawBody = await readJsonBody(request);
         const { attributes: newAttributes } = attributesBodySchema.parse(rawBody);
 
         // 저장은 항상 deleteMany 로 기존 속성을 전부 지우고 다시 만든다. 그 삭제의
@@ -113,6 +114,8 @@ export async function POST(
             message: '제품 속성이 저장되었습니다',
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: '유효하지 않은 제품 속성 데이터입니다.' }, { status: 400 });
         }

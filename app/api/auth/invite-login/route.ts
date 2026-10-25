@@ -14,6 +14,7 @@ import { isProfileCompleteForRole } from '@/lib/member-profile';
 import { LOGIN_RATE_LIMIT, clientIpFrom, consumeRateLimit, resetRateLimit } from '@/lib/rate-limit';
 import { createLogger } from '@/lib/logger';
 import { errorCodeOf } from '@/lib/api-error';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/auth/invite-login');
 const schema = z.object({
@@ -28,7 +29,7 @@ const denied = () => NextResponse.json({ error: '이메일과 초대 코드를 �
 
 export async function POST(request: NextRequest) {
     try {
-        const { email, inviteCode, name } = schema.parse(await request.json());
+        const { email, inviteCode, name } = schema.parse(await readJsonBody(request));
         const rateKey = `invite-login:${clientIpFrom(request.headers)}:${email}`;
         const limit = consumeRateLimit(rateKey, LOGIN_RATE_LIMIT);
         if (!limit.allowed) {
@@ -100,6 +101,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, user: { id: user.id, email: user.email, name: user.name },
             mustChangePassword: user.mustChangePassword, needsProfile: !isProfileCompleteForRole('MENTEE', profile) });
     } catch (error) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof InviteAccountExists) {
             return NextResponse.json({ code: 'INVITE_ACCOUNT_EXISTS', error: '이 이메일로 이미 가입된 계정이 있습니다. 관리자에게 기존 회원 연결을 요청하세요.' }, { status: 409 });
         }

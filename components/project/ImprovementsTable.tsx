@@ -135,7 +135,7 @@ export default function ImprovementsTable({ projectId }: Props) {
                 if (!active) return;
                 setLoadFailed(true);
                 console.error(error);
-                showToast('개선포인트 데이터를 불러오지 못했습니다.');
+                showToast('개선포인트 데이터를 불러오지 못했습니다.', 'error');
             })
             .finally(() => { if (active) setIsLoading(false); });
         return () => { active = false; };
@@ -284,7 +284,7 @@ export default function ImprovementsTable({ projectId }: Props) {
             });
 
             if (!response.ok) {
-                showToast('저장에 실패했습니다.');
+                showToast('저장에 실패했습니다.', 'error');
                 return;
             }
 
@@ -293,7 +293,7 @@ export default function ImprovementsTable({ projectId }: Props) {
             showToast('저장되었습니다.');
         } catch (error) {
             console.error(error);
-            showToast('저장에 실패했습니다.');
+            showToast('저장에 실패했습니다.', 'error');
         } finally {
             setIsSaving(false);
         }
@@ -310,7 +310,7 @@ export default function ImprovementsTable({ projectId }: Props) {
             });
 
             if (!response.ok) {
-                showToast('초기화에 실패했습니다.');
+                showToast('초기화에 실패했습니다.', 'error');
                 return;
             }
 
@@ -320,7 +320,7 @@ export default function ImprovementsTable({ projectId }: Props) {
             showToast('입력 내용이 초기화되었습니다.');
         } catch (error) {
             console.error(error);
-            showToast('초기화에 실패했습니다.');
+            showToast('초기화에 실패했습니다.', 'error');
         } finally {
             setIsSaving(false);
         }
@@ -329,7 +329,7 @@ export default function ImprovementsTable({ projectId }: Props) {
     const handleImportFromQFD = () => {
         const suggestions = getQfdSuggestions();
         if (suggestions.length === 0) {
-            showToast('QFD TOP5 데이터가 없습니다.');
+            showToast('QFD TOP5 데이터가 없습니다.', 'error');
             return;
         }
 

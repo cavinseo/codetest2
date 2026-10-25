@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/qfd/relationships');
 
@@ -44,7 +45,7 @@ export async function POST(
         const projectId = params.id;
         const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
         if (accessResult instanceof NextResponse) return accessResult;
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const data = relationshipSchema.parse(body);
 
         // 두 id 만 믿으면 다른 프로젝트의 행·열을 참조하는 관계가 만들어진다.
@@ -93,6 +94,8 @@ export async function POST(
         log.info('관계 설정 완료', { projectId, reqId: data.requirementId, techId: data.technicalCharId });
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }

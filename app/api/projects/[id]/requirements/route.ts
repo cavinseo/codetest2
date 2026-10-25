@@ -10,6 +10,7 @@ import {
     describeCascadeImpact,
     hasCascadeImpact,
 } from '@/lib/import-cascade-guard';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/requirements');
 
@@ -74,7 +75,7 @@ export async function POST(
         const projectId = params.id;
         const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
         if (accessResult instanceof NextResponse) return accessResult;
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const { requirements } = bulkRequirementsSchema.parse(body);
 
         const submittedIds = requirements
@@ -166,6 +167,8 @@ export async function POST(
             count: requirements.length,
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             log.warn('요구사항 검증 오류 (Zod)', { firstIssue: error.errors[0]?.message });
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });

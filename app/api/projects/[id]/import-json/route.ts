@@ -11,6 +11,7 @@ import {
     describeCascadeImpact,
     hasCascadeImpact,
 } from '@/lib/import-cascade-guard';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/import-json');
 
@@ -52,7 +53,7 @@ export async function POST(
     try {
         // 검증 없이 {...r, projectId} 로 펼쳐 넣던 자리다. 화이트리스트 스키마가
         // 모르는 열과 과도한 행수를 먼저 걸러낸다.
-        const parsed = importJsonSchema.safeParse(await request.json());
+        const parsed = importJsonSchema.safeParse(await readJsonBody(request));
         if (!parsed.success) {
             const issue = parsed.error.errors[0];
             const where = issue.path.join('.');
@@ -304,6 +305,8 @@ export async function POST(
             },
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof ImportReferenceError) {
             return NextResponse.json({ error: error.message }, { status: 400 });
         }

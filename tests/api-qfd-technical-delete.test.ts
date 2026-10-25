@@ -103,3 +103,12 @@ describe('DELETE /api/projects/[id]/qfd/technical', () => {
         await expect(res.json()).resolves.toEqual({ error: '세부기능 처리에 실패했습니다.' });
     });
 });
+
+it('깨진 JSON 본문은 500 이 아니라 400 으로 거절하고 아무것도 지우지 않는다 (B25)', async () => {
+    const res = await DELETE(new NextRequest('http://localhost/api/projects/proj_1/qfd/technical', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{',
+    }), { params: Promise.resolve({ id: 'proj_1' }) });
+
+    expect(res.status).toBe(400);
+    expect(deleteTech).not.toHaveBeenCalled();
+});

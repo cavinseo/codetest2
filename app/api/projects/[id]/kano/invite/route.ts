@@ -6,6 +6,7 @@ import { sendSurveyInvitation } from '@/lib/email';
 import { generateId } from '@/lib/id';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/kano/invite');
 
@@ -25,7 +26,7 @@ export async function POST(
     const { userId } = accessResult.user;
 
     try {
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const { email } = inviteSchema.parse(body);
 
         // 프로젝트 존재 확인 및 이름 조회(이메일에 사용)
@@ -100,6 +101,8 @@ export async function POST(
                 : `초대가 생성되었습니다. 질문지 링크를 직접 공유하세요.`,
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }

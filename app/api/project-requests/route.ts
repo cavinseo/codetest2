@@ -6,6 +6,7 @@ import { requireAuth } from '@/lib/auth';
 import { canManageThisProgram } from '@/lib/program';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 const log = createLogger('project-requests');
 
 export async function GET(request: NextRequest) {
@@ -31,13 +32,15 @@ export async function POST(request: NextRequest) {
     if (actor instanceof NextResponse) return actor;
     if (actor.role !== 'MENTEE') return NextResponse.json({ error: '멘티만 신청할 수 있습니다.' }, { status: 403 });
     try {
-        const parsed = z.object({ reason: z.string().trim().min(1).max(2000) }).safeParse(await request.json());
+        const parsed = z.object({ reason: z.string().trim().min(1).max(2000) }).safeParse(await readJsonBody(request));
         if (!parsed.success) return NextResponse.json({ error: '신청 사유를 1~2,000자로 입력하세요.' }, { status: 400 });
         const me = await prisma.user.findUnique({ where: { id: actor.userId }, select: { programId: true } });
         if (!me?.programId) return NextResponse.json({ error: '소속 프로그램이 없습니다.' }, { status: 400 });
         const application = await prisma.projectCreationRequest.create({ data: { menteeId: actor.userId, programId: me.programId, reason: parsed.data.reason } });
         return NextResponse.json({ request: application }, { status: 201 });
     } catch (error) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') return NextResponse.json({ error: '이미 승인 대기 중인 신청이 있습니다.' }, { status: 409 });
         return toErrorResponse(error, { log, message: '개설 신청에 실패했습니다.' });
     }
@@ -47,7 +50,7 @@ export async function PATCH(request: NextRequest) {
     if (actor instanceof NextResponse) return actor;
     if (!['ADMIN', 'PROGRAM_MANAGER'].includes(actor.role)) return NextResponse.json({ error: '승인 권한이 없습니다.' }, { status: 403 });
     try {
-        const parsed = z.object({ requestId: z.string().min(1), status: z.enum(['APPROVED', 'REJECTED']), reviewNote: z.string().trim().max(2000).optional() }).safeParse(await request.json());
+        const parsed = z.object({ requestId: z.string().min(1), status: z.enum(['APPROVED', 'REJECTED']), reviewNote: z.string().trim().max(2000).optional() }).safeParse(await readJsonBody(request));
         if (!parsed.success) return NextResponse.json({ error: '승인 또는 반려와 신청을 선택하세요.' }, { status: 400 });
         const application = await prisma.projectCreationRequest.findUnique({ where: { id: parsed.data.requestId }, include: { program: { select: { managerId: true } } } });
         if (!application) return NextResponse.json({ error: '신청을 찾을 수 없습니다.' }, { status: 404 });

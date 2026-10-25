@@ -11,6 +11,7 @@ import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { isProfileCompleteForRole, memberProfileSchemaFor } from '@/lib/member-profile';
 import { inviteAccessExpiresAt } from '@/lib/invite-access';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/me/profile');
 
@@ -85,7 +86,7 @@ export async function PUT(request: NextRequest) {
     try {
         // 이름은 프로필 스키마 밖에 있다(User.name 컬럼). 프로필 스키마는 strict 라
         // name 을 섞어 보내면 "알 수 없는 항목" 으로 거부되므로 먼저 떼어낸다.
-        const body = (await request.json()) as Record<string, unknown> | null;
+        const body = (await readJsonBody(request)) as Record<string, unknown> | null;
         const { name: rawName, ...profileInput } = body ?? {};
 
         // 저장된 행을 검증 payload 에 섞지 않는다. 멘티 <-> 멘토 역할 전환은
@@ -143,6 +144,8 @@ export async function PUT(request: NextRequest) {
         log.info('프로필 저장', { userId: authResult.userId, nameChanged: nextName !== undefined });
         return NextResponse.json({ success: true, name: nextName });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         return toErrorResponse(error, { log, message: '프로필 저장에 실패했습니다.' });
     }
 }

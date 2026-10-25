@@ -10,6 +10,7 @@ import { LOGIN_RATE_LIMIT, clientIpFrom, consumeRateLimit, resetRateLimit } from
 import { isProfileCompleteForRole } from '@/lib/member-profile';
 import { parseMemberRole } from '@/lib/member-roles';
 import { isUserAccessExpired } from '@/lib/invite-access';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/auth/login');
 
@@ -29,7 +30,7 @@ const loginSchema = z.object({
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const { email, password, role: selectedRole } = loginSchema.parse(body);
 
         // IP 와 이메일을 함께 키로 쓴다. IP 만 쓰면 공유 IP 뒤의 정상 사용자가
@@ -145,6 +146,8 @@ export async function POST(request: NextRequest) {
             needsProfile: !isProfileCompleteForRole(role, profile),
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }

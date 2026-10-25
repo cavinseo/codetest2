@@ -26,6 +26,7 @@ import { buildInviteEmail, generateInviteCode } from '@/lib/invite-code';
 import { inviteAccessExpiresAt } from '@/lib/invite-access';
 import { inviteExpirySchema } from '@/lib/invite-expiry';
 import { extendMenteeInvite, issueMenteeInvite } from '@/lib/invite-management';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/invites');
 
@@ -167,7 +168,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     try {
-        const parsed = revokeSchema.safeParse(await request.json());
+        const parsed = revokeSchema.safeParse(await readJsonBody(request));
         if (!parsed.success) {
             return NextResponse.json({ error: 'id 가 필요합니다.' }, { status: 400 });
         }
@@ -200,6 +201,8 @@ export async function DELETE(request: NextRequest) {
         log.info('초대 코드 회수', { inviteId: invite.id });
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         return toErrorResponse(error, { log, message: '초대 코드 회수에 실패했습니다.' });
     }
 }

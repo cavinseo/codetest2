@@ -5,6 +5,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
+import { readJsonBody } from '@/lib/request-body';
 const log = createLogger('worksheet-comments');
 const worksheet = z.enum(['overview', 'sales', 'spec', 'attributes', 'fitness', 'requirements', 'kano', 'kano-aggregation', 'qfd', 'tech-tree', 'improvements', 'target-spec', 'tech-roadmap', 'assets', 'funding-plan', 'funding-source']);
 const contentSchema = z.string().trim().min(1).max(5000);
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
             return NextResponse.json({ comments, canComment, userId: access.user.userId });
         }
         if (!canComment) return NextResponse.json({ error: '배정된 멘토만 의견을 작성할 수 있습니다.' }, { status: 403 });
-        const parsed = z.object({ id: z.string().min(1).optional(), content: contentSchema.optional() }).safeParse(await request.json());
+        const parsed = z.object({ id: z.string().min(1).optional(), content: contentSchema.optional() }).safeParse(await readJsonBody(request));
         if (!parsed.success) return NextResponse.json({ error: '의견은 1~5,000자로 입력하세요.' }, { status: 400 });
         if (request.method === 'POST') {
             if (!parsed.data.content) return NextResponse.json({ error: '의견을 입력하세요.' }, { status: 400 });

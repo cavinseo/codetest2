@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/members');
 
@@ -28,7 +29,7 @@ export async function POST(
     const { userId: requesterId } = accessResult.user;
 
     try {
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const { email, role } = inviteSchema.parse(body);
 
         // 프로젝트 존재 여부 및 소유자 정보 확인
@@ -100,6 +101,8 @@ export async function POST(
             },
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }
