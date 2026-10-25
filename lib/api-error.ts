@@ -7,6 +7,7 @@
 // 사용자에게는 고정 문구와 상관 ID 만 주고, 상세는 서버 로그에서 그 ID 로 찾는다.
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
+import { invalidJsonBodyResponse } from './request-body';
 
 // createLogger 가 돌려주는 객체를 그대로 받을 수 있도록 meta 타입을 맞춘다.
 type LogValue = string | number | boolean | undefined;
@@ -25,13 +26,17 @@ export function errorCodeOf(error: unknown): string | null {
 }
 
 /**
- * 내부 오류를 사용자용 500 응답으로 바꾼다.
+ * 내부 오류를 사용자용 500 응답으로 바꾼다(요청 본문이 깨진 JSON 이면 400).
  * 상관 ID 를 만들어 응답과 로그 양쪽에 남기므로, 사용자가 알려준 ID 로 로그를 찾을 수 있다.
  */
 export function toErrorResponse(
     error: unknown,
     options: { log: ErrorLogger; message: string; context?: Record<string, LogValue> }
 ): NextResponse {
+    // 깨진 JSON 본문은 서버 오류가 아니라 잘못된 요청이다. 오류 로그·상관 ID 없이 400 으로 답한다.
+    const invalidBody = invalidJsonBodyResponse(error);
+    if (invalidBody) return invalidBody;
+
     const referenceId = randomUUID().slice(0, 8);
 
     options.log.error(options.message, error, {

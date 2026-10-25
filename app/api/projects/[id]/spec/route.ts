@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/spec');
 
@@ -50,7 +51,7 @@ export async function PATCH(
         const { id: projectId } = await params;
         const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
-        const { specDetailCollapsed } = await request.json();
+        const { specDetailCollapsed } = await readJsonBody(request);
         if (typeof specDetailCollapsed !== 'boolean') {
             return NextResponse.json({ error: '접기 상태가 올바르지 않습니다.' }, { status: 400 });
         }
@@ -61,6 +62,8 @@ export async function PATCH(
         });
         return NextResponse.json(project);
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         return toErrorResponse(error, { log, message: '세세부기술 열 상태를 저장하지 못했습니다.' });
     }
 }
@@ -88,7 +91,7 @@ export async function POST(
             );
         }
 
-        const body = await request.json();
+        const body = await readJsonBody(request);
         // 빈 배열은 "전부 지움"(행을 다 지운 저장·초기화 버튼)이라, 키가 빠진 요청까지 빈 목록으로
         // 받아 주면 잘못된 요청 하나로 스펙 전체가 지워진다. 배열이 아니면 거절한다.
         if (!Array.isArray(body?.specFunctions)) {
@@ -177,6 +180,8 @@ export async function POST(
             message: '스펙이 저장되었습니다',
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         return toErrorResponse(error, { log, message: '스펙 저장에 실패했습니다.' });
     }
 }

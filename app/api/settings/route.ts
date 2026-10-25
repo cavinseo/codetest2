@@ -12,6 +12,7 @@ import { requireAdmin } from '@/lib/authorization';
 import { getProviderStatuses } from '@/lib/ai/registry';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/settings');
 
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
     if (adminResult instanceof NextResponse) return adminResult;
 
     try {
-        const body = await request.json();
+        const body = await readJsonBody(request);
 
         // 빈 문자열은 "바꾸지 않음"으로 처리된다. 예전에는 부분 payload 하나로
         // 저장해 둔 clientSecret 이나 SMTP 비밀번호가 통째로 지워졌다.
@@ -104,6 +105,8 @@ export async function POST(request: NextRequest) {
             ai: { ...ai, providers },
         });
     } catch (error) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         return toErrorResponse(error, { log, message: '설정 저장에 실패했습니다.' });
     }
 }

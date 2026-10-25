@@ -8,6 +8,7 @@ import { createLogger } from '@/lib/logger';
 import { classifyKano } from '@/lib/kano';
 import { toErrorResponse } from '@/lib/api-error';
 import { GOOGLE_FORMS_DISABLED_MESSAGE, GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/kano/form-responses');
 
@@ -43,7 +44,7 @@ export async function POST(
             );
         }
 
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const formId = body.formId;
 
         if (!formId) {
@@ -137,6 +138,8 @@ export async function POST(
             importedCount,
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         return toErrorResponse(error, {
             log,
             message: '응답 가져오기에 실패했습니다.',

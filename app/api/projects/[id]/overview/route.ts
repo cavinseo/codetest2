@@ -9,6 +9,7 @@ import {
     BusinessPlanFileValidationError,
     validateBusinessPlanFileStorageValue,
 } from '@/lib/business-plan-file';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/project/overview');
 
@@ -142,7 +143,7 @@ export async function PATCH(
         const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
 
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const data = updateOverviewSchema.parse(body);
         let productDetails;
         try { productDetails = validateProductOverview(body); }
@@ -181,6 +182,8 @@ export async function PATCH(
             },
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError || error instanceof BusinessPlanFileValidationError) {
             const message = error instanceof z.ZodError ? error.errors[0].message : error.message;
             return NextResponse.json({ error: message }, { status: 400 });

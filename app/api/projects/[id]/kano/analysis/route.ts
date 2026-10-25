@@ -10,6 +10,7 @@ import {
     getWeightedTimkoCategory,
     getSatisfactionQuadrant,
 } from '@/lib/kano-algorithm';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/kano/analysis');
 
@@ -108,7 +109,7 @@ export async function PATCH(
         const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
 
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const updates = Array.isArray(body.weights) ? body.weights : [];
 
         await prisma.$transaction(
@@ -125,6 +126,8 @@ export async function PATCH(
 
         return NextResponse.json({ success: true, count: updates.length });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         log.error('Kano 가중치 저장 오류', error);
         return NextResponse.json({ error: 'Kano 가중치 저장 실패' }, { status: 500 });
     }

@@ -5,6 +5,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { fitnessBodySchema } from '@/lib/bulk-save-schemas';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/attributes/fitness');
 
@@ -62,7 +63,7 @@ export async function POST(
             );
         }
 
-        const { fitnesses: newFitnesses } = fitnessBodySchema.parse(await request.json());
+        const { fitnesses: newFitnesses } = fitnessBodySchema.parse(await readJsonBody(request));
 
         // attributeId 를 그대로 믿으면 다른 프로젝트의 속성에 적합도를 매달 수 있다.
         // 이 프로젝트 속성만 허용하고, 다른 프로젝트에 있든 아예 없든 같은 400 으로 답해
@@ -111,6 +112,8 @@ export async function POST(
             message: '적합도 데이터가 저장되었습니다',
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: '유효하지 않은 적합도 데이터입니다.' }, { status: 400 });
         }

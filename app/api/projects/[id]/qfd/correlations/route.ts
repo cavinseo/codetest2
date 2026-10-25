@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/qfd/correlations');
 
@@ -46,7 +47,7 @@ export async function POST(
         const projectId = params.id;
         const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
         if (accessResult instanceof NextResponse) return accessResult;
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const { techId1, techId2, correlation } = correlationSchema.parse(body);
 
         // 대칭성을 위해 ID 정렬(항상 techId1 < techId2가 되도록)
@@ -103,6 +104,8 @@ export async function POST(
         log.info('상관관계 설정 완료', { projectId, techId1: sortedId1, techId2: sortedId2, correlation });
         return NextResponse.json({ success: true, action: 'saved', correlation: updatedCorrelation });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }

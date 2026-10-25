@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { improvementsBodySchema, type ImprovementRow } from '@/lib/bulk-save-schemas';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const cleanItem = (item: ImprovementRow, index: number) => ({
     type: item.type,
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     try {
         // 예전에는 items 가 배열이 아니면 조용히 [] 로 강등돼, 오타 난 바디 하나로
         // 개선포인트가 통째로 지워지고도 200 이 나갔다. 이제는 400 으로 막는다.
-        const parsed = improvementsBodySchema.parse(await request.json());
+        const parsed = improvementsBodySchema.parse(await readJsonBody(request));
         const items = parsed.items.map(cleanItem);
 
         const saved = await prisma.$transaction(async (tx) => {
@@ -64,6 +65,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
         return NextResponse.json({ items: saved });
     } catch (error) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }

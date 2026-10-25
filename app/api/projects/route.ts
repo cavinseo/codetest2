@@ -15,6 +15,7 @@ import {
 } from '@/lib/business-plan-file';
 import { DEFAULT_PROJECT_AI_MODE, projectAiModeSchema } from '@/lib/ai/project-ai-mode';
 import { createProjectWithApproval, ProjectApprovalError, MentorProjectCreationError } from '@/lib/project-creation-approval';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/projects');
 
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
                 throw new MentorProjectCreationError('멘토의 프로젝트 생성 기능이 사용중지 상태입니다. 관리자에게 문의하세요.');
             }
         }
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const { name, description, detailedDescription, businessPlanFile, aiMode, programId, ownerMenteeId, approvalRequestId } =
             createProjectSchema.parse(body);
         const validatedBusinessPlanFile = validateBusinessPlanFileStorageValue(businessPlanFile);
@@ -234,6 +235,8 @@ export async function POST(request: NextRequest) {
             },
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof MentorProjectCreationError) return NextResponse.json({ error: error.message }, { status: 403 });
         if (error instanceof ProjectApprovalError) return NextResponse.json({ error: error.message, approvalRequired: true }, { status: 403 });
         if (error instanceof z.ZodError || error instanceof BusinessPlanFileValidationError) {

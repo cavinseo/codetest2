@@ -152,3 +152,12 @@ describe('적합도 저장의 남의 속성 (B13)', () => {
         expect(createFitnesses).not.toHaveBeenCalled();
     });
 });
+
+it('적합도 저장에 깨진 JSON 본문을 보내면 400 으로 거절하고 지우지 않는다 (B25)', async () => {
+    const res = await saveFitnesses(new NextRequest('http://localhost/api/projects/proj_1/attributes/fitness', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{',
+    }), { params });
+
+    expect(res.status).toBe(400);
+    expect(deleteFitnesses).not.toHaveBeenCalled();
+});

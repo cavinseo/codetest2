@@ -13,6 +13,7 @@ import { parseInvitableRole, type MemberRole } from '@/lib/member-roles';
 import { memberProfileSchemaFor } from '@/lib/member-profile';
 import { inviteAccessExpiresAt } from '@/lib/invite-access';
 import { errorCodeOf } from '@/lib/api-error';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/auth/signup');
 
@@ -40,7 +41,7 @@ class ExistingAccountError extends Error {}
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const { name, email, password, inviteCode, role: requestedRole, profile } = signupSchema.parse(body);
 
         // 가입을 무제한 허용하면 승인 대기 큐가 오염되고 DB 행이 소모된다.
@@ -201,6 +202,8 @@ export async function POST(request: NextRequest) {
             user: { id: newUser.id, name: newUser.name, email: newUser.email },
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof InviteRoleConflictError) {
             return NextResponse.json({ code: 'INVITE_ROLE_CONFLICT', error: '이 이메일에 멘티 초대가 등록되어 있습니다. 멘토 가입을 위해 관리자에게 초대 대상 확인을 요청하세요.' }, { status: 409 });
         }

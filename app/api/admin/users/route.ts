@@ -21,6 +21,7 @@ import {
     accessExpiryFrom, canTransitionRole, parseDirectCreateRole,
     parseMemberRole, isAccessExpired, MEMBER_ROLE_LABELS, type MemberRole,
 } from '@/lib/member-roles';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/admin/users');
 
@@ -85,7 +86,7 @@ export async function PATCH(request: NextRequest) {
     if (adminResult instanceof NextResponse) return adminResult;
 
     try {
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const userId: string | undefined = body?.userId;
         const action: string | undefined = body?.action;
 
@@ -228,6 +229,8 @@ export async function PATCH(request: NextRequest) {
         // 추가되고 분기 처리를 잊으면 조용히 승인 취소로 새는 대신 명시적으로 막는다.
         return NextResponse.json({ error: '처리할 수 없는 action 입니다.' }, { status: 400 });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         log.error('사용자 승인 상태 변경 실패', error);
         return NextResponse.json({ error: '승인 상태 변경에 실패했습니다.' }, { status: 500 });
     }
@@ -265,7 +268,7 @@ export async function POST(request: NextRequest) {
     if (adminResult instanceof NextResponse) return adminResult;
 
     try {
-        const parsed = createUserSchema.safeParse(await request.json());
+        const parsed = createUserSchema.safeParse(await readJsonBody(request));
         if (!parsed.success) {
             return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
         }
@@ -385,6 +388,8 @@ export async function POST(request: NextRequest) {
             user: { id: created.id, name: created.name, email: created.email, role },
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         return toErrorResponse(error, { log, message: '계정 생성에 실패했습니다.' });
     }
 }
@@ -418,7 +423,7 @@ export async function DELETE(request: NextRequest) {
     if (adminResult instanceof NextResponse) return adminResult;
 
     try {
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const userId: string | undefined = body?.userId;
 
         if (!userId) {
@@ -591,6 +596,8 @@ export async function DELETE(request: NextRequest) {
         log.info('사용자 삭제', { userId, ownedProjects, transferredIssuedInviteCodes });
         return NextResponse.json({ success: true, ownedProjects, transferredIssuedInviteCodes });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof ProjectTransferError) return NextResponse.json({ error: error.message }, { status: error.status });
         if (isTransferConflictError(error) && (error as { code?: string }).code !== 'P2003') {
             return NextResponse.json({ error: '회원 또는 프로젝트가 변경되었습니다. 삭제를 다시 확인하세요.' }, { status: 409 });

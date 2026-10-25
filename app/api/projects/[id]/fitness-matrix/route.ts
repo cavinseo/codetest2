@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 // GET: 적합도 매트릭스 로드
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const { marketsJson, matrixJson, managerComment, consultantNote } = body;
         const record = await prisma.fitnessMatrix.upsert({
             where: { projectId },
@@ -31,6 +32,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         });
         return NextResponse.json({ fitnessMatrix: record });
     } catch (error) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         console.error('fitness-matrix POST error:', error);
         return NextResponse.json({ error: 'Failed to save fitness matrix' }, { status: 500 });
     }

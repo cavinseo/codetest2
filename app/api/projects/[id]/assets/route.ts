@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { assetsBodySchema } from '@/lib/bulk-save-schemas';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 // GET: 핵심자산 및 보완자산 목록
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
-        const { assets } = assetsBodySchema.parse(await request.json());
+        const { assets } = assetsBodySchema.parse(await readJsonBody(request));
 
         // 배열 형태 $transaction([...]) 은 인자를 먼저 다 평가하므로, 예전에는
         // assets 가 배열이 아닐 때 .map 이 터져 준 것이 사실상 유일한 방어막이었다.
@@ -50,6 +51,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
         return NextResponse.json({ assets: saved });
     } catch (error) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }

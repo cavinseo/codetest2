@@ -82,7 +82,7 @@ export default function TechRoadmapTable({ projectId }: Props) {
             });
 
             if (!res.ok) {
-                showToast('저장에 실패했습니다.');
+                showToast('저장에 실패했습니다.', 'error');
                 return;
             }
 
@@ -98,7 +98,7 @@ export default function TechRoadmapTable({ projectId }: Props) {
             })));
             showToast('저장되었습니다.');
         } catch {
-            showToast('저장에 실패했습니다.');
+            showToast('저장에 실패했습니다.', 'error');
         } finally {
             setIsSaving(false);
         }

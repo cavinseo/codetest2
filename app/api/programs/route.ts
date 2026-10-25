@@ -10,6 +10,7 @@ import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { canManagePrograms, canCreateProgram } from '@/lib/member-roles';
 import { isValidProgramPeriod } from '@/lib/program';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/programs');
 
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const parsed = createProgramSchema.safeParse(await request.json());
+        const parsed = createProgramSchema.safeParse(await readJsonBody(request));
         if (!parsed.success) {
             return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
         }
@@ -122,6 +123,8 @@ export async function POST(request: NextRequest) {
             },
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         return toErrorResponse(error, { log, message: '프로그램 개설에 실패했습니다.' });
     }
 }

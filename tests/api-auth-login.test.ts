@@ -228,3 +228,12 @@ describe('로그인 선택 역할 확인', () => {
         expect(resetRateLimit).not.toHaveBeenCalled();
     });
 });
+
+it('깨진 JSON 본문은 500 이 아니라 400 으로 거절한다 (B25)', async () => {
+    const res = await POST(new NextRequest('http://localhost/api/auth/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{',
+    }));
+
+    expect(res.status).toBe(400);
+    expect(findUniqueUser).not.toHaveBeenCalled();
+});

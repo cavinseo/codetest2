@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
 import { requireAdmin } from '@/lib/authorization';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/admin/projects');
 
@@ -60,7 +61,7 @@ export async function DELETE(request: NextRequest) {
     if (adminResult instanceof NextResponse) return adminResult;
 
     try {
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const projectId: string | undefined = body?.projectId;
 
         if (!projectId) {
@@ -84,6 +85,8 @@ export async function DELETE(request: NextRequest) {
         log.info('프로젝트 삭제 완료', { projectName: target.name, projectId });
         return NextResponse.json({ success: true, deletedProject: target.name });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         log.error('프로젝트 삭제 실패', error);
         return NextResponse.json({ error: '프로젝트 삭제 실패' }, { status: 500 });
     }

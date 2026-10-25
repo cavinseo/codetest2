@@ -6,6 +6,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { isMissingTechnicalBenchmarkTable } from '@/lib/technical-benchmark-guards';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/qfd/technical-benchmarks');
 
@@ -56,7 +57,7 @@ export async function POST(
         const projectId = params.id;
         const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
         if (accessResult instanceof NextResponse) return accessResult;
-        const body = await request.json();
+        const body = await readJsonBody(request);
         const data = upsertSchema.parse(body);
 
         // 기술특성 id 만 믿으면 다른 프로젝트의 열에 값을 붙일 수 있다.
@@ -108,6 +109,8 @@ export async function POST(
         log.info('기술특성 벤치마크 저장', { projectId, techId: data.technicalCharId });
         return NextResponse.json({ success: true, technicalBenchmark: saved });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }

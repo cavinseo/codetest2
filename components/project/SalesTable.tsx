@@ -190,10 +190,10 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                 showToast('저장되었습니다. 다음 워크시트로 이동합니다.');
                 setTimeout(() => onSaved?.(), 1000);
             } else {
-                showToast('저장에 실패했습니다.');
+                showToast('저장에 실패했습니다.', 'error');
             }
         } catch {
-            showToast('저장에 실패했습니다.');
+            showToast('저장에 실패했습니다.', 'error');
         } finally {
             setIsSaving(false);
         }
@@ -214,7 +214,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                 showToast('초기화되었습니다.');
             }
         } catch {
-            showToast('초기화에 실패했습니다.');
+            showToast('초기화에 실패했습니다.', 'error');
         } finally {
             setIsSaving(false);
         }

@@ -14,6 +14,7 @@ import { toErrorResponse } from '@/lib/api-error';
 import { canManagePrograms, parseMemberRole } from '@/lib/member-roles';
 import { canManageThisProgram, programMoveOutcome } from '@/lib/program';
 import { isTransferConflictError, lockTransferUsers, ProjectTransferError } from '@/lib/project-transfer';
+import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/programs/mentees');
 
@@ -97,7 +98,7 @@ export async function POST(
     }
 
     try {
-        const parsed = assignSchema.safeParse(await request.json());
+        const parsed = assignSchema.safeParse(await readJsonBody(request));
         if (!parsed.success) {
             return NextResponse.json({ error: 'userId가 필요합니다.' }, { status: 400 });
         }
@@ -169,6 +170,8 @@ export async function POST(
             mentee: { id: target.id, name: target.name, programName: program.name },
         });
     } catch (error: unknown) {
+        const invalidBody = invalidJsonBodyResponse(error);
+        if (invalidBody) return invalidBody;
         if (error instanceof ProjectTransferError) return NextResponse.json({ error: error.message }, { status: error.status });
         if (isTransferConflictError(error)) return NextResponse.json({ error: '멘티 또는 프로그램 정보가 변경되었습니다. 다시 확인하세요.' }, { status: 409 });
         return toErrorResponse(error, { log, message: '멘티를 배정하지 못했습니다.', context: { programId } });

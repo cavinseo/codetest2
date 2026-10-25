@@ -82,7 +82,7 @@ export default function TargetSpecTable({ projectId }: Props) {
         const parentPath = newSubCategory.trim();
         const subCategory = [parentPath, feature.subCategory].filter(Boolean).join(' > ');
         if (rows.some((row) => row.category === category && row.subCategory === subCategory)) {
-            showToast('이미 추가된 기능입니다.');
+            showToast('이미 추가된 기능입니다.', 'error');
             return;
         }
         const next = [...rows];
@@ -150,7 +150,7 @@ export default function TargetSpecTable({ projectId }: Props) {
             });
 
             if (!res.ok) {
-                showToast('저장에 실패했습니다.');
+                showToast('저장에 실패했습니다.', 'error');
                 return;
             }
 
@@ -168,7 +168,7 @@ export default function TargetSpecTable({ projectId }: Props) {
             })));
             showToast('저장되었습니다.');
         } catch {
-            showToast('저장에 실패했습니다.');
+            showToast('저장에 실패했습니다.', 'error');
         } finally {
             setIsSaving(false);
         }
