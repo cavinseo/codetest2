@@ -42,10 +42,13 @@ interface MentorMenteeOption extends MenteeOption {
     approvals: { id: string; reason: string }[];
 }
 
+type ProjectView = 'all' | 'program';
+const PROJECT_VIEW_OPTIONS: ReadonlyArray<[ProjectView, string]> = [['all', '전체'], ['program', '프로그램별']];
+
 export default function DashboardPage() {
     const [projects, setProjects] = useState<Project[]>([]);
     // 여러 프로그램의 프로젝트에 참여하는 회원이 프로그램 단위로 훑어볼 수 있게 한다.
-    const [projectView, setProjectView] = useState<'all' | 'program'>('all');
+    const [projectView, setProjectView] = useState<ProjectView>('all');
     const [role, setRole] = useState<MemberRole | null>(null);
     const [mentorProjectCreationEnabled, setMentorProjectCreationEnabled] = useState(false);
     const [mentorMentees, setMentorMentees] = useState<MentorMenteeOption[]>([]);
@@ -210,6 +213,13 @@ export default function DashboardPage() {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    // 입력한 이름·설명은 남겨 둔다. 승인 후 다시 열면 그대로 이어 쓴다.
+    const handleApprovalRequested = () => {
+        setApprovalNeeded(false);
+        setRequestsVersion(v => v + 1);
+        setShowNewProjectModal(false);
     };
 
     const handleLogout = async () => {
@@ -402,7 +412,7 @@ export default function DashboardPage() {
                         </p>
                         {/* 프로그램이 하나뿐이면 묶어도 같은 목록이라 전환 버튼을 감춘다. */}
                         {programGroups.length > 1 && <div className="mt-3 inline-flex rounded-lg border border-white/10 p-0.5 text-xs" role="group" aria-label="프로젝트 보기 방식">
-                            {([['all', '전체'], ['program', '프로그램별']] as const).map(([view, label]) => (
+                            {PROJECT_VIEW_OPTIONS.map(([view, label]) => (
                                 <button
                                     key={view}
                                     type="button"
@@ -494,12 +504,7 @@ export default function DashboardPage() {
                             {menteeNeedsApproval && (
                                 <ProjectApprovalRequestBox
                                     defaultReason={newProjectName ? `「${newProjectName}」 프로젝트를 추가로 개설하고자 합니다.` : ''}
-                                    onRequested={() => {
-                                        // 입력한 이름·설명은 남겨 둔다. 승인 후 다시 열면 그대로 이어 쓴다.
-                                        setApprovalNeeded(false);
-                                        setRequestsVersion(v => v + 1);
-                                        setShowNewProjectModal(false);
-                                    }}
+                                    onRequested={handleApprovalRequested}
                                 />
                             )}
                             <div>
