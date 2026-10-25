@@ -134,11 +134,27 @@ function normalize(value: unknown): string {
     return text(value).toLowerCase().replace(/[\s_\-()[\]{}]/g, '');
 }
 
+// 엑셀을 서식 그대로(raw: false) 읽으므로 금액·비율 칸은 "₩1,200,000", "12%", "(500)",
+// "△500" 같은 표시 문자열로 들어온다. 쉼표만 지우던 때는 이런 값이 전부 0 이 되어 매출·자금
+// 표의 금액이 사라졌다. 통화 기호·원·% 는 떼고, 괄호와 △·▲ 는 회계 표기의 음수로 읽는다.
+// % 는 화면에 보이는 숫자(12% → 12)를 쓴다 — 앱에서 직접 입력할 때도 12 로 적기 때문이다.
 function numberValue(value: unknown): number {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
-    const cleaned = text(value).replace(/,/g, '');
-    const parsed = Number(cleaned);
-    return Number.isFinite(parsed) ? parsed : 0;
+    let cleaned = text(value).replace(/[,\s₩￦$]|원/g, '');
+    let negative = false;
+    const parenthesized = /^\((.*)\)$/.exec(cleaned);
+    if (parenthesized) {
+        negative = true;
+        cleaned = parenthesized[1];
+    }
+    if (/^[△▲]/.test(cleaned)) {
+        negative = true;
+        cleaned = cleaned.slice(1);
+    }
+    const parsed = Number(cleaned.replace(/%$/, ''));
+    if (!Number.isFinite(parsed)) return 0;
+    // "(0)" 이 -0 이 되지 않도록 0 은 그대로 둔다.
+    return negative && parsed !== 0 ? -parsed : parsed;
 }
 
 function hasText(value: unknown): boolean {
@@ -270,6 +286,11 @@ function parseSpec(sheet: ParsedSheet) {
     const detailCol = findColumn(headerRow, ['세세부', '상세']);
     const techCol = findColumn(headerRow, ['기술']);
 
+    // 핵심·세부 기능 칸은 보통 여러 행에 걸쳐 병합돼 있고, 병합 셀은 첫 행에만 값이 있다.
+    // 빈 칸을 "상위 없음"으로 읽으면 둘째 행부터의 하위 기능이 고아가 되어 속성 선택·
+    // 목표스펙 화면에서 사라졌다. 빈 상위 칸은 위에서 이어진 병합으로 보고 직전 상위에 잇는다.
+    let currentCoreId: string | null = null;
+    let currentSubId: string | null = null;
     for (let rowIndex = header.rowIndex + 1; rowIndex < sheet.data.length; rowIndex++) {
         const row = sheet.data[rowIndex];
         const core = cell(row, coreCol);
@@ -280,9 +301,16 @@ function parseSpec(sheet: ParsedSheet) {
 
         const coreId = generateId('spec');
         const subId = generateId('spec');
-        if (core) records.push({ id: coreId, level: 'CORE', name: core, technology: !sub && !detail ? technology || null : null, order: records.length });
-        if (sub) records.push({ id: subId, level: 'SUB', parentId: core ? coreId : null, name: sub, technology: detail ? null : technology || null, order: records.length });
-        if (detail) records.push({ id: generateId('spec'), level: 'DETAIL', parentId: sub ? subId : core ? coreId : null, name: detail, technology: technology || null, order: records.length });
+        if (core) {
+            records.push({ id: coreId, level: 'CORE', name: core, technology: !sub && !detail ? technology || null : null, order: records.length });
+            currentCoreId = coreId;
+            currentSubId = null;
+        }
+        if (sub) {
+            records.push({ id: subId, level: 'SUB', parentId: currentCoreId, name: sub, technology: detail ? null : technology || null, order: records.length });
+            currentSubId = subId;
+        }
+        if (detail) records.push({ id: generateId('spec'), level: 'DETAIL', parentId: currentSubId ?? currentCoreId, name: detail, technology: technology || null, order: records.length });
         if (!core && !sub && !detail && technology) records.push({ id: generateId('spec'), level: 'CORE', name: technology, technology, order: records.length });
     }
     return records;
