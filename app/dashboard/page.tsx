@@ -56,6 +56,10 @@ export default function DashboardPage() {
     const [userName, setUserName] = useState<string | null>(null);
     const [canAccessAdmin, setCanAccessAdmin] = useState<boolean | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    // 목록 조회 결과. isLoading 은 생성 중에도 켜져 목록 상태로 쓸 수 없다. 실패를 빈 목록처럼
+    // 보이면 "프로젝트가 없습니다 · 첫 프로젝트 만들기"가 떠서 이미 있는 프로젝트를 또 만들게
+    // 했다(2026-10-25 코드 리뷰 B19). 불러오기 전에도 빈 화면 안내를 띄우지 않는다.
+    const [projectsStatus, setProjectsStatus] = useState<'loading' | 'loaded' | 'failed'>('loading');
     const [showNewProjectModal, setShowNewProjectModal] = useState(false);
     const [approvalRequestId, setApprovalRequestId] = useState('');
     // 서버가 승인 필요로 거절했다는 사실. 목록의 소유 수가 오래됐어도 신청 칸을 띄운다.
@@ -144,6 +148,7 @@ export default function DashboardPage() {
     const fetchProjects = async () => {
         try {
             setIsLoading(true);
+            setProjectsStatus('loading');
             const response = await fetch('/api/projects');
             // 로그인하지 않은 방문자에게 빈 대시보드와 "새 프로젝트" 버튼을 보여주면
             // 눌러도 401 로 조용히 실패한다. 곧장 로그인으로 보낸다.
@@ -151,12 +156,13 @@ export default function DashboardPage() {
                 window.location.replace('/login');
                 return;
             }
-            if (response.ok) {
-                const data = await response.json();
-                setProjects(data.projects || []);
-            }
+            if (!response.ok) throw new Error(`프로젝트 목록 조회 실패 (${response.status})`);
+            const data = await response.json();
+            setProjects(data.projects || []);
+            setProjectsStatus('loaded');
         } catch (error) {
             console.error('프로젝트 목록 조회 실패:', error);
+            setProjectsStatus('failed');
         } finally {
             setIsLoading(false);
         }
@@ -454,8 +460,20 @@ export default function DashboardPage() {
                         </section>
                     ))}
 
+                    {projectsStatus === 'failed' && (
+                        <div className="col-span-full text-center py-16" role="alert">
+                            <h3 className="text-xl font-display font-semibold text-gray-300 mb-2">
+                                프로젝트 목록을 불러오지 못했습니다
+                            </h3>
+                            <p className="text-gray-500 mb-6 text-sm">이미 만든 프로젝트가 있을 수 있습니다. 다시 불러온 뒤 확인하세요.</p>
+                            <button type="button" onClick={() => void fetchProjects()} className="btn-primary">
+                                다시 불러오기
+                            </button>
+                        </div>
+                    )}
+
                     {/* Empty State */}
-                    {displayProjects.length === 0 && (
+                    {projectsStatus === 'loaded' && displayProjects.length === 0 && (
                         <div className="col-span-full text-center py-16">
                             <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center text-4xl">
                                 📊
