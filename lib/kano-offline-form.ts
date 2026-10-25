@@ -148,9 +148,16 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
             + respondentEmail.replace(/[\\\\/:*?"<>|\\s]+/g, '_') + '.html';
     }
 
+    function writeHtmlFile(handle, html) {
+        return handle.createWritable().then(function (writable) {
+            return writable.write(new Blob([html], { type: 'text/html;charset=utf-8' }))
+                .then(function () { return writable.close(); });
+        });
+    }
+
     // 파일을 고를 수 있는 브라우저(Chrome·Edge)는 처음 고른 파일에 계속 덮어쓴다. 그렇지 못한
     // 브라우저는 페이지가 파일에 직접 쓸 방법이 없어 같은 이름으로 내려받게 한다.
-    function saveIntoSurveyFile(html, respondentEmail) {
+    function saveResponseFile(html, respondentEmail) {
         var fileName = responseFileName(respondentEmail);
         // 이메일을 바꿨다면 다른 응답자의 파일이므로 이전 파일에 덮어쓰지 않는다.
         if (responseFileEmail !== respondentEmail) responseFileHandle = null;
@@ -167,10 +174,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         handlePromise.then(function (handle) {
             responseFileHandle = handle;
             responseFileEmail = respondentEmail;
-            return handle.createWritable().then(function (writable) {
-                return writable.write(new Blob([html], { type: 'text/html;charset=utf-8' }))
-                    .then(function () { return writable.close(); });
-            });
+            return writeHtmlFile(handle, html);
         }).then(function () {
             alert('설문지 파일에 응답을 저장했습니다.');
         }, function (error) {
@@ -180,15 +184,8 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         });
     }
 
-    function saveHtml(formOnly) {
-        // 응답자를 구분할 수 없는 응답지는 업로드 때 익명 처리되므로 저장 단계에서 막는다.
-        var respondentEmail = emailInput.value.trim();
-        if (!formOnly && !isValidEmail(respondentEmail)) {
-            alert('이메일 주소를 입력해야 응답을 저장할 수 있습니다.');
-            if (emailInput.focus) emailInput.focus();
-            return;
-        }
-        var answers = payload.answers.map(function (answer) {
+    function collectAnswers() {
+        return payload.answers.map(function (answer) {
             var positive = document.querySelector('input[name="q' + answer.index + '-positive"]:checked');
             var negative = document.querySelector('input[name="q' + answer.index + '-negative"]:checked');
             return {
@@ -197,42 +194,64 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
                 negative: negative ? Number(negative.value) : null
             };
         });
-        var incompleteCount = answers.filter(function (answer) {
+    }
+
+    function countIncompleteAnswers(answers) {
+        return answers.filter(function (answer) {
             return answer.positive === null || answer.negative === null;
         }).length;
-        if (!formOnly && incompleteCount > 0 && !confirm(incompleteCount + '개 문항이 비어 있습니다. 그래도 저장할까요?')) {
-            return;
-        }
+    }
 
+    // 화면 상태를 JSON 블록에 박아 넣고, 그 상태가 담긴 문서 전체를 HTML 문자열로 돌려준다.
+    function serializeDocument(respondentEmail, answers) {
         var nextPayload = {
             kind: '${KANO_OFFLINE_PAYLOAD_KIND}',
             version: ${KANO_OFFLINE_PAYLOAD_VERSION},
             projectId: payload.projectId,
-            respondentEmail: formOnly ? emailInput.value : respondentEmail,
+            respondentEmail: respondentEmail,
             answers: answers
         };
         payloadElement.textContent = JSON.stringify(nextPayload).replace(/</g, '\\\\u003c');
         payload = nextPayload;
         updateIntroduction();
+        return '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
+    }
 
-        var html = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
-        if (!formOnly) {
-            saveIntoSurveyFile(html, respondentEmail);
-            return;
-        }
-        var date = new Date();
+    function formatTimestamp(date) {
         var pad = function (value) { return String(value).padStart(2, '0'); };
-        var timestamp = String(date.getFullYear())
+        return String(date.getFullYear())
             + pad(date.getMonth() + 1)
             + pad(date.getDate())
             + '-'
             + pad(date.getHours())
             + pad(date.getMinutes())
             + pad(date.getSeconds());
-        downloadHtml(html, 'Kano_오프라인_응답지_' + document.body.dataset.downloadStem + '_' + timestamp + '.html');
     }
-    saveButton.addEventListener('click', function () { saveHtml(false); });
-    saveFormButton.addEventListener('click', function () { saveHtml(true); });
+
+    function saveResponse() {
+        // 응답자를 구분할 수 없는 응답지는 업로드 때 익명 처리되므로 저장 단계에서 막는다.
+        var respondentEmail = emailInput.value.trim();
+        if (!isValidEmail(respondentEmail)) {
+            alert('이메일 주소를 입력해야 응답을 저장할 수 있습니다.');
+            if (emailInput.focus) emailInput.focus();
+            return;
+        }
+        var answers = collectAnswers();
+        var incompleteCount = countIncompleteAnswers(answers);
+        if (incompleteCount > 0 && !confirm(incompleteCount + '개 문항이 비어 있습니다. 그래도 저장할까요?')) {
+            return;
+        }
+        saveResponseFile(serializeDocument(respondentEmail, answers), respondentEmail);
+    }
+
+    // 소개문만 고친 배포용 양식이라 이메일·미응답 확인 없이 시각을 붙인 새 파일로 내려받는다.
+    function saveForm() {
+        var html = serializeDocument(emailInput.value, collectAnswers());
+        downloadHtml(html, 'Kano_오프라인_응답지_' + document.body.dataset.downloadStem + '_' + formatTimestamp(new Date()) + '.html');
+    }
+
+    saveButton.addEventListener('click', saveResponse);
+    saveFormButton.addEventListener('click', saveForm);
 }());`;
 
     return `<!DOCTYPE html>
