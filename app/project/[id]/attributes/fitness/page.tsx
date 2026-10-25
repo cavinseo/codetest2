@@ -135,44 +135,48 @@ export default function AttributeFitnessPage() {
     const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
     const [fitnessMap, setFitnessMap] = useState<Record<string, AttributeFitness>>({});
     const [isLoading, setIsLoading] = useState(true);
+    // 불러오기에 실패한 채 편집 화면을 보이면 기본값(5/3/7)이 저장된 점수처럼 보이고,
+    // 저장을 누르면 그 기본값이 실제 점수를 덮어쓴다. 실패하면 편집 화면 대신 재시도를 보인다.
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const [savedAt, setSavedAt] = useState<string | null>(null);
     const { toast, showToast } = useToast();
 
     useEffect(() => {
         async function loadData() {
+            setIsLoading(true);
+            setLoadFailed(false);
             try {
                 const [attrRes, fitRes] = await Promise.all([
                     fetch(`/api/projects/${projectId}/attributes`),
                     fetch(`/api/projects/${projectId}/attributes/fitness`),
                 ]);
+                if (!attrRes.ok || !fitRes.ok) throw new Error('속성 또는 적합도 조회 실패');
 
-                if (attrRes.ok) {
-                    const data = await attrRes.json();
-                    const loadedAttributes: ProductAttribute[] = (data.attributes || [])
-                        .filter((attr: ProductAttribute) => (attr.attribute ?? attr.name ?? '').trim())
-                        .sort((a: ProductAttribute, b: ProductAttribute) => a.order - b.order);
-                    setAttributes(dedupeByAttributeName(loadedAttributes));
-                }
+                const attributeData = await attrRes.json();
+                const loadedAttributes: ProductAttribute[] = (attributeData.attributes || [])
+                    .filter((attr: ProductAttribute) => (attr.attribute ?? attr.name ?? '').trim())
+                    .sort((a: ProductAttribute, b: ProductAttribute) => a.order - b.order);
+                setAttributes(dedupeByAttributeName(loadedAttributes));
 
-                if (fitRes.ok) {
-                    const data = await fitRes.json();
-                    const fitnesses: AttributeFitness[] = data.fitnesses || [];
-                    const map: Record<string, AttributeFitness> = {};
-                    fitnesses.forEach(f => { map[f.attributeId] = f; });
-                    setFitnessMap(map);
-                    if (fitnesses.length > 0) {
-                        setSavedAt('저장됨');
-                    }
+                const fitnessData = await fitRes.json();
+                const fitnesses: AttributeFitness[] = fitnessData.fitnesses || [];
+                const map: Record<string, AttributeFitness> = {};
+                fitnesses.forEach(f => { map[f.attributeId] = f; });
+                setFitnessMap(map);
+                if (fitnesses.length > 0) {
+                    setSavedAt('저장됨');
                 }
             } catch (error) {
                 console.error('데이터 로딩 실패:', error);
+                setLoadFailed(true);
             } finally {
                 setIsLoading(false);
             }
         }
         loadData();
-    }, [projectId]);
+    }, [projectId, loadAttempt]);
 
     const handleFitnessChange = (attrId: string, field: keyof AttributeFitness, value: any) => {
         setFitnessMap(prev => {
@@ -191,6 +195,7 @@ export default function AttributeFitnessPage() {
     };
 
     const handleSave = async () => {
+        if (loadFailed) return;
         setIsSaving(true);
         try {
             // 화면에 보이는 모든 속성을 보낸다(건드리지 않은 것은 기본값으로).
@@ -219,6 +224,20 @@ export default function AttributeFitnessPage() {
                 <div className="text-center">
                     <div className="animate-spin h-8 w-8 border-2 border-primary-500 border-t-transparent rounded-full mx-auto mb-4" />
                     <p className="text-gray-400">로딩 중...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (loadFailed) {
+        return (
+            <div className="min-h-screen bg-surface-900 flex items-center justify-center">
+                <div className="text-center space-y-4">
+                    <p role="alert" className="text-gray-300">적합도 데이터를 불러오지 못했습니다. 저장된 점수를 지키기 위해 편집을 막았습니다.</p>
+                    <div className="flex justify-center gap-3">
+                        <button type="button" className="btn-primary" onClick={() => setLoadAttempt(attempt => attempt + 1)}>다시 불러오기</button>
+                        <Link href={`/project/${projectId}`} className="btn-secondary">프로젝트로</Link>
+                    </div>
                 </div>
             </div>
         );

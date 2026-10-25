@@ -89,6 +89,11 @@ export async function POST(
         }
 
         const body = await request.json();
+        // 빈 배열은 "전부 지움"(행을 다 지운 저장·초기화 버튼)이라, 키가 빠진 요청까지 빈 목록으로
+        // 받아 주면 잘못된 요청 하나로 스펙 전체가 지워진다. 배열이 아니면 거절한다.
+        if (!Array.isArray(body?.specFunctions)) {
+            return NextResponse.json({ error: 'specFunctions 배열이 필요합니다.' }, { status: 400 });
+        }
         const newSpecs: Array<{
             id?: string;
             level: string;
@@ -96,16 +101,11 @@ export async function POST(
             parentId?: string;
             technology?: string;
             order: number;
-        }> = body.specFunctions || [];
+        }> = body.specFunctions;
 
-        if (newSpecs.length === 0) {
-            return NextResponse.json({
-                specFunctions: [],
-                message: '스펙이 저장되었습니다',
-            });
-        }
-
-        // 삭제와 삽입을 하나의 트랜잭션으로 묶어 중간 실패 시 롤백
+        // 삭제와 삽입을 하나의 트랜잭션으로 묶어 중간 실패 시 롤백한다. 빈 목록이면 삭제만 한다 —
+        // 예전에는 빈 목록을 저장 성공으로만 답하고 아무것도 지우지 않아, 행을 다 지우거나
+        // 초기화해도 새로고침하면 스펙이 되살아났다.
         const updatedSpecs = await prisma.$transaction(async (tx) => {
             await tx.specFunction.deleteMany({ where: { projectId } });
 
