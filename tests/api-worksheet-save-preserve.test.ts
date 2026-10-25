@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server';
 
 const countCustomerRequirement = vi.fn();
 const findProject = vi.fn();
+const findRequirements = vi.fn();
 const transaction = vi.fn();
 const updateRequirements = vi.fn();
 const createRequirement = vi.fn();
@@ -14,7 +15,7 @@ const findSpecs = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
-        customerRequirement: { count: countCustomerRequirement },
+        customerRequirement: { count: countCustomerRequirement, findMany: findRequirements },
         project: { findUnique: findProject },
         $transaction: (...args: unknown[]) => transaction(...(args as [])),
     },
@@ -43,6 +44,8 @@ beforeEach(() => {
     // 제출 id 가 기존 행을 모두 덮는 정상 편집이라 지워질 기존 행은 없다.
     countCustomerRequirement.mockResolvedValue(0);
     findProject.mockResolvedValue({ id: 'proj_1' });
+    // 다른 프로젝트에 같은 id 가 있는지 보는 조회(B13). 기본은 없음.
+    findRequirements.mockResolvedValue([]);
     updateRequirements.mockResolvedValue({ count: 1 });
     createRequirement.mockResolvedValue({});
     deleteSpecs.mockResolvedValue({ count: 3 });

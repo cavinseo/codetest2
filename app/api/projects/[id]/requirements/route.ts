@@ -110,6 +110,15 @@ export async function POST(
             }
         }
 
+        // 다른 프로젝트 요구사항의 id 로 create 하면 기본키 충돌로 500 이 나서 그 id 가
+        // 있다는 사실이 드러난다. 그런 id 는 새 행으로 보고 서버 id 를 붙인다.
+        const foreignIds = submittedIds.length > 0
+            ? new Set((await prisma.customerRequirement.findMany({
+                where: { id: { in: submittedIds }, NOT: { projectId } },
+                select: { id: true },
+            })).map((row) => row.id))
+            : new Set<string>();
+
         await prisma.$transaction(async (tx) => {
             await tx.customerRequirement.deleteMany({
                 where: submittedIds.length > 0
@@ -131,9 +140,10 @@ export async function POST(
                     order: req.order,
                 };
 
-                if (req.id) {
+                const ownId = req.id && !foreignIds.has(req.id) ? req.id : undefined;
+                if (ownId) {
                     const updated = await tx.customerRequirement.updateMany({
-                        where: { id: req.id, projectId },
+                        where: { id: ownId, projectId },
                         data,
                     });
                     if (updated.count > 0) continue;
@@ -141,7 +151,7 @@ export async function POST(
 
                 await tx.customerRequirement.create({
                     data: {
-                        id: req.id || generateId('spec'),
+                        id: ownId || generateId('spec'),
                         projectId,
                         ...data,
                     },

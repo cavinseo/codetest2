@@ -230,7 +230,69 @@ describe('저장', () => {
 
         expect(res.status).toBe(200);
         expect(upsertConn.mock.calls[0][0].create.apiKey).toBeNull();
-        expect(upsertConn.mock.calls[0][0].update.apiKey).toBeUndefined();
+        // 남아 있을지 모를 예전 키도 지운다(B11).
+        expect(upsertConn.mock.calls[0][0].update.apiKey).toBeNull();
+    });
+
+    describe('저장된 키는 입력한 곳에만 보낸다 (B11)', () => {
+        it('api 에서 키 없이 mcp 로 바꾸면 벤더 키를 지워 새 주소로 보내지 않는다', async () => {
+            findUniqueConn.mockResolvedValue(connectionSummary());
+            const res = await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://attacker.example.com/v1' }));
+
+            expect(res.status).toBe(200);
+            expect(upsertConn.mock.calls[0][0].update).toMatchObject({ vendor: null, apiKey: null });
+        });
+
+        it('mcp 주소를 바꾸면서 키를 비우면 예전 MCP 키를 지운다', async () => {
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: null, mcpBaseUrl: 'https://old.example.com/v1' }));
+            await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://new.example.com/v1' }));
+
+            expect(upsertConn.mock.calls[0][0].update.apiKey).toBeNull();
+        });
+
+        it('같은 mcp 주소에서 모델만 바꾸면 키를 유지한다', async () => {
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: null, mcpBaseUrl: 'https://mcp.example.com/v1' }));
+            await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://mcp.example.com/v1', mcpModel: 'other' }));
+
+            expect(upsertConn.mock.calls[0][0].update).not.toHaveProperty('apiKey');
+        });
+
+        it('벤더가 남은 예전 mcp 행은 키의 출처를 알 수 없어 지운다', async () => {
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: 'openai', mcpBaseUrl: 'https://mcp.example.com/v1' }));
+            await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://mcp.example.com/v1' }));
+
+            expect(upsertConn.mock.calls[0][0].update.apiKey).toBeNull();
+        });
+
+        it('rule 을 거쳐 같은 mcp 주소로 돌아오면 키를 다시 받는다', async () => {
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'rule', vendor: null, mcpBaseUrl: 'https://mcp.example.com/v1' }));
+            await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://mcp.example.com/v1' }));
+
+            expect(upsertConn.mock.calls[0][0].update.apiKey).toBeNull();
+        });
+
+        it('새 키를 함께 보내면 주소가 바뀌어도 그 키로 저장한다', async () => {
+            findUniqueConn.mockResolvedValue(connectionSummary());
+            await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://mcp.example.com/v1', apiKey: 'new-mcp-key' }));
+
+            expect(upsertConn.mock.calls[0][0].update.apiKey).toMatch(/^enc:v1:/);
+        });
+
+        it('mcp 에서 같은 벤더 이름이 남아 있어도 api 로 돌아가면 새 키를 요구한다', async () => {
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: 'openai', mcpBaseUrl: 'https://mcp.example.com/v1' }));
+            const res = await PUT(jsonRequest('PUT', { mode: 'api', vendor: 'openai' }));
+
+            expect(res.status).toBe(400);
+            expect(upsertConn).not.toHaveBeenCalled();
+        });
+
+        it('rule 을 거쳐 같은 벤더의 api 로 돌아오면 그 벤더 키를 유지한다', async () => {
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'rule', vendor: 'openai' }));
+            const res = await PUT(jsonRequest('PUT', { mode: 'api', vendor: 'openai' }));
+
+            expect(res.status).toBe(200);
+            expect(upsertConn.mock.calls[0][0].update).not.toHaveProperty('apiKey');
+        });
     });
 
     it('local 모드는 비운 주소를 허용한다', async () => {
@@ -310,8 +372,11 @@ describe('저장', () => {
         }));
 
         expect(res.status).toBe(200);
+        // local 필드는 건드리지 않는다. 벤더와 키는 MCP 로 새지 않게 일부러 지운다(B11).
         expect(upsertConn.mock.calls[0][0].update).toEqual({
             mode: 'mcp',
+            vendor: null,
+            apiKey: null,
             mcpBaseUrl: 'https://mcp.example.com/v1',
             mcpModel: 'remote-model',
         });

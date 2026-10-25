@@ -8,6 +8,7 @@ const countQfd = vi.fn();
 const countFitness = vi.fn();
 const countCustomerRequirement = vi.fn();
 const findProject = vi.fn();
+const findRequirements = vi.fn();
 const transaction = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
@@ -16,7 +17,7 @@ vi.mock('../lib/prisma', () => ({
         benchmark: { count: countBenchmark },
         qFDMatrix: { count: countQfd },
         attributeFitness: { count: countFitness },
-        customerRequirement: { count: countCustomerRequirement },
+        customerRequirement: { count: countCustomerRequirement, findMany: findRequirements },
         project: { findUnique: findProject },
         $transaction: (...args: unknown[]) => transaction(...(args as [])),
     },
@@ -56,6 +57,8 @@ beforeEach(() => {
         Promise.resolve(args?.where?.id?.notIn ? 0 : 5)
     );
     findProject.mockResolvedValue({ id: 'proj_1' });
+    // 다른 프로젝트에 같은 id 가 있는지 보는 조회(B13). 기본은 없음.
+    findRequirements.mockResolvedValue([]);
     transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         if (typeof fn !== 'function') return undefined;
         return fn({
