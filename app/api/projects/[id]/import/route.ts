@@ -2,12 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cascadeConfirmResponse } from '@/lib/cascade-confirm-response';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
-import { parseExcelFile, ParsedExcelData, ParsedSheet } from '@/lib/excel-parser';
-import {
-    parseWorkbookImport,
-    type WorkbookImportRecords,
-    type WorkbookWritePolicy,
-} from '@/lib/workbook-importer';
+import { parseExcelFile, type ParsedExcelData, type ParsedSheet } from '@/lib/excel-parser';
+import { parseWorkbookImport } from '@/lib/workbook-importer';
+import { selectSheets, toSheetPreview } from '@/lib/workbook-import-sheets';
+import { applyImportedRecords, DuplicateTechnicalNameError } from '@/lib/workbook-import-apply';
 import {
     countCascadeImpact,
     describeCascadeImpact,
@@ -16,16 +14,9 @@ import {
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { parseWritePolicy } from '@/lib/write-policy';
-
-import { hasDuplicateTechnicalNames } from '@/lib/qfd-technical-sync';
 import { guardUploadedExcel } from '@/lib/upload-guard';
 
-class DuplicateTechnicalNameError extends Error {}
-
 const log = createLogger('api/import');
-
-const PREVIEW_ROW_LIMIT = 8;
-const PREVIEW_COL_LIMIT = 8;
 
 function parseRequestedSheetNames(rawValue: FormDataEntryValue | null) {
     if (!rawValue || typeof rawValue !== 'string') return [];
@@ -37,194 +28,6 @@ function parseRequestedSheetNames(rawValue: FormDataEntryValue | null) {
 
 function parseAction(rawValue: FormDataEntryValue | null) {
     return rawValue === 'apply' ? 'apply' : 'preview';
-}
-
-function normalizeSheetName(name: string) {
-    return name.toLowerCase().replace(/[\s_\-()[\]{}]/g, '');
-}
-
-function getRequestedSheetAliases(requestedName: string) {
-    const normalized = normalizeSheetName(requestedName);
-    if (normalized.includes('제품속성')) return ['제품속성표', '제품속성서', '제품속성'];
-    if (normalized.includes('고객요구사항')) return ['고객요구사항도출표', '고객요구사항', '요구사항도출'];
-    if (normalized.includes('asis') || normalized.includes('as-is') || normalized.includes('스펙')) return ['AS-IS스펙표', 'AS-IS 스펙표', 'ASIS스펙', '스펙표'];
-    return [requestedName];
-}
-
-function matchesRequestedSheetName(sheetName: string, requestedName: string) {
-    const normalizedSheetName = normalizeSheetName(sheetName);
-    return getRequestedSheetAliases(requestedName).some((alias) => {
-        const normalizedAlias = normalizeSheetName(alias);
-        return (
-            normalizedSheetName === normalizedAlias ||
-            normalizedSheetName.includes(normalizedAlias) ||
-            normalizedAlias.includes(normalizedSheetName)
-        );
-    });
-}
-
-function countNonEmptyCells(sheet: ParsedSheet) {
-    return sheet.data.reduce((total, row) => {
-        return total + row.filter((value) => value !== null && value !== undefined && `${value}`.trim() !== '').length;
-    }, 0);
-}
-
-function toSheetPreview(sheet: ParsedSheet) {
-    return {
-        name: sheet.name,
-        rowCount: sheet.rowCount,
-        colCount: sheet.colCount,
-        nonEmptyCellCount: countNonEmptyCells(sheet),
-        formulaCount: sheet.formulas ? Object.keys(sheet.formulas).length : 0,
-        previewRows: sheet.data
-            .slice(0, PREVIEW_ROW_LIMIT)
-            .map((row) => row.slice(0, PREVIEW_COL_LIMIT)),
-    };
-}
-
-function selectSheets(parsedData: ParsedExcelData, requestedSheetNames: string[]) {
-    if (requestedSheetNames.length === 0) {
-        return parsedData.sheets;
-    }
-
-    const missingSheets: string[] = [];
-    const selectedSheets = requestedSheetNames
-        .map((requestedName) => {
-            const sheet = parsedData.sheets.find(
-                (item) => matchesRequestedSheetName(item.name, requestedName)
-            );
-            if (!sheet) missingSheets.push(requestedName);
-            return sheet;
-        })
-        .filter((sheet): sheet is ParsedSheet => Boolean(sheet));
-
-    return { selectedSheets, missingSheets };
-}
-
-function selectedSheetsInclude(selectedSheets: string[], keywords: string[]) {
-    return selectedSheets.some((sheetName) => {
-        const normalizedSheetName = normalizeSheetName(sheetName);
-        return keywords.some((keyword) => normalizedSheetName.includes(normalizeSheetName(keyword)));
-    });
-}
-
-/** 시트가 많은 워크북도 한 트랜잭션 안에서 끝내야 하므로 넉넉히 잡는다. */
-const IMPORT_TIMEOUT_MS = 60_000;
-const IMPORT_MAX_WAIT_MS = 15_000;
-
-async function applyImportedRecords(
-    projectId: string,
-    records: WorkbookImportRecords,
-    writePolicy: WorkbookWritePolicy,
-    metadata: { userId: string; fileName: string; fileSize: number; selectedSheets: string[] }
-) {
-    const counts = Object.fromEntries(
-        Object.entries(records).map(([key, value]) => [key, value.length])
-    ) as Record<keyof WorkbookImportRecords, number>;
-
-    // 워크북 하나가 11개 테이블을 지우고 다시 채운다. 원격 DB 에서는 이 왕복이
-    // Prisma 기본 제한(5초)을 쉽게 넘겨, 중간에 트랜잭션이 닫히고 P2028 로 전부
-    // 롤백된다(실제로 9.4초 지점에서 끊겼다). 시트가 많은 파일까지 감안해 넉넉히 준다.
-    // maxWait 는 커넥션을 기다리는 시간이라, 여러 요청이 겹칠 때를 위해 함께 늘린다.
-    await prisma.$transaction(async (tx) => {
-        if (records.technicalCharacteristics.length > 0) {
-            await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
-            const existing = writePolicy === 'append'
-                ? await tx.technicalCharacteristic.findMany({ where: { projectId }, select: { name: true } }) : [];
-            if (hasDuplicateTechnicalNames([...existing, ...records.technicalCharacteristics].map(tech => tech.name))) {
-                throw new DuplicateTechnicalNameError();
-            }
-        }
-        if (writePolicy === 'replace') {
-            if (records.specFunctions.length > 0) await tx.specFunction.deleteMany({ where: { projectId } });
-            if (records.productAttributes.length > 0) {
-                await tx.attributeFitness.deleteMany({ where: { projectId } });
-                await tx.productAttribute.deleteMany({ where: { projectId } });
-            }
-            if (records.customerRequirements.length > 0) await tx.customerRequirement.deleteMany({ where: { projectId } });
-            if (records.technicalCharacteristics.length > 0) {
-                await tx.qFDMatrix.deleteMany({ where: { projectId } });
-                await tx.techCorrelation.deleteMany({ where: { projectId } });
-                await tx.technicalCharacteristic.deleteMany({ where: { projectId } });
-            }
-            if (
-                records.improvementItems.length > 0
-                || selectedSheetsInclude(metadata.selectedSheets, ['개선포인트도출', '개선포인트'])
-            ) await tx.improvementItem.deleteMany({ where: { projectId } });
-            if (records.targetSpecs.length > 0) await tx.targetSpec.deleteMany({ where: { projectId } });
-            if (records.techRoadmaps.length > 0) await tx.techRoadmap.deleteMany({ where: { projectId } });
-            if (records.assetItems.length > 0) await tx.assetItem.deleteMany({ where: { projectId } });
-            if (records.fundingPlans.length > 0) await tx.fundingPlan.deleteMany({ where: { projectId } });
-            if (records.fundingSources.length > 0) await tx.fundingSource.deleteMany({ where: { projectId } });
-            if (records.salesEstimates.length > 0) await tx.salesEstimate.deleteMany({ where: { projectId } });
-        }
-
-        if (records.salesEstimates.length > 0) {
-            await tx.salesEstimate.createMany({
-                data: records.salesEstimates.map((row) => ({
-                    customer: row.customer,
-                    period: row.period === 'Y_PLUS_1' ? 'Y_PLUS_1' : 'Y',
-                    amount: Number(row.amount) || 0,
-                    futureAmount: 0,
-                    competitor: row.competitor,
-                    order: row.order,
-                    projectId,
-                })),
-            });
-        }
-        if (records.specFunctions.length > 0) {
-            await tx.specFunction.createMany({ data: records.specFunctions.map((row) => ({ ...row, projectId })) });
-        }
-        if (records.productAttributes.length > 0) {
-            await tx.productAttribute.createMany({ data: records.productAttributes.map((row) => ({ ...row, projectId })) });
-        }
-        if (records.customerRequirements.length > 0) {
-            await tx.customerRequirement.createMany({ data: records.customerRequirements.map((row) => ({ ...row, projectId })) });
-        }
-        if (records.technicalCharacteristics.length > 0) {
-            const existing = await tx.technicalCharacteristic.findMany({ where: { projectId }, select: { groupIndex: true } });
-            const firstGroup = existing.length ? Math.max(...existing.map(row => row.groupIndex)) + 1 : 0;
-            await tx.technicalCharacteristic.createMany({ data: records.technicalCharacteristics.map((row, index) => ({
-                ...row, projectId, groupIndex: firstGroup + Math.floor(index / 3), columnOrder: index,
-            })) });
-            await tx.project.update({ where: { id: projectId }, data: { qfdTechnicalInitialized: true } });
-        }
-        if (records.improvementItems.length > 0) {
-            await tx.improvementItem.createMany({ data: records.improvementItems.map((row) => ({ ...row, projectId })) });
-        }
-        if (records.targetSpecs.length > 0) {
-            await tx.targetSpec.createMany({ data: records.targetSpecs.map((row) => ({ ...row, projectId })) });
-        }
-        if (records.techRoadmaps.length > 0) {
-            await tx.techRoadmap.createMany({ data: records.techRoadmaps.map((row) => ({ ...row, projectId })) });
-        }
-        if (records.assetItems.length > 0) {
-            await tx.assetItem.createMany({ data: records.assetItems.map((row) => ({ ...row, projectId })) });
-        }
-        if (records.fundingPlans.length > 0) {
-            await tx.fundingPlan.createMany({ data: records.fundingPlans.map((row) => ({ ...row, projectId })) });
-        }
-        if (records.fundingSources.length > 0) {
-            await tx.fundingSource.createMany({ data: records.fundingSources.map((row) => ({ ...row, projectId })) });
-        }
-
-        await tx.migrationHistory.create({
-            data: {
-                projectId,
-                userId: metadata.userId,
-                fileName: metadata.fileName,
-                fileSize: metadata.fileSize,
-                sheetsMigrated: JSON.stringify({
-                    selectedSheets: metadata.selectedSheets,
-                    counts,
-                    writePolicy,
-                }),
-                status: 'SUCCESS',
-            },
-        });
-    }, { timeout: IMPORT_TIMEOUT_MS, maxWait: IMPORT_MAX_WAIT_MS });
-
-    return counts;
 }
 
 export async function POST(
@@ -321,36 +124,9 @@ export async function POST(
             });
         }
 
-        return NextResponse.json({
-            success: true,
-            readOnly: action !== 'apply',
-            applied: action === 'apply',
-            writePolicy,
-            cascadeImpact,
-            cascadeWarning: describeCascadeImpact(cascadeImpact),
-            mode: requestedSheetNames.length > 0 ? 'worksheet' : 'workbook',
-            workbook: {
-                fileName: parsedData.fileName,
-                fileSize: parsedData.fileSize,
-                totalSheets: parsedData.sheets.length,
-                availableSheets: parsedData.sheets.map((sheet) => sheet.name),
-            },
-            sheetsProcessed: selectedSheets.length,
-            selectedSheets: selectedSheets.map((sheet) => sheet.name),
-            recognizedSheets: importResult.recognizedSheets,
-            unknownSheets: importResult.unknownSheets,
-            sheetPreviews: selectedSheets.map(toSheetPreview),
-            requirementCount: importResult.counts.customerRequirements,
-            counts: importResult.counts,
-            appliedCounts,
-            extracted: {
-                customerRequirements: importResult.records.customerRequirements.slice(0, 50),
-            },
-            warnings: importResult.warnings,
-            errors: importResult.errors,
-            formulaIssues: importResult.formulaIssues,
-            parseErrors: parsedData.parseErrors,
-        });
+        return NextResponse.json(importResponseBody({
+            action, writePolicy, requestedSheetNames, parsedData, selectedSheets, importResult, cascadeImpact, appliedCounts,
+        }));
     } catch (error: unknown) {
         if (error instanceof DuplicateTechnicalNameError) {
             return NextResponse.json({ error: '중복된 기술특성이 있습니다. 기존 항목과 파일의 기술특성 이름을 확인해 주세요.' }, { status: 409 });
@@ -362,4 +138,48 @@ export async function POST(
             context: { projectId: params.id },
         });
     }
+}
+
+/** 미리보기와 반영이 같은 모양으로 돌려주는 결과. 화면은 이 하나로 두 단계를 그린다. */
+function importResponseBody(result: {
+    action: 'apply' | 'preview';
+    writePolicy: ReturnType<typeof parseWritePolicy>;
+    requestedSheetNames: string[];
+    parsedData: ParsedExcelData;
+    selectedSheets: ParsedSheet[];
+    importResult: ReturnType<typeof parseWorkbookImport>;
+    cascadeImpact: Awaited<ReturnType<typeof countCascadeImpact>>;
+    appliedCounts: Record<string, number> | null;
+}) {
+    const { action, writePolicy, requestedSheetNames, parsedData, selectedSheets, importResult, cascadeImpact, appliedCounts } = result;
+    return {
+        success: true,
+        readOnly: action !== 'apply',
+        applied: action === 'apply',
+        writePolicy,
+        cascadeImpact,
+        cascadeWarning: describeCascadeImpact(cascadeImpact),
+        mode: requestedSheetNames.length > 0 ? 'worksheet' : 'workbook',
+        workbook: {
+            fileName: parsedData.fileName,
+            fileSize: parsedData.fileSize,
+            totalSheets: parsedData.sheets.length,
+            availableSheets: parsedData.sheets.map((sheet) => sheet.name),
+        },
+        sheetsProcessed: selectedSheets.length,
+        selectedSheets: selectedSheets.map((sheet) => sheet.name),
+        recognizedSheets: importResult.recognizedSheets,
+        unknownSheets: importResult.unknownSheets,
+        sheetPreviews: selectedSheets.map(toSheetPreview),
+        requirementCount: importResult.counts.customerRequirements,
+        counts: importResult.counts,
+        appliedCounts,
+        extracted: {
+            customerRequirements: importResult.records.customerRequirements.slice(0, 50),
+        },
+        warnings: importResult.warnings,
+        errors: importResult.errors,
+        formulaIssues: importResult.formulaIssues,
+        parseErrors: parsedData.parseErrors,
+    };
 }
