@@ -182,6 +182,12 @@ function nonZeroCell(row: unknown[] | undefined, col: number): string {
     return value === '0' ? '' : value;
 }
 
+/** 양식에 따라 없을 수 있는 열의 값. 열이 없거나 칸이 비면 null 이다. */
+function optionalCell(row: unknown[] | undefined, col: number): string | null {
+    if (col < 0) return null;
+    return cell(row, col) || null;
+}
+
 function findHeader(sheet: ParsedSheet, keywords: string[]): { rowIndex: number; columns: number[] } | null {
     const normalizedKeywords = keywords.map(normalize);
     for (let rowIndex = 0; rowIndex < sheet.data.length; rowIndex++) {
@@ -284,6 +290,14 @@ function parseSales(sheet: ParsedSheet) {
     return records;
 }
 
+type SpecLevel = WorkbookImportRecords['specFunctions'][number]['level'];
+
+function specLeafLevel(sub: string, detail: string): SpecLevel {
+    if (detail) return 'DETAIL';
+    if (sub) return 'SUB';
+    return 'CORE';
+}
+
 function parseSpec(sheet: ParsedSheet) {
     const records: WorkbookImportRecords['specFunctions'] = [];
     const header = findHeader(sheet, ['핵심', '세부', '기술']);
@@ -307,18 +321,21 @@ function parseSpec(sheet: ParsedSheet) {
         const technology = cell(row, techCol);
         if (!core && !sub && !detail && !technology) continue;
 
+        // 한 행의 기술 칸은 그 행에서 가장 아래 단계(세세부 > 세부 > 핵심)의 기능에 붙는다.
+        const leafLevel = specLeafLevel(sub, detail);
+        const technologyFor = (level: SpecLevel) => (level === leafLevel ? technology || null : null);
         const coreId = generateId('spec');
         const subId = generateId('spec');
         if (core) {
-            records.push({ id: coreId, level: 'CORE', name: core, technology: !sub && !detail ? technology || null : null, order: records.length });
+            records.push({ id: coreId, level: 'CORE', name: core, technology: technologyFor('CORE'), order: records.length });
             currentCoreId = coreId;
             currentSubId = null;
         }
         if (sub) {
-            records.push({ id: subId, level: 'SUB', parentId: currentCoreId, name: sub, technology: detail ? null : technology || null, order: records.length });
+            records.push({ id: subId, level: 'SUB', parentId: currentCoreId, name: sub, technology: technologyFor('SUB'), order: records.length });
             currentSubId = subId;
         }
-        if (detail) records.push({ id: generateId('spec'), level: 'DETAIL', parentId: currentSubId ?? currentCoreId, name: detail, technology: technology || null, order: records.length });
+        if (detail) records.push({ id: generateId('spec'), level: 'DETAIL', parentId: currentSubId ?? currentCoreId, name: detail, technology: technologyFor('DETAIL'), order: records.length });
         if (!core && !sub && !detail && technology) records.push({ id: generateId('spec'), level: 'CORE', name: technology, technology, order: records.length });
     }
     return records;
@@ -396,55 +413,71 @@ function parseQfdTechnicals(sheet: ParsedSheet) {
     return records;
 }
 
-function parseImprovements(sheet: ParsedSheet) {
+// 개선포인트 시트에는 표가 둘 있다. 예전 양식의 "고객니즈 순위" 표와, 지금 양식의
+// "개선포인트 · 추가 기능 · 성능 향상" 표다. 한 함수에 두 파서가 겹쳐 있어 나눴다
+// (2026-10-25 코드 리뷰 L7).
+function parseImprovementNeeds(sheet: ParsedSheet): WorkbookImportRecords['improvementItems'] {
     const records: WorkbookImportRecords['improvementItems'] = [];
-    const firstHeader = findHeader(sheet, ['순위', '고객니즈']);
-    if (firstHeader) {
-        const headerRow = sheet.data[firstHeader.rowIndex];
-        const priorityCol = findColumn(headerRow, ['순위']);
-        const contentCol = findColumn(headerRow, ['고객니즈']);
-        const rateCol = findColumn(headerRow, ['향상율', '개선율']);
-        const proportionCol = findColumn(headerRow, ['비중']);
-        const isFeatureListHeader = findColumn(headerRow, ['추가 기능', '추가기능']) >= 0
-            || findColumn(headerRow, ['성능향상', '성능 향상']) >= 0;
-        for (let rowIndex = firstHeader.rowIndex + 1; !isFeatureListHeader && rowIndex < sheet.data.length; rowIndex++) {
-            const row = sheet.data[rowIndex];
-            const content = cell(row, contentCol);
-            if (!content) continue;
-            records.push({
-                type: 'need',
-                content,
-                improvementRate: rateCol >= 0 ? cell(row, rateCol) || null : null,
-                devProportion: proportionCol >= 0 ? cell(row, proportionCol) || null : null,
-                priority: priorityCol >= 0 ? cell(row, priorityCol) || null : null,
-                order: records.length,
-            });
-        }
-    }
+    const header = findHeader(sheet, ['순위', '고객니즈']);
+    if (!header) return records;
+    const headerRow = sheet.data[header.rowIndex];
+    // 지금 양식의 표 머리에도 '순위'·'고객니즈'가 함께 있을 수 있다. 그건 아래 표의 몫이다.
+    const isFeatureListHeader = findColumn(headerRow, ['추가 기능', '추가기능']) >= 0
+        || findColumn(headerRow, ['성능향상', '성능 향상']) >= 0;
+    if (isFeatureListHeader) return records;
+    const priorityCol = findColumn(headerRow, ['순위']);
+    const contentCol = findColumn(headerRow, ['고객니즈']);
+    const rateCol = findColumn(headerRow, ['향상율', '개선율']);
+    const proportionCol = findColumn(headerRow, ['비중']);
+    // 아래에 지금 양식의 기능 표가 이어 붙어 있으면 그 머리 행에서 멈춘다. 예전에는 시트 끝까지
+    // 읽어, 기능 표의 머리와 행까지 고객니즈로 들어왔다.
     const featureHeader = findHeader(sheet, ['개선포인트', '추가 기능', '성능향상']);
-    if (featureHeader) {
-        const headerRow = sheet.data[featureHeader.rowIndex];
-        const needCol = findColumn(headerRow, ['개선포인트']);
-        const addedFeatureCol = findColumn(headerRow, ['추가 기능', '추가기능']);
-        const performanceCol = findColumn(headerRow, ['성능향상', '성능 향상']);
-        for (let rowIndex = featureHeader.rowIndex + 1; rowIndex < sheet.data.length; rowIndex++) {
-            const row = sheet.data[rowIndex];
-            const customerNeed = nonZeroCell(row, needCol);
-            const addedFeature = nonZeroCell(row, addedFeatureCol);
-            const performanceImprovement = nonZeroCell(row, performanceCol);
-            if (!customerNeed && !addedFeature && !performanceImprovement) continue;
-            records.push({
-                type: 'feature',
-                content: customerNeed || null,
-                // DB 열 이름이 다를 뿐, 추가 기능·성능 향상을 담는다(위 타입 주석 참고).
-                improvementRate: addedFeature || null,
-                devProportion: performanceImprovement || null,
-                priority: null,
-                order: records.filter((record) => record.type === 'feature').length,
-            });
-        }
+    const end = featureHeader && featureHeader.rowIndex > header.rowIndex ? featureHeader.rowIndex : sheet.data.length;
+    for (let rowIndex = header.rowIndex + 1; rowIndex < end; rowIndex++) {
+        const row = sheet.data[rowIndex];
+        const content = cell(row, contentCol);
+        if (!content) continue;
+        records.push({
+            type: 'need',
+            content,
+            improvementRate: optionalCell(row, rateCol),
+            devProportion: optionalCell(row, proportionCol),
+            priority: optionalCell(row, priorityCol),
+            order: records.length,
+        });
     }
     return records;
+}
+
+function parseImprovementFeatures(sheet: ParsedSheet): WorkbookImportRecords['improvementItems'] {
+    const records: WorkbookImportRecords['improvementItems'] = [];
+    const header = findHeader(sheet, ['개선포인트', '추가 기능', '성능향상']);
+    if (!header) return records;
+    const headerRow = sheet.data[header.rowIndex];
+    const needCol = findColumn(headerRow, ['개선포인트']);
+    const addedFeatureCol = findColumn(headerRow, ['추가 기능', '추가기능']);
+    const performanceCol = findColumn(headerRow, ['성능향상', '성능 향상']);
+    for (let rowIndex = header.rowIndex + 1; rowIndex < sheet.data.length; rowIndex++) {
+        const row = sheet.data[rowIndex];
+        const customerNeed = nonZeroCell(row, needCol);
+        const addedFeature = nonZeroCell(row, addedFeatureCol);
+        const performanceImprovement = nonZeroCell(row, performanceCol);
+        if (!customerNeed && !addedFeature && !performanceImprovement) continue;
+        records.push({
+            type: 'feature',
+            content: customerNeed || null,
+            // DB 열 이름이 다를 뿐, 추가 기능·성능 향상을 담는다(위 타입 주석 참고).
+            improvementRate: addedFeature || null,
+            devProportion: performanceImprovement || null,
+            priority: null,
+            order: records.length,
+        });
+    }
+    return records;
+}
+
+function parseImprovements(sheet: ParsedSheet) {
+    return [...parseImprovementNeeds(sheet), ...parseImprovementFeatures(sheet)];
 }
 
 function parseTargetSpecs(sheet: ParsedSheet) {
@@ -463,7 +496,7 @@ function parseTargetSpecs(sheet: ParsedSheet) {
         const category = cell(row, categoryCol);
         const subCategory = cell(row, subCol);
         if (!specItem && !category && !subCategory) continue;
-        records.push({ category: category || null, subCategory: subCategory || null, specItem: specItem || null, note: noteCol >= 0 ? cell(row, noteCol) || null : null, order: records.length });
+        records.push({ category: category || null, subCategory: subCategory || null, specItem: specItem || null, note: optionalCell(row, noteCol), order: records.length });
     }
     return records;
 }
@@ -484,7 +517,7 @@ function parseTechRoadmap(sheet: ParsedSheet) {
         const category = cell(row, directionCol);
         const targetCustomer = cell(row, targetCol);
         if (!techItem && !category && !targetCustomer) continue;
-        const feasibility = feasibilityCol >= 0 ? cell(row, feasibilityCol) || null : null;
+        const feasibility = optionalCell(row, feasibilityCol);
         records.push({ category: category || null, techItem: techItem || null, currentLevel: feasibility, owner: targetCustomer || null, order: records.length });
     }
     return records;
@@ -514,12 +547,16 @@ function parseFundingPlans(sheet: ParsedSheet) {
         const category = cell(row, 0);
         const item = cell(row, 1);
         if (!category && !item) continue;
+        // 매출액 행의 2·3차년도는 비워 둘 수 있다(아직 모름). 0 으로 읽으면 "매출 0원"이 되므로
+        // 빈 칸은 null 로 남긴다. 다른 행은 빈 칸도 0 이다.
+        const isRevenueRow = category === '매출액' || item === '매출액';
+        const yearAmount = (col: number) => (isRevenueRow && !cell(row, col) ? null : numberValue(row?.[col]));
         records.push({
             category: category || null,
             item: item || null,
             year1: numberValue(row?.[2]),
-            year2: (category === '매출액' || item === '매출액') && !cell(row, 3) ? null : numberValue(row?.[3]),
-            year3: (category === '매출액' || item === '매출액') && !cell(row, 4) ? null : numberValue(row?.[4]),
+            year2: yearAmount(3),
+            year3: yearAmount(4),
             order: records.length,
         });
     }

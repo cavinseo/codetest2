@@ -404,3 +404,52 @@ describe('병합된 스펙 칸 (B7)', () => {
         expect(byName('세금 계산').parentId).toBe(byName('정산').id);
     });
 });
+
+describe('L7 정리 뒤에도 같은 값을 읽는다', () => {
+    it('예전 양식의 고객니즈 순위 표와 지금 양식의 기능 표를 한 시트에서 함께 읽는다', () => {
+        const result = parseWorkbookImport(workbook([sheet('개선포인트도출', [
+            ['순위', '고객니즈', '향상율', '비중'],
+            [1, '빠르게', '20%', ''],
+            ['', '정확하게', '', '30'],
+            [],
+            ['개선포인트', '추가 기능', '성능향상'],
+            ['빠르게', '자동 추천', '1초 단축'],
+        ])]), { sheetNames: ['개선포인트도출'] });
+
+        expect(result.records.improvementItems).toEqual([
+            { type: 'need', content: '빠르게', improvementRate: '20%', devProportion: null, priority: '1', order: 0 },
+            { type: 'need', content: '정확하게', improvementRate: null, devProportion: '30', priority: null, order: 1 },
+            // 기능 표의 순서는 기능 행끼리 센다.
+            { type: 'feature', content: '빠르게', improvementRate: '자동 추천', devProportion: '1초 단축', priority: null, order: 0 },
+        ]);
+    });
+
+    it('예전 표에 비율·비중 열이 없으면 그 값은 null 이다', () => {
+        const result = parseWorkbookImport(workbook([sheet('개선포인트도출', [
+            ['순위', '고객니즈'],
+            [1, '빠르게'],
+        ])]), { sheetNames: ['개선포인트도출'] });
+
+        expect(result.records.improvementItems).toEqual([
+            { type: 'need', content: '빠르게', improvementRate: null, devProportion: null, priority: '1', order: 0 },
+        ]);
+    });
+
+    it('한 행의 기술 칸은 그 행의 가장 아래 단계 기능에만 붙는다', () => {
+        const result = parseWorkbookImport(workbook([sheet('AS-IS스펙표', [
+            ['핵심스펙(기능)', '세부스펙(기능)', '세세부스펙', '기술적 특성'],
+            ['주문', '', '', '주문 기술'],
+            ['결제', '간편 결제', '', '결제 기술'],
+            ['정산', '수수료', '세금 계산', '세율표'],
+        ])]), { sheetNames: ['AS-IS스펙표'] });
+
+        expect(result.records.specFunctions.map((item) => [item.name, item.technology])).toEqual([
+            ['주문', '주문 기술'],
+            ['결제', null],
+            ['간편 결제', '결제 기술'],
+            ['정산', null],
+            ['수수료', null],
+            ['세금 계산', '세율표'],
+        ]);
+    });
+});
