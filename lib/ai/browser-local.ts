@@ -5,7 +5,7 @@
 //
 // 주의: 브라우저가 만든 결과는 신뢰할 수 없다. 여기서는 원문 문자열만 받아 오고,
 // 파싱과 스키마 검증은 서버(spec/generate/complete)가 한다.
-import { extractModelIds, nativeTagsUrl, pickModel } from './endpoint-discovery';
+import { extractModelIds, joinUrl, nativeTagsUrl, pickModel } from './endpoint-discovery';
 
 export interface BrowserLocalEndpoint {
     baseUrl: string;
@@ -27,10 +27,6 @@ export class BrowserLocalError extends Error {
 const PROBE_TIMEOUT_MS = 3_000;
 // 로컬 7B 급 모델은 느리다. 서버측(20초)보다 넉넉하게 잡는다.
 const DEFAULT_CALL_TIMEOUT_MS = 90_000;
-
-function joinUrl(baseUrl: string, path: string): string {
-    return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-}
 
 async function fetchWithTimeout(
     url: string,

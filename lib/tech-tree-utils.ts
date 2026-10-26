@@ -1,4 +1,6 @@
 // WS-10 기능기술체계도 행 생성과 AS-IS 스펙 선택 후보를 만든다.
+import { buildSpecTree } from './spec-tree';
+
 export interface TechTreeSpecFunctionLike {
     id: string;
     level: 'CORE' | 'SUB' | 'DETAIL';
@@ -36,13 +38,11 @@ export interface TechTreeSpecOption {
 export function buildTechTreeSpecOptions(sourceSpecs: TechTreeSpecFunctionLike[]): TechTreeSpecOption[] {
     const sorted = [...sourceSpecs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     const options: TechTreeSpecOption[] = [];
-    const cores = sorted.filter((spec) => spec.level === 'CORE');
 
-    for (const core of cores) {
-        const subs = sorted.filter((spec) => spec.level === 'SUB' && spec.parentId === core.id);
-        for (const sub of subs) {
+    for (const { core, subs } of buildSpecTree(sorted)) {
+        for (const { sub, details } of subs) {
             options.push({ id: sub.id, coreId: core.id, parentId: core.id, depth: 0, coreSpec: core.name, subSpec: sub.name, techCharacteristic: sub.technology || '' });
-            for (const detail of sorted.filter((spec) => spec.level === 'DETAIL' && spec.parentId === sub.id)) {
+            for (const detail of details) {
                 options.push({ id: detail.id, coreId: core.id, parentId: sub.id, depth: 1, coreSpec: core.name, subSpec: detail.name, techCharacteristic: detail.technology || '' });
             }
         }

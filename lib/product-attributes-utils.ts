@@ -1,3 +1,5 @@
+import { buildSpecTree } from './spec-tree';
+
 export interface AttributeSpecFunctionLike {
     id: string;
     level: 'CORE' | 'SUB' | 'DETAIL';
@@ -89,13 +91,10 @@ export function buildSpecPickerRows(
     specs: AttributeSpecFunctionLike[],
     field: 'attribute' | 'techCapability'
 ): SpecPickerRow[] {
-    const sorted = [...specs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    const cores = sorted.filter((spec) => spec.level === 'CORE');
     const rows: SpecPickerRow[] = [];
     let rowNo = 0;
 
-    for (const core of cores) {
-        const subs = sorted.filter((spec) => spec.level === 'SUB' && spec.parentId === core.id);
+    for (const { core, subs } of buildSpecTree(specs)) {
         if (subs.length === 0) {
             const technology = core.technology?.trim() || '';
             rows.push({
@@ -110,8 +109,7 @@ export function buildSpecPickerRows(
             continue;
         }
 
-        for (const sub of subs) {
-            const details = sorted.filter((spec) => spec.level === 'DETAIL' && spec.parentId === sub.id);
+        for (const { sub, details } of subs) {
             if (details.length === 0) {
                 const technology = sub.technology?.trim() || '';
                 rows.push({

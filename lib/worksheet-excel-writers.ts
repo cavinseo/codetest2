@@ -10,6 +10,7 @@ import { dedupeByAttributeName } from './product-attributes-utils';
 import { parseSourceYear } from './funding-ai-agent';
 import { buildFundingPlansWithSales, buildTargetSpecAdditionsFromTechTree } from './worksheet-links';
 import { addTable, addTotals, sortByOrder, cachedFormula, textDisplayWidth, writeNumericFormula, type ExcelCellValue } from './worksheet-excel-layout';
+import { buildSpecTree } from './spec-tree';
 
 function writeSalesSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
     const { project } = context;
@@ -23,13 +24,10 @@ function writeSalesSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContex
 
 function writeSpecSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
     const { project } = context;
-    const specFunctions = sortByOrder(project.specFunctions);
     const specRows: ExcelCellValue[][] = [];
-    for (const coreSpec of specFunctions.filter(spec => spec.level === 'CORE')) {
-        const subSpecs = specFunctions.filter(spec => spec.level === 'SUB' && spec.parentId === coreSpec.id);
-        if (coreSpec.technology || !subSpecs.length) specRows.push([coreSpec.name, '', '', coreSpec.technology]);
-        for (const subSpec of subSpecs) {
-            const detailSpecs = specFunctions.filter(spec => spec.level === 'DETAIL' && spec.parentId === subSpec.id);
+    for (const { core: coreSpec, subs } of buildSpecTree(project.specFunctions)) {
+        if (coreSpec.technology || !subs.length) specRows.push([coreSpec.name, '', '', coreSpec.technology]);
+        for (const { sub: subSpec, details: detailSpecs } of subs) {
             if (subSpec.technology || !detailSpecs.length) specRows.push([coreSpec.name, subSpec.name, '', subSpec.technology]);
             detailSpecs.forEach(detail => specRows.push([coreSpec.name, subSpec.name, detail.name, detail.technology]));
         }

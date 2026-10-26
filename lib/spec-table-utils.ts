@@ -1,3 +1,5 @@
+import { buildSpecTree } from './spec-tree';
+
 export interface SpecFunctionLike {
     id: string;
     level: 'CORE' | 'SUB' | 'DETAIL';
@@ -17,11 +19,7 @@ export interface FlatSpecRowLike {
 
 export function buildFlatSpecRowsFromFunctions(specs: SpecFunctionLike[]): FlatSpecRowLike[] {
     const newRows: FlatSpecRowLike[] = [];
-    const sorted = [...specs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    const sortedCores = sorted.filter((spec) => spec.level === 'CORE');
-
-    for (const core of sortedCores) {
-        const subs = sorted.filter((spec) => spec.parentId === core.id && spec.level === 'SUB');
+    for (const { core, subs } of buildSpecTree(specs)) {
         if (subs.length === 0) {
             newRows.push({
                 id: Math.random().toString(36).slice(2),
@@ -33,8 +31,7 @@ export function buildFlatSpecRowsFromFunctions(specs: SpecFunctionLike[]): FlatS
             continue;
         }
 
-        for (const sub of subs) {
-            const details = sorted.filter((spec) => spec.parentId === sub.id && spec.level === 'DETAIL');
+        for (const { sub, details } of subs) {
             if (details.length === 0) {
                 newRows.push({
                     id: Math.random().toString(36).slice(2),

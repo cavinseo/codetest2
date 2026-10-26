@@ -1,4 +1,5 @@
 import { buildTechTreeSpecOptions, type TechTreeSpecFunctionLike } from './tech-tree-utils';
+import { buildSpecTree } from './spec-tree';
 
 export interface QfdRequirementLinkInput {
     requirementId: string;
@@ -143,16 +144,13 @@ export function buildFundingPlansWithSales({
 }
 
 export function buildTargetSpecsFromAsIs(specs: Array<Omit<TechTreeSpecFunctionLike, 'level'> & { level: string }>): TargetSpecSuggestion[] {
-    const sorted = [...specs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     const result: TargetSpecSuggestion[] = [];
     const append = (spec: Omit<TechTreeSpecFunctionLike, 'level'>, category: string, subCategory: string) => {
         result.push({ id: 'asis_' + spec.id, category, subCategory, specItem: spec.technology ?? '', unit: '', targetValue: '', note: '유지', order: result.length });
     };
-    for (const core of sorted.filter((spec) => spec.level === 'CORE')) {
-        const subs = sorted.filter((spec) => spec.level === 'SUB' && spec.parentId === core.id);
+    for (const { core, subs } of buildSpecTree(specs)) {
         if (core.technology || subs.length === 0) append(core, core.name, '');
-        for (const sub of subs) {
-            const details = sorted.filter((spec) => spec.level === 'DETAIL' && spec.parentId === sub.id);
+        for (const { sub, details } of subs) {
             if (sub.technology || details.length === 0) append(sub, core.name, sub.name);
             for (const detail of details) {
                 append(detail, core.name, sub.name + ' > ' + detail.name);

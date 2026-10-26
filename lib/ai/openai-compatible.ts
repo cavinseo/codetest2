@@ -1,7 +1,7 @@
 // OpenAI 호환 엔드포인트(Ollama, LM Studio, 헤르메스, 클라우드 API)를 하나의 클라이언트로 다룬다.
 // 응답은 자유 텍스트가 아니라 JSON 스키마로 강제하고 Zod 로 검증한다. 검증에 실패하면 1회 교정 재시도한다.
 import type { z } from 'zod';
-import { extractModelIds, nativeTagsUrl, pickModel } from './endpoint-discovery';
+import { extractModelIds, joinUrl, nativeTagsUrl, pickModel } from './endpoint-discovery';
 import {
     buildAttributeDraftPrompts,
     buildMentorQuestionsPrompts,
@@ -69,10 +69,6 @@ export function assertAllowedBaseUrl(baseUrl: string, allowRemoteHost = false): 
     }
 
     return url;
-}
-
-function joinUrl(baseUrl: string, path: string): string {
-    return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
 
 interface TimedJsonResponse {

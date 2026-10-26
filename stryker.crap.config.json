@@ -36,7 +36,9 @@
         "lib/final-report-edit.ts",
         "lib/final-report-document.ts",
         "lib/report-image-fit.ts",
-        "lib/project-grouping.ts"
+        "lib/project-grouping.ts",
+        "lib/spec-tree.ts",
+        "lib/add-days.ts"
     ],
     "ignorePatterns": [
         ".claude/**",

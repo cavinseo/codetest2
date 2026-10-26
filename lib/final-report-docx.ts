@@ -1,32 +1,14 @@
 // 모델의 내용 결정을 보존하면서 브라우저에서 Word 문서로 직렬화한다.
 import {
-    AlignmentType, Document, HeadingLevel, ImageRun, Packer, PageOrientation, Paragraph,
-    SectionType, Table, TableCell, TableRow, TextRun, VerticalAlign, WidthType, convertMillimetersToTwip,
-    type ISectionOptions,
+    AlignmentType, Document, HeadingLevel, ImageRun, Packer, PageOrientation, Paragraph, SectionType, Table, TableRow, TextRun, WidthType, type ISectionOptions,
 } from 'docx';
+import { A4_PORTRAIT_PAGE, textCell } from './docx-common';
 import type { FinalReportBlock, FinalReportModel } from './final-report-document';
 import { renderTemplateReportDocx } from './final-report-template-docx';
 import { getFitnessReportExcludedIndexes } from './final-report-fitness';
 import { normalizeReportLabels } from './final-report-labels';
 
-const PAGE = {
-    size: { orientation: PageOrientation.PORTRAIT, width: convertMillimetersToTwip(210), height: convertMillimetersToTwip(297) },
-    margin: {
-        top: convertMillimetersToTwip(20), bottom: convertMillimetersToTwip(20),
-        left: convertMillimetersToTwip(20), right: convertMillimetersToTwip(20),
-    },
-};
-
-function cell(text: string, options: { bold?: boolean; align?: (typeof AlignmentType)[keyof typeof AlignmentType]; width: number }) {
-    return new TableCell({
-        width: { size: options.width, type: WidthType.PERCENTAGE },
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({
-            alignment: options.align ?? AlignmentType.LEFT,
-            children: [new TextRun({ text, bold: options.bold })],
-        })],
-    });
-}
+const PAGE = A4_PORTRAIT_PAGE;
 
 function renderBlock(block: FinalReportBlock): Paragraph | Table {
     switch (block.kind) {
@@ -44,7 +26,7 @@ function renderBlock(block: FinalReportBlock): Paragraph | Table {
             return new Table({
                 width: { size: 100, type: WidthType.PERCENTAGE },
                 rows: block.rows.map(row => new TableRow({ children: [
-                    cell(row.label, { width: 30, bold: true }), cell(row.value, { width: 70 }),
+                    textCell(row.label, { width: 30, bold: true }), textCell(row.value, { width: 70 }),
                 ] })),
             });
         case 'dataTable':
@@ -53,10 +35,10 @@ function renderBlock(block: FinalReportBlock): Paragraph | Table {
                 rows: [
                     new TableRow({
                         tableHeader: true,
-                        children: block.headers.map(text => cell(text, { width: 100 / block.headers.length, bold: true, align: AlignmentType.CENTER })),
+                        children: block.headers.map(text => textCell(text, { width: 100 / block.headers.length, bold: true, align: AlignmentType.CENTER })),
                     }),
                     ...block.rows.map(row => new TableRow({
-                        children: row.map(text => cell(text, { width: 100 / block.headers.length })),
+                        children: row.map(text => textCell(text, { width: 100 / block.headers.length })),
                     })),
                 ],
             });
