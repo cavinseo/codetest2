@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import ProductAttributesTable from '@/components/project/ProductAttributesTable';
@@ -28,17 +28,9 @@ import AssetsTable from '@/components/project/AssetsTable';
 import FundingTable from '@/components/project/FundingTable';
 import KanoSatisfactionGraph from '@/components/project/KanoSatisfactionGraph';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
-import {
-    getBusinessPlanFileValidationError,
-    parseBusinessPlanFile,
-    readAndSerializeBusinessPlanFile,
-} from '@/lib/business-plan-file';
 import { useRouter } from 'next/navigation';
 import { isProjectWriteRole } from '@/lib/project-roles';
-
-function isExcelFileName(fileName: string) {
-    return /\.(xlsx|xls)$/i.test(fileName.trim());
-}
+import { useProjectOverviewEditor } from '@/components/project/useProjectOverviewEditor';
 
 interface ProjectData extends ProductOverview {
     id: string;
@@ -102,92 +94,77 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
     const [worksheetCompleteness, setWorksheetCompleteness] = useState<WorksheetCompleteness | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
-    const [isOverviewEditing, setIsOverviewEditing] = useState(false);
-    const [isOverviewSaving, setIsOverviewSaving] = useState(false);
-    const [isProductImageReading, setIsProductImageReading] = useState(false);
-    const [isOverviewFileReading, setIsOverviewFileReading] = useState(false);
-    const [isOverviewFileDirty, setIsOverviewFileDirty] = useState(false);
-    const [overviewError, setOverviewError] = useState('');
-    // 사업계획 양식에서 어떤 항목이 자동으로 채워졌는지 알려주는 안내 문구
-    const [overviewAutoFillNotice, setOverviewAutoFillNotice] = useState('');
-    const overviewFileSelectionRef = useRef(0);
-    const [overviewForm, setOverviewForm] = useState<ProductOverview & { name: string; description: string; detailedDescription: string; businessPlanFile: string }>({
-        name: '',
-        description: '',
-        detailedDescription: '',
-        businessPlanFile: '',
-    });
+    const {
+        overviewForm, setOverviewForm, isOverviewEditing, setIsOverviewEditing, isOverviewSaving,
+        isProductImageReading, setIsProductImageReading, isOverviewFileReading, overviewError, setOverviewError,
+        overviewAutoFillNotice, projectBusinessPlanFile, formBusinessPlanFile,
+        handleOverviewCancel, handleOverviewFileSelect, handleTemplateDownload, handleOverviewFileRemove, handleOverviewSave,
+    } = useProjectOverviewEditor(projectId, project, setProject);
 
     useEffect(() => {
+        let active = true;
         async function loadData() {
             setIsLoading(true); setLoadError(''); setProject(null);
+            // 서로 기다릴 이유가 없는 요청 다섯 개를 한꺼번에 보낸다. 예전에는 하나씩 차례로 보내
+            // 첫 화면이 왕복 다섯 번만큼 늦게 떴다(2026-10-25 코드 리뷰 L5). 개요만 필수이고, 나머지
+            // (목록의 멤버 수, 워크시트별 건수)는 실패해도 기본값으로 화면을 띄운다.
+            const optional = (url: string) => fetch(url)
+                .then((res) => (res.ok ? res.json() : null))
+                .catch(() => null);
+            const projectsRequest = optional('/api/projects');
+            const requirementsRequest = optional(`/api/projects/${projectId}/requirements`);
+            const kanoAnalysisRequest = optional(`/api/projects/${projectId}/kano/analysis`);
+            const specRequest = optional(`/api/projects/${projectId}/spec`);
             try {
-                // 프로젝트 목록에서 현재 프로젝트 찾기
-                const projRes = await fetch('/api/projects');
-                if (projRes.ok) {
-                    const projData = await projRes.json();
-                    const found = projData.projects?.find((p: any) => p.id === projectId);
-                    if (found) setProject(found);
-                }
-
                 const overviewRes = await fetch(`/api/projects/${projectId}/overview`);
                 if (!overviewRes.ok) {
                     throw new Error(overviewRes.status === 403 ? '이 프로젝트에 접근할 권한이 없습니다. 멘토는 현재 배정된 멘티의 프로젝트만 열람·수정할 수 있습니다.'
                         : overviewRes.status === 401 ? '로그인이 필요합니다.' : '프로젝트를 불러오지 못했습니다. 다시 시도해 주세요.');
                 }
-                if (overviewRes.ok) {
-                    const overviewData = await overviewRes.json();
-                    setWorksheetCompleteness(overviewData.worksheetCompleteness || null);
-                    if (overviewData.project) {
-                        setProject((current) => ({
-                            id: overviewData.project.id,
-                            name: overviewData.project.name,
-                            description: overviewData.project.description || '',
-                            detailedDescription: overviewData.project.detailedDescription || '',
-                            businessPlanFile: overviewData.project.businessPlanFile || '',
-                            productName: overviewData.project.productName,
-                            relatedImages: overviewData.project.relatedImages,
-                            productImageDataUrl: overviewData.project.productImageDataUrl,
-                            productImageWidthPx: overviewData.project.productImageWidthPx,
-                            productImageHeightPx: overviewData.project.productImageHeightPx,
-                            marketDefinition: overviewData.project.marketDefinition,
-                            targetCustomer: overviewData.project.targetCustomer,
-                            additionalMarketData: overviewData.project.additionalMarketData,
-                            createdAt: overviewData.project.createdAt,
-                            memberCount: current?.memberCount ?? 1,
-                            role: overviewData.project.role || current?.role || 'COACH',
-                        }));
-                    }
+                const [overviewData, projData, reqData, kanoAnalysisData, specData] = await Promise.all([
+                    overviewRes.json(), projectsRequest, requirementsRequest, kanoAnalysisRequest, specRequest,
+                ]);
+                // 그사이 다른 프로젝트로 넘어갔으면 늦게 온 응답으로 화면을 덮지 않는다.
+                if (!active) return;
+
+                // 목록의 항목(멤버 수 등)을 먼저 넣고, 개요의 최신 값으로 덮는다.
+                const found = projData?.projects?.find((p: any) => p.id === projectId);
+                if (found) setProject(found);
+                setWorksheetCompleteness(overviewData.worksheetCompleteness || null);
+                if (overviewData.project) {
+                    setProject((current) => ({
+                        id: overviewData.project.id,
+                        name: overviewData.project.name,
+                        description: overviewData.project.description || '',
+                        detailedDescription: overviewData.project.detailedDescription || '',
+                        businessPlanFile: overviewData.project.businessPlanFile || '',
+                        productName: overviewData.project.productName,
+                        relatedImages: overviewData.project.relatedImages,
+                        productImageDataUrl: overviewData.project.productImageDataUrl,
+                        productImageWidthPx: overviewData.project.productImageWidthPx,
+                        productImageHeightPx: overviewData.project.productImageHeightPx,
+                        marketDefinition: overviewData.project.marketDefinition,
+                        targetCustomer: overviewData.project.targetCustomer,
+                        additionalMarketData: overviewData.project.additionalMarketData,
+                        createdAt: overviewData.project.createdAt,
+                        memberCount: current?.memberCount ?? 1,
+                        role: overviewData.project.role || current?.role || 'COACH',
+                    }));
                 }
 
-                // 요구사항 수
-                const reqRes = await fetch(`/api/projects/${projectId}/requirements`);
-                if (reqRes.ok) {
-                    const reqData = await reqRes.json();
-                    setReqCount((reqData.requirements || []).length);
-                }
-
-                // Kano 분석 데이터
-                const kanoAnalysisRes = await fetch(`/api/projects/${projectId}/kano/analysis`);
-                if (kanoAnalysisRes.ok) {
-                    const kanoAnalysisData = await kanoAnalysisRes.json();
-                    setKanoCount(kanoAnalysisData.totalResponses || 0);
-                }
-
-                // 스펙 수
-                const specRes = await fetch(`/api/projects/${projectId}/spec`);
-                if (specRes.ok) {
-                    const specData = await specRes.json();
-                    setSpecCount(specData.specFunctions?.length || 0);
-                }
+                if (reqData) setReqCount((reqData.requirements || []).length);
+                if (kanoAnalysisData) setKanoCount(kanoAnalysisData.totalResponses || 0);
+                if (specData) setSpecCount(specData.specFunctions?.length || 0);
             } catch (error) {
+                if (!active) return;
                 setProject(null);
                 setLoadError(error instanceof Error ? error.message : '프로젝트를 불러오지 못했습니다.');
             } finally {
-                setIsLoading(false);
+                if (active) setIsLoading(false);
             }
         }
         loadData();
+        return () => { active = false; };
     }, [projectId]);
 
     useEffect(() => {
@@ -218,186 +195,6 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         void loadAnalysis();
         return () => controller.abort();
     }, [activeTab, projectId, kanoAnalysisReload]);
-
-    useEffect(() => {
-        if (!project) return;
-        setOverviewForm({
-            ...project,
-            name: project.name || '',
-            description: project.description || '',
-            detailedDescription: project.detailedDescription || '',
-            businessPlanFile: project.businessPlanFile || '',
-        });
-        setIsOverviewFileDirty(false);
-    }, [project]);
-
-    const projectBusinessPlanFile = useMemo(
-        () => parseBusinessPlanFile(project?.businessPlanFile),
-        [project?.businessPlanFile]
-    );
-    const formBusinessPlanFile = useMemo(
-        () => parseBusinessPlanFile(overviewForm.businessPlanFile),
-        [overviewForm.businessPlanFile]
-    );
-
-    const handleOverviewCancel = () => {
-        if (!project) return;
-        overviewFileSelectionRef.current += 1;
-        setIsOverviewFileReading(false);
-        setIsOverviewFileDirty(false);
-        setOverviewForm({
-            ...project,
-            name: project.name || '',
-            description: project.description || '',
-            detailedDescription: project.detailedDescription || '',
-            businessPlanFile: project.businessPlanFile || '',
-        });
-        setOverviewError('');
-        setOverviewAutoFillNotice('');
-        setIsOverviewEditing(false);
-    };
-
-    const handleOverviewFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        event.target.value = '';
-        if (!file) return;
-
-        const validationError = getBusinessPlanFileValidationError(file);
-        if (validationError) {
-            setOverviewError(validationError);
-            return;
-        }
-
-        const selectionVersion = ++overviewFileSelectionRef.current;
-        setOverviewError('');
-        setOverviewAutoFillNotice('');
-        setIsOverviewFileReading(true);
-        try {
-            const businessPlanFile = await readAndSerializeBusinessPlanFile(file);
-            if (selectionVersion !== overviewFileSelectionRef.current) return;
-            setOverviewForm((current) => ({ ...current, businessPlanFile }));
-            setIsOverviewFileDirty(true);
-
-            if (isExcelFileName(file.name)) {
-                await autoFillFromBusinessPlan(file, selectionVersion);
-            }
-        } catch (error) {
-            if (selectionVersion !== overviewFileSelectionRef.current) return;
-            setOverviewError(error instanceof Error ? error.message : '사업계획 파일을 읽지 못했습니다.');
-        } finally {
-            if (selectionVersion === overviewFileSelectionRef.current) setIsOverviewFileReading(false);
-        }
-    };
-
-    // 양식을 읽어 개요 입력칸을 채운다. 첨부 자체는 이미 위에서 반영됐고,
-    // 여기서 실패해도 첨부는 유지한다.
-    const autoFillFromBusinessPlan = async (file: File, selectionVersion: number) => {
-        const body = new FormData();
-        body.append('file', file);
-
-        const res = await fetch(`/api/projects/${projectId}/business-plan/parse`, {
-            method: 'POST',
-            body,
-        });
-        if (selectionVersion !== overviewFileSelectionRef.current) return;
-
-        const data = await res.json().catch(() => null);
-        if (!res.ok) {
-            setOverviewError(data?.error || '사업계획 양식을 읽지 못했습니다. 첨부는 그대로 유지됩니다.');
-            return;
-        }
-
-        const overview = data?.overview ?? {};
-        const filledLabels: string[] = Array.isArray(data?.filledLabels) ? data.filledLabels : [];
-        if (filledLabels.length === 0) {
-            setOverviewError('양식에서 읽을 수 있는 항목이 없습니다. [내용] 칸에 입력했는지 확인하세요.');
-            return;
-        }
-
-        // 양식에서 비워 둔 항목은 건너뛰어, 기존에 적어 둔 내용을 지우지 않는다.
-        setOverviewForm((current) => ({
-            ...current,
-            name: overview.name?.trim() ? overview.name.trim() : current.name,
-            description: overview.description?.trim() ? overview.description.trim() : current.description,
-            detailedDescription: overview.detailedDescription?.trim()
-                ? overview.detailedDescription.trim()
-                : current.detailedDescription,
-        }));
-        setOverviewAutoFillNotice(
-            `양식에서 ${filledLabels.join(', ')} 항목을 불러왔습니다. 확인 후 저장하세요.`
-        );
-    };
-
-    const handleTemplateDownload = () => {
-        window.location.href = `/api/projects/${projectId}/business-plan/template`;
-    };
-
-    const handleOverviewFileRemove = () => {
-        overviewFileSelectionRef.current += 1;
-        setIsOverviewFileReading(false);
-        setIsOverviewFileDirty(true);
-        setOverviewError('');
-        setOverviewAutoFillNotice('');
-        setOverviewForm((current) => ({ ...current, businessPlanFile: '' }));
-    };
-
-    const handleOverviewSave = async () => {
-        if (!project) return;
-        setOverviewError('');
-        if (!overviewForm.name.trim()) {
-            setOverviewError('프로젝트명을 입력하세요.');
-            return;
-        }
-
-        setIsOverviewSaving(true);
-        try {
-            const payload = {
-                name: overviewForm.name,
-                productName: overviewForm.productName,
-                relatedImages: overviewForm.relatedImages,
-                productImageDataUrl: overviewForm.productImageDataUrl,
-                productImageWidthPx: overviewForm.productImageWidthPx,
-                productImageHeightPx: overviewForm.productImageHeightPx,
-                marketDefinition: overviewForm.marketDefinition,
-                targetCustomer: overviewForm.targetCustomer,
-                additionalMarketData: overviewForm.additionalMarketData,
-                description: overviewForm.description,
-                detailedDescription: overviewForm.detailedDescription,
-                ...(isOverviewFileDirty ? { businessPlanFile: overviewForm.businessPlanFile } : {}),
-            };
-            const res = await fetch(`/api/projects/${projectId}/overview`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json().catch(() => null);
-            if (!res.ok) {
-                throw new Error(data?.error || '제품개요 저장에 실패했습니다.');
-            }
-
-            setProject({
-                ...project,
-                productName: data.project.productName,
-                relatedImages: data.project.relatedImages,
-                productImageDataUrl: data.project.productImageDataUrl,
-                productImageWidthPx: data.project.productImageWidthPx,
-                productImageHeightPx: data.project.productImageHeightPx,
-                marketDefinition: data.project.marketDefinition,
-                targetCustomer: data.project.targetCustomer,
-                additionalMarketData: data.project.additionalMarketData,
-                name: data.project.name,
-                description: data.project.description || '',
-                detailedDescription: data.project.detailedDescription || '',
-                businessPlanFile: isOverviewFileDirty ? overviewForm.businessPlanFile : project.businessPlanFile || '',
-            });
-            setIsOverviewFileDirty(false);
-            setIsOverviewEditing(false);
-        } catch (error) {
-            setOverviewError(error instanceof Error ? error.message : '제품개요 저장에 실패했습니다.');
-        } finally {
-            setIsOverviewSaving(false);
-        }
-    };
 
     const iconSvg = (d: string) => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={d} /></svg>;
 
