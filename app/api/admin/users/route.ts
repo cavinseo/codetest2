@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
-import { hasAdminAccess, requireAdmin } from '@/lib/authorization';
+import { requireAdmin } from '@/lib/authorization';
 import { BCRYPT_ROUNDS } from '@/lib/constants';
 import { generateId } from '@/lib/id';
 import { errorCodeOf, toErrorResponse } from '@/lib/api-error';
@@ -13,13 +13,15 @@ import { escapeHtml } from '@/lib/html-escape';
 import { buildTempPasswordEmail } from '@/lib/temp-password-email';
 import { memberProfileSchemaFor } from '@/lib/member-profile';
 import { describeMenteeDeletion, parseDeletionReason } from '@/lib/account-deletion';
-import { isTransferConflictError, lockTransferUsers, ProjectTransferError, transferSnapshotToken } from '@/lib/project-transfer';
-import { Prisma } from '@prisma/client';
+import { isTransferConflictError, ProjectTransferError } from '@/lib/project-transfer';
+import {
+    deleteMember, deleteMentee, menteeDeletionToken, readMemberDeletionImpact, readMenteeDeletionImpact,
+} from '@/lib/admin-user-deletion';
 import { memberAccessExpirySchema } from '@/lib/member-access-expiry';
 import { setMemberAccessExpiry } from '@/lib/member-access-management';
 import {
     accessExpiryFrom, canTransitionRole, parseDirectCreateRole,
-    parseMemberRole, isAccessExpired, MEMBER_ROLE_LABELS, type MemberRole,
+    parseMemberRole, MEMBER_ROLE_LABELS, type MemberRole,
 } from '@/lib/member-roles';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
@@ -395,28 +397,7 @@ export async function POST(request: NextRequest) {
 }
 
 // ─── DELETE: 사용자 삭제 ──────────────────────────────────────────────
-
-async function lockDeletionActors(tx: Prisma.TransactionClient, actorId: string, userId: string, relatedUserIds: string[] = []) {
-    // 관리자 교차 삭제는 공통 잠금 뒤 같은 사용자 잠금 순서로 실행한다.
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('admin-user-deletion'))::text`;
-    await lockTransferUsers(tx, [actorId, userId, ...relatedUserIds]);
-    const actor = await tx.user.findUnique({ where: { id: actorId } });
-    if (!actor || actor.status !== 'APPROVED' || isAccessExpired(actor.accessExpiresAt)
-        || !hasAdminAccess({ ...actor, role: parseMemberRole(actor.role) ?? 'MENTEE' })) {
-        throw new ProjectTransferError('실행 관리자 정보가 변경되었습니다. 다시 로그인한 뒤 확인하세요.', 409);
-    }
-    const target = await tx.user.findUnique({ where: { id: userId } });
-    if (!target) throw new ProjectTransferError('회원 정보가 변경되었습니다. 다시 확인하세요.', 409);
-    if (target.isAdmin && await tx.user.count({ where: { isAdmin: true } }) <= 1) {
-        throw new ProjectTransferError('마지막 관리자 계정은 삭제할 수 없습니다.', 400);
-    }
-    return target;
-}
-
-async function transferIssuedInvites(tx: Prisma.TransactionClient, userId: string, actorId: string, expectedCount: number) {
-    const moved = await tx.inviteCode.updateMany({ where: { issuedById: userId }, data: { issuedById: actorId } });
-    if (moved.count !== expectedCount) throw new ProjectTransferError('발급한 초대 코드가 변경되었습니다. 삭제를 다시 확인하세요.', 409);
-}
+// 삭제 트랜잭션은 lib/admin-user-deletion 에 있다. 여기서는 확인 절차와 응답만 맡는다.
 
 export async function DELETE(request: NextRequest) {
     const adminResult = await requireAdmin(request);
@@ -444,183 +425,122 @@ export async function DELETE(request: NextRequest) {
         }
 
         // 멘티는 다르게 다룬다: 소유한 프로젝트가 사라지는 게 아니라 그 프로그램의
-        // 매니저에게 넘어간다. 프로그램은 "참여 멘티들의 프로젝트로 구성"되므로,
-        // 멘티 계정이 없어졌다고 그 프로젝트까지 함께 없어지면 안 된다.
+        // 매니저에게 넘어간다(lib/admin-user-deletion 의 deleteMentee).
         if (parseMemberRole(target.role) === 'MENTEE') {
-            const ownedProjects = await prisma.project.findMany({
-                where: { ownerId: userId },
-                select: {
-                    id: true,
-                    name: true,
-                    program: { select: { id: true, managerId: true, manager: { select: { name: true } } } },
-                },
-                orderBy: { id: 'asc' },
-            });
-
-            // 이력은 남기되 주인만 비운다(스키마의 SetNull). 몇 건이 그렇게 되는지는
-            // 확인창에도 보여 주고 로그에도 남겨야 하므로 두 갈래 모두에서 미리 센다.
-            const [invitations, migrations, inviteCodes, transferredIssuedInviteCodes] = await Promise.all([
-                prisma.kanoSurveyInvitation.count({ where: { invitedBy: userId } }),
-                prisma.migrationHistory.count({ where: { userId } }),
-                // 가입 때 저장된 주소와 코드 발급 때 입력한 주소의 대소문자가 다를 수 있다.
-                prisma.inviteCode.count({ where: { email: { equals: target.email, mode: 'insensitive' }, issuedById: { not: userId } } }),
-                prisma.inviteCode.count({ where: { issuedById: userId } }),
-            ]);
-
-            const preview = {
-                transferProjects: ownedProjects.map((p) => ({
-                    id: p.id,
-                    name: p.name,
-                    managerName: p.program.manager.name,
-                })),
-                invitations,
-                migrations,
-                inviteCodes,
-                transferredIssuedInviteCodes,
-                previewToken: transferSnapshotToken({ userId, email: target.email, role: target.role, ownedProjects, invitations, migrations, inviteCodes, transferredIssuedInviteCodes }),
-            };
-
-            // 지우기 전에 무엇이 벌어지는지 보여 주고 사유를 받는다. 예전에는 멘티만
-            // 확인 없이 지웠는데, 개인정보 파기가 끼는 순간 "파괴적이지 않다"는
-            // 근거가 성립하지 않는다.
-            if (body?.confirmCascade !== true) {
-                return NextResponse.json(
-                    {
-                        error: describeMenteeDeletion(preview).join(' ') || '이 작업은 되돌릴 수 없습니다.',
-                        needsCascadeConfirm: true,
-                        preview,
-                    },
-                    { status: 409 }
-                );
-            }
-
-            // 사유는 파기의 증빙이다. 없이 지우면 나중에 왜 지웠는지 답할 수 없다.
-            const reason = parseDeletionReason(body?.reason);
-            if (!reason) {
-                return NextResponse.json({ error: '삭제 사유를 고르세요.' }, { status: 400 });
-            }
-
-            if (body.previewToken !== preview.previewToken) {
-                return NextResponse.json({ error: '소유 프로젝트 또는 삭제 영향이 변경되었습니다. 다시 확인하세요.', needsCascadeConfirm: true, preview }, { status: 409 });
-            }
-
-            await prisma.$transaction(async tx => {
-                const currentUser = await lockDeletionActors(tx, adminResult.userId, userId, ownedProjects.map(p => p.program.managerId));
-                const programIds = [...new Set(ownedProjects.map(p => p.program.id))].sort();
-                if (programIds.length > 0) {
-                    await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "programs" WHERE "id" IN (${Prisma.join(programIds)}) ORDER BY "id" FOR SHARE`);
-                }
-                const currentProjects = await tx.project.findMany({
-                    where: { ownerId: userId },
-                    select: { id: true, name: true, program: { select: { id: true, managerId: true, manager: { select: { name: true } } } } },
-                    orderBy: { id: 'asc' },
-                });
-                const currentInvitations = await tx.kanoSurveyInvitation.count({ where: { invitedBy: userId } });
-                const currentMigrations = await tx.migrationHistory.count({ where: { userId } });
-                const currentCodes = await tx.inviteCode.count({ where: { email: { equals: target.email, mode: 'insensitive' }, issuedById: { not: userId } } });
-                const currentIssuedCodes = await tx.inviteCode.count({ where: { issuedById: userId } });
-                const currentToken = transferSnapshotToken({ userId, email: currentUser.email, role: currentUser.role, ownedProjects: currentProjects, invitations: currentInvitations, migrations: currentMigrations, inviteCodes: currentCodes, transferredIssuedInviteCodes: currentIssuedCodes });
-                if (currentToken !== preview.previewToken) {
-                    throw new ProjectTransferError('소유 프로젝트 또는 삭제 영향이 변경되었습니다. 삭제를 다시 요청해 확인하세요.', 409);
-                }
-                for (const project of ownedProjects) {
-                    const moved = await tx.project.updateMany({
-                        where: { id: project.id, ownerId: userId, programId: project.program.id },
-                        data: { ownerId: project.program.managerId },
-                    });
-                    if (moved.count !== 1) throw new ProjectTransferError('프로젝트 소유자가 변경되었습니다. 삭제를 다시 확인하세요.', 409);
-                }
-                if (await tx.project.count({ where: { ownerId: userId } }) > 0) {
-                    throw new ProjectTransferError('소유 프로젝트가 변경되었습니다. 삭제를 다시 확인하세요.', 409);
-                }
-                // 이 사람에게 발급된 초대 코드는 목적을 다했다. 계정을 지워도
-                // email 이 남는 유일한 자리라, 사용 여부와 무관하게 함께 지운다.
-                // 사용자보다 먼저 지워야 한다 — 순서가 뒤집히면 usedById 가 먼저
-                // SetNull 이 돼 어느 코드가 그 사람의 것이었는지 알 수 없게 된다.
-                await tx.inviteCode.deleteMany({
-                    where: { email: { equals: target.email, mode: 'insensitive' }, issuedById: { not: userId } },
-                });
-                await transferIssuedInvites(tx, userId, adminResult.userId, transferredIssuedInviteCodes);
-                await tx.user.delete({ where: { id: userId } });
-            }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-
-            // 이메일은 남기지 않는다. 파기의 증빙은 지워진 정보가 아니라 이 기록이다.
-            log.info('멘티 삭제', {
-                userId,
-                reason,
-                transferredProjects: ownedProjects.length,
-                anonymizedInvitations: invitations,
-                anonymizedMigrations: migrations,
-                deletedInviteCodes: inviteCodes,
-                transferredIssuedInviteCodes,
-            });
-            return NextResponse.json({
-                success: true,
-                transferredProjects: ownedProjects.length,
-                anonymizedInvitations: invitations,
-                anonymizedMigrations: migrations,
-                deletedInviteCodes: inviteCodes,
-                transferredIssuedInviteCodes,
-            });
+            return await handleMenteeDeletion(body, target, adminResult.userId);
         }
-
-        // User 삭제는 Project.ownerId 의 onDelete: Cascade 를 타고 그 사람이 소유한
-        // 프로젝트 전체와 하위 워크시트를 지운다. 그 프로젝트에 참여한 다른 사람의
-        // 작업물까지 함께 사라지므로, 건수를 알려주고 확인을 받는다.
-        const ownedProjects = await prisma.project.count({ where: { ownerId: userId } });
-        const transferredIssuedInviteCodes = await prisma.inviteCode.count({ where: { issuedById: userId } });
-        if ((ownedProjects > 0 || transferredIssuedInviteCodes > 0) && body?.confirmCascade !== true) {
-            return NextResponse.json(
-                {
-                    error: (ownedProjects > 0 ? `이 사용자가 소유한 프로젝트 ${ownedProjects}개와 그 안의 모든 워크시트가 함께 삭제됩니다. 다른 참여자의 작업물도 사라집니다.` : '')
-                        + (transferredIssuedInviteCodes > 0 ? ` 이 사람이 발급한 초대 코드 ${transferredIssuedInviteCodes}건의 관리 책임은 실행 관리자에게 이전됩니다.` : ''),
-                    needsCascadeConfirm: true,
-                    ownedProjects,
-                    transferredIssuedInviteCodes,
-                },
-                { status: 409 }
-            );
-        }
-
-        await prisma.$transaction(async tx => {
-            const current = await lockDeletionActors(tx, adminResult.userId, userId);
-            const currentProjectCount = await tx.project.count({ where: { ownerId: userId } });
-            const currentIssuedCodes = await tx.inviteCode.count({ where: { issuedById: userId } });
-            if (current.role !== target.role || current.isAdmin !== target.isAdmin || currentProjectCount !== ownedProjects || currentIssuedCodes !== transferredIssuedInviteCodes) {
-                throw new ProjectTransferError('회원 또는 소유 프로젝트가 변경되었습니다. 삭제를 다시 확인하세요.', 409);
-            }
-            await transferIssuedInvites(tx, userId, adminResult.userId, transferredIssuedInviteCodes);
-            await tx.user.delete({ where: { id: userId } });
-        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-
-        log.info('사용자 삭제', { userId, ownedProjects, transferredIssuedInviteCodes });
-        return NextResponse.json({ success: true, ownedProjects, transferredIssuedInviteCodes });
+        return await handleMemberDeletion(body, target, adminResult.userId);
     } catch (error: unknown) {
-        const invalidBody = invalidJsonBodyResponse(error);
-        if (invalidBody) return invalidBody;
-        if (error instanceof ProjectTransferError) return NextResponse.json({ error: error.message }, { status: error.status });
-        if (isTransferConflictError(error) && (error as { code?: string }).code !== 'P2003') {
-            return NextResponse.json({ error: '회원 또는 프로젝트가 변경되었습니다. 삭제를 다시 확인하세요.' }, { status: 409 });
-        }
-        // 삭제를 막는 FK 가 아직 남아 있는 경우다. 설문·가져오기 이력은 SetNull 이
-        // 됐으니 여기 걸리지 않는다. 남은 것은 담당 중인 프로그램이고, 그건 사람을
-        // 지우는 게 아니라 담당자를 옮겨야 풀린다. 예전에는 원인과 무관하게 설문
-        // 이력을 탓해, 매니저를 겸하는 계정이 막힐 때 엉뚱한 곳을 보게 했다.
-        if (typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2003') {
-            const field = (error as { meta?: { field_name?: string } }).meta?.field_name ?? '';
-            log.warn('사용자 삭제가 FK 제약에 막혔다', { field });
-
-            const blockedByProgram = field.includes('managerId') || field.includes('programs');
-            return NextResponse.json(
-                {
-                    error: blockedByProgram
-                        ? '담당 중인 프로그램이 있어 삭제할 수 없습니다. 프로그램 담당자를 먼저 다른 사람으로 옮기세요.'
-                        : '삭제를 막는 연결이 남아 있습니다. 승인을 취소해 접근만 막고 개발자에게 알려 주세요.',
-                },
-                { status: 409 }
-            );
-        }
-        log.error('사용자 삭제 실패', error);
-        return NextResponse.json({ error: '사용자 삭제 실패' }, { status: 500 });
+        return deletionErrorResponse(error);
     }
+}
+
+type DeletionRequestBody = { confirmCascade?: unknown; reason?: unknown; previewToken?: unknown } | null | undefined;
+type DeletionTargetUser = { id: string; email: string; role: string; isAdmin: boolean };
+
+async function handleMenteeDeletion(body: DeletionRequestBody, target: DeletionTargetUser, actorId: string) {
+    const impact = await readMenteeDeletionImpact(prisma, target.id, target.email);
+    const preview = {
+        transferProjects: impact.ownedProjects.map((p) => ({
+            id: p.id,
+            name: p.name,
+            managerName: p.program.manager.name,
+        })),
+        invitations: impact.invitations,
+        migrations: impact.migrations,
+        inviteCodes: impact.inviteCodes,
+        transferredIssuedInviteCodes: impact.transferredIssuedInviteCodes,
+        previewToken: menteeDeletionToken(target, impact),
+    };
+
+    // 지우기 전에 무엇이 벌어지는지 보여 주고 사유를 받는다. 예전에는 멘티만
+    // 확인 없이 지웠는데, 개인정보 파기가 끼는 순간 "파괴적이지 않다"는
+    // 근거가 성립하지 않는다.
+    if (body?.confirmCascade !== true) {
+        return NextResponse.json(
+            {
+                error: describeMenteeDeletion(preview).join(' ') || '이 작업은 되돌릴 수 없습니다.',
+                needsCascadeConfirm: true,
+                preview,
+            },
+            { status: 409 }
+        );
+    }
+
+    // 사유는 파기의 증빙이다. 없이 지우면 나중에 왜 지웠는지 답할 수 없다.
+    const reason = parseDeletionReason(body?.reason);
+    if (!reason) {
+        return NextResponse.json({ error: '삭제 사유를 고르세요.' }, { status: 400 });
+    }
+
+    if (body?.previewToken !== preview.previewToken) {
+        return NextResponse.json({ error: '소유 프로젝트 또는 삭제 영향이 변경되었습니다. 다시 확인하세요.', needsCascadeConfirm: true, preview }, { status: 409 });
+    }
+
+    await deleteMentee({ actorId, target, impact, previewToken: preview.previewToken });
+
+    const result = {
+        transferredProjects: impact.ownedProjects.length,
+        anonymizedInvitations: impact.invitations,
+        anonymizedMigrations: impact.migrations,
+        deletedInviteCodes: impact.inviteCodes,
+        transferredIssuedInviteCodes: impact.transferredIssuedInviteCodes,
+    };
+    // 이메일은 남기지 않는다. 파기의 증빙은 지워진 정보가 아니라 이 기록이다.
+    log.info('멘티 삭제', { userId: target.id, reason, ...result });
+    return NextResponse.json({ success: true, ...result });
+}
+
+async function handleMemberDeletion(body: DeletionRequestBody, target: DeletionTargetUser, actorId: string) {
+    // User 삭제는 Project.ownerId 의 onDelete: Cascade 를 타고 그 사람이 소유한
+    // 프로젝트 전체와 하위 워크시트를 지운다. 그 프로젝트에 참여한 다른 사람의
+    // 작업물까지 함께 사라지므로, 건수를 알려주고 확인을 받는다.
+    const impact = await readMemberDeletionImpact(prisma, target.id);
+    const { ownedProjects, transferredIssuedInviteCodes } = impact;
+    if ((ownedProjects > 0 || transferredIssuedInviteCodes > 0) && body?.confirmCascade !== true) {
+        return NextResponse.json(
+            {
+                error: (ownedProjects > 0 ? `이 사용자가 소유한 프로젝트 ${ownedProjects}개와 그 안의 모든 워크시트가 함께 삭제됩니다. 다른 참여자의 작업물도 사라집니다.` : '')
+                    + (transferredIssuedInviteCodes > 0 ? ` 이 사람이 발급한 초대 코드 ${transferredIssuedInviteCodes}건의 관리 책임은 실행 관리자에게 이전됩니다.` : ''),
+                needsCascadeConfirm: true,
+                ownedProjects,
+                transferredIssuedInviteCodes,
+            },
+            { status: 409 }
+        );
+    }
+
+    await deleteMember({ actorId, target, impact });
+
+    log.info('사용자 삭제', { userId: target.id, ownedProjects, transferredIssuedInviteCodes });
+    return NextResponse.json({ success: true, ownedProjects, transferredIssuedInviteCodes });
+}
+
+function deletionErrorResponse(error: unknown) {
+    const invalidBody = invalidJsonBodyResponse(error);
+    if (invalidBody) return invalidBody;
+    if (error instanceof ProjectTransferError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (isTransferConflictError(error) && (error as { code?: string }).code !== 'P2003') {
+        return NextResponse.json({ error: '회원 또는 프로젝트가 변경되었습니다. 삭제를 다시 확인하세요.' }, { status: 409 });
+    }
+    // 삭제를 막는 FK 가 아직 남아 있는 경우다. 설문·가져오기 이력은 SetNull 이
+    // 됐으니 여기 걸리지 않는다. 남은 것은 담당 중인 프로그램이고, 그건 사람을
+    // 지우는 게 아니라 담당자를 옮겨야 풀린다. 예전에는 원인과 무관하게 설문
+    // 이력을 탓해, 매니저를 겸하는 계정이 막힐 때 엉뚱한 곳을 보게 했다.
+    if (typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2003') {
+        const field = (error as { meta?: { field_name?: string } }).meta?.field_name ?? '';
+        log.warn('사용자 삭제가 FK 제약에 막혔다', { field });
+
+        const blockedByProgram = field.includes('managerId') || field.includes('programs');
+        return NextResponse.json(
+            {
+                error: blockedByProgram
+                    ? '담당 중인 프로그램이 있어 삭제할 수 없습니다. 프로그램 담당자를 먼저 다른 사람으로 옮기세요.'
+                    : '삭제를 막는 연결이 남아 있습니다. 승인을 취소해 접근만 막고 개발자에게 알려 주세요.',
+            },
+            { status: 409 }
+        );
+    }
+    log.error('사용자 삭제 실패', error);
+    return NextResponse.json({ error: '사용자 삭제 실패' }, { status: 500 });
 }
