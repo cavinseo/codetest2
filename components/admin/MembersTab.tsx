@@ -8,6 +8,7 @@ import {
     MEMBER_ROLES, MEMBER_ROLE_LABELS, canTransitionRole,
     DEFAULT_ACCESS_DURATION_DAYS, type MemberRole,
 } from '@/lib/member-roles';
+import { readJsonOrThrow } from '@/lib/client-fetch';
 
 interface ProgramOption {
     id: string;
@@ -94,8 +95,7 @@ export default function MembersTab({
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: member.id, action: 'setMentorProjectCreation', enabled }),
             });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || '프로젝트 생성 권한 변경에 실패했습니다.');
+            await readJsonOrThrow(response, '프로젝트 생성 권한 변경에 실패했습니다.');
             setCreationMessage(`${member.name || member.email} 멘토의 프로젝트 생성을 ${enabled ? '활성화' : '비활성화'}했습니다.`);
             onReload();
         } catch (error) {

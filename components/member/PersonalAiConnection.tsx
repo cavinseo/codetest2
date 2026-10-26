@@ -20,6 +20,7 @@ import {
     type MemberAiMode,
     type PersonalAiVendor,
 } from '@/lib/ai/personal-vendors';
+import { readJsonOrThrow } from '@/lib/client-fetch';
 
 interface ConnectionSummary {
     mode: MemberAiMode;
@@ -150,8 +151,7 @@ export default function PersonalAiConnection() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
-            const data = await res.json().catch(() => null);
-            if (!res.ok) throw new Error(data?.error || '저장에 실패했습니다.');
+            const data = await readJsonOrThrow(res, '저장에 실패했습니다.');
             setAiConn(parseConnectionSummary(data?.connection));
             // 키는 저장 즉시 입력칸에서 지운다 — 화면에 남겨둘 이유가 없다.
             setAiForm((prev) => ({ ...prev, apiKey: '' }));
@@ -176,8 +176,7 @@ export default function PersonalAiConnection() {
         setAiMsg(null);
         try {
             const res = await fetch('/api/me/ai-connection/verify', { method: 'POST' });
-            const data = await res.json().catch(() => null);
-            if (!res.ok) throw new Error(data?.error || '연결 확인에 실패했습니다.');
+            const data = await readJsonOrThrow(res, '연결 확인에 실패했습니다.');
             setAiMsg({ type: data.ok ? 'success' : 'error', text: data.message });
         } catch (error) {
             setAiMsg({

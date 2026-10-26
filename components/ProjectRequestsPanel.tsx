@@ -1,6 +1,7 @@
 'use client';
 // 신청과 심사 상태를 한 화면 계약으로 표시하여 승인 없이 추가 개설하는 혼동을 줄인다.
 import { useCallback, useEffect, useState } from 'react';
+import { readJsonOrThrow } from '@/lib/client-fetch';
 
 interface ProjectRequest {
     id: string;
@@ -29,8 +30,7 @@ async function sendProjectRequest(method: 'POST' | 'PATCH', body: object, fallba
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
-    const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(data?.error || fallbackError);
+    await readJsonOrThrow(res, fallbackError);
 }
 
 function ReasonField({ reason, onChange, className }: { reason: string; onChange: (reason: string) => void; className: string }) {
@@ -71,8 +71,7 @@ export default function ProjectRequestsPanel({ reviewer = false, onCreate }: { r
     const loadRequests = useCallback(async () => {
         try {
             const res = await fetch('/api/project-requests');
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || '신청 조회 실패');
+            const data = await readJsonOrThrow(res, '신청 조회 실패');
             setRequests(data.requests);
             setOwnedProjectCount(data.ownedProjectCount || 0);
         } catch (cause) {

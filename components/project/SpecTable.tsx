@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import WorksheetLoadError from './WorksheetLoadError';
+import { useWorksheetLoad } from './useWorksheetLoad';
 import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
 import { readBusinessPlanForSpec } from '@/lib/business-plan-sections';
 import { describeAiEngine } from '@/lib/ai/engine-label';
@@ -103,10 +104,6 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const [isSavingDetailVisibility, setIsSavingDetailVisibility] = useState(false);
     const hasDetailContent = rows.some(row => row.detail.trim() !== '');
     const showDetailColumn = hasDetailContent || !isDetailColumnCollapsed;
-    const [isLoading, setIsLoading] = useState(true);
-    const [loadFailed, setLoadFailed] = useState(false);
-    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
-    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
@@ -140,42 +137,26 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     }, []);
 
     // 데이터 로드
-    useEffect(() => {
-        let active = true;
-        setIsLoading(true);
-        setLoadFailed(false);
-        async function loadData() {
-            try {
-                const [projRes, specRes] = await Promise.all([
-                    fetch('/api/projects'),
-                    fetch(`/api/projects/${projectId}/spec`),
-                ]);
+    const { loadFailed, isReady, retry } = useWorksheetLoad(projectId, async (isActive) => {
+        const [projRes, specRes] = await Promise.all([
+            fetch('/api/projects'),
+            fetch(`/api/projects/${projectId}/spec`),
+        ]);
 
-                if (projRes.ok) {
-                    const projData = await projRes.json();
-                    const found = projData.projects?.find((p: any) => p.id === projectId);
-                    if (found) setProject(found);
-                }
-
-                if (specRes.ok) {
-                    const specData = await specRes.json();
-                    if (!active) return;
-                    if (!Array.isArray(specData.specFunctions)) throw new Error('스펙 응답 형식 오류');
-                    const loadedSpecs: SpecFunction[] = specData.specFunctions;
-                    setRows(buildRowsFromSpecs(loadedSpecs));
-                    setIsDetailColumnCollapsed(specData.specDetailCollapsed === true);
-                    setLoadedProjectId(projectId);
-                } else throw new Error('스펙 조회 실패');
-            } catch (error) {
-                if (active) setLoadFailed(true);
-                console.error('데이터 로딩 실패:', error);
-            } finally {
-                if (active) setIsLoading(false);
-            }
+        if (projRes.ok) {
+            const projData = await projRes.json();
+            const found = projData.projects?.find((p: any) => p.id === projectId);
+            if (found) setProject(found);
         }
-        loadData();
-        return () => { active = false; };
-    }, [buildRowsFromSpecs, projectId, loadAttempt]);
+
+        if (!specRes.ok) throw new Error('스펙 조회 실패');
+        const specData = await specRes.json();
+        if (!isActive()) return;
+        if (!Array.isArray(specData.specFunctions)) throw new Error('스펙 응답 형식 오류');
+        const loadedSpecs: SpecFunction[] = specData.specFunctions;
+        setRows(buildRowsFromSpecs(loadedSpecs));
+        setIsDetailColumnCollapsed(specData.specDetailCollapsed === true);
+    }, (error) => console.error('데이터 로딩 실패:', error));
 
     const updateDetailVisibility = async (collapsed: boolean) => {
         const previous = isDetailColumnCollapsed;
@@ -732,7 +713,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
 
     // 저장
     const handleSave = async (moveNext = false) => {
-        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
+        if (!isReady) return;
         setIsSaving(true);
         try {
             const finalSpecs = serializeSpecs();
@@ -761,7 +742,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     };
 
     const handleReset = async () => {
-        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
+        if (!isReady) return;
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/spec`, {
@@ -786,8 +767,8 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         }
     };
 
-    if (loadFailed) return <WorksheetLoadError onRetry={() => setLoadAttempt(attempt => attempt + 1)} />;
-    if (isLoading || loadedProjectId !== projectId) {
+    if (loadFailed) return <WorksheetLoadError onRetry={retry} />;
+    if (!isReady) {
         return (
             <div className="flex items-center justify-center p-12">
                 <div className="text-center">

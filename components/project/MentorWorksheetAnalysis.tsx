@@ -9,6 +9,7 @@ import {
     ANALYSIS_WORKSHEETS, appendTargetSpecItems, emptyWorksheetAnalysis, isAnalysisWorksheetId,
     type AnalysisWorksheetId, type WorksheetAnalysis,
 } from '@/lib/mentor-worksheet-analysis';
+import { readJsonOrThrow } from '@/lib/client-fetch';
 
 type AnalysisValue = NonNullable<WorksheetAnalysis[AnalysisWorksheetId]>;
 interface Props { projectId: string; worksheetId?: string; onDirtyChange?: (dirty: boolean) => void; }
@@ -112,8 +113,7 @@ function AnalysisForm({ projectId, id, onDirtyChange }: { projectId: string; id:
         setBusy(true); setError('');
         try {
             const response = await fetch(`/api/projects/${projectId}/target-spec`, { cache: 'no-store' });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || '최종 목표 스펙을 불러오지 못했습니다.');
+            const data = await readJsonOrThrow(response, '최종 목표 스펙을 불러오지 못했습니다.');
             const items = appendTargetSpecItems(value.items, data.rows?.length ? data.rows : data.asIsRows ?? []);
             if (items.length > 500) throw new Error('설명 항목은 최대 500개까지 저장할 수 있습니다. 기존 항목을 정리한 뒤 불러와 주세요.');
             update({ items });

@@ -1,21 +1,13 @@
 // WS-15 자금소요계획표 화면을 공통 테이블로 연결하는 페이지입니다.
 import FundingTable from '@/components/project/FundingTable';
-import WorksheetEditGuard from '@/components/project/WorksheetEditGuard';
+import StandaloneWorksheetPage, { type StandaloneWorksheetPageProps } from '@/components/project/StandaloneWorksheetPage';
 
-interface FundingPlanPageProps {
-    params: Promise<{ id: string }>;
-}
-
-export default async function FundingPlanPage({ params }: FundingPlanPageProps) {
+export default async function FundingPlanPage({ params }: StandaloneWorksheetPageProps) {
     const { id } = await params;
 
     return (
-        <main className="min-h-screen bg-surface-900 bg-grid px-4 py-8 sm:px-6 lg:px-8">
-            <div className="mx-auto max-w-[1800px]">
-                <WorksheetEditGuard projectId={id}>
-                    <FundingTable projectId={id} mode="plan" />
-                </WorksheetEditGuard>
-            </div>
-        </main>
+        <StandaloneWorksheetPage projectId={id}>
+            <FundingTable projectId={id} mode="plan" />
+        </StandaloneWorksheetPage>
     );
 }

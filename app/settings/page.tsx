@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import PersonalAiConnection from '@/components/member/PersonalAiConnection';
 import ThemeToggle from '@/components/ThemeToggle';
+import { checkPageAccess } from '@/lib/client-fetch';
 
 interface SettingsData {
     google: {
@@ -44,11 +45,9 @@ export default function ServiceSettingsPage() {
             // 이 화면의 구글·SMTP 탭은 /api/settings(requireAdmin)를 쓴다. 403 을
             // 조용히 넘기면 비관리자에게 빈 "미설정" 폼이 그대로 보여, 안내대로
             // Client Secret 이나 SMTP 비밀번호를 입력하게 된다.
-            if (res.status === 401) {
-                window.location.replace('/login');
-                return;
-            }
-            if (res.status === 403) {
+            const access = checkPageAccess(res);
+            if (access === 'redirected') return;
+            if (access === 'denied') {
                 setDenied(true);
                 return;
             }

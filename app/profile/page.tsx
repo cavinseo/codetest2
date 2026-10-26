@@ -14,6 +14,7 @@ import type { MentorRef, ProgramRef, ProgramWithProjects } from '@/lib/affiliati
 import PersonalAiConnection from '@/components/member/PersonalAiConnection';
 import PasswordChangeForm from '@/components/member/PasswordChangeForm';
 import ThemeToggle from '@/components/ThemeToggle';
+import { readJsonOrThrow, redirectToLoginOn401 } from '@/lib/client-fetch';
 
 interface Account {
     name: string | null;
@@ -49,10 +50,7 @@ export default function ProfilePage() {
                 fetch('/api/me/affiliation'),
             ]);
 
-            if (profileRes.status === 401) {
-                window.location.replace('/login');
-                return;
-            }
+            if (redirectToLoginOn401(profileRes)) return;
 
             const profileData = await profileRes.json().catch(() => null);
             if (!profileRes.ok || !profileData) {
@@ -86,8 +84,7 @@ export default function ProfilePage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...toProfilePayload(profile, account.role), name }),
             });
-            const data = await res.json().catch(() => null);
-            if (!res.ok) throw new Error(data?.error || '저장에 실패했습니다.');
+            const data = await readJsonOrThrow(res, '저장에 실패했습니다.');
             // 헤더는 대시보드에서 다시 받아 가므로, 여기서는 이 화면의 표시만 맞춘다.
             setAccount((prev) => (prev ? { ...prev, name: data?.name ?? prev.name } : prev));
             setMessage({ type: 'success', text: '저장했습니다.' });

@@ -10,6 +10,7 @@ import {
 import { canCreateProject, canCreateProjectForOthers, type MemberRole } from '@/lib/member-roles';
 import ThemeToggle from '@/components/ThemeToggle';
 import ProjectRequestsPanel, { ProjectApprovalRequestBox } from '@/components/ProjectRequestsPanel';
+import { readJsonOrThrow, redirectToLoginOn401 } from '@/lib/client-fetch';
 
 interface Project {
     id: string;
@@ -121,8 +122,7 @@ export default function DashboardPage() {
         setNewProjectError('');
         fetch('/api/projects/creation-options')
             .then(async res => {
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || '배정 멘티를 불러오지 못했습니다.');
+                const data = await readJsonOrThrow(res, '배정 멘티를 불러오지 못했습니다.');
                 if (!cancelled) setMentorMentees(data.mentees);
             })
             .catch(error => { if (!cancelled) setNewProjectError(error.message); })
@@ -154,10 +154,7 @@ export default function DashboardPage() {
             const response = await fetch('/api/projects');
             // 로그인하지 않은 방문자에게 빈 대시보드와 "새 프로젝트" 버튼을 보여주면
             // 눌러도 401 로 조용히 실패한다. 곧장 로그인으로 보낸다.
-            if (response.status === 401) {
-                window.location.replace('/login');
-                return;
-            }
+            if (redirectToLoginOn401(response)) return;
             if (!response.ok) throw new Error(`프로젝트 목록 조회 실패 (${response.status})`);
             const data = await response.json();
             setProjects(data.projects || []);
@@ -196,10 +193,7 @@ export default function DashboardPage() {
                 }),
             });
             // 작성 중 세션이 만료된 경우에도 오류 문구 대신 로그인으로 보낸다.
-            if (response.status === 401) {
-                window.location.replace('/login');
-                return;
-            }
+            if (redirectToLoginOn401(response)) return;
             const data = await response.json().catch(() => null);
             // 멘티는 이 창에서 바로 신청하게 한다. 오류 문구만 남기면 신청이 접수된 줄 안다.
             if (!response.ok && data?.approvalRequired && role === 'MENTEE') {

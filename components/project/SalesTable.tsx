@@ -3,10 +3,11 @@
 import MoneyInput from '@/components/ui/MoneyInput';
 import { formatMoney } from '@/lib/money';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
+import { useWorksheetLoad } from './useWorksheetLoad';
 
 type SalesPeriod = 'Y' | 'Y_PLUS_1';
 
@@ -59,10 +60,6 @@ function formatAmount(value: number) {
 
 export default function SalesTable({ projectId, onSaved }: Props) {
     const [rows, setRows] = useState<SalesRow[]>([createRow('Y'), createRow('Y_PLUS_1')]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [loadFailed, setLoadFailed] = useState(false);
-    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
-    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -87,56 +84,47 @@ export default function SalesTable({ projectId, onSaved }: Props) {
         };
     }, [rowsByPeriod]);
 
-    useEffect(() => {
-        let active = true;
-        setIsLoading(true);
-        setLoadFailed(false);
-        fetch(`/api/projects/${projectId}/sales`)
-            .then(r => { if (!r.ok) throw new Error('매출 조회 실패'); return r.json(); })
-            .then((data) => {
-                if (!active) return;
-                if (!Array.isArray(data?.rows)) throw new Error('매출 응답 형식 오류');
-                if (data?.rows && data.rows.length > 0) {
-                    const loadedRows: SalesRow[] = [];
-                    for (const r of data.rows) {
-                        const period: SalesPeriod = r.period === 'Y_PLUS_1' ? 'Y_PLUS_1' : 'Y';
-                        loadedRows.push({
-                            id: r.id,
-                            period,
-                            customer: r.customer ?? '',
-                            amount: Number(r.amount) || 0,
-                            competitor: r.competitor ?? '',
-                            order: r.order,
-                        });
+    const { loadFailed, isReady, retry } = useWorksheetLoad(projectId, async (isActive) => {
+        const data = await fetch(`/api/projects/${projectId}/sales`)
+            .then(r => { if (!r.ok) throw new Error('매출 조회 실패'); return r.json(); });
+        if (!isActive()) return;
+        if (!Array.isArray(data?.rows)) throw new Error('매출 응답 형식 오류');
+        if (data?.rows && data.rows.length > 0) {
+            const loadedRows: SalesRow[] = [];
+            for (const r of data.rows) {
+                const period: SalesPeriod = r.period === 'Y_PLUS_1' ? 'Y_PLUS_1' : 'Y';
+                loadedRows.push({
+                    id: r.id,
+                    period,
+                    customer: r.customer ?? '',
+                    amount: Number(r.amount) || 0,
+                    competitor: r.competitor ?? '',
+                    order: r.order,
+                });
 
-                        // 이전 구현에서 한 행에 들어간 Y+1 값이 있으면 새 독립 행으로 표시합니다.
-                        if (period === 'Y' && Number(r.futureAmount) > 0) {
-                            loadedRows.push({
-                                id: `${r.id}_future`,
-                                period: 'Y_PLUS_1',
-                                customer: r.customer ?? '',
-                                amount: Number(r.futureAmount) || 0,
-                                competitor: r.competitor ?? '',
-                                order: loadedRows.length,
-                            });
-                        }
-                    }
-                    const hasY = loadedRows.some((row) => row.period === 'Y');
-                    const hasFuture = loadedRows.some((row) => row.period === 'Y_PLUS_1');
-                    setRows([
-                        ...loadedRows,
-                        ...(hasY ? [] : [createRow('Y')]),
-                        ...(hasFuture ? [] : [createRow('Y_PLUS_1')]),
-                    ]);
-                } else {
-                    setRows([createRow('Y'), createRow('Y_PLUS_1')]);
+                // 이전 구현에서 한 행에 들어간 Y+1 값이 있으면 새 독립 행으로 표시합니다.
+                if (period === 'Y' && Number(r.futureAmount) > 0) {
+                    loadedRows.push({
+                        id: `${r.id}_future`,
+                        period: 'Y_PLUS_1',
+                        customer: r.customer ?? '',
+                        amount: Number(r.futureAmount) || 0,
+                        competitor: r.competitor ?? '',
+                        order: loadedRows.length,
+                    });
                 }
-                setLoadedProjectId(projectId);
-            })
-            .catch(() => { if (active) setLoadFailed(true); })
-            .finally(() => { if (active) setIsLoading(false); });
-        return () => { active = false; };
-    }, [projectId, loadAttempt]);
+            }
+            const hasY = loadedRows.some((row) => row.period === 'Y');
+            const hasFuture = loadedRows.some((row) => row.period === 'Y_PLUS_1');
+            setRows([
+                ...loadedRows,
+                ...(hasY ? [] : [createRow('Y')]),
+                ...(hasFuture ? [] : [createRow('Y_PLUS_1')]),
+            ]);
+        } else {
+            setRows([createRow('Y'), createRow('Y_PLUS_1')]);
+        }
+    });
 
     const addRow = (period: SalesPeriod) => {
         setRows((current) => {
@@ -160,7 +148,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
     };
 
     const handleSave = async () => {
-        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
+        if (!isReady) return;
         setIsSaving(true);
         try {
             const payload = PERIODS.flatMap(({ key }) => rowsByPeriod[key].map((row, idx) => ({
@@ -200,7 +188,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
     };
 
     const handleReset = async () => {
-        if (isLoading || loadFailed || loadedProjectId !== projectId) return;
+        if (!isReady) return;
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/sales`, {
@@ -220,8 +208,8 @@ export default function SalesTable({ projectId, onSaved }: Props) {
         }
     };
 
-    if (loadFailed) return <WorksheetLoadError onRetry={() => setLoadAttempt(attempt => attempt + 1)} />;
-    if (isLoading || loadedProjectId !== projectId) {
+    if (loadFailed) return <WorksheetLoadError onRetry={retry} />;
+    if (!isReady) {
         return (
             <div className="flex items-center justify-center p-12">
                 <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
