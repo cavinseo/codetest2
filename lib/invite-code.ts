@@ -2,6 +2,7 @@
 import { randomBytes } from 'crypto';
 import type { InvitableRole } from './member-roles';
 import { formatInviteExpiryDate } from './invite-expiry';
+import { addDays } from './add-days';
 
 /** 코드 자체의 기본 사용 기한(일). 접근 기간(90일)과는 다른 값이다. */
 export const INVITE_CODE_VALID_DAYS = 14;
@@ -44,9 +45,7 @@ export function normalizeInviteCode(value: string): string {
 }
 
 export function inviteCodeExpiryFrom(issuedAt: Date, validDays: number = INVITE_CODE_VALID_DAYS): Date {
-    const expiry = new Date(issuedAt);
-    expiry.setDate(expiry.getDate() + validDays);
-    return expiry;
+    return addDays(issuedAt, validDays);
 }
 
 export interface InviteCodeRecord {

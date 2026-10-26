@@ -1,9 +1,17 @@
 // 초대 기한의 날짜 입력과 표시를 한국 시간 기준으로 통일한다.
 import { z } from 'zod';
 
+/**
+ * 날짜 입력(YYYY-MM-DD)을 그날 한국 시간 자정 직전 시각으로 바꾼다. 초대 기한과 회원
+ * 이용만료일이 같은 규칙을 각자 적고 있었다(2026-10-25 코드 리뷰 D8).
+ */
+export function endOfKoreanDay(value: string): Date {
+    return new Date(`${value}T23:59:59.999+09:00`);
+}
+
 export const inviteExpirySchema = z.string({ required_error: '최초 접속 기한을 입력하세요.' })
     .date('올바른 최초 접속 기한 날짜를 입력하세요.')
-    .transform((value) => new Date(`${value}T23:59:59.999+09:00`));
+    .transform(endOfKoreanDay);
 
 export function formatInviteExpiryDate(value: string | Date): string {
     return new Date(new Date(value).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);

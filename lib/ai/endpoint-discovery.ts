@@ -68,6 +68,14 @@ export function pickModel(modelIds: string[], preferred: string | undefined, hin
     return modelIds[0];
 }
 
+/**
+ * 엔드포인트 주소와 하위 경로를 슬래시 하나로 잇는다. 서버 쪽 엔진(openai-compatible)과
+ * 브라우저 쪽 엔진(browser-local)이 같은 함수를 복사해 들고 있었다(2026-10-25 코드 리뷰 D8).
+ */
+export function joinUrl(baseUrl: string, path: string): string {
+    return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+}
+
 // OpenAI 호환 경로가 막혀 있으면 Ollama 네이티브 경로로도 한 번 확인한다.
 export function nativeTagsUrl(baseUrl: string): string {
     return `${baseUrl.replace(/\/v1\/?$/, '').replace(/\/+$/, '')}/api/tags`;

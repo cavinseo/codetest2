@@ -5,6 +5,7 @@ import type { WorksheetAnalysis } from './mentor-worksheet-analysis';
 import { formatMoney } from './money';
 import { buildAssetReportTables, buildFitnessReportTables, buildFundingPlanReportTable, buildFundingSourceReportTable, buildKanoReportTable, buildQfdReportTables } from './final-report-worksheet-tables';
 import { fitImageToBody, A4_PORTRAIT_BODY } from './report-image-fit';
+import { buildSpecTree } from './spec-tree';
 
 type ReportCell = string | number | null | undefined;
 const displayValue = (text: ReportCell) => text == null || String(text).trim() === '' ? '미입력' : String(text);
@@ -42,11 +43,10 @@ type ReportWriter = ReturnType<typeof createReportWriter>;
 
 function buildSpecRows(specFunctions: FinalReportWorksheetData['specFunctions']): ReportCell[][] {
     const specs: ReportCell[][] = [];
-    for (const core of specFunctions.filter(row => row.level === 'CORE')) {
-        const subs = specFunctions.filter(row => row.level === 'SUB' && row.parentId === core.id);
+    // 내보내기 데이터는 저장 순서와 무관하게 오므로 order 로 정렬해 펼친다.
+    for (const { core, subs } of buildSpecTree(specFunctions)) {
         if (!subs.length || core.technology) specs.push([specs.length + 1, core.name, '', '', core.technology]);
-        for (const sub of subs) {
-            const details = specFunctions.filter(row => row.level === 'DETAIL' && row.parentId === sub.id);
+        for (const { sub, details } of subs) {
             if (!details.length || sub.technology) specs.push([specs.length + 1, core.name, sub.name, '', sub.technology]);
             for (const detail of details) specs.push([specs.length + 1, core.name, sub.name, detail.name, detail.technology]);
         }

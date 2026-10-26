@@ -9,6 +9,8 @@
 //   MENTOR           현재 배정된 멘티의 프로젝트만 열람·편집
 //   MENTEE           배정된 프로젝트만. 프로젝트는 만들지 못한다
 
+import { addDays } from './add-days';
+
 export const MEMBER_ROLES = ['ADMIN', 'PROGRAM_MANAGER', 'MENTOR', 'MENTEE'] as const;
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 
@@ -137,9 +139,7 @@ export function accessExpiryFrom(
     issuedAt: Date,
     durationDays: number = DEFAULT_ACCESS_DURATION_DAYS
 ): Date {
-    const expiry = new Date(issuedAt);
-    expiry.setDate(expiry.getDate() + durationDays);
-    return expiry;
+    return addDays(issuedAt, durationDays);
 }
 
 /** 접근 기간이 지났는지. null 은 만료 없음(관리자가 직접 만든 계정). */

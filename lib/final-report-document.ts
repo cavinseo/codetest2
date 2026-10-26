@@ -33,7 +33,7 @@ export interface FinalReportWorksheetData {
     qfdRelationships?: Array<{ requirementId: string; technicalCharId: string; strength: string }>;
     qfdTechnicals?: Array<{ technicalCharId: string; totalScore: number; importancePercent: number; rank: number | null }>;
     salesEstimates: Array<{ period: string; customer: string | null; amount: number; futureAmount: number; competitor: string | null }>;
-    specFunctions: Array<{ id: string; level: string; parentId: string | null; name: string; technology: string | null }>;
+    specFunctions: Array<{ id: string; level: string; parentId: string | null; name: string; technology: string | null; order?: number | null }>;
     specDetailCollapsed?: boolean;
     productAttributes: Array<{ id?: string; productName: string | null; customerName: string | null; marketSegment: string | null; customerNeed: string | null; benefit: string | null; attribute: string | null; techCapability: string | null }>;
     requirements: Array<{ id: string; category: string; subcategory: string | null; requirement: string }>;
