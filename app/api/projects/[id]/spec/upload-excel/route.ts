@@ -3,8 +3,7 @@ import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { parseWritePolicy, type WritePolicy } from '@/lib/write-policy';
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+import { guardUploadedExcel } from '@/lib/upload-guard';
 
 type FlatSpecRow = {
     core: string;
@@ -28,11 +27,6 @@ type HeaderMatch = {
     index: number;
     layout: SheetLayout;
 };
-
-function isSupportedExcelFile(fileName: string) {
-    const lowerName = fileName.toLowerCase();
-    return lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls');
-}
 
 function normalizeCell(value: unknown) {
     return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -332,19 +326,13 @@ export async function POST(
         }
 
         const formData = await request.formData();
-        const file = formData.get('file');
+        const upload = guardUploadedExcel(formData.get('file'));
         const requestedSheetName = normalizeCell(formData.get('sheetName'));
         const writePolicy = parseWritePolicy(formData.get('writePolicy'));
 
-        if (!(file instanceof File)) {
-            return NextResponse.json({ error: '파일이 없습니다.' }, { status: 400 });
-        }
-        if (file.size > MAX_FILE_SIZE) {
-            return NextResponse.json({ error: '파일 크기는 10MB를 초과할 수 없습니다.' }, { status: 400 });
-        }
-        if (!isSupportedExcelFile(file.name)) {
-            return NextResponse.json({ error: '.xlsx 또는 .xls 파일만 업로드할 수 있습니다.' }, { status: 400 });
-        }
+        // 크기·형식 검사는 다른 업로드 라우트와 같은 기준을 쓴다(2026-10-25 코드 리뷰 D5).
+        if (!upload.ok) return NextResponse.json({ error: upload.failure.error }, { status: upload.failure.status });
+        const file = upload.file;
 
         const workbook = XLSX.read(Buffer.from(await file.arrayBuffer()), {
             type: 'buffer',

@@ -11,6 +11,7 @@ import {
     getRequirementGroupSpans,
     sortRequirementsByWorksheetOrder,
 } from '@/lib/requirements-table-utils';
+import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
 
 interface Requirement {
     id: string;
@@ -237,9 +238,8 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
     const handleExcelUpload = (file: File | null) => {
         if (!file) return;
-        const fileName = file.name.toLowerCase();
-        if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
-            showToast('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', 'error');
+        if (!isExcelFileName(file.name)) {
+            showToast(EXCEL_FILE_TYPE_ERROR, 'error');
             if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }

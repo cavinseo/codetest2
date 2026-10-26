@@ -28,9 +28,17 @@ export function guardUploadedExcel(
     return { ok: true, file: value as File };
 }
 
-function hasSupportedExtension(fileName: string, allowCsv = false): boolean {
+// 화면(파일 고르기)과 서버(업로드 라우트)가 같은 확장자 기준·같은 문구를 쓰도록 내보낸다.
+// 화면 다섯 곳이 각자 endsWith 를 적고 있었다(2026-10-25 코드 리뷰 D5).
+export const EXCEL_FILE_TYPE_ERROR = '.xlsx 또는 .xls 파일만 업로드할 수 있습니다.';
+
+export function isExcelFileName(fileName: string): boolean {
     const lower = fileName.trim().toLowerCase();
-    return lower.endsWith('.xlsx') || lower.endsWith('.xls') || (allowCsv && lower.endsWith('.csv'));
+    return lower.endsWith('.xlsx') || lower.endsWith('.xls');
+}
+
+function hasSupportedExtension(fileName: string, allowCsv = false): boolean {
+    return isExcelFileName(fileName) || (allowCsv && fileName.trim().toLowerCase().endsWith('.csv'));
 }
 
 /**
@@ -56,7 +64,7 @@ export function checkUploadedExcel(
         };
     }
     if (!hasSupportedExtension(value.name, options.allowCsv)) {
-        return { error: options.allowCsv ? '.xlsx, .xls 또는 .csv 파일만 업로드할 수 있습니다.' : '.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', status: 400 };
+        return { error: options.allowCsv ? '.xlsx, .xls 또는 .csv 파일만 업로드할 수 있습니다.' : EXCEL_FILE_TYPE_ERROR, status: 400 };
     }
     return null;
 }

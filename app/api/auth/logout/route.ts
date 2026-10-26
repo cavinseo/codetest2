@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE_NAME } from '../../../../lib/constants';
 import { verifySessionCookie } from '../../../../lib/auth';
+import { clearSessionCookie } from '../../../../lib/session-cookie';
 import { prisma } from '../../../../lib/prisma';
 import { createLogger } from '../../../../lib/logger';
 
@@ -9,13 +10,7 @@ const log = createLogger('api/auth/logout');
 
 export async function POST(request: NextRequest) {
     const response = NextResponse.json({ success: true });
-    response.cookies.set(SESSION_COOKIE_NAME, '', {
-        httpOnly: true,
-        sameSite: 'strict',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 0,
-        path: '/',
-    });
+    clearSessionCookie(response.cookies);
 
     // 쿠키만 지우면 유출된 쿠키는 만료 시각까지 계속 통한다.
     // sessionVersion 을 올려 그 전에 발급된 쿠키를 전부 거부한다.

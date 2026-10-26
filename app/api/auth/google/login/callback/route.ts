@@ -1,8 +1,7 @@
 // Google 회원 로그인 콜백. 승인된 기존 회원만 로그인시킨다 — 자동 가입 없음.
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { encodeSessionCookie } from '@/lib/auth';
-import { SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
+import { setSessionCookie } from '@/lib/session-cookie';
 import { exchangeLoginCodeForEmail } from '@/lib/google-auth';
 import { readLoginStateRole } from '@/lib/login-state';
 import { parseMemberRole } from '@/lib/member-roles';
@@ -74,16 +73,7 @@ export async function GET(request: NextRequest) {
             new URL(needsOnboarding ? '/onboarding' : '/dashboard', origin)
         );
         response.cookies.delete(STATE_COOKIE);
-        response.cookies.set(SESSION_COOKIE_NAME, encodeSessionCookie(
-            { userId: user.id, email: user.email, name: user.name },
-            { sessionVersion: user.sessionVersion }
-        ), {
-            httpOnly: true,
-            sameSite: 'strict',
-            secure: process.env.NODE_ENV === 'production',
-            maxAge: SESSION_MAX_AGE_SECONDS,
-            path: '/',
-        });
+        setSessionCookie(response.cookies, { userId: user.id, email: user.email, name: user.name }, user.sessionVersion);
 
         // 이메일은 로그에 남기지 않는다. userId 만.
         log.info('Google 로그인 성공', { userId: user.id });

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
+import { isProjectWriteRole } from '@/lib/project-roles';
 import { createLogger } from '@/lib/logger';
 import { buildKanoOfflineFormHtml, kanoOfflineFormFileName } from '@/lib/kano-offline-form';
 import { z } from 'zod';
@@ -36,7 +37,7 @@ export async function GET(
         if (request.nextUrl.searchParams.get('format') === 'json') {
             return NextResponse.json({
                 projectId, projectName: project.name, requirements, introduction,
-                canEdit: ['OWNER', 'EDITOR', 'ADMIN'].includes(accessResult.role),
+                canEdit: isProjectWriteRole(accessResult.role),
             }, { headers: { 'Cache-Control': 'no-store' } });
         }
         if (requirements.length === 0) {

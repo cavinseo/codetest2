@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
+import { cascadeConfirmResponse } from '@/lib/cascade-confirm-response';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
@@ -100,14 +101,7 @@ export async function POST(
                 replacesCustomerRequirements: true,
             });
             if (hasCascadeImpact(impact) && body?.confirmCascade !== true) {
-                return NextResponse.json(
-                    {
-                        error: describeCascadeImpact(impact),
-                        needsCascadeConfirm: true,
-                        cascadeImpact: impact,
-                    },
-                    { status: 409 }
-                );
+                return cascadeConfirmResponse(describeCascadeImpact(impact), impact);
             }
         }
 

@@ -18,6 +18,7 @@ import {
     GOOGLE_FORMS_INTEGRATION_ENABLED,
 } from '@/lib/feature-flags';
 import { readJsonOrThrow } from '@/lib/client-fetch';
+import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
 
 interface Requirement {
     id: string;
@@ -301,9 +302,8 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             setBulkFile(null);
             return;
         }
-        const fileName = file.name.toLowerCase();
-        if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
-            setInviteError('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.');
+        if (!isExcelFileName(file.name)) {
+            setInviteError(EXCEL_FILE_TYPE_ERROR);
             if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
             return;
         }

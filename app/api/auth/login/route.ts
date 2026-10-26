@@ -3,8 +3,8 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
-import { BCRYPT_ROUNDS, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
-import { encodeSessionCookie } from '@/lib/auth';
+import { BCRYPT_ROUNDS } from '@/lib/constants';
+import { setSessionCookie } from '@/lib/session-cookie';
 import { createLogger } from '@/lib/logger';
 import { LOGIN_RATE_LIMIT, clientIpFrom, consumeRateLimit, resetRateLimit } from '@/lib/rate-limit';
 import { isProfileCompleteForRole } from '@/lib/member-profile';
@@ -122,18 +122,7 @@ export async function POST(request: NextRequest) {
         const sessionPayload = { userId: user.id, email: user.email, name: user.name };
 
         const cookieStore = await cookies();
-        // 발급 당시의 sessionVersion 을 서명 안에 넣는다. 이후 비밀번호 변경이나
-        // 승인 취소로 값이 올라가면 이 쿠키는 즉시 거부된다.
-        const cookieValue = encodeSessionCookie(sessionPayload, {
-            sessionVersion: user.sessionVersion,
-        });
-        cookieStore.set(SESSION_COOKIE_NAME, cookieValue, {
-            httpOnly: true,
-            sameSite: 'strict',
-            secure: process.env.NODE_ENV === 'production',
-            maxAge: SESSION_MAX_AGE_SECONDS,
-            path: '/',
-        });
+        setSessionCookie(cookieStore, sessionPayload, user.sessionVersion);
 
         // 정상 로그인이 확인됐으니 이 조합의 실패 카운터는 비운다.
         resetRateLimit(rateKey);

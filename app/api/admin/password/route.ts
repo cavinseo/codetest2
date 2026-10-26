@@ -3,9 +3,10 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
-import { BCRYPT_ROUNDS, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
+import { BCRYPT_ROUNDS, SESSION_COOKIE_NAME } from '@/lib/constants';
 import { createLogger } from '@/lib/logger';
-import { encodeSessionCookie, requireAuth, verifySessionCookie } from '@/lib/auth';
+import { requireAuth, verifySessionCookie } from '@/lib/auth';
+import { setSessionCookie } from '@/lib/session-cookie';
 import { PASSWORD_MIN_LENGTH, getNewPasswordError, getPasswordChangeError } from '@/lib/password-policy';
 import { normalizeInviteCode } from '@/lib/invite-code';
 import { inviteAccessExpiresAt, isUserAccessExpired } from '@/lib/invite-access';
@@ -126,20 +127,7 @@ export async function POST(request: NextRequest) {
 
         // 다른 기기의 세션은 끊되, 지금 조작 중인 본인은 새 버전으로 재발급해 유지한다.
         const cookieStore = await cookies();
-        cookieStore.set(
-            SESSION_COOKIE_NAME,
-            encodeSessionCookie(
-                { userId: user.id, email: user.email, name: user.name },
-                { sessionVersion: session.ver + 1 }
-            ),
-            {
-                httpOnly: true,
-                sameSite: 'strict',
-                secure: process.env.NODE_ENV === 'production',
-                maxAge: SESSION_MAX_AGE_SECONDS,
-                path: '/',
-            }
-        );
+        setSessionCookie(cookieStore, { userId: user.id, email: user.email, name: user.name }, session.ver + 1);
 
         resetRateLimit(rateKey);
         log.info('비밀번호 변경 완료', { userId: user.id });

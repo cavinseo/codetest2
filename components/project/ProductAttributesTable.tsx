@@ -17,6 +17,7 @@ import {
     getCustomerNeedSpan,
     getMarketSegmentSpan,
 } from '@/lib/product-attributes-utils';
+import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
 
 interface ProductAttributeRow {
     id: string;
@@ -396,9 +397,8 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
 
     const handleExcelUpload = async (file: File | null) => {
         if (!file) return;
-        const fileName = file.name.toLowerCase();
-        if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
-            showToast('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', 'error');
+        if (!isExcelFileName(file.name)) {
+            showToast(EXCEL_FILE_TYPE_ERROR, 'error');
             if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }

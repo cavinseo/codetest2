@@ -10,6 +10,7 @@ import {
     type AnalysisWorksheetId, type WorksheetAnalysis,
 } from '@/lib/mentor-worksheet-analysis';
 import { readJsonOrThrow } from '@/lib/client-fetch';
+import { useLeaveGuard } from './useLeaveGuard';
 
 type AnalysisValue = NonNullable<WorksheetAnalysis[AnalysisWorksheetId]>;
 interface Props { projectId: string; worksheetId?: string; onDirtyChange?: (dirty: boolean) => void; }
@@ -60,35 +61,17 @@ function AnalysisForm({ projectId, id, onDirtyChange }: { projectId: string; id:
     useEffect(() => {
         if (confirmBack && backDialog.current && !backDialog.current.open) backDialog.current.showModal();
     }, [confirmBack]);
-    useEffect(() => {
-        if (!dirty) return;
-        const currentUrl = window.location.href;
-        const currentHistory = window.history.state;
-        const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-        const guardBack = (event: PopStateEvent) => {
-            if (allowNextPop.current) { allowNextPop.current = false; return; }
-            event.stopImmediatePropagation();
-            window.history.pushState(currentHistory, '', currentUrl);
+    useLeaveGuard({
+        enabled: dirty,
+        message: '저장하지 않은 멘토 분석이 있습니다. 저장하지 않고 이동할까요?',
+        // 뒤로 가기는 confirm 대신 대화상자로 묻는다. 대화상자에서 "이동"을 고르면 history.back()
+        // 전에 allowNextPop 을 세워 두므로, 그 한 번은 묻지 않고 보낸다.
+        confirmBack: () => {
+            if (allowNextPop.current) { allowNextPop.current = false; return true; }
             setConfirmBack(true);
-        };
-        const guardLink = (event: MouseEvent) => {
-            if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-            const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
-            if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download') || link.target === '_blank') return;
-            if (link.href === window.location.href) return;
-            if (!window.confirm('저장하지 않은 멘토 분석이 있습니다. 저장하지 않고 이동할까요?')) {
-                event.preventDefault(); event.stopImmediatePropagation();
-            }
-        };
-        window.addEventListener('beforeunload', warn);
-        window.addEventListener('popstate', guardBack, true);
-        document.addEventListener('click', guardLink, true);
-        return () => {
-            window.removeEventListener('beforeunload', warn);
-            window.removeEventListener('popstate', guardBack, true);
-            document.removeEventListener('click', guardLink, true);
-        };
-    }, [dirty]);
+            return false;
+        },
+    });
 
     const update = (next: AnalysisValue) => { setValue(next); setDirty(true); setNotice(''); };
     const save = async () => {

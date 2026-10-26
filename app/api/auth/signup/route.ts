@@ -4,8 +4,8 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
-import { BCRYPT_ROUNDS, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
-import { encodeSessionCookie } from '@/lib/auth';
+import { BCRYPT_ROUNDS } from '@/lib/constants';
+import { setSessionCookie } from '@/lib/session-cookie';
 import { createLogger } from '@/lib/logger';
 import { SIGNUP_RATE_LIMIT, clientIpFrom, consumeRateLimit } from '@/lib/rate-limit';
 import { checkInviteCode, normalizeInviteCode, INVITE_CODE_MESSAGES } from '@/lib/invite-code';
@@ -185,12 +185,7 @@ export async function POST(request: NextRequest) {
         if (invite) {
             // 기존 코드 가입도 최초 로그인으로 완료하여 이용 기간의 시작 시각을 일치시킨다.
             const cookieStore = await cookies();
-            cookieStore.set(SESSION_COOKIE_NAME, encodeSessionCookie({ userId: newUser.id, email: newUser.email, name: newUser.name }, {
-                sessionVersion: newUser.sessionVersion,
-            }), {
-                httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production',
-                maxAge: SESSION_MAX_AGE_SECONDS, path: '/',
-            });
+            setSessionCookie(cookieStore, { userId: newUser.id, email: newUser.email, name: newUser.name }, newUser.sessionVersion);
         }
         log.info('회원가입 완료', { userId: newUser.id, role, viaInvite: Boolean(invite) });
         return NextResponse.json({

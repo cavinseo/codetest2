@@ -9,6 +9,7 @@ import { toggleGroupVisibility } from '@/lib/qfd-technical-header';
 import { findMissingTechnicalCharNames, normalizeTechnicalName } from '@/lib/qfd-technical-sync';
 import { buildTechnicalGroups } from '@/lib/qfd-technical-groups';
 import { useQfdRelationshipAutosave, type Relationship } from './useQfdRelationshipAutosave';
+import { useLeaveGuard } from './useLeaveGuard';
 
 interface Requirement {
     id: string;
@@ -265,36 +266,11 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
         loadData();
     }, [loadData]);
 
-    useEffect(() => {
-        const currentUrl = window.location.href;
-        const currentHistory = window.history.state;
-        const confirmLeave = () => !hasUnsavedRelationships() || window.confirm('저장 중이거나 저장하지 못한 관계 강도가 있습니다. 저장하지 않고 이동할까요?');
-        const warn = (event: BeforeUnloadEvent) => {
-            if (hasUnsavedRelationships()) event.preventDefault();
-        };
-        const guardLink = (event: MouseEvent) => {
-            if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-            const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
-            if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download') || link.target === '_blank' || link.href === window.location.href) return;
-            if (!confirmLeave()) {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-            }
-        };
-        const guardBack = (event: PopStateEvent) => {
-            if (confirmLeave()) return;
-            event.stopImmediatePropagation();
-            window.history.pushState(currentHistory, '', currentUrl);
-        };
-        window.addEventListener('beforeunload', warn);
-        window.addEventListener('popstate', guardBack, true);
-        document.addEventListener('click', guardLink, true);
-        return () => {
-            window.removeEventListener('beforeunload', warn);
-            window.removeEventListener('popstate', guardBack, true);
-            document.removeEventListener('click', guardLink, true);
-        };
-    }, [hasUnsavedRelationships]);
+    useLeaveGuard({
+        enabled: true,
+        isDirty: hasUnsavedRelationships,
+        message: '저장 중이거나 저장하지 못한 관계 강도가 있습니다. 저장하지 않고 이동할까요?',
+    });
 
     const openAddTechnical = (groupIndex: number | null) => {
         setAddingToGroup(groupIndex);
