@@ -4,20 +4,12 @@ import { useState, useCallback, useMemo, useRef } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import WorksheetLoadError from './WorksheetLoadError';
 import { useWorksheetLoad } from './useWorksheetLoad';
-import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
-import { readBusinessPlanForSpec } from '@/lib/business-plan-sections';
-import { describeAiEngine } from '@/lib/ai/engine-label';
+import { buildFlatSpecRowsFromFunctions, groupSpecRows, renameSpecGroup } from '@/lib/spec-table-utils';
 import FunctionAnalysisAssistant from '@/components/project/FunctionAnalysisAssistant';
+import SpecFastWizard from './SpecFastWizard';
 import { isProjectWriteRole } from '@/lib/project-roles';
-import {
-    BrowserLocalError,
-    callBrowserLocalLlm,
-    discoverBrowserLocalEndpoint,
-} from '@/lib/ai/browser-local';
 import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
 
 interface SpecFunction {
@@ -51,54 +43,7 @@ interface FlatSpecRow {
     technology: string;
 }
 
-interface GroupedSpecRow extends FlatSpecRow {
-    coreRowSpan: number;
-    subRowSpan: number;
-}
-
-type SpecAiWizardStep = 'guide' | 'questions' | 'review' | 'fast';
-
-// 서버가 로컬 엔진에 못 붙었을 때 내려주는 봉투. 브라우저가 이걸로 자기 PC의 LLM 을 부른다.
-interface BrowserRelayEnvelope {
-    task: string;
-    prompts: { system: string; user: string };
-    candidateBaseUrls: string[];
-    preferredModel?: string;
-}
-
-interface SpecDraftResponse {
-    specFunctions?: SpecFunction[];
-    issues?: SpecAiIssue[];
-    recommendations?: SpecAiRecommendation[];
-    contextSummary?: SpecAiContextSummary | null;
-    provider?: string;
-    degraded?: boolean;
-    browserRelay?: BrowserRelayEnvelope;
-}
-
-interface SpecAiContextSummary {
-    keywords?: string[];
-    customerNeedCount?: number;
-    productAttributeCount?: number;
-    existingSpecCount?: number;
-    qfdTechnicalCount?: number;
-    targetSpecCount?: number;
-}
-
-interface SpecAiIssue {
-    severity: 'info' | 'warning' | 'error';
-    message: string;
-    specId?: string;
-}
-
-interface SpecAiRecommendation {
-    type: 'qfd' | 'targetSpec';
-    label: string;
-    reason: string;
-}
-
 export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
-    const router = useRouter();
     const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=spec`;
     const [project, setProject] = useState<ProjectData | null>(null);
     const [rows, setRows] = useState<FlatSpecRow[]>([]);
@@ -107,27 +52,10 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const hasDetailContent = rows.some(row => row.detail.trim() !== '');
     const showDetailColumn = hasDetailContent || !isDetailColumnCollapsed;
     const [isSaving, setIsSaving] = useState(false);
-    const [isGenerating, setIsGenerating] = useState(false);
     const [isUploadingExcel, setIsUploadingExcel] = useState(false);
     const [activeMode, setActiveMode] = useState<'manual' | 'auto'>('manual');
     const [showAiDetailPopup, setShowAiDetailPopup] = useState(false);
     const [showFunctionAnalysisAssistant, setShowFunctionAnalysisAssistant] = useState(false);
-    const [aiDetailInput, setAiDetailInput] = useState('');
-    const [aiWizardStep, setAiWizardStep] = useState<SpecAiWizardStep>('guide');
-    const [aiQuestionInput, setAiQuestionInput] = useState({
-        desiredFunctions: '',
-    });
-    const [aiFastRows, setAiFastRows] = useState<FlatSpecRow[]>([]);
-    const [aiDraftSpecs, setAiDraftSpecs] = useState<SpecFunction[]>([]);
-    const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set());
-    const [aiIssues, setAiIssues] = useState<SpecAiIssue[]>([]);
-    const [aiRecommendations, setAiRecommendations] = useState<SpecAiRecommendation[]>([]);
-    const [aiContextSummary, setAiContextSummary] = useState<SpecAiContextSummary | null>(null);
-    // 어떤 엔진이 이 초안을 만들었는지 결과 화면에 배지로 보여준다.
-    const [aiEngineLabel, setAiEngineLabel] = useState('');
-    // 브라우저 경유 호출은 최대 90초 걸릴 수 있어 진행 상황을 알려주고 취소도 받는다.
-    const [relayStatus, setRelayStatus] = useState('');
-    const relayAbortRef = useRef<AbortController | null>(null);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const { toast, showToast } = useToast();
@@ -221,48 +149,9 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         setRows(rows.map(r => r.id === id ? { ...r, [field]: value } : r));
     };
 
-    const updateCoreGroup = (index: number, value: string) => {
-        const currentCore = rows[index]?.core.trim();
-        if (!currentCore) {
-            updateRow(rows[index].id, 'core', value);
-            return;
-        }
-
-        let start = index;
-        while (start > 0 && rows[start - 1].core.trim() === currentCore) start--;
-        let end = index;
-        while (end + 1 < rows.length && rows[end + 1].core.trim() === currentCore) end++;
-
-        setRows(rows.map((row, rowIndex) => (
-            rowIndex >= start && rowIndex <= end ? { ...row, core: value } : row
-        )));
-    };
-
-    const updateSubGroup = (index: number, value: string) => {
-        const currentCore = rows[index]?.core.trim();
-        const currentSub = rows[index]?.sub.trim();
-        if (!currentSub) {
-            updateRow(rows[index].id, 'sub', value);
-            return;
-        }
-
-        let start = index;
-        while (
-            start > 0 &&
-            rows[start - 1].core.trim() === currentCore &&
-            rows[start - 1].sub.trim() === currentSub
-        ) start--;
-        let end = index;
-        while (
-            end + 1 < rows.length &&
-            rows[end + 1].core.trim() === currentCore &&
-            rows[end + 1].sub.trim() === currentSub
-        ) end++;
-
-        setRows(rows.map((row, rowIndex) => (
-            rowIndex >= start && rowIndex <= end ? { ...row, sub: value } : row
-        )));
-    };
+    // 합쳐 보이는 핵심·세부 칸을 고치면 그 묶음 전체가 바뀐다(lib/spec-table-utils).
+    const updateCoreGroup = (index: number, value: string) => setRows(renameSpecGroup(rows, index, 'core', value));
+    const updateSubGroup = (index: number, value: string) => setRows(renameSpecGroup(rows, index, 'sub', value));
 
     const deleteRow = (id: string) => {
         setRows(rows.filter(r => r.id !== id));
@@ -297,73 +186,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         return Array.from(new Set(rows.map(row => row.technology.trim()).filter(Boolean)));
     }, [rows]);
 
-    const groupedRows = useMemo<GroupedSpecRow[]>(() => {
-        return rows.map((row, index) => {
-            const core = row.core.trim();
-            const sub = row.sub.trim();
-            const previous = rows[index - 1];
-            const isFirstCore = !core || !previous || previous.core.trim() !== core;
-            const isFirstSub = !sub || isFirstCore || !previous || previous.sub.trim() !== sub || previous.core.trim() !== core;
-
-            let coreRowSpan = 0;
-            if (isFirstCore) {
-                coreRowSpan = 1;
-                while (index + coreRowSpan < rows.length && core && rows[index + coreRowSpan].core.trim() === core) {
-                    coreRowSpan++;
-                }
-            }
-
-            let subRowSpan = 0;
-            if (isFirstSub) {
-                subRowSpan = 1;
-                while (
-                    index + subRowSpan < rows.length &&
-                    sub &&
-                    rows[index + subRowSpan].core.trim() === core &&
-                    rows[index + subRowSpan].sub.trim() === sub
-                ) {
-                    subRowSpan++;
-                }
-            }
-
-            return { ...row, coreRowSpan, subRowSpan };
-        });
-    }, [rows]);
-
-    const aiGroupedRows = useMemo<GroupedSpecRow[]>(() => {
-        return aiFastRows.map((row, index) => {
-            const core = row.core.trim();
-            const sub = row.sub.trim();
-            const previous = aiFastRows[index - 1];
-            const isFirstCore = !core || !previous || previous.core.trim() !== core;
-            const isFirstSub = !sub || !previous || previous.core.trim() !== core || previous.sub.trim() !== sub;
-
-            let coreRowSpan = 0;
-            if (isFirstCore) {
-                coreRowSpan = 1;
-                while (index + coreRowSpan < aiFastRows.length && core && aiFastRows[index + coreRowSpan].core.trim() === core) {
-                    coreRowSpan++;
-                }
-            }
-
-            let subRowSpan = 0;
-            if (isFirstSub) {
-                subRowSpan = 1;
-                while (
-                    index + subRowSpan < aiFastRows.length &&
-                    sub &&
-                    aiFastRows[index + subRowSpan].core.trim() === core &&
-                    aiFastRows[index + subRowSpan].sub.trim() === sub
-                ) {
-                    subRowSpan++;
-                }
-            }
-
-            return { ...row, coreRowSpan, subRowSpan };
-        });
-    }, [aiFastRows]);
-
-    const aiDraftRows = useMemo(() => buildRowsFromSpecs(aiDraftSpecs), [aiDraftSpecs, buildRowsFromSpecs]);
+    const groupedRows = useMemo(() => groupSpecRows(rows), [rows]);
 
     const handleSpecExcelUpload = (file: File | null) => {
         if (!file) return;
@@ -407,241 +230,6 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
             setPendingExcelFile(null);
             if (excelInputRef.current) excelInputRef.current.value = '';
         }
-    };
-
-    const handleAutoGenerate = async () => {
-        const additionalDescription = aiDetailInput.trim();
-        const desiredFunctions = aiQuestionInput.desiredFunctions.trim();
-        if (!additionalDescription || !desiredFunctions) {
-            showToast('세부설명과 원하는 기능을 모두 입력하세요.', 'error');
-            return;
-        }
-
-        setAiDraftSpecs([]);
-        setSelectedDraftIds(new Set());
-        setAiIssues([]);
-        setAiRecommendations([]);
-        setAiContextSummary(null);
-        setAiEngineLabel('');
-        setIsGenerating(true);
-        try {
-            const res = await fetch(`/api/projects/${projectId}/spec/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    mode: 'draft',
-                    additionalDescription,
-                    structuredInput: {
-                        productService: project?.name || '',
-                        currentFunctions: desiredFunctions,
-                    },
-                }),
-            });
-            if (!res.ok) {
-                showToast('FAST 결과표 생성에 실패했습니다.', 'error');
-                return;
-            }
-
-            const data = await res.json();
-
-            // 서버가 로컬 엔진에 못 붙어 브라우저 경유를 제안했으면, 내 PC의 LLM 을 직접 부른다.
-            // 실패하면 이미 응답에 담겨 온 규칙 기반 결과를 그대로 쓴다.
-            if (data.browserRelay) {
-                const relayed = await tryBrowserRelay(data.browserRelay, additionalDescription);
-                applyDraftResult(relayed ?? data);
-                return;
-            }
-
-            applyDraftResult(data);
-        } catch (error) {
-            console.error('FAST 결과표 생성 실패:', error);
-            showToast('FAST 결과표 생성에 실패했습니다.', 'error');
-        } finally {
-            setIsGenerating(false);
-            setRelayStatus('');
-        }
-    };
-
-    const applyDraftResult = (data: SpecDraftResponse) => {
-        const loadedSpecs: SpecFunction[] = data.specFunctions || [];
-        setAiDraftSpecs(loadedSpecs);
-        setAiFastRows(buildRowsFromSpecs(loadedSpecs));
-        setSelectedDraftIds(new Set(loadedSpecs.map((spec) => spec.id)));
-        setAiIssues(data.issues || []);
-        setAiRecommendations(data.recommendations || []);
-        setAiContextSummary(data.contextSummary || null);
-        setAiEngineLabel(describeAiEngine(data));
-        setAiWizardStep('fast');
-        showToast('FAST 결과표 초안을 만들었습니다. 수정 후 확정하세요.', 'info');
-    };
-
-    // 성공하면 서버가 검증까지 마친 결과를, 실패하면 null 을 돌려준다.
-    const tryBrowserRelay = async (
-        relay: BrowserRelayEnvelope,
-        additionalDescription: string
-    ): Promise<SpecDraftResponse | null> => {
-        const controller = new AbortController();
-        relayAbortRef.current = controller;
-
-        try {
-            setRelayStatus('내 PC에서 로컬 AI를 찾는 중...');
-            const endpoint = await discoverBrowserLocalEndpoint(
-                relay.candidateBaseUrls,
-                relay.preferredModel,
-                controller.signal
-            );
-            if (!endpoint) {
-                showToast(
-                    '로컬 AI를 찾지 못해 기본 엔진으로 만들었습니다. Ollama·LM Studio 실행 여부와 CORS 설정을 확인하세요.',
-                    'info'
-                );
-                return null;
-            }
-
-            setRelayStatus(`${endpoint.model} 모델로 생성 중... (최대 90초)`);
-            const content = await callBrowserLocalLlm(endpoint, relay.prompts, { signal: controller.signal });
-
-            setRelayStatus('결과를 검증하는 중...');
-            const res = await fetch(`/api/projects/${projectId}/spec/generate/complete`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content, additionalDescription }),
-            });
-            if (!res.ok) {
-                showToast('로컬 AI 응답 형식이 맞지 않아 기본 엔진 결과를 사용합니다.', 'info');
-                return null;
-            }
-            return await res.json();
-        } catch (error) {
-            const message = error instanceof BrowserLocalError
-                ? error.message
-                : '로컬 AI 호출에 실패했습니다.';
-            showToast(`${message} 기본 엔진 결과를 사용합니다.`, 'info');
-            return null;
-        } finally {
-            relayAbortRef.current = null;
-        }
-    };
-
-    // 개요에 저장된 사업계획 내용을 FAST 입력칸으로 옮긴다.
-    // 양식으로 채운 경우 핵심 기능 구획이 있어 원하는 기능까지 자동으로 채워진다.
-    const businessPlanForSpec = useMemo(
-        () => readBusinessPlanForSpec(project?.detailedDescription),
-        [project?.detailedDescription]
-    );
-
-    const applyBusinessPlanToWizard = () => {
-        setAiDetailInput(businessPlanForSpec.detailText || project?.description || '');
-        setAiQuestionInput({ desiredFunctions: businessPlanForSpec.desiredFunctions });
-    };
-
-    const openAiDetailPopup = () => {
-        setAiWizardStep('guide');
-        setAiDetailInput(prev => prev || businessPlanForSpec.detailText || project?.description || '');
-        setAiQuestionInput({
-            desiredFunctions: businessPlanForSpec.desiredFunctions,
-        });
-        setAiFastRows([]);
-        setShowAiDetailPopup(true);
-    };
-
-    const toggleDraftSpec = (id: string) => {
-        setSelectedDraftIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-        });
-    };
-
-    const getSelectedDraftSpecs = () => {
-        const selected = new Set(selectedDraftIds);
-        const byId = new Map(aiDraftSpecs.map((spec) => [spec.id, spec]));
-        for (const spec of aiDraftSpecs) {
-            if (!selected.has(spec.id)) continue;
-            // AI 초안은 부모가 순환할 수 있다. 지나온 부모를 다시 만나면 멈춰 화면이 멈추지 않게 한다(B27과 같은 이유).
-            const visited = new Set<string>();
-            let parentId = spec.parentId;
-            while (parentId && !visited.has(parentId)) {
-                visited.add(parentId);
-                selected.add(parentId);
-                parentId = byId.get(parentId)?.parentId;
-            }
-        }
-        return aiDraftSpecs.filter((spec) => selected.has(spec.id));
-    };
-
-    const applySelectedDraft = () => {
-        if (aiFastRows.length === 0) {
-            showToast('반영할 FAST 양식 행이 없습니다.', 'error');
-            return;
-        }
-
-        setRows(aiFastRows);
-        setActiveMode('manual');
-        setShowAiDetailPopup(false);
-        showToast(`FAST 양식 ${aiFastRows.length}행을 표에 반영했습니다. 저장 버튼을 눌러 확정하세요.`, 'success');
-    };
-
-    const updateAiFastRow = (id: string, field: keyof FlatSpecRow, value: string) => {
-        setAiFastRows(prev => prev.map(row => row.id === id ? { ...row, [field]: value } : row));
-    };
-
-    const updateAiFastCoreGroup = (index: number, value: string) => {
-        const currentCore = aiFastRows[index]?.core.trim();
-        if (!currentCore) {
-            updateAiFastRow(aiFastRows[index].id, 'core', value);
-            return;
-        }
-
-        let start = index;
-        while (start > 0 && aiFastRows[start - 1].core.trim() === currentCore) start--;
-        let end = index;
-        while (end + 1 < aiFastRows.length && aiFastRows[end + 1].core.trim() === currentCore) end++;
-
-        setAiFastRows(prev => prev.map((row, rowIndex) => (
-            rowIndex >= start && rowIndex <= end ? { ...row, core: value } : row
-        )));
-    };
-
-    const updateAiFastSubGroup = (index: number, value: string) => {
-        const currentCore = aiFastRows[index]?.core.trim();
-        const currentSub = aiFastRows[index]?.sub.trim();
-        if (!currentSub) {
-            updateAiFastRow(aiFastRows[index].id, 'sub', value);
-            return;
-        }
-
-        let start = index;
-        while (
-            start > 0 &&
-            aiFastRows[start - 1].core.trim() === currentCore &&
-            aiFastRows[start - 1].sub.trim() === currentSub
-        ) start--;
-        let end = index;
-        while (
-            end + 1 < aiFastRows.length &&
-            aiFastRows[end + 1].core.trim() === currentCore &&
-            aiFastRows[end + 1].sub.trim() === currentSub
-        ) end++;
-
-        setAiFastRows(prev => prev.map((row, rowIndex) => (
-            rowIndex >= start && rowIndex <= end ? { ...row, sub: value } : row
-        )));
-    };
-
-    const deleteAiFastRow = (id: string) => {
-        setAiFastRows(prev => prev.filter(row => row.id !== id));
-    };
-
-    const addAiFastRow = () => {
-        setAiFastRows(prev => [...prev, {
-            id: Math.random().toString(36).slice(2),
-            core: '',
-            sub: '',
-            detail: '',
-            technology: '',
-        }]);
     };
 
     const serializeSpecs = (): SpecFunction[] => {
@@ -796,254 +384,19 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                     }}
                 />
             )}
-            {showAiDetailPopup && (
-                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 px-4">
-                    <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-xl border border-white/10 bg-gray-950 shadow-2xl">
-                        <div className="flex items-start justify-between border-b border-white/10 px-6 py-5">
-                            <div>
-                                <h3 className="text-lg font-semibold text-white">WS-2 FAST 작성 지원</h3>
-                                <p className="mt-1 text-sm text-gray-400">
-                                    세부설명과 원하는 기능을 바탕으로 FAST 결과표를 만들고, 확정된 내용만 본 페이지 표에 반영합니다.
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setShowAiDetailPopup(false)}
-                                disabled={isGenerating}
-                                className="rounded-lg p-2 text-gray-500 hover:bg-white/5 hover:text-white disabled:opacity-50"
-                                aria-label="닫기"
-                            >
-                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-                        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
-                            <div className="grid grid-cols-4 gap-2 text-xs">
-                                {[
-                                    ['guide', '1. 안내'],
-                                    ['questions', '2. 입력'],
-                                    ['review', '3. 검토'],
-                                    ['fast', '4. FAST 결과표'],
-                                ].map(([step, label]) => (
-                                    <div key={step} className={`rounded-md px-3 py-2 text-center font-semibold ${aiWizardStep === step ? 'bg-accent-600 text-white' : 'bg-white/[0.04] text-gray-500'}`}>
-                                        {label}
-                                    </div>
-                                ))}
-                            </div>
-
-                            {aiWizardStep === 'guide' && (
-                                <div className="space-y-4">
-                                    <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4 text-sm leading-6 text-blue-100">
-                                        <p className="font-semibold text-white">작성에 필요한 내용 안내.</p>
-                                        <p className="mt-2">프로젝트명, 프로젝트 설명, 기존 WS-2 항목은 자동으로 참고합니다. 추가로는 세부설명과 원하는 기능만 입력하면 FAST 결과표를 핵심기술, 세부기술, 세세부기술, 적용기술 순서로 제시합니다.</p>
-                                    </div>
-                                    <div className="grid gap-3 md:grid-cols-3">
-                                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                                            <p className="text-xs text-gray-500">제품/서비스</p>
-                                            <p className="mt-1 text-sm text-white">{project?.name || '미입력'}</p>
-                                        </div>
-                                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                                            <p className="text-xs text-gray-500">프로젝트 설명</p>
-                                            <p className="mt-1 line-clamp-3 text-sm text-white">{project?.description || '미입력'}</p>
-                                        </div>
-                                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                                            <p className="text-xs text-gray-500">기존 WS-2 행</p>
-                                            <p className="mt-1 text-sm text-white">{rows.length}행</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {aiWizardStep === 'questions' && (
-                                <div className="space-y-4">
-                                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-500/25 bg-primary-500/10 px-3 py-2.5">
-                                        <p className="text-xs text-primary-200">
-                                            {businessPlanForSpec.hasSections
-                                                ? '개요의 사업계획 내용(고객 정의 · 고객 문제 · 핵심 기능)을 불러올 수 있습니다.'
-                                                : '개요에 상세 제품개요가 있으면 아래 칸으로 불러올 수 있습니다.'}
-                                        </p>
-                                        <button
-                                            type="button"
-                                            onClick={applyBusinessPlanToWizard}
-                                            disabled={isGenerating || !businessPlanForSpec.detailText}
-                                            className="btn-secondary flex-shrink-0 text-xs disabled:opacity-40"
-                                        >
-                                            제품개요 불러오기
-                                        </button>
-                                    </div>
-                                    <label className="block">
-                                        <span className="mb-1 block text-xs font-medium text-gray-400">세부설명</span>
-                                        <textarea
-                                            value={aiDetailInput}
-                                            onChange={e => setAiDetailInput(e.target.value)}
-                                            disabled={isGenerating}
-                                            className="min-h-[160px] w-full resize-y rounded-lg border border-gray-700 bg-gray-900 p-4 text-sm leading-6 text-white outline-none focus:border-accent-500 disabled:opacity-60"
-                                            placeholder="아이템의 배경, 사용 상황, 고객 문제, 현재 보유한 정보나 기술, 반드시 고려해야 할 제약을 입력하세요."
-                                        />
-                                    </label>
-                                    <label className="block">
-                                        <span className="mb-1 block text-xs font-medium text-gray-400">원하는 기능</span>
-                                        <textarea
-                                            value={aiQuestionInput.desiredFunctions}
-                                            onChange={(event) => setAiQuestionInput({ desiredFunctions: event.target.value })}
-                                            disabled={isGenerating}
-                                            className="min-h-[120px] w-full resize-y rounded-lg border border-gray-700 bg-gray-900 p-4 text-sm leading-6 text-white outline-none focus:border-accent-500 disabled:opacity-60"
-                                            placeholder="예: 고객 문의 자동 분류, 전문가 추천, 결과 리포트 생성처럼 원하는 기능을 줄바꿈 또는 쉼표로 입력하세요."
-                                        />
-                                    </label>
-                                    {relayStatus && (
-                                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-2.5">
-                                            <p className="text-xs text-cyan-100">{relayStatus}</p>
-                                            <button
-                                                type="button"
-                                                onClick={() => relayAbortRef.current?.abort()}
-                                                className="flex-shrink-0 rounded-lg px-3 py-1.5 text-xs text-cyan-200 hover:bg-white/10"
-                                            >
-                                                기다리지 않고 기본 엔진 결과 보기
-                                            </button>
-                                        </div>
-                                    )}
-                                    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-gray-400">
-                                        기본 아이템 정보는 프로젝트와 기존 워크시트에서 불러오며, 위 두 항목은 FAST 결과표를 구체화하는 데만 사용됩니다.
-                                    </div>
-                                </div>
-                            )}
-
-                            {aiWizardStep === 'review' && (
-                                <div className="space-y-3">
-                                    {[
-                                        ['세부설명', aiDetailInput || '미입력'],
-                                        ['원하는 기능', aiQuestionInput.desiredFunctions || '미입력'],
-                                    ].map(([label, value]) => (
-                                        <div key={label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                                            <p className="text-xs font-semibold text-gray-500">{label}</p>
-                                            <p className="mt-1 whitespace-pre-line text-sm text-white">{value}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {aiWizardStep === 'fast' && (
-                                <div className="space-y-4">
-                                    {aiEngineLabel && (
-                                        <div className="flex items-center gap-2">
-                                            <span className="badge-primary text-[10px]">{aiEngineLabel}</span>
-                                            <span className="text-xs text-gray-500">이 초안을 만든 엔진</span>
-                                        </div>
-                                    )}
-                                    {aiContextSummary && (
-                                        <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs leading-5 text-cyan-100">
-                                            <div>참고 데이터: 제품속성 {aiContextSummary.productAttributeCount ?? 0}개, 고객요구 {aiContextSummary.customerNeedCount ?? 0}개, 기존스펙 {aiContextSummary.existingSpecCount ?? 0}개</div>
-                                            {aiContextSummary.keywords?.length ? <div className="mt-1">키워드: {aiContextSummary.keywords.join(', ')}</div> : null}
-                                        </div>
-                                    )}
-                                    {aiIssues.length > 0 && (
-                                        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100">
-                                            {aiIssues.slice(0, 4).map((issue, index) => <p key={index}>- {issue.message}</p>)}
-                                        </div>
-                                    )}
-                                    <div className="overflow-auto rounded-lg border border-white/10">
-                                        <table className="w-full min-w-[900px] border-collapse text-xs">
-                                            <thead className="bg-gray-900">
-                                                <tr>
-                                                    <th className="border border-white/10 p-2 text-left">핵심기술</th>
-                                                    <th className="border border-white/10 p-2 text-left">세부기술</th>
-                                                    <th className="border border-white/10 p-2 text-left">세세부기술</th>
-                                                    <th className="border border-white/10 p-2 text-left">적용기술</th>
-                                                    <th className="border border-white/10 p-2 w-[56px]" />
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {aiGroupedRows.length === 0 ? (
-                                                    <tr>
-                                                        <td colSpan={5} className="border border-white/10 p-6 text-center text-gray-500">생성된 FAST 결과표가 없습니다.</td>
-                                                    </tr>
-                                                ) : aiGroupedRows.map((row, index) => (
-                                                    <tr key={row.id}>
-                                                        {row.coreRowSpan > 0 && (
-                                                            <td className="border border-white/10 p-0 align-top bg-blue-950/10" rowSpan={row.coreRowSpan}>
-                                                                <input
-                                                                    type="text"
-                                                                    value={row.core}
-                                                                    onChange={(event) => updateAiFastCoreGroup(index, event.target.value)}
-                                                                    className="w-full bg-transparent px-3 py-2 text-blue-100 outline-none focus:bg-white/[0.04]"
-                                                                />
-                                                            </td>
-                                                        )}
-                                                        {row.subRowSpan > 0 && (
-                                                            <td className="border border-white/10 p-0 align-top bg-purple-950/10" rowSpan={row.subRowSpan}>
-                                                                <input
-                                                                    type="text"
-                                                                    value={row.sub}
-                                                                    onChange={(event) => updateAiFastSubGroup(index, event.target.value)}
-                                                                    className="w-full bg-transparent px-3 py-2 text-purple-100 outline-none focus:bg-white/[0.04]"
-                                                                />
-                                                            </td>
-                                                        )}
-                                                        <td className="border border-white/10 p-0">
-                                                            <input
-                                                                type="text"
-                                                                value={row.detail}
-                                                                onChange={(event) => updateAiFastRow(row.id, 'detail', event.target.value)}
-                                                                className="w-full bg-transparent px-3 py-2 text-emerald-100 outline-none focus:bg-white/[0.04]"
-                                                            />
-                                                        </td>
-                                                        <td className="border border-white/10 p-0">
-                                                            <input
-                                                                type="text"
-                                                                value={row.technology}
-                                                                onChange={(event) => updateAiFastRow(row.id, 'technology', event.target.value)}
-                                                                className="w-full bg-transparent px-3 py-2 text-amber-100 outline-none focus:bg-white/[0.04]"
-                                                            />
-                                                        </td>
-                                                        <td className="border border-white/10 p-2 text-center">
-                                                            <button type="button" onClick={() => deleteAiFastRow(row.id)} className="text-rose-400 hover:text-rose-300">삭제</button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <button type="button" onClick={addAiFastRow} className="btn-secondary text-sm">행 추가</button>
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex items-center justify-end gap-2 border-t border-white/10 px-6 py-4">
-                            <button
-                                type="button"
-                                onClick={() => setShowAiDetailPopup(false)}
-                                disabled={isGenerating}
-                                className="rounded-lg px-4 py-2 text-sm text-gray-300 hover:bg-white/5 hover:text-white disabled:opacity-50"
-                            >
-                                취소
-                            </button>
-                            {aiWizardStep === 'guide' && (
-                                <button type="button" onClick={() => setAiWizardStep('questions')} className="btn-primary">입력 시작</button>
-                            )}
-                            {aiWizardStep === 'questions' && (
-                                <button type="button" onClick={() => setAiWizardStep('review')} className="btn-primary">입력 내용 검토</button>
-                            )}
-                            {aiWizardStep === 'review' && (
-                                <>
-                                    <button type="button" onClick={() => setAiWizardStep('questions')} className="rounded-lg px-4 py-2 text-sm text-gray-300 hover:bg-white/5">입력 수정</button>
-                                    <button type="button" onClick={handleAutoGenerate} disabled={isGenerating} className="btn-primary inline-flex items-center gap-2 disabled:opacity-50">
-                                        {isGenerating ? '생성 중...' : 'FAST 결과표 제시'}
-                                    </button>
-                                </>
-                            )}
-                            {aiWizardStep === 'fast' && (
-                                <>
-                                    <button type="button" onClick={() => setAiWizardStep('questions')} className="rounded-lg px-4 py-2 text-sm text-gray-300 hover:bg-white/5">입력 수정</button>
-                                    <button type="button" onClick={applySelectedDraft} disabled={isGenerating || aiFastRows.length === 0} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
-                                        확정 후 표에 반영
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
+            <SpecFastWizard
+                projectId={projectId}
+                project={project}
+                existingRowCount={rows.length}
+                open={showAiDetailPopup}
+                onClose={() => setShowAiDetailPopup(false)}
+                onApply={(fastRows) => {
+                    setRows(fastRows);
+                    setActiveMode('manual');
+                    setShowAiDetailPopup(false);
+                }}
+                showToast={showToast}
+            />
             {canUseFunctionAnalysisAssistant && <FunctionAnalysisAssistant key={projectId}
                 open={showFunctionAnalysisAssistant} project={project} existingRows={rows}
                 onClose={() => setShowFunctionAnalysisAssistant(false)} />}
@@ -1055,7 +408,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
 
                 <div className="flex flex-wrap items-center gap-2">
                     {canUseFunctionAnalysisAssistant && <button type="button"
-                        onClick={() => setShowFunctionAnalysisAssistant(true)} disabled={isSaving || isGenerating || isUploadingExcel}
+                        onClick={() => setShowFunctionAnalysisAssistant(true)} disabled={isSaving || isUploadingExcel}
                         className="px-3 py-1.5 bg-primary-900/40 hover:bg-primary-800/60 border border-primary-500/30 text-primary-200 text-sm rounded transition-colors disabled:opacity-50">
                         기능분석 작성 도우미
                     </button>}
@@ -1079,7 +432,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                     />
                     <label
                         htmlFor={`spec-excel-upload-${projectId}`}
-                        className={`px-3 py-1.5 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-500/30 text-emerald-200 text-sm rounded transition-colors flex items-center gap-1 ${isSaving || isGenerating || isUploadingExcel ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
+                        className={`px-3 py-1.5 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-500/30 text-emerald-200 text-sm rounded transition-colors flex items-center gap-1 ${isSaving || isUploadingExcel ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
                         title="엑셀 파일의 AS-IS 스펙표 워크시트로 현재 스펙표를 완성합니다"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
@@ -1092,7 +445,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                     <button
                         type="button"
                         onClick={() => setShowResetConfirm(true)}
-                        disabled={isSaving || isGenerating}
+                        disabled={isSaving}
                         className="px-3 py-1.5 bg-red-900/40 hover:bg-red-800/60 border border-red-500/30 text-red-200 text-sm rounded transition-colors flex items-center gap-1 disabled:opacity-50"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -1190,11 +543,10 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                             </div>
                         )}
                         <button
-                            onClick={openAiDetailPopup}
-                            disabled={isGenerating}
+                            onClick={() => setShowAiDetailPopup(true)}
                             className="btn-primary inline-flex items-center gap-2"
                         >
-                            {isGenerating ? '생성 중...' : 'AI 에이전트 열기'}
+                            AI 에이전트 열기
                         </button>
                     </div>
                 )
