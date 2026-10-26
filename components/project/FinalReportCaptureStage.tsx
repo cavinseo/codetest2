@@ -1,6 +1,6 @@
 'use client';
 // 보고서의 세 그림 자리에 들어갈 실제 워크시트 결과를 읽기 전용으로 렌더링한다.
-import FitnessWrapper from './FitnessWrapper';
+import FitnessMatrix from './FitnessMatrix';
 import KanoSatisfactionGraph from './KanoSatisfactionGraph';
 import QFDMatrix from './QFDMatrix';
 import WorksheetImageExport from './WorksheetImageExport';
@@ -16,7 +16,7 @@ interface Props {
 
 export default function FinalReportCaptureStage({ projectId, kanoPoints, requirementCount, revision, disabled }: Props) {
     const sections = [
-        { id: 'fitness', title: '[WS-4] 제품속성적합도', content: <FitnessWrapper key={revision} projectId={projectId} reportTableOnly /> },
+        { id: 'fitness', title: '[WS-4] 제품속성적합도', content: <FitnessMatrix key={revision} projectId={projectId} reportTableOnly /> },
         { id: 'kano-aggregation', title: '[WS-7] TIMKO/만족계수 그래프', content: kanoPoints.length
             ? <KanoSatisfactionGraph analysis={kanoPoints} />
             : <p className="p-4 text-sm text-gray-400">Kano 응답이 없어 산점도를 그릴 수 없습니다. (요구사항 {requirementCount}개)</p> },

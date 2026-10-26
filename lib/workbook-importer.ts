@@ -36,6 +36,11 @@ export interface WorkbookImportRecords {
         order: number;
     }>;
     technicalCharacteristics: Array<{ name: string; unit?: string | null; targetValue?: string | null }>;
+    // 필드 이름은 DB 열 이름이다. 화면이 바뀌면서 열의 쓰임이 달라졌는데 열 이름은 그대로라,
+    // 이름과 실제 값이 다르다(2026-10-25 코드 리뷰 N2). 열 이름을 바꾸면 JSON 백업 형식과 모든
+    // 화면이 함께 바뀌므로 여기서는 실제 뜻을 적어 둔다.
+    //   type 'feature' 행: improvementRate = 추가 기능, devProportion = 성능 향상
+    //   type 'need' 행(구 양식): improvementRate = 향상율, devProportion = 비중
     improvementItems: Array<{ type: string; content?: string | null; improvementRate?: string | null; devProportion?: string | null; priority?: string | null; order: number }>;
     targetSpecs: Array<{
         category?: string | null;
@@ -48,6 +53,9 @@ export interface WorkbookImportRecords {
         note?: string | null;
         order: number;
     }>;
+    // 향후목표고객(WS-12) 표. 필드 이름은 DB 열 이름이고 실제 값은 다르다(N2):
+    //   category = 개선방향(차별화), techItem = 개선기능(성능향상),
+    //   currentLevel = 구현가능성, owner = 목표고객(화면은 targetLevel 을 먼저 보고 없으면 owner 를 쓴다)
     techRoadmaps: Array<{
         category?: string | null;
         techItem?: string | null;
@@ -428,6 +436,7 @@ function parseImprovements(sheet: ParsedSheet) {
             records.push({
                 type: 'feature',
                 content: customerNeed || null,
+                // DB 열 이름이 다를 뿐, 추가 기능·성능 향상을 담는다(위 타입 주석 참고).
                 improvementRate: addedFeature || null,
                 devProportion: performanceImprovement || null,
                 priority: null,
@@ -473,9 +482,10 @@ function parseTechRoadmap(sheet: ParsedSheet) {
         const row = sheet.data[rowIndex];
         const techItem = cell(row, techCol);
         const category = cell(row, directionCol);
-        const owner = cell(row, targetCol);
-        if (!techItem && !category && !owner) continue;
-        records.push({ category: category || null, techItem: techItem || null, currentLevel: feasibilityCol >= 0 ? cell(row, feasibilityCol) || null : null, owner: owner || null, order: records.length });
+        const targetCustomer = cell(row, targetCol);
+        if (!techItem && !category && !targetCustomer) continue;
+        const feasibility = feasibilityCol >= 0 ? cell(row, feasibilityCol) || null : null;
+        records.push({ category: category || null, techItem: techItem || null, currentLevel: feasibility, owner: targetCustomer || null, order: records.length });
     }
     return records;
 }

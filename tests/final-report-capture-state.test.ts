@@ -16,7 +16,7 @@ const m = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ useParams: () => ({ id: 'project' }), useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
 vi.mock('next/link', () => ({ default: (props: any) => createElement('a', props) }));
-vi.mock('../components/project/FitnessWrapper', () => {
+vi.mock('../components/project/FitnessMatrix', () => {
     function MockFitness() {
         useEffect(() => { m.fitnessMounts += 1; }, []);
         return m.fitnessError ? createElement('div', { role: 'alert' }, '데이터를 불러오지 못했습니다. 다시 불러온 후 편집해 주세요.') : createElement('div', null, '적합도');

@@ -68,8 +68,8 @@ function connectionSummary(overrides: Record<string, unknown> = {}) {
         mode: 'api',
         vendor: 'openai',
         model: null,
-        mcpBaseUrl: null,
-        mcpModel: null,
+        remoteBaseUrl: null,
+        remoteModel: null,
         localBaseUrl: null,
         localModel: null,
         updatedAt: new Date(),
@@ -182,8 +182,8 @@ describe('저장', () => {
 
     it('mcp 주소는 https 공인 도메인만 허용하고 오류 메시지를 돌려준다', async () => {
         const res = await PUT(jsonRequest('PUT', {
-            mode: 'mcp',
-            mcpBaseUrl: 'http://localhost:3000/v1',
+            mode: 'remote',
+            remoteBaseUrl: 'http://localhost:3000/v1',
         }));
 
         expect(res.status).toBe(400);
@@ -196,14 +196,14 @@ describe('저장', () => {
         findUniqueConn.mockResolvedValue(connectionSummary({
             mode: 'mcp',
             vendor: null,
-            mcpBaseUrl: 'https://mcp.example.com/v1',
-            mcpModel: 'remote-model',
+            remoteBaseUrl: 'https://mcp.example.com/v1',
+            remoteModel: 'remote-model',
         }));
         const res = await PUT(jsonRequest('PUT', {
             userId: 'body_user',
-            mode: 'mcp',
-            mcpBaseUrl: 'https://mcp.example.com/v1///?ignored=1',
-            mcpModel: 'remote-model',
+            mode: 'remote',
+            remoteBaseUrl: 'https://mcp.example.com/v1///?ignored=1',
+            remoteModel: 'remote-model',
             apiKey: 'mcp-plain-secret',
         }));
 
@@ -211,12 +211,13 @@ describe('저장', () => {
         const saved = upsertConn.mock.calls[0][0];
         expect(saved.where).toEqual({ userId: 'session_user' });
         expect(saved.create.userId).toBe('session_user');
+        // 원격 모드는 DB 에 예전 이름 그대로 저장한다(N3, lib/ai/personal-vendors).
         expect(saved.create.mode).toBe('mcp');
-        expect(saved.create.mcpBaseUrl).toBe('https://mcp.example.com/v1');
+        expect(saved.create.remoteBaseUrl).toBe('https://mcp.example.com/v1');
         expect(saved.create.apiKey).toMatch(/^enc:v1:/);
         expect(JSON.stringify(saved)).not.toContain('mcp-plain-secret');
         const responseBody = await res.json();
-        expect(responseBody.connection.mode).toBe('mcp');
+        expect(responseBody.connection.mode).toBe('remote');
         expect(JSON.stringify(responseBody)).not.toContain('apiKey');
         expect(JSON.stringify([logInfo.mock.calls, logWarn.mock.calls, logError.mock.calls]))
             .not.toContain('mcp-plain-secret');
@@ -224,8 +225,8 @@ describe('저장', () => {
 
     it('mcp 모드는 키 없이도 저장한다', async () => {
         const res = await PUT(jsonRequest('PUT', {
-            mode: 'mcp',
-            mcpBaseUrl: 'https://mcp.example.com/v1',
+            mode: 'remote',
+            remoteBaseUrl: 'https://mcp.example.com/v1',
         }));
 
         expect(res.status).toBe(200);
@@ -237,49 +238,49 @@ describe('저장', () => {
     describe('저장된 키는 입력한 곳에만 보낸다 (B11)', () => {
         it('api 에서 키 없이 mcp 로 바꾸면 벤더 키를 지워 새 주소로 보내지 않는다', async () => {
             findUniqueConn.mockResolvedValue(connectionSummary());
-            const res = await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://attacker.example.com/v1' }));
+            const res = await PUT(jsonRequest('PUT', { mode: 'remote', remoteBaseUrl: 'https://attacker.example.com/v1' }));
 
             expect(res.status).toBe(200);
             expect(upsertConn.mock.calls[0][0].update).toMatchObject({ vendor: null, apiKey: null });
         });
 
         it('mcp 주소를 바꾸면서 키를 비우면 예전 MCP 키를 지운다', async () => {
-            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: null, mcpBaseUrl: 'https://old.example.com/v1' }));
-            await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://new.example.com/v1' }));
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: null, remoteBaseUrl: 'https://old.example.com/v1' }));
+            await PUT(jsonRequest('PUT', { mode: 'remote', remoteBaseUrl: 'https://new.example.com/v1' }));
 
             expect(upsertConn.mock.calls[0][0].update.apiKey).toBeNull();
         });
 
         it('같은 mcp 주소에서 모델만 바꾸면 키를 유지한다', async () => {
-            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: null, mcpBaseUrl: 'https://mcp.example.com/v1' }));
-            await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://mcp.example.com/v1', mcpModel: 'other' }));
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: null, remoteBaseUrl: 'https://mcp.example.com/v1' }));
+            await PUT(jsonRequest('PUT', { mode: 'remote', remoteBaseUrl: 'https://mcp.example.com/v1', remoteModel: 'other' }));
 
             expect(upsertConn.mock.calls[0][0].update).not.toHaveProperty('apiKey');
         });
 
         it('벤더가 남은 예전 mcp 행은 키의 출처를 알 수 없어 지운다', async () => {
-            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: 'openai', mcpBaseUrl: 'https://mcp.example.com/v1' }));
-            await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://mcp.example.com/v1' }));
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: 'openai', remoteBaseUrl: 'https://mcp.example.com/v1' }));
+            await PUT(jsonRequest('PUT', { mode: 'remote', remoteBaseUrl: 'https://mcp.example.com/v1' }));
 
             expect(upsertConn.mock.calls[0][0].update.apiKey).toBeNull();
         });
 
         it('rule 을 거쳐 같은 mcp 주소로 돌아오면 키를 다시 받는다', async () => {
-            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'rule', vendor: null, mcpBaseUrl: 'https://mcp.example.com/v1' }));
-            await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://mcp.example.com/v1' }));
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'rule', vendor: null, remoteBaseUrl: 'https://mcp.example.com/v1' }));
+            await PUT(jsonRequest('PUT', { mode: 'remote', remoteBaseUrl: 'https://mcp.example.com/v1' }));
 
             expect(upsertConn.mock.calls[0][0].update.apiKey).toBeNull();
         });
 
         it('새 키를 함께 보내면 주소가 바뀌어도 그 키로 저장한다', async () => {
             findUniqueConn.mockResolvedValue(connectionSummary());
-            await PUT(jsonRequest('PUT', { mode: 'mcp', mcpBaseUrl: 'https://mcp.example.com/v1', apiKey: 'new-mcp-key' }));
+            await PUT(jsonRequest('PUT', { mode: 'remote', remoteBaseUrl: 'https://mcp.example.com/v1', apiKey: 'new-mcp-key' }));
 
             expect(upsertConn.mock.calls[0][0].update.apiKey).toMatch(/^enc:v1:/);
         });
 
         it('mcp 에서 같은 벤더 이름이 남아 있어도 api 로 돌아가면 새 키를 요구한다', async () => {
-            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: 'openai', mcpBaseUrl: 'https://mcp.example.com/v1' }));
+            findUniqueConn.mockResolvedValue(connectionSummary({ mode: 'mcp', vendor: 'openai', remoteBaseUrl: 'https://mcp.example.com/v1' }));
             const res = await PUT(jsonRequest('PUT', { mode: 'api', vendor: 'openai' }));
 
             expect(res.status).toBe(400);
@@ -333,8 +334,8 @@ describe('저장', () => {
             vendor: 'azure',
             apiKey: 'ignored-secret',
             model: 'ignored-model',
-            mcpBaseUrl: 'http://localhost/internal',
-            mcpModel: 'ignored-mcp',
+            remoteBaseUrl: 'http://localhost/internal',
+            remoteModel: 'ignored-mcp',
             localBaseUrl: 'https://example.com/internal',
             localModel: 'ignored-local',
         }));
@@ -347,8 +348,8 @@ describe('저장', () => {
             vendor: null,
             apiKey: null,
             model: null,
-            mcpBaseUrl: null,
-            mcpModel: null,
+            remoteBaseUrl: null,
+            remoteModel: null,
             localBaseUrl: null,
             localModel: null,
         });
@@ -366,9 +367,9 @@ describe('저장', () => {
         }));
 
         const res = await PUT(jsonRequest('PUT', {
-            mode: 'mcp',
-            mcpBaseUrl: 'https://mcp.example.com/v1',
-            mcpModel: 'remote-model',
+            mode: 'remote',
+            remoteBaseUrl: 'https://mcp.example.com/v1',
+            remoteModel: 'remote-model',
         }));
 
         expect(res.status).toBe(200);
@@ -377,8 +378,8 @@ describe('저장', () => {
             mode: 'mcp',
             vendor: null,
             apiKey: null,
-            mcpBaseUrl: 'https://mcp.example.com/v1',
-            mcpModel: 'remote-model',
+            remoteBaseUrl: 'https://mcp.example.com/v1',
+            remoteModel: 'remote-model',
         });
     });
 });
@@ -389,13 +390,15 @@ describe('조회·삭제', () => {
             mode: 'mcp',
             vendor: 'gemini',
             model: 'gemini-2.0-flash',
-            mcpBaseUrl: 'https://mcp.example.com/v1',
-            mcpModel: 'remote-model',
+            remoteBaseUrl: 'https://mcp.example.com/v1',
+            remoteModel: 'remote-model',
         });
         findUniqueConn.mockResolvedValue(summary);
         const body = await (await GET(jsonRequest('GET'))).json();
         expect(body.connection).toEqual({
             ...summary,
+            // DB 의 예전 이름 mcp 는 화면에 remote 로 나간다(N3).
+            mode: 'remote',
             updatedAt: summary.updatedAt.toISOString(),
         });
         expect(JSON.stringify(body)).not.toContain('apiKey');
@@ -443,8 +446,8 @@ describe('연결 확인', () => {
             vendor: null,
             apiKey: null,
             model: null,
-            mcpBaseUrl: null,
-            mcpModel: null,
+            remoteBaseUrl: null,
+            remoteModel: null,
             localBaseUrl: null,
             localModel: null,
         });
@@ -462,8 +465,8 @@ describe('연결 확인', () => {
             vendor: 'anthropic',
             apiKey: encryptSettingsValue('stored-secret'),
             model: 'claude-haiku-4-5',
-            mcpBaseUrl: null,
-            mcpModel: null,
+            remoteBaseUrl: null,
+            remoteModel: null,
             localBaseUrl: null,
             localModel: null,
             createdAt: new Date(),
@@ -483,8 +486,8 @@ describe('연결 확인', () => {
             vendor: 'anthropic',
             apiKey: 'stored-secret',
             model: 'claude-haiku-4-5',
-            mcpBaseUrl: null,
-            mcpModel: null,
+            remoteBaseUrl: null,
+            remoteModel: null,
             localBaseUrl: null,
             localModel: null,
         });

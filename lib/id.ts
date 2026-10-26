@@ -10,7 +10,8 @@ import { randomUUID } from 'crypto';
 export function generateId(
     // 'bm' 은 요구사항 × 회사 벤치마크, 'techbm' 은 기술특성 × 회사 벤치마크다.
     // 축이 다른 두 테이블이라 접두사도 갈라 둔다 — 로그에서 id 만 보고도 구분된다.
-    prefix: 'user' | 'proj' | 'prog' | 'member' | 'response' | 'inv' | 'invite' | 'spec' | 'attr' | 'fitness' | 'rel' | 'corr' | 'bm' | 'techbm' | 'tech'
+    // 'req' 는 고객요구사항이다. 예전에는 스펙과 같은 'spec' 을 써서 둘이 구분되지 않았다.
+    prefix: 'user' | 'proj' | 'prog' | 'member' | 'response' | 'inv' | 'invite' | 'spec' | 'req' | 'attr' | 'fitness' | 'rel' | 'corr' | 'bm' | 'techbm' | 'tech'
 ): string {
     // UUID의 하이픈을 제거한 뒤 앞 16자만 사용 (충분한 엔트로피 유지)
     const shortUuid = randomUUID().replace(/-/g, '').slice(0, 16);

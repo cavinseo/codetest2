@@ -108,7 +108,7 @@ export async function POST(
         const techCorrelations = importData.techCorrelations ?? [];
         const technicalBenchmarks = importData.technicalBenchmarks ?? [];
 
-        const requirementIds = assignIds(requirements, 'spec');
+        const requirementIds = assignIds(requirements, 'req');
         const technicalIds = assignIds(technicals, 'tech');
         const specIds = assignIds(specs, 'spec');
         const attributeIds = assignIds(attributes, 'attr');

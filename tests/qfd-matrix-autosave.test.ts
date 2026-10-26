@@ -53,7 +53,7 @@ function fixture() {
             technicalCharId: tech.id, name: tech.name, totalScore: score ?? [...saved.values()]
                 .filter((item) => item.technicalCharId === tech.id)
                 .reduce((total, item) => total + ({ NONE: 0, WEAK: 1, MEDIUM: 3, STRONG: 9 }[item.strength] * 2), 0),
-            rank: 1, importancePercent: 50,
+            rank: 1,
         })),
     });
     const payloadFor = (path: string) => {

@@ -93,15 +93,21 @@ export function verifySessionCookie(cookieValue: string | undefined): SessionPay
     }
 }
 
-/** 쿠키 값 자체로 세션을 해석한다. 서버 컴포넌트에서 next/headers 의 cookies() 와 함께 쓴다. */
-export function getSessionUserFromCookieValue(cookieValue: string | undefined): SessionUser | null {
+/**
+ * 쿠키 값으로 세션을 "들여다본다". 서명·만료만 보고 DB(승인 취소·비밀번호 변경으로 올라간 세션
+ * 버전, 탈퇴)는 보지 않으므로 권한 판단에 쓰면 안 된다 — 그런 곳은 requireAuth 를 쓴다.
+ * 이름이 get 이라 권한 확인용으로 오해받기 쉬워 peek 로 바꿨다(2026-10-25 코드 리뷰 N4).
+ * 서버 컴포넌트에서 next/headers 의 cookies() 와 함께 쓴다(로그인 여부에 따른 첫 화면 이동 등).
+ */
+export function peekSessionUserFromCookieValue(cookieValue: string | undefined): SessionUser | null {
     const payload = verifySessionCookie(cookieValue);
     if (!payload) return null;
     return { userId: payload.userId, email: payload.email, name: payload.name };
 }
 
-export function getSessionUser(request: NextRequest): SessionUser | null {
-    return getSessionUserFromCookieValue(request.cookies.get(SESSION_COOKIE_NAME)?.value);
+/** 요청 쿠키로 세션을 들여다본다. DB 를 보지 않는다 — peekSessionUserFromCookieValue 참고. */
+export function peekSessionUser(request: NextRequest): SessionUser | null {
+    return peekSessionUserFromCookieValue(request.cookies.get(SESSION_COOKIE_NAME)?.value);
 }
 
 export interface AuthenticatedUser extends SessionUser {

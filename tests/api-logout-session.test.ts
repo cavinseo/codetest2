@@ -10,10 +10,10 @@ vi.mock('../lib/prisma', () => ({
     prisma: { user: { update: updateUser, updateMany: updateUser } },
 }));
 
-const getSessionUser = vi.fn();
+const peekSessionUser = vi.fn();
 vi.mock('../lib/auth', () => ({
-    getSessionUser: (...args: unknown[]) => getSessionUser(...(args as [])),
-    verifySessionCookie: (...args: unknown[]) => getSessionUser(...(args as [])),
+    peekSessionUser: (...args: unknown[]) => peekSessionUser(...(args as [])),
+    verifySessionCookie: (...args: unknown[]) => peekSessionUser(...(args as [])),
 }));
 
 const { POST } = await import('../app/api/auth/logout/route');
@@ -23,7 +23,7 @@ function logoutRequest(): NextRequest {
 }
 
 beforeEach(() => {
-    getSessionUser.mockReturnValue({ userId: 'user_7', email: 'u@x.com', name: '사용자', ver: 4 });
+    peekSessionUser.mockReturnValue({ userId: 'user_7', email: 'u@x.com', name: '사용자', ver: 4 });
     updateUser.mockResolvedValue({ id: 'user_7' });
 });
 
@@ -63,7 +63,7 @@ describe('logout', () => {
     });
 
     it('세션이 없어도 200 으로 끝낸다', async () => {
-        getSessionUser.mockReturnValue(null);
+        peekSessionUser.mockReturnValue(null);
 
         const res = await POST(logoutRequest());
 

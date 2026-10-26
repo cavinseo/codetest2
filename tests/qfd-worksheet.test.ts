@@ -100,9 +100,11 @@ describe('qfd worksheet calculations', () => {
         ]);
 
         expect(result.technicals).toMatchObject([
-            { technicalCharId: 't1', totalScore: 42, rank: 1, importancePercent: 70 },
-            { technicalCharId: 't2', totalScore: 22, rank: 2, importancePercent: 36.67 },
+            { technicalCharId: 't1', totalScore: 42, rank: 1 },
+            { technicalCharId: 't2', totalScore: 22, rank: 2 },
         ]);
+        // 쓰는 곳이 없고 백분율도 아니던 importancePercent 는 응답에서 뺐다(2026-10-25 코드 리뷰 N8).
+        expect(result.technicals[0]).not.toHaveProperty('importancePercent');
 
         expect(result.totals.weight).toBe(6);
         expect(result.totals.absoluteImportance).toBe(10);

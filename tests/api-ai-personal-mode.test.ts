@@ -35,8 +35,8 @@ const API_CONNECTION = {
     vendor: 'openai',
     apiKey: 'sk-x',
     model: null,
-    mcpBaseUrl: null,
-    mcpModel: null,
+    remoteBaseUrl: null,
+    remoteModel: null,
     localBaseUrl: null,
     localModel: null,
 };

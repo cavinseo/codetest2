@@ -2,7 +2,7 @@ import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import {
     encodeSessionCookie,
-    getSessionUser,
+    peekSessionUser,
     requireAuth,
     verifySessionCookie,
     type SessionUser,
@@ -61,7 +61,7 @@ describe('세션 쿠키 서명', () => {
     it('서명된 쿠키를 받아들인다', () => {
         const cookieValue = encodeSessionCookie(SESSION);
 
-        expect(getSessionUser(requestWithSessionCookie(cookieValue))).toEqual(SESSION);
+        expect(peekSessionUser(requestWithSessionCookie(cookieValue))).toEqual(SESSION);
     });
 
     it('변조된 쿠키를 거부한다', () => {
@@ -71,7 +71,7 @@ describe('세션 쿠키 서명', () => {
         decoded.userId = 'user_2';
         const tamperedPayload = Buffer.from(JSON.stringify(decoded), 'utf8').toString('base64url');
 
-        expect(getSessionUser(requestWithSessionCookie(`${tamperedPayload}.${signature}`))).toBeNull();
+        expect(peekSessionUser(requestWithSessionCookie(`${tamperedPayload}.${signature}`))).toBeNull();
     });
 
     it('서명 없는 평문 JSON 쿠키를 어떤 환경에서도 거부한다', () => {
@@ -80,7 +80,7 @@ describe('세션 쿠키 서명', () => {
         // 예전에는 NODE_ENV 가 production 이 아니면 이 쿠키로 아무나 사칭할 수 있었다.
         for (const env of ['production', 'development', 'test']) {
             vi.stubEnv('NODE_ENV', env);
-            expect(getSessionUser(requestWithSessionCookie(unsigned))).toBeNull();
+            expect(peekSessionUser(requestWithSessionCookie(unsigned))).toBeNull();
         }
     });
 
@@ -105,7 +105,7 @@ describe('세션 만료', () => {
         const expired = encodeSessionCookie(SESSION, { maxAgeSeconds: -1 });
 
         expect(verifySessionCookie(expired)).toBeNull();
-        expect(getSessionUser(requestWithSessionCookie(expired))).toBeNull();
+        expect(peekSessionUser(requestWithSessionCookie(expired))).toBeNull();
     });
 
     it('exp 가 없는 옛 형식 쿠키는 거부한다', () => {

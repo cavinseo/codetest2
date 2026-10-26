@@ -35,23 +35,37 @@ export function resolvePersonalModel(vendor: PersonalAiVendor, model: string | n
 
 // ─── 회원 AI 연결 모드 ─────────────────────────────────────────
 
-export const MEMBER_AI_MODES = ['rule', 'api', 'mcp', 'local'] as const;
+export const MEMBER_AI_MODES = ['rule', 'api', 'remote', 'local'] as const;
 export type MemberAiMode = (typeof MEMBER_AI_MODES)[number];
 
 export const MEMBER_AI_MODE_LABELS: Record<MemberAiMode, string> = {
     rule: '규칙 기반',
     api: 'API 연결 (OpenAI · Claude · Gemini)',
-    mcp: '원격 MCP (Remote/HTTP)',
+    remote: '원격 엔드포인트 (Remote/HTTP)',
     local: '로컬 AI (Ollama · LM Studio)',
 };
 
 export const MEMBER_AI_MODE_DESCRIPTIONS: Record<MemberAiMode, string> = {
     rule: '설정 없이 바로 씁니다. 프로젝트 문맥으로 초안을 조립합니다.',
     api: '본인의 벤더 API 키로 호출합니다. 요금은 본인 벤더 계정에 청구됩니다.',
-    mcp: '본인이 운영하는 원격 OpenAI 호환 엔드포인트(https)로 호출합니다.',
+    remote: '본인이 운영하는 원격 OpenAI 호환 엔드포인트(https)로 호출합니다.',
     local: '내 PC의 로컬 LLM을 씁니다. 온라인 서버에서는 연결되지 않을 수 있으며, 그 경우 규칙 기반으로 자동 전환됩니다.',
 };
 
+/**
+ * 원격 모드는 처음에 'mcp' 라는 이름으로 만들어졌지만 MCP 프로토콜이 아니라 일반 원격 OpenAI
+ * 호환 주소다(2026-10-25 코드 리뷰 N3). 코드에서는 'remote' 로 부르되, 실데이터가 있는 DB 의
+ * 저장값은 마이그레이션 없이 'mcp' 그대로 둔다 — 읽을 때 옮기고 쓸 때 되돌린다.
+ */
+export const STORED_REMOTE_MODE = 'mcp';
+
+/** 저장값·요청값을 모드로 읽는다. 예전 이름 'mcp' 도 원격 모드로 받는다. */
 export function parseMemberAiMode(value: unknown): MemberAiMode | null {
-    return MEMBER_AI_MODES.includes(value as MemberAiMode) ? (value as MemberAiMode) : null;
+    const mode = value === STORED_REMOTE_MODE ? 'remote' : value;
+    return MEMBER_AI_MODES.includes(mode as MemberAiMode) ? (mode as MemberAiMode) : null;
+}
+
+/** DB 에 쓸 저장값. 원격 모드만 예전 이름으로 바꾼다. */
+export function toStoredMemberAiMode(mode: MemberAiMode): string {
+    return mode === 'remote' ? STORED_REMOTE_MODE : mode;
 }

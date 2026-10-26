@@ -702,12 +702,13 @@ model MemberProfile {
 }
 
 /// 회원의 AI 연결 설정. 본인의 AI 작업에만 쓰이고 절대 공유되지 않는다.
-/// mode 가 연결 방식을 정한다: rule(기본)·api(벤더 키)·mcp(원격 HTTP)·local(내 PC).
+/// mode 가 연결 방식을 정한다: rule(기본)·api(벤더 키)·mcp(원격 HTTP, 코드에서는 remote)·local(내 PC).
 /// apiKey 는 lib/settings-crypto 로 암호화된 값(enc:v1: 접두)만 저장한다.
 model UserAiConnection {
   userId    String   @id
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  // 'rule' | 'api' | 'mcp' | 'local' — lib/ai/personal-vendors.ts 가 정본
+  // 'rule' | 'api' | 'mcp' | 'local' — lib/ai/personal-vendors.ts 가 정본.
+  // 'mcp' 는 원격 모드의 예전 이름이다. 코드는 remote 로 부르고 저장값만 그대로 둔다(STORED_REMOTE_MODE)
   mode      String   @default("rule")
   // api 모드: 'openai' | 'anthropic' | 'gemini'
   vendor    String?
@@ -715,9 +716,10 @@ model UserAiConnection {
   apiKey    String?
   // api 모드의 모델. 비우면 벤더 기본
   model     String?
-  // mcp 모드: 원격 OpenAI 호환 엔드포인트. https 공인 호스트만 허용된다
-  mcpBaseUrl String?
-  mcpModel   String?
+  // 원격 모드: 원격 OpenAI 호환 엔드포인트. https 공인 호스트만 허용된다.
+  // 열 이름은 예전 이름(mcp*) 그대로 두고 필드 이름만 바꿨다 — 마이그레이션이 필요 없다
+  remoteBaseUrl String? @map("mcpBaseUrl")
+  remoteModel   String? @map("mcpModel")
   // local 모드: 비우면 Ollama·LM Studio 기본 후보 주소를 차례로 두드린다
   localBaseUrl String?
   localModel   String?

@@ -72,8 +72,9 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     const subcategoryList = [...new Set(requirements.map(r => r.subcategory).filter(Boolean))];
     const categoryColors = useCategoryColor(categoryList);
 
-    // AI 자동생성 (규칙 기반)
-    const handleGenerateAI = async (mode: 'append' | 'overwrite') => {
+    // 제품속성서의 고객 니즈·제공혜택을 규칙으로 요구사항 문장으로 바꾼다. AI 호출이 아니다
+    // (예전 이름 generateFromAttributes 가 AI 를 부르는 것처럼 읽혔다 — 2026-10-25 코드 리뷰 N7).
+    const generateFromAttributes = async (mode: 'append' | 'overwrite') => {
         setIsLoading(true);
         try {
             // 1. 제품속성서 데이터 가져오기
@@ -126,7 +127,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                 }
             }
         } catch (error) {
-            console.error('AI 생성 오류:', error);
+            console.error('제품속성 기반 요구사항 생성 오류:', error);
             showToast('데이터 생성 중 오류가 발생했습니다.', 'error');
         } finally {
             setIsLoading(false);
@@ -428,7 +429,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                     {/* AI 자동생성 버튼 및 메뉴 */}
                     <div className="relative group">
                         <button
-                            onClick={() => handleGenerateAI('append')}
+                            onClick={() => generateFromAttributes('append')}
                             disabled={isSaving}
                             className="btn-secondary text-sm flex items-center gap-1.5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 border-indigo-500/30 text-indigo-300"
                         >
@@ -443,13 +444,13 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                         {requirements.length > 0 && (
                             <div className="absolute right-0 top-full mt-2 w-48 py-2 bg-[#1a1c1e] border border-white/[0.08] rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                                 <button
-                                    onClick={() => handleGenerateAI('append')}
+                                    onClick={() => generateFromAttributes('append')}
                                     className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/[0.04] hover:text-white transition-colors"
                                 >
                                     기존 항목에 추가
                                 </button>
                                 <button
-                                    onClick={() => handleGenerateAI('overwrite')}
+                                    onClick={() => generateFromAttributes('overwrite')}
                                     className="w-full text-left px-4 py-2 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
                                 >
                                     전체 교체 (기존 삭제)

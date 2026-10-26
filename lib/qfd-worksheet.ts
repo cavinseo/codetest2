@@ -57,7 +57,6 @@ export interface QfdTechnicalWorksheetRow extends QfdTechnicalInput {
     technicalCharId: string;
     totalScore: number;
     rank: number | null;
-    importancePercent: number;
 }
 
 export interface QfdWorksheetResult {
@@ -153,7 +152,6 @@ export function calculateQfdWorksheet(input: QfdWorksheetInput): QfdWorksheetRes
             technicalCharId: tech.id,
             totalScore: round(totalScore),
             rank: null as number | null,
-            importancePercent: 0,
         };
     });
 
@@ -163,7 +161,6 @@ export function calculateQfdWorksheet(input: QfdWorksheetInput): QfdWorksheetRes
     const technicals = technicalBaseRows.map((row, index) => ({
         ...row,
         rank: technicalRanks[index],
-        importancePercent: totalWeight > 0 ? round((row.totalScore / totalWeight) * 10) : 0,
     }));
 
     return {

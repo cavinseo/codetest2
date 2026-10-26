@@ -8,7 +8,7 @@ import FinalReportPage from '../app/project/[id]/report/page';
 const m = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock('next/navigation', () => ({ useParams: () => ({ id: 'project' }), useRouter: () => m }));
 vi.mock('next/link', () => ({ default: (props: any) => createElement('a', props) }));
-vi.mock('../components/project/FitnessWrapper', () => ({ default: () => null }));
+vi.mock('../components/project/FitnessMatrix', () => ({ default: () => null }));
 vi.mock('../components/project/QFDMatrix', () => ({ default: () => null }));
 vi.mock('../components/project/KanoSatisfactionGraph', () => ({ default: () => null }));
 vi.mock('../components/project/FinalReportPreview', () => ({ default: ({ blocks, onEdit }: any) => createElement('textarea', {

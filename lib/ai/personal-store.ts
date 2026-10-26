@@ -3,7 +3,7 @@
 import { prisma } from '../prisma';
 import { createLogger } from '../logger';
 import { decryptSettingsValue, encryptSettingsValue } from '../settings-crypto';
-import { parseMemberAiMode, parsePersonalAiVendor } from './personal-vendors';
+import { parseMemberAiMode, parsePersonalAiVendor, toStoredMemberAiMode } from './personal-vendors';
 import type { PersonalAiConnection } from './personal';
 
 const log = createLogger('lib/ai/personal-store');
@@ -16,14 +16,16 @@ export async function getPersonalConnectionSummary(userId: string) {
             mode: true,
             vendor: true,
             model: true,
-            mcpBaseUrl: true,
-            mcpModel: true,
+            remoteBaseUrl: true,
+            remoteModel: true,
             localBaseUrl: true,
             localModel: true,
             updatedAt: true,
         },
     });
-    return row ?? null;
+    if (!row) return null;
+    // 저장값(예전 이름 mcp)을 화면·라우트가 쓰는 모드 이름으로 옮긴다. 모르는 값은 그대로 둔다.
+    return { ...row, mode: parseMemberAiMode(row.mode) ?? row.mode };
 }
 
 /** AI 실행 직전에 쓰는 복호화 조회. 키가 손상됐으면 없다고 답해 폴백을 태운다. */
@@ -47,8 +49,8 @@ export async function loadPersonalConnection(userId: string): Promise<PersonalAi
         vendor,
         apiKey,
         model: row.model,
-        mcpBaseUrl: row.mcpBaseUrl,
-        mcpModel: row.mcpModel,
+        remoteBaseUrl: row.remoteBaseUrl,
+        remoteModel: row.remoteModel,
         localBaseUrl: row.localBaseUrl,
         localModel: row.localModel,
     };
@@ -62,14 +64,14 @@ export async function upsertPersonalConnection(
         /** 문자열은 새 키로 바꾸고, null 은 저장된 키를 지우고, 생략하면 그대로 둔다. */
         apiKey?: string | null;
         model?: string | null;
-        mcpBaseUrl?: string | null;
-        mcpModel?: string | null;
+        remoteBaseUrl?: string | null;
+        remoteModel?: string | null;
         localBaseUrl?: string | null;
         localModel?: string | null;
     }
 ): Promise<void> {
     const encrypted = input.apiKey ? encryptSettingsValue(input.apiKey) : undefined;
-    const mode = input.mode ?? 'api';
+    const mode = toStoredMemberAiMode(input.mode ?? 'api');
     await prisma.userAiConnection.upsert({
         where: { userId },
         create: {
@@ -78,8 +80,8 @@ export async function upsertPersonalConnection(
             vendor: input.vendor ?? null,
             apiKey: encrypted ?? null,
             model: input.model ?? null,
-            mcpBaseUrl: input.mcpBaseUrl ?? null,
-            mcpModel: input.mcpModel ?? null,
+            remoteBaseUrl: input.remoteBaseUrl ?? null,
+            remoteModel: input.remoteModel ?? null,
             localBaseUrl: input.localBaseUrl ?? null,
             localModel: input.localModel ?? null,
         },
@@ -87,8 +89,8 @@ export async function upsertPersonalConnection(
             mode,
             ...(input.vendor !== undefined ? { vendor: input.vendor } : {}),
             ...(input.model !== undefined ? { model: input.model } : {}),
-            ...(input.mcpBaseUrl !== undefined ? { mcpBaseUrl: input.mcpBaseUrl } : {}),
-            ...(input.mcpModel !== undefined ? { mcpModel: input.mcpModel } : {}),
+            ...(input.remoteBaseUrl !== undefined ? { remoteBaseUrl: input.remoteBaseUrl } : {}),
+            ...(input.remoteModel !== undefined ? { remoteModel: input.remoteModel } : {}),
             ...(input.localBaseUrl !== undefined ? { localBaseUrl: input.localBaseUrl } : {}),
             ...(input.localModel !== undefined ? { localModel: input.localModel } : {}),
             ...(encrypted ? { apiKey: encrypted } : input.apiKey === null ? { apiKey: null } : {}),
