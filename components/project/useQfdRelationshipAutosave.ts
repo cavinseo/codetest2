@@ -27,7 +27,6 @@ interface TechnicalAnalysis {
     targetValue?: string | null;
     totalScore: number;
     rank: number | null;
-    importancePercent: number;
 }
 
 interface Analysis {

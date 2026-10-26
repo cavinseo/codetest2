@@ -41,7 +41,7 @@ beforeEach(() => {
             : pathname.endsWith('/qfd/technical') ? { technicalCharacteristics: technicals, canWrite: role === 'OWNER' }
             : pathname.endsWith('/qfd/analysis') ? {
                 requirements: [{ requirementId: 'req', weight: 2, weightPercent: 100, selfScore: 0, competitorScore: 0, planQuality: 0, improvementRate: 0, absoluteImportance: 2, qualityImportancePercent: 100, rank: 1 }],
-                technicals: technicals.map(tech => ({ technicalCharId: tech.id, name: tech.name, totalScore: 0, rank: 0, importancePercent: 0 })),
+                technicals: technicals.map(tech => ({ technicalCharId: tech.id, name: tech.name, totalScore: 0, rank: 0 })),
             }
             : pathname.endsWith('/tech-tree') ? { entries: technicals.map(tech => ({ subSpec: tech.name, coreSpec: '정밀 측정' })) }
             : { specFunctions: [], totalResponses: 0, relationships: [], benchmarks: [], technicalBenchmarks: [] };

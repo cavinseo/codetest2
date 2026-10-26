@@ -9,7 +9,7 @@ import {
     verifyPersonalConnection,
     type PersonalAiConnection,
 } from '../lib/ai/personal';
-import { parseMemberAiMode } from '../lib/ai/personal-vendors';
+import { parseMemberAiMode, STORED_REMOTE_MODE, toStoredMemberAiMode } from '../lib/ai/personal-vendors';
 import { assertPublicHttpsUrl, RemoteUrlError } from '../lib/ai/url-guard';
 
 function connection(overrides: Partial<PersonalAiConnection> = {}): PersonalAiConnection {
@@ -18,8 +18,8 @@ function connection(overrides: Partial<PersonalAiConnection> = {}): PersonalAiCo
         vendor: null,
         apiKey: null,
         model: null,
-        mcpBaseUrl: null,
-        mcpModel: null,
+        remoteBaseUrl: null,
+        remoteModel: null,
         localBaseUrl: null,
         localModel: null,
         ...overrides,
@@ -130,12 +130,33 @@ describe('assertPublicHttpsUrl', () => {
 });
 
 describe('parseMemberAiMode', () => {
-    it.each(['rule', 'api', 'mcp', 'local'] as const)('%s 를 허용한다', (mode) => {
+    it.each(['rule', 'api', 'remote', 'local'] as const)('%s 를 허용한다', (mode) => {
         expect(parseMemberAiMode(mode)).toBe(mode);
     });
 
     it.each([null, undefined, '', 'API', 'unknown', 1])('%s 를 거부한다', (value) => {
         expect(parseMemberAiMode(value)).toBeNull();
+    });
+    it('DB 에 남은 예전 이름 mcp 는 원격 모드로 읽는다 (N3)', () => {
+        expect(parseMemberAiMode('mcp')).toBe('remote');
+        expect(parseMemberAiMode('MCP')).toBeNull();
+    });
+});
+
+describe('toStoredMemberAiMode (N3)', () => {
+    it('원격 모드만 DB 의 예전 저장값 mcp 로 바꾼다', () => {
+        expect(toStoredMemberAiMode('remote')).toBe('mcp');
+        expect(STORED_REMOTE_MODE).toBe('mcp');
+    });
+
+    it.each(['rule', 'api', 'local'] as const)('%s 는 그대로 저장한다', (mode) => {
+        expect(toStoredMemberAiMode(mode)).toBe(mode);
+    });
+
+    it('저장했다 읽으면 같은 모드가 된다', () => {
+        for (const mode of ['rule', 'api', 'remote', 'local'] as const) {
+            expect(parseMemberAiMode(toStoredMemberAiMode(mode))).toBe(mode);
+        }
     });
 });
 
@@ -167,15 +188,15 @@ describe('createPersonalProvider', () => {
         expect(transport.publicFetch).not.toHaveBeenCalled();
     });
 
-    it('mcp 모드는 실행 직전 검사한 원격 주소를 쓴다', async () => {
+    it('remote 모드는 실행 직전 검사한 원격 주소를 쓴다', async () => {
         const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => mentorResponse());
         vi.stubGlobal('fetch', fetchMock);
 
         await createPersonalProvider(connection({
-            mode: 'mcp',
+            mode: 'remote',
             apiKey: 'mcp-key',
-            mcpBaseUrl: 'https://mcp.example.com/v1/',
-            mcpModel: 'mcp-model',
+            remoteBaseUrl: 'https://mcp.example.com/v1/',
+            remoteModel: 'mcp-model',
         })).mentorQuestions({ project: { name: 'T' } });
 
         expect(fetchMock.mock.calls[0][0]).toBe('https://mcp.example.com/v1/chat/completions');
@@ -195,10 +216,10 @@ describe('createPersonalProvider', () => {
         expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:11434/v1/models');
     });
 
-    it('mcp 사설 주소는 프로바이더 생성 시점에 거부한다', () => {
+    it('remote 사설 주소는 프로바이더 생성 시점에 거부한다', () => {
         expect(() => createPersonalProvider(connection({
-            mode: 'mcp',
-            mcpBaseUrl: 'https://localhost/v1',
+            mode: 'remote',
+            remoteBaseUrl: 'https://localhost/v1',
         }))).toThrow(RemoteUrlError);
     });
 });
@@ -215,16 +236,16 @@ describe('verifyPersonalConnection', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('모델 없는 mcp 모드는 models 경로를 GET 한다', async () => {
+    it('모델 없는 remote 모드는 models 경로를 GET 한다', async () => {
         const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => (
             new Response(JSON.stringify({ data: [] }), { status: 200 })
         ));
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(verifyPersonalConnection(connection({
-            mode: 'mcp',
+            mode: 'remote',
             apiKey: 'mcp-key',
-            mcpBaseUrl: 'https://mcp.example.com/v1',
+            remoteBaseUrl: 'https://mcp.example.com/v1',
         }))).resolves.toEqual({ ok: true, message: '연결에 성공했습니다.' });
 
         expect(fetchMock.mock.calls[0][0]).toBe('https://mcp.example.com/v1/models');

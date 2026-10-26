@@ -19,7 +19,7 @@ import type { ProductOverview } from '@/lib/product-overview';
 import { HEADER_TOAST_SLOT_ID } from '@/components/HeaderToast';
 import KanoManager from '@/components/project/KanoManager';
 import SalesTable from '@/components/project/SalesTable';
-import FitnessWrapper from '@/components/project/FitnessWrapper';
+import FitnessMatrix from '@/components/project/FitnessMatrix';
 import ImprovementsTable from '@/components/project/ImprovementsTable';
 import TargetSpecTable from '@/components/project/TargetSpecTable';
 import TechRoadmapTable from '@/components/project/TechRoadmapTable';
@@ -474,15 +474,16 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
 
     const router = useRouter();
 
-    const canEditOverview = project !== null && isProjectWriteRole(project.role);
+    // 개요뿐 아니라 모든 워크시트 탭의 편집 권한을 정한다.
+    const canWriteProject = project !== null && isProjectWriteRole(project.role);
     const tabComponents: Record<string, React.ReactNode> = {
         attributes: <ProductAttributesTable projectId={projectId} />,
         spec: <SpecTable projectId={projectId} onSaved={() => changeTab('attributes')} />,
         requirements: <RequirementsTable projectId={projectId} />,
-        qfd: <QFDMatrix projectId={projectId} onDirtyChange={setQfdDirty} readOnly={!canEditOverview} />,
+        qfd: <QFDMatrix projectId={projectId} onDirtyChange={setQfdDirty} readOnly={!canWriteProject} />,
         kano: <KanoManager projectId={projectId} />,
         sales: <SalesTable projectId={projectId} onSaved={() => changeTab('spec')} />,
-        fitness: <FitnessWrapper projectId={projectId} />,
+        fitness: <FitnessMatrix projectId={projectId} />,
         improvements: <ImprovementsTable projectId={projectId} />,
         'target-spec': <TargetSpecTable projectId={projectId} />,
         'tech-roadmap': <TechRoadmapTable projectId={projectId} />,
@@ -532,7 +533,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         if (tabComponents[tabId]) {
             return (
                 <WorksheetImageExport key={tabId} title={tabs.find(tab => tab.id === tabId)?.name ?? tabId} projectId={projectId} worksheetId={tabId}>
-                    <fieldset disabled={!canEditOverview && tabId !== 'qfd'} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
+                    <fieldset disabled={!canWriteProject && tabId !== 'qfd'} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
                 </WorksheetImageExport>
             );
         }
@@ -623,7 +624,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                             {['OWNER', 'ADMIN'].includes(project.role) && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 팀원 초대
                             </Link>}
-                            {canEditOverview && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
+                            {canWriteProject && <Link href={`/project/${projectId}/settings`} className="btn-secondary text-sm">
                                 설정
                             </Link>}
                             <ThemeToggle />
@@ -636,7 +637,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
             <div className="relative z-10 border-b border-white/[0.06] bg-surface-900/80 backdrop-blur-sm">
                 <div className="mx-auto w-full max-w-[1800px] px-3 sm:px-4 lg:px-6 2xl:px-8">
                     <nav className="flex gap-1 py-2 overflow-x-auto">
-                        {tabs.filter(tab => canEditOverview || tab.id !== 'import').map((tab) => (
+                        {tabs.filter(tab => canWriteProject || tab.id !== 'import').map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => changeTab(tab.id)}
@@ -671,7 +672,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                                             </button>
                                         </>
                                     ) : (
-                                        canEditOverview && (
+                                        canWriteProject && (
                                             <button type="button" onClick={() => { setOverviewError(''); setIsOverviewEditing(true); }} className="btn-secondary text-xs">수정</button>
                                         )
                                     )}
@@ -990,8 +991,8 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                     </div>
                 )}
 
-                {!canEditOverview && <p className="mb-4 text-sm text-amber-300">읽기 전용입니다. 워크시트 내용은 수정할 수 없습니다.</p>}
-                {activeTab !== 'overview' && (canEditOverview || activeTab !== 'import') && (
+                {!canWriteProject && <p className="mb-4 text-sm text-amber-300">읽기 전용입니다. 워크시트 내용은 수정할 수 없습니다.</p>}
+                {activeTab !== 'overview' && (canWriteProject || activeTab !== 'import') && (
                     renderTabContent(activeTab)
                 )}
                 <MentorWorksheetAnalysis projectId={projectId} worksheetId={activeTab} onDirtyChange={setMentorAnalysisDirty} />

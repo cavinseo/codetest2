@@ -7,7 +7,7 @@ import { Blob } from 'node:buffer';
 import { renderToStaticMarkup } from 'react-dom/server';
 import JSZip from 'jszip';
 import FinalReportCaptureStage from '../components/project/FinalReportCaptureStage';
-import FitnessWrapper from '../components/project/FitnessWrapper';
+import FitnessMatrix from '../components/project/FitnessMatrix';
 import { buildFinalReportModel, type FinalReportWorksheetData } from '../lib/final-report-document';
 import { EMPTY_REPORT_FREE_INPUT } from '../lib/final-report-payload';
 import FinalReportPreview from '../components/project/FinalReportPreview';
@@ -75,7 +75,7 @@ it.each([true, false])('보고서 표 전용 모드(%s)는 표의 평가·집계
     try {
         await act(async () => root.render(tableOnly
             ? createElement(FinalReportCaptureStage, { projectId: 'project', kanoPoints: [], requirementCount: 0, revision: 0, disabled: false })
-            : createElement(FitnessWrapper, { projectId: 'project' })));
+            : createElement(FitnessMatrix, { projectId: 'project' })));
         const view = tableOnly ? container.querySelector('[data-worksheet-id="fitness"]')! : container;
         const table = view.querySelector('table')!;
         expect(table).not.toBeNull();

@@ -137,7 +137,7 @@ function PriorityCell({
 // ──────────────────────────────────
 // 메인 컴포넌트
 // ──────────────────────────────────
-export default function FitnessWrapper({ projectId, reportTableOnly = false }: Props) {
+export default function FitnessMatrix({ projectId, reportTableOnly = false }: Props) {
     const [attrs, setAttrs] = useState<ProductAttribute[]>([]);
     const [markets, setMarkets] = useState<Market[]>([]);
     const [matrix, setMatrix] = useState<MatrixData>({});

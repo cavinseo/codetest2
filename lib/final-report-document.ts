@@ -31,7 +31,7 @@ export interface FinalReportWorksheetData {
     benchmarks?: Array<{ requirementId: string; company: string; score: number }>;
     technicalBenchmarks?: Array<{ technicalCharId: string; company: string; value: string }>;
     qfdRelationships?: Array<{ requirementId: string; technicalCharId: string; strength: string }>;
-    qfdTechnicals?: Array<{ technicalCharId: string; totalScore: number; importancePercent: number; rank: number | null }>;
+    qfdTechnicals?: Array<{ technicalCharId: string; totalScore: number; rank: number | null }>;
     salesEstimates: Array<{ period: string; customer: string | null; amount: number; futureAmount: number; competitor: string | null }>;
     specFunctions: Array<{ id: string; level: string; parentId: string | null; name: string; technology: string | null; order?: number | null }>;
     specDetailCollapsed?: boolean;

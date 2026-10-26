@@ -18,8 +18,8 @@ export interface PersonalAiConnection {
     vendor: PersonalAiVendor | null;
     apiKey: string | null;
     model: string | null;
-    mcpBaseUrl: string | null;
-    mcpModel: string | null;
+    remoteBaseUrl: string | null;
+    remoteModel: string | null;
     localBaseUrl: string | null;
     localModel: string | null;
 }
@@ -38,21 +38,21 @@ export function createPersonalProvider(conn: PersonalAiConnection): AiProvider {
                 apiKey: conn.apiKey, allowRemoteHost: true, directEndpoint: true,
             });
         }
-        case 'mcp': {
-            if (!conn.mcpBaseUrl) {
-                throw new AiProviderError('원격 MCP 주소가 없습니다. 설정을 확인하세요.');
+        case 'remote': {
+            if (!conn.remoteBaseUrl) {
+                throw new AiProviderError('원격 엔드포인트 주소가 없습니다. 설정을 확인하세요.');
             }
             // 저장 시에도 검사하지만, 저장 후 규칙이 바뀌었을 수 있어 실행 직전에 다시 검사한다.
-            const baseUrl = assertPublicHttpsUrl(conn.mcpBaseUrl);
+            const baseUrl = assertPublicHttpsUrl(conn.remoteBaseUrl);
             return createOpenAiCompatibleProvider({
                 id: 'personal', label: '내 AI',
                 baseUrls: [baseUrl],
-                model: conn.mcpModel ?? undefined,
+                model: conn.remoteModel ?? undefined,
                 apiKey: conn.apiKey ?? undefined,
                 allowRemoteHost: true,
                 fetch: publicHttpsFetch,
                 // 모델을 지정했으면 탐색 생략, 아니면 /models 탐색에 맡긴다.
-                directEndpoint: Boolean(conn.mcpModel),
+                directEndpoint: Boolean(conn.remoteModel),
             });
         }
         case 'local':
@@ -150,17 +150,17 @@ export async function verifyPersonalConnection(
                 signal: controller.signal,
             };
         } else {
-            if (!conn.mcpBaseUrl) {
-                return { ok: false, message: '원격 MCP 주소가 없습니다. 설정을 확인하세요.' };
+            if (!conn.remoteBaseUrl) {
+                return { ok: false, message: '원격 엔드포인트 주소가 없습니다. 설정을 확인하세요.' };
             }
-            const baseUrl = assertPublicHttpsUrl(conn.mcpBaseUrl);
-            url = conn.mcpModel ? `${baseUrl}/chat/completions` : `${baseUrl}/models`;
-            init = conn.mcpModel
+            const baseUrl = assertPublicHttpsUrl(conn.remoteBaseUrl);
+            url = conn.remoteModel ? `${baseUrl}/chat/completions` : `${baseUrl}/models`;
+            init = conn.remoteModel
                 ? {
                     method: 'POST',
                     headers,
                     body: JSON.stringify({
-                        model: conn.mcpModel,
+                        model: conn.remoteModel,
                         max_tokens: 8,
                         messages: [{ role: 'user', content: 'ping' }],
                     }),
@@ -169,7 +169,7 @@ export async function verifyPersonalConnection(
                 : { method: 'GET', headers, signal: controller.signal };
         }
 
-        const response = await (conn.mode === 'mcp' ? publicHttpsFetch : fetch)(url, init);
+        const response = await (conn.mode === 'remote' ? publicHttpsFetch : fetch)(url, init);
 
         if (response.ok) return { ok: true, message: '연결에 성공했습니다.' };
         if (conn.mode === 'api' && conn.vendor === 'gemini' && response.status === 400) {

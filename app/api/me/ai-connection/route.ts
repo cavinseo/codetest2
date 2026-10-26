@@ -23,8 +23,8 @@ const putSchema = z.object({
     vendor: z.string().optional(),
     apiKey: z.string().trim().min(1).max(500).optional(),
     model: z.string().trim().max(100).optional(),
-    mcpBaseUrl: z.string().trim().max(1000).optional(),
-    mcpModel: z.string().trim().max(100).optional(),
+    remoteBaseUrl: z.string().trim().max(1000).optional(),
+    remoteModel: z.string().trim().max(100).optional(),
     localBaseUrl: z.string().trim().max(1000).optional(),
     localModel: z.string().trim().max(100).optional(),
 });
@@ -67,8 +67,8 @@ export async function PUT(request: NextRequest) {
                 const existing = await getPersonalConnectionSummary(authResult.userId);
                 // 새 등록이거나 벤더를 바꿀 때는 그 벤더의 키가 반드시 필요하다.
                 // 이전 벤더의 키를 새 벤더에 이어 붙이면 인증만 조용히 깨진다.
-                // mcp 모드에서 넘어올 때도 저장된 키는 MCP 서버용이라 벤더로 보내면 안 된다.
-                if (!parsed.data.apiKey && (!existing || existing.vendor !== vendor || existing.mode === 'mcp')) {
+                // 원격 모드에서 넘어올 때도 저장된 키는 원격 엔드포인트용이라 벤더로 보내면 안 된다.
+                if (!parsed.data.apiKey && (!existing || existing.vendor !== vendor || existing.mode === 'remote')) {
                     return NextResponse.json({ error: 'API 키를 입력하세요.' }, { status: 400 });
                 }
 
@@ -80,14 +80,14 @@ export async function PUT(request: NextRequest) {
                 });
                 break;
             }
-            case 'mcp': {
-                if (!parsed.data.mcpBaseUrl) {
-                    return NextResponse.json({ error: '원격 MCP 주소를 입력하세요.' }, { status: 400 });
+            case 'remote': {
+                if (!parsed.data.remoteBaseUrl) {
+                    return NextResponse.json({ error: '원격 엔드포인트 주소를 입력하세요.' }, { status: 400 });
                 }
 
-                let mcpBaseUrl: string;
+                let remoteBaseUrl: string;
                 try {
-                    mcpBaseUrl = assertPublicHttpsUrl(parsed.data.mcpBaseUrl);
+                    remoteBaseUrl = assertPublicHttpsUrl(parsed.data.remoteBaseUrl);
                 } catch (error: unknown) {
                     if (error instanceof RemoteUrlError) {
                         return NextResponse.json({ error: error.message }, { status: 400 });
@@ -95,20 +95,20 @@ export async function PUT(request: NextRequest) {
                     throw error;
                 }
 
-                // 저장된 키는 그 키를 입력한 곳(벤더 또는 같은 MCP 주소)에만 보낸다. 키 없이
+                // 저장된 키는 그 키를 입력한 곳(벤더 또는 같은 원격 주소)에만 보낸다. 키 없이
                 // 다른 곳으로 바꾸면 예전 키가 사용자가 새로 적은 주소로 그대로 전송됐다.
-                // 벤더를 비워 두는 것은 "이 키는 MCP 용"이라는 표시다 — 이후 api 모드로
+                // 벤더를 비워 두는 것은 "이 키는 원격 엔드포인트용"이라는 표시다 — 이후 api 모드로
                 // 돌아가면 벤더가 달라 새 키를 요구한다.
                 const existing = await getPersonalConnectionSummary(authResult.userId);
-                const keepsStoredKey = existing?.mode === 'mcp'
+                const keepsStoredKey = existing?.mode === 'remote'
                     && existing.vendor === null
-                    && existing.mcpBaseUrl === mcpBaseUrl;
+                    && existing.remoteBaseUrl === remoteBaseUrl;
                 await upsertPersonalConnection(authResult.userId, {
                     mode,
                     vendor: null,
                     apiKey: parsed.data.apiKey ?? (keepsStoredKey ? undefined : null),
-                    mcpBaseUrl,
-                    mcpModel: parsed.data.mcpModel?.trim() || null,
+                    remoteBaseUrl,
+                    remoteModel: parsed.data.remoteModel?.trim() || null,
                 });
                 break;
             }

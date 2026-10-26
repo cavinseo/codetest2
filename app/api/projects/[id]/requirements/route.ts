@@ -146,7 +146,7 @@ export async function POST(
 
                 await tx.customerRequirement.create({
                     data: {
-                        id: ownId || generateId('spec'),
+                        id: ownId || generateId('req'),
                         projectId,
                         ...data,
                     },

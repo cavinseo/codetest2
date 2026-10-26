@@ -12,7 +12,7 @@ import SpecTable from '../components/project/SpecTable';
 import ImprovementsTable from '../components/project/ImprovementsTable';
 import SalesTable from '../components/project/SalesTable';
 import ProductAttributesTable from '../components/project/ProductAttributesTable';
-import FitnessWrapper from '../components/project/FitnessWrapper';
+import FitnessMatrix from '../components/project/FitnessMatrix';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
@@ -43,7 +43,7 @@ const relatedWorksheets = [
     { Component: ImprovementsTable, endpoint: 'improvements', data: { items: [{ id: 'saved', type: 'need', content: '기존 자료', improvementRate: '1', devProportion: '10', order: 0 }] } },
     { Component: SalesTable, endpoint: 'sales', data: { rows: [{ id: 'saved', period: 'Y', customer: '기존 자료', amount: 10, order: 0 }] } },
     { Component: ProductAttributesTable, endpoint: 'attributes', data: { attributes: [{ id: 'saved', productName: '기존 자료', attribute: '품질', order: 0 }] } },
-    { Component: FitnessWrapper, endpoint: 'fitness-matrix', data: { fitnessMatrix: { marketsJson: '[]', matrixJson: '{}', managerComment: '기존 자료' } } },
+    { Component: FitnessMatrix, endpoint: 'fitness-matrix', data: { fitnessMatrix: { marketsJson: '[]', matrixJson: '{}', managerComment: '기존 자료' } } },
 ];
 
 describe.each(relatedWorksheets)('$endpoint 동일한 조회 실패 보호', ({ Component, endpoint, data }) => {
@@ -80,7 +80,7 @@ it('적합도 내부 JSON이 손상된 경우 새 기본값으로 덮어쓰지 �
         ? { attributes: [{ id: 'saved', attribute: '품질', order: 0 }] }
         : { fitnessMatrix: { marketsJson: '{broken', matrixJson: '{}' } },
     }));
-    await act(async () => root.render(createElement(FitnessWrapper, { projectId: 'project-a' })));
+    await act(async () => root.render(createElement(FitnessMatrix, { projectId: 'project-a' })));
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
     expect(button('저장')).toBeUndefined();
     expect(writes()).toHaveLength(0);

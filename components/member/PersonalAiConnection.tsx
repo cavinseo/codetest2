@@ -26,8 +26,8 @@ interface ConnectionSummary {
     mode: MemberAiMode;
     vendor: PersonalAiVendor | null;
     model: string | null;
-    mcpBaseUrl: string | null;
-    mcpModel: string | null;
+    remoteBaseUrl: string | null;
+    remoteModel: string | null;
     localBaseUrl: string | null;
     localModel: string | null;
 }
@@ -37,8 +37,8 @@ interface AiConnectionForm {
     vendor: PersonalAiVendor;
     apiKey: string;
     model: string;
-    mcpBaseUrl: string;
-    mcpModel: string;
+    remoteBaseUrl: string;
+    remoteModel: string;
     localBaseUrl: string;
     localModel: string;
 }
@@ -48,8 +48,8 @@ const INITIAL_AI_FORM: AiConnectionForm = {
     vendor: 'openai',
     apiKey: '',
     model: '',
-    mcpBaseUrl: '',
-    mcpModel: '',
+    remoteBaseUrl: '',
+    remoteModel: '',
     localBaseUrl: '',
     localModel: '',
 };
@@ -73,8 +73,8 @@ function parseConnectionSummary(value: unknown): ConnectionSummary | null {
         mode,
         vendor,
         model: typeof source.model === 'string' ? source.model : null,
-        mcpBaseUrl: typeof source.mcpBaseUrl === 'string' ? source.mcpBaseUrl : null,
-        mcpModel: typeof source.mcpModel === 'string' ? source.mcpModel : null,
+        remoteBaseUrl: typeof source.remoteBaseUrl === 'string' ? source.remoteBaseUrl : null,
+        remoteModel: typeof source.remoteModel === 'string' ? source.remoteModel : null,
         localBaseUrl: typeof source.localBaseUrl === 'string' ? source.localBaseUrl : null,
         localModel: typeof source.localModel === 'string' ? source.localModel : null,
     };
@@ -102,8 +102,8 @@ export default function PersonalAiConnection() {
                     vendor: connection.vendor ?? 'openai',
                     apiKey: '',
                     model: connection.model ?? '',
-                    mcpBaseUrl: connection.mcpBaseUrl ?? '',
-                    mcpModel: connection.mcpModel ?? '',
+                    remoteBaseUrl: connection.remoteBaseUrl ?? '',
+                    remoteModel: connection.remoteModel ?? '',
                     localBaseUrl: connection.localBaseUrl ?? '',
                     localModel: connection.localModel ?? '',
                 });
@@ -129,11 +129,11 @@ export default function PersonalAiConnection() {
                     ...(aiForm.apiKey.trim() ? { apiKey: aiForm.apiKey.trim() } : {}),
                     ...(aiForm.model.trim() ? { model: aiForm.model.trim() } : {}),
                 };
-            } else if (aiForm.mode === 'mcp') {
+            } else if (aiForm.mode === 'remote') {
                 payload = {
                     mode: aiForm.mode,
-                    mcpBaseUrl: aiForm.mcpBaseUrl.trim(),
-                    ...(aiForm.mcpModel.trim() ? { mcpModel: aiForm.mcpModel.trim() } : {}),
+                    remoteBaseUrl: aiForm.remoteBaseUrl.trim(),
+                    ...(aiForm.remoteModel.trim() ? { remoteModel: aiForm.remoteModel.trim() } : {}),
                     ...(aiForm.apiKey.trim() ? { apiKey: aiForm.apiKey.trim() } : {}),
                 };
             } else if (aiForm.mode === 'local') {
@@ -210,7 +210,7 @@ export default function PersonalAiConnection() {
 
     const canSave = aiForm.mode === 'rule'
         || aiForm.mode === 'local'
-        || (aiForm.mode === 'mcp' && Boolean(aiForm.mcpBaseUrl.trim()))
+        || (aiForm.mode === 'remote' && Boolean(aiForm.remoteBaseUrl.trim()))
         || (aiForm.mode === 'api' && Boolean(
             aiForm.apiKey.trim() || aiConn?.vendor === aiForm.vendor
         ));
@@ -220,7 +220,7 @@ export default function PersonalAiConnection() {
             <div>
                 <h2 className="text-sm font-bold text-white">내 AI 연결</h2>
                 <p className="mt-1 text-xs text-gray-500">
-                    규칙 기반 또는 본인의 API·원격 MCP·로컬 AI를 선택할 수 있습니다.
+                    규칙 기반 또는 본인의 API·원격 엔드포인트·로컬 AI를 선택할 수 있습니다.
                     인증 키는 암호화되어 저장되고 다시 표시되지 않으며 다른 회원과 공유되지 않습니다.
                 </p>
             </div>
@@ -244,9 +244,9 @@ export default function PersonalAiConnection() {
                                 value={mode}
                                 checked={aiForm.mode === mode}
                                 onChange={() => {
-                                    // API 탭과 MCP 탭이 같은 apiKey 칸을 공유한다.
+                                    // API 탭과 원격 탭이 같은 apiKey 칸을 공유한다.
                                     // 비우지 않으면 벤더용으로 입력한 키가 모드를
-                                    // 바꿔 저장하는 순간 사용자가 적은 MCP 주소의
+                                    // 바꿔 저장하는 순간 사용자가 적은 원격 주소의
                                     // 키로 전송된다.
                                     setAiForm((prev) => ({ ...prev, mode, apiKey: '' }));
                                     setAiMsg(null);
@@ -330,16 +330,16 @@ export default function PersonalAiConnection() {
                 </>
             )}
 
-            {aiForm.mode === 'mcp' && (
+            {aiForm.mode === 'remote' && (
                 <>
                     <label className="block text-sm font-medium text-gray-400">
-                        원격 MCP 주소
+                        원격 엔드포인트 주소
                         <input
                             className="input mt-2"
-                            value={aiForm.mcpBaseUrl}
+                            value={aiForm.remoteBaseUrl}
                             placeholder="https://my-llm.example.com/v1"
-                            onChange={(e) => setAiForm({ ...aiForm, mcpBaseUrl: e.target.value })}
-                            id="personal-ai-mcp-base-url"
+                            onChange={(e) => setAiForm({ ...aiForm, remoteBaseUrl: e.target.value })}
+                            id="personal-ai-remote-base-url"
                         />
                         <span className="mt-1 block text-xs text-gray-600">
                             https 공인 주소만 허용됩니다.
@@ -351,9 +351,9 @@ export default function PersonalAiConnection() {
                             모델 <span className="text-gray-600">(선택)</span>
                             <input
                                 className="input mt-2"
-                                value={aiForm.mcpModel}
-                                onChange={(e) => setAiForm({ ...aiForm, mcpModel: e.target.value })}
-                                id="personal-ai-mcp-model"
+                                value={aiForm.remoteModel}
+                                onChange={(e) => setAiForm({ ...aiForm, remoteModel: e.target.value })}
+                                id="personal-ai-remote-model"
                             />
                         </label>
                         <label className="block text-sm font-medium text-gray-400">
@@ -364,7 +364,7 @@ export default function PersonalAiConnection() {
                                 value={aiForm.apiKey}
                                 autoComplete="off"
                                 onChange={(e) => setAiForm({ ...aiForm, apiKey: e.target.value })}
-                                id="personal-ai-mcp-key"
+                                id="personal-ai-remote-key"
                             />
                         </label>
                     </div>

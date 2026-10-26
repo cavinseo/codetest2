@@ -5,7 +5,7 @@
 // 조회 전용 회원(코치 등)도 편집할 수 있는 것처럼 보였다. 입력한 뒤 저장하면 403 이 나고
 // 입력이 사라졌다(2026-10-25 코드 리뷰 B16). 홈과 같은 역할 기준·같은 잠금 방식을 쓴다.
 import { useEffect, useState, type ReactNode } from 'react';
-// 프로젝트 홈(app/project/[id]/page.tsx)의 canEditOverview 와 같은 기준이다.
+// 프로젝트 홈(app/project/[id]/page.tsx)의 canWriteProject 와 같은 기준이다.
 import { isProjectWriteRole } from '@/lib/project-roles';
 
 export type ProjectEditAccess = 'loading' | 'edit' | 'read' | 'unknown';

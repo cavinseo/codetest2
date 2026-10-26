@@ -18,8 +18,8 @@ export async function POST(request: NextRequest) {
             vendor: null,
             apiKey: null,
             model: null,
-            mcpBaseUrl: null,
-            mcpModel: null,
+            remoteBaseUrl: null,
+            remoteModel: null,
             localBaseUrl: null,
             localModel: null,
         };
