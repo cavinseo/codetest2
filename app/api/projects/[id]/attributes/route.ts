@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cascadeConfirmResponse } from '@/lib/cascade-confirm-response';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
@@ -77,14 +78,7 @@ export async function POST(
         // 전체 교체 저장도 적합도가 있으면 확인 없이 진행하면 안 된다.
         const impact = await countAttributeCascadeImpact(prisma, projectId);
         if (impact.fitnesses > 0 && rawBody?.confirmCascade !== true) {
-            return NextResponse.json(
-                {
-                    error: describeAttributeCascadeImpact(impact),
-                    needsCascadeConfirm: true,
-                    cascadeImpact: impact,
-                },
-                { status: 409 }
-            );
+            return cascadeConfirmResponse(describeAttributeCascadeImpact(impact), impact);
         }
 
         const updatedAttrs = await prisma.$transaction(async (tx: any) => {

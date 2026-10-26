@@ -2,20 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 import { requireAuth, SessionUser, type AuthenticatedUser } from './auth';
 import { canReadAnyProject, canWriteAnyProject, type MemberRole } from './member-roles';
+import { isProjectWriteRole, type ProjectAccessRole } from './project-roles';
 
-export type ProjectAccessRole = 'OWNER' | 'EDITOR' | 'COACH' | 'ADMIN' | 'VIEWER';
-
-const WRITE_ROLES = new Set<ProjectAccessRole>(['OWNER', 'EDITOR', 'ADMIN']);
+export type { ProjectAccessRole };
 
 /**
  * 이 역할로 프로젝트에 쓸 수 있는가. requireProjectAccess 의 쓰기 판정과 같은
  * 기준을 써야 한다 — GET 라우트가 조회 도중 부수적으로 쓰기를 해야 할 때(예:
  * 자동 채움) 이 판정이 따로 복제되면 VIEWER·COACH 가 읽기만 해도 쓰기가
- * 일어나는 권한 경계 붕괴가 생긴다.
+ * 일어나는 권한 경계 붕괴가 생긴다. 판정 자체는 화면과 함께 쓰려고 project-roles 에 둔다.
  */
-export function isProjectWriteRole(role: ProjectAccessRole): boolean {
-    return WRITE_ROLES.has(role);
-}
+export { isProjectWriteRole };
 
 /**
  * 프로젝트에서 유효한 역할을 정한다. requireProjectAccess 와 목록 API 가
@@ -40,7 +37,7 @@ export function resolveProjectRole(params: {
     if (canWriteAnyProject(params.systemRole)) {
         // 관리자는 전권이되, 이미 쓰기 가능한 명시 역할이 있으면 그대로 둔다.
         // OWNER 전용 게이트에서 관리자 소유자가 막히면 안 된다.
-        if (!explicitRole || !WRITE_ROLES.has(explicitRole)) return 'ADMIN';
+        if (!explicitRole || !isProjectWriteRole(explicitRole)) return 'ADMIN';
         return explicitRole;
     }
     if (canReadAnyProject(params.systemRole)) {
@@ -138,7 +135,7 @@ export async function requireProjectAccess(
         return NextResponse.json({ error: 'Project access denied.' }, { status: 403 });
     }
 
-    if (options.write && !WRITE_ROLES.has(role)) {
+    if (options.write && !isProjectWriteRole(role)) {
         return NextResponse.json({ error: 'Project write access required.' }, { status: 403 });
     }
 

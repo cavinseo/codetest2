@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import ThemeToggle from '@/components/ThemeToggle';
 import UploadWritePolicyPrompt, { type UploadWritePolicy } from '@/components/project/UploadWritePolicyPrompt';
+import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
 
 type UploadMode = 'workbook' | 'worksheet';
 type UploadStatus = 'idle' | 'parsing' | 'success' | 'error';
@@ -118,12 +119,11 @@ export default function ImportPage() {
     };
 
     const acceptFile = (selectedFile: File) => {
-        const fileName = selectedFile.name.toLowerCase();
-        if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        if (isExcelFileName(selectedFile.name)) {
             setFile(selectedFile);
             resetResult();
         } else {
-            setErrorMessage('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.');
+            setErrorMessage(EXCEL_FILE_TYPE_ERROR);
         }
     };
 

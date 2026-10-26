@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cascadeConfirmResponse } from '@/lib/cascade-confirm-response';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
@@ -82,14 +83,7 @@ export async function POST(
             replacesTechnicalCharacteristics: Array.isArray(importData.technicalCharacteristics),
         });
         if (hasCascadeImpact(cascadeImpact) && importData.confirmCascade !== true) {
-            return NextResponse.json(
-                {
-                    error: describeCascadeImpact(cascadeImpact),
-                    needsCascadeConfirm: true,
-                    cascadeImpact,
-                },
-                { status: 409 }
-            );
+            return cascadeConfirmResponse(describeCascadeImpact(cascadeImpact), cascadeImpact);
         }
 
         const project = await prisma.project.findUnique({

@@ -12,11 +12,13 @@ import { buildFlatSpecRowsFromFunctions } from '@/lib/spec-table-utils';
 import { readBusinessPlanForSpec } from '@/lib/business-plan-sections';
 import { describeAiEngine } from '@/lib/ai/engine-label';
 import FunctionAnalysisAssistant from '@/components/project/FunctionAnalysisAssistant';
+import { isProjectWriteRole } from '@/lib/project-roles';
 import {
     BrowserLocalError,
     callBrowserLocalLlm,
     discoverBrowserLocalEndpoint,
 } from '@/lib/ai/browser-local';
+import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
 
 interface SpecFunction {
     id: string;
@@ -130,7 +132,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const { toast, showToast } = useToast();
     const excelInputRef = useRef<HTMLInputElement | null>(null);
-    const canUseFunctionAnalysisAssistant = project?.id === projectId && ['OWNER', 'EDITOR', 'ADMIN'].includes(project.role ?? '');
+    const canUseFunctionAnalysisAssistant = project?.id === projectId && isProjectWriteRole(project.role);
 
     const buildRowsFromSpecs = useCallback((loadedSpecs: SpecFunction[]) => {
         return buildFlatSpecRowsFromFunctions(loadedSpecs);
@@ -365,9 +367,8 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
 
     const handleSpecExcelUpload = (file: File | null) => {
         if (!file) return;
-        const fileName = file.name.toLowerCase();
-        if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
-            showToast('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.', 'error');
+        if (!isExcelFileName(file.name)) {
+            showToast(EXCEL_FILE_TYPE_ERROR, 'error');
             if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }

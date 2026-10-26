@@ -6,8 +6,8 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
-import { encodeSessionCookie } from '@/lib/auth';
-import { BCRYPT_ROUNDS, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/constants';
+import { setSessionCookie } from '@/lib/session-cookie';
+import { BCRYPT_ROUNDS } from '@/lib/constants';
 import { normalizeInviteCode } from '@/lib/invite-code';
 import { inviteAccessExpiresAt } from '@/lib/invite-access';
 import { isProfileCompleteForRole } from '@/lib/member-profile';
@@ -91,12 +91,7 @@ export async function POST(request: NextRequest) {
 
         const profile = await prisma.memberProfile.findUnique({ where: { userId: user.id } });
         const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE_NAME, encodeSessionCookie({ userId: user.id, email: user.email, name: user.name }, {
-            sessionVersion: user.sessionVersion,
-        }), {
-            httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production',
-            maxAge: SESSION_MAX_AGE_SECONDS, path: '/',
-        });
+        setSessionCookie(cookieStore, { userId: user.id, email: user.email, name: user.name }, user.sessionVersion);
         resetRateLimit(rateKey);
         return NextResponse.json({ success: true, user: { id: user.id, email: user.email, name: user.name },
             mustChangePassword: user.mustChangePassword, needsProfile: !isProfileCompleteForRole('MENTEE', profile) });

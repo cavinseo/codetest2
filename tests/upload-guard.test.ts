@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_UPLOAD_BYTES, checkUploadedExcel, guardUploadedExcel } from '../lib/upload-guard';
+import { EXCEL_FILE_TYPE_ERROR, MAX_UPLOAD_BYTES, checkUploadedExcel, guardUploadedExcel, isExcelFileName } from '../lib/upload-guard';
 import {
     MAX_OFFLINE_HTML_BYTES,
     MAX_OFFLINE_HTML_FILES,
@@ -130,5 +130,22 @@ describe('guardUploadedOfflineHtml', () => {
             ok: false,
             failure: { error: 'HTML 응답지 하나는 2MB를 초과할 수 없습니다.', status: 413 },
         });
+    });
+});
+
+describe('isExcelFileName (화면과 서버가 함께 쓰는 확장자 기준, D5)', () => {
+    it('대소문자·앞뒤 공백과 관계없이 xlsx·xls 만 엑셀로 본다', () => {
+        expect(isExcelFileName('data.xlsx')).toBe(true);
+        expect(isExcelFileName('DATA.XLS')).toBe(true);
+        expect(isExcelFileName(' data.xlsx ')).toBe(true);
+        expect(isExcelFileName('data.csv')).toBe(false);
+        expect(isExcelFileName('data.xlsx.pdf')).toBe(false);
+        expect(isExcelFileName('xlsx')).toBe(false);
+    });
+
+    it('csv 를 받는 업로드는 엑셀 확장자와 csv 를 함께 받는다', () => {
+        expect(checkUploadedExcel(fileOf('data.CSV', 10), { allowCsv: true })).toBeNull();
+        expect(checkUploadedExcel(fileOf('data.xls', 10), { allowCsv: true })).toBeNull();
+        expect(checkUploadedExcel(fileOf('data.csv', 10))?.error).toBe(EXCEL_FILE_TYPE_ERROR);
     });
 });

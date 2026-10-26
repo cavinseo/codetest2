@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cascadeConfirmResponse } from '@/lib/cascade-confirm-response';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { parseExcelFile, ParsedExcelData, ParsedSheet } from '@/lib/excel-parser';
@@ -17,19 +18,14 @@ import { toErrorResponse } from '@/lib/api-error';
 import { parseWritePolicy } from '@/lib/write-policy';
 
 import { hasDuplicateTechnicalNames } from '@/lib/qfd-technical-sync';
+import { guardUploadedExcel } from '@/lib/upload-guard';
 
 class DuplicateTechnicalNameError extends Error {}
 
 const log = createLogger('api/import');
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const PREVIEW_ROW_LIMIT = 8;
 const PREVIEW_COL_LIMIT = 8;
-
-function isSupportedExcelFile(fileName: string) {
-    const lowerName = fileName.toLowerCase();
-    return lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls');
-}
 
 function parseRequestedSheetNames(rawValue: FormDataEntryValue | null) {
     if (!rawValue || typeof rawValue !== 'string') return [];
@@ -240,7 +236,7 @@ export async function POST(
     try {
         const projectId = params.id;
         const formData = await request.formData();
-        const file = formData.get('file') as File | null;
+        const upload = guardUploadedExcel(formData.get('file'));
         const requestedSheetNames = parseRequestedSheetNames(formData.get('sheetNames'));
         const action = parseAction(formData.get('action'));
         const writePolicy = parseWritePolicy(formData.get('writePolicy'));
@@ -249,23 +245,9 @@ export async function POST(
         const accessResult = await requireProjectAccess(request, projectId, { write: action === 'apply' });
         if (accessResult instanceof NextResponse) return accessResult;
 
-        if (!file) {
-            return NextResponse.json({ error: '파일이 없습니다.' }, { status: 400 });
-        }
-
-        if (file.size > MAX_FILE_SIZE) {
-            return NextResponse.json(
-                { error: '파일 크기는 10MB를 초과할 수 없습니다.' },
-                { status: 400 }
-            );
-        }
-
-        if (!isSupportedExcelFile(file.name)) {
-            return NextResponse.json(
-                { error: '.xlsx 또는 .xls 파일만 업로드할 수 있습니다.' },
-                { status: 400 }
-            );
-        }
+        // 크기·형식 검사는 다른 업로드 라우트와 같은 기준을 쓴다(2026-10-25 코드 리뷰 D5).
+        if (!upload.ok) return NextResponse.json({ error: upload.failure.error }, { status: upload.failure.status });
+        const file = upload.file;
 
         const parsedData = await parseExcelFile(file);
         if (parsedData.parseErrors.some((error) => error.severity === 'error')) {
@@ -320,14 +302,7 @@ export async function POST(
         let appliedCounts: Record<string, number> | null = null;
         if (action === 'apply') {
             if (hasCascadeImpact(cascadeImpact) && !confirmCascade) {
-                return NextResponse.json(
-                    {
-                        error: describeCascadeImpact(cascadeImpact),
-                        needsCascadeConfirm: true,
-                        cascadeImpact,
-                    },
-                    { status: 409 }
-                );
+                return cascadeConfirmResponse(describeCascadeImpact(cascadeImpact), cascadeImpact);
             }
             if (importResult.formulaIssues.length > 0) {
                 return NextResponse.json(

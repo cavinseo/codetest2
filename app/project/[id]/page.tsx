@@ -34,6 +34,7 @@ import {
     readAndSerializeBusinessPlanFile,
 } from '@/lib/business-plan-file';
 import { useRouter } from 'next/navigation';
+import { isProjectWriteRole } from '@/lib/project-roles';
 
 function isExcelFileName(fileName: string) {
     return /\.(xlsx|xls)$/i.test(fileName.trim());
@@ -473,7 +474,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
 
     const router = useRouter();
 
-    const canEditOverview = project !== null && ['OWNER', 'EDITOR', 'ADMIN'].includes(project.role);
+    const canEditOverview = project !== null && isProjectWriteRole(project.role);
     const tabComponents: Record<string, React.ReactNode> = {
         attributes: <ProductAttributesTable projectId={projectId} />,
         spec: <SpecTable projectId={projectId} onSaved={() => changeTab('attributes')} />,
