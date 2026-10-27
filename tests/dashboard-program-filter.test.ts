@@ -38,6 +38,7 @@ async function choose(value: string) {
 }
 
 beforeEach(() => {
+    window.localStorage.clear();
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.stubGlobal('fetch', fetchMock);
     container = document.createElement('div');
@@ -95,4 +96,31 @@ it('프로그램이 하나뿐이면 드롭다운을 보이지 않는다', async 
     expect(filter()).toBeNull();
     expect(container.textContent).toContain('스마트 화분');
     expect(container.textContent).toContain('공유 주차');
+});
+
+it('고른 프로그램은 다시 열어도 남고, 로그아웃하면 지워진다', async () => {
+    mockApi(projects);
+    await open();
+    await choose('prog_a');
+
+    // 프로젝트에 들어갔다 돌아오는 것처럼 화면을 새로 연다.
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await open();
+    expect(filter()!.value).toBe('prog_a');
+    expect(container.textContent).not.toContain('스마트 화분');
+
+    fetchMock.mockImplementation((url: string) => (url === '/api/auth/logout' ? json({ success: true }) : json({})));
+    await act(async () => [...container.querySelectorAll('button')].find((item) => item.textContent?.includes('로그아웃'))!.click());
+
+    expect(window.localStorage.getItem('dashboard-selected-program')).toBeNull();
+});
+
+it('저장된 프로그램이 내 목록에 없으면 전체를 보인다', async () => {
+    window.localStorage.setItem('dashboard-selected-program', 'prog_other');
+    mockApi(projects);
+    await open();
+
+    expect(filter()!.value).toBe('');
+    for (const name of ['스마트 화분', '배달 로봇', '공유 주차']) expect(container.textContent).toContain(name);
 });

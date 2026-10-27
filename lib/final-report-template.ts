@@ -95,7 +95,7 @@ function appendProductDiagnosis(writer: ReportWriter, worksheets: FinalReportWor
     writer.addHeading('(AS-IS) 제품/서비스 스펙표 (WS-2)'); writer.addMentorAnalysis('WS-2', analysis.spec?.analysis);
     const specs = buildSpecRows(worksheets.specFunctions);
     const showDetailColumn = specs.some(row => String(row[3] ?? '').trim() !== '') || !worksheets.specDetailCollapsed;
-    writer.addTable('WS-2 AS-IS 스펙표', ['No', '핵심기술', '세부기술', ...(showDetailColumn ? ['세세부기술'] : []), '적용기술'],
+    writer.addTable('WS-2 AS-IS 스펙표', ['No', '핵심기능', '세부기능', ...(showDetailColumn ? ['세세부기능'] : []), '적용기술'],
         showDetailColumn ? specs : specs.map(row => row.filter((_, column) => column !== 3)),
         [24, 73, 136, ...(showDetailColumn ? [57] : []), 221], [1, 2]);
     writer.startWorksheetPage('제품속성표 (WS-3)', 'WS-3', analysis.attributes?.analysis);

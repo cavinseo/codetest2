@@ -42,7 +42,7 @@ export async function GET(
     }
 }
 
-// PATCH: 세세부기술 열의 접기 상태만 변경한다.
+// PATCH: 세세부기능 열의 접기 상태만 변경한다.
 export async function PATCH(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -64,7 +64,7 @@ export async function PATCH(
     } catch (error: unknown) {
         const invalidBody = invalidJsonBodyResponse(error);
         if (invalidBody) return invalidBody;
-        return toErrorResponse(error, { log, message: '세세부기술 열 상태를 저장하지 못했습니다.' });
+        return toErrorResponse(error, { log, message: '세세부기능 열 상태를 저장하지 못했습니다.' });
     }
 }
 

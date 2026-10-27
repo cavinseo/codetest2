@@ -580,7 +580,7 @@ export default function TechTreeTable({ projectId }: Props) {
                                                 </button>
                                             </div>
                                             <datalist id={`tech-tree-sub-${row.id}`}>
-                                                {optionsForCore(row.coreSpec).map((option) => <option key={option.id} value={option.subSpec}>{option.depth === 1 ? '└ 세세부기술' : '세부기술'}</option>)}
+                                                {optionsForCore(row.coreSpec).map((option) => <option key={option.id} value={option.subSpec}>{option.depth === 1 ? '└ 세세부기능' : '세부기능'}</option>)}
                                             </datalist>
                                         </td>
                                     )}

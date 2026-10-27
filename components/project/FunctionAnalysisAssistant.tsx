@@ -160,7 +160,7 @@ export default function FunctionAnalysisAssistant({ open, project, existingRows,
                         <p className="text-xs text-gray-400">{includeExisting ? '아래 내용을 참고 자료로 프롬프트에 포함합니다.' : '현재 WS-2 내용은 프롬프트에서 제외됩니다.'}</p>
                         {includeExisting && <div className="max-h-64 overflow-auto">
                             <table className="w-full min-w-[560px] border-collapse text-left text-xs">
-                                <thead><tr>{['핵심기술', '세부기술', '세세부기술', '적용기술'].map(title => <th key={title} className="border border-white/10 bg-white/5 px-3 py-2 font-medium text-gray-300">{title}</th>)}</tr></thead>
+                                <thead><tr>{['핵심기능', '세부기능', '세세부기능', '적용기술'].map(title => <th key={title} className="border border-white/10 bg-white/5 px-3 py-2 font-medium text-gray-300">{title}</th>)}</tr></thead>
                                 <tbody>{availableRows.map((row, index) => <tr key={index}>{[row.core, row.sub, row.detail, row.technology].map((value, column) => <td key={column} className="whitespace-pre-wrap break-words border border-white/10 px-3 py-2 text-gray-400">{value || '—'}</td>)}</tr>)}</tbody>
                             </table>
                         </div>}

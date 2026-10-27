@@ -1,6 +1,7 @@
 'use client';
 // 개요의 제품명·이미지·시장·고객 정보를 편집 권한에 맞게 표시한다.
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { optimizeReportImage } from '@/lib/final-report-image';
 import { getProductOverviewImages, relatedImagesPatch, PRODUCT_IMAGE_MAX_LENGTH, RELATED_IMAGE_MAX_COUNT, type ProductOverview } from '@/lib/product-overview';
 import ProductOverviewContent from './ProductOverviewContent';
@@ -19,9 +20,18 @@ export default function ProductOverviewFields({ value, editing = false, disabled
     const reading = useRef(false);
     const [isReading, setIsReading] = useState(false);
     const [marketPreview, setMarketPreview] = useState(false);
+    // 크게 보고 있는 관련이미지. 칸 안의 작은 미리보기로는 공정도·BM 도식의 글씨를 읽을 수 없다.
+    const [zoomedIndex, setZoomedIndex] = useState<number | null>(null);
     const images = getProductOverviewImages(value);
+    const zoomedImage = zoomedIndex === null ? undefined : images[zoomedIndex];
     useEffect(() => () => { generation.current += 1; onBusy?.(false); }, [onBusy]);
     useEffect(() => { if (!editing) setMarketPreview(false); }, [editing]);
+    useEffect(() => {
+        if (!zoomedImage) return;
+        const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setZoomedIndex(null); };
+        window.addEventListener('keydown', closeOnEscape);
+        return () => window.removeEventListener('keydown', closeOnEscape);
+    }, [zoomedImage]);
     async function selectImages(files: File[]) {
         if (!files.length || reading.current) return;
         if (images.length + files.length > RELATED_IMAGE_MAX_COUNT) {
@@ -83,8 +93,10 @@ export default function ProductOverviewFields({ value, editing = false, disabled
             <p className="text-xs text-gray-500">{images.length} / {RELATED_IMAGE_MAX_COUNT}개</p>
             {images.length ? <div className="grid gap-3 sm:grid-cols-3">
                 {images.map((image, index) => <div key={index} className="space-y-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- 개요에 저장한 최적화 이미지를 직접 표시한다. */}
-                    <img src={image.dataUrl} alt={`관련이미지 ${index + 1}`} className="h-40 w-full rounded object-contain" />
+                    <button type="button" className="block w-full cursor-zoom-in" title="클릭하면 크게 봅니다" onClick={() => setZoomedIndex(index)}>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- 개요에 저장한 최적화 이미지를 직접 표시한다. */}
+                        <img src={image.dataUrl} alt={`관련이미지 ${index + 1}`} className="h-40 w-full rounded object-contain" />
+                    </button>
                     {editing && <button type="button" disabled={disabled || isReading} className="btn-secondary text-xs" onClick={() => onChange?.(relatedImagesPatch(images.filter((_, imageIndex) => imageIndex !== index)))}>관련이미지 {index + 1} 삭제</button>}
                 </div>)}
             </div> : <p className="text-sm text-gray-500">등록된 이미지가 없습니다.</p>}
@@ -93,5 +105,14 @@ export default function ProductOverviewFields({ value, editing = false, disabled
                 <span className="mt-2 block text-xs text-gray-500">PNG/JPEG · 원본 20MB 이하 · 저장 전 자동 최적화합니다.</span>
             </label>}
         </div>
+        {/* 화면 전체를 덮는 확대 창. 어디를 눌러도(이미지 포함) 닫힌다. 개요 카드의 애니메이션
+            transform 이 fixed 위치의 기준을 카드로 바꿀 수 있어 body 에 붙인다. */}
+        {zoomedImage && createPortal(
+            <div role="dialog" aria-modal="true" aria-label={`관련이미지 ${zoomedIndex! + 1} 확대`} className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-4" onClick={() => setZoomedIndex(null)}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- 개요에 저장한 최적화 이미지를 직접 표시한다. */}
+                <img src={zoomedImage.dataUrl} alt={`관련이미지 ${zoomedIndex! + 1} 확대`} className="max-h-full max-w-full rounded object-contain" />
+            </div>,
+            document.body,
+        )}
     </div>;
 }

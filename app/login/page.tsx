@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ThemeToggle from '@/components/ThemeToggle';
+import { clearSelectedProgramId } from '@/lib/dashboard-program-filter';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -87,6 +88,8 @@ export default function LoginPage() {
                 throw new Error(data.error || '로그인에 실패했습니다.');
             }
 
+            // 앞서 이 브라우저를 쓴 사람이 대시보드에서 고른 프로그램이 남지 않게 한다.
+            clearSelectedProgramId();
             // 임시 비밀번호를 바꿔야 하거나 프로필이 미완성이면 온보딩에서 마무리한다.
             router.push(data.mustChangePassword || data.needsProfile ? '/onboarding' : '/dashboard');
         } catch (err: any) {

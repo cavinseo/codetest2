@@ -8,6 +8,7 @@ import ThemeToggle from '@/components/ThemeToggle';
 import ProjectRequestsPanel from '@/components/ProjectRequestsPanel';
 import NewProjectModal from '@/components/dashboard/NewProjectModal';
 import { redirectToLoginOn401 } from '@/lib/client-fetch';
+import { clearSelectedProgramId, readSelectedProgramId, saveSelectedProgramId } from '@/lib/dashboard-program-filter';
 
 interface Project {
     id: string;
@@ -47,7 +48,14 @@ export default function DashboardPage() {
     useEffect(() => {
         fetchProjects();
         fetchRole();
+        // 서버 렌더와 첫 화면을 맞추기 위해 저장된 선택은 마운트 뒤에 읽는다.
+        setSelectedProgramId(readSelectedProgramId());
     }, []);
+
+    const selectProgram = (programId: string) => {
+        setSelectedProgramId(programId);
+        saveSelectedProgramId(programId);
+    };
 
     // 관리자/매니저 전용 링크를 가리기 위해 역할만 조회한다. 새 엔드포인트 대신
     // 이미 있는 본인 프로필 API(app/api/me/profile)를 쓴다.
@@ -99,6 +107,7 @@ export default function DashboardPage() {
         try {
             const response = await fetch('/api/auth/logout', { method: 'POST' });
             if (!response.ok) throw new Error('로그아웃 실패');
+            clearSelectedProgramId();
             window.location.href = '/login';
         } catch (error) {
             console.error(error);
@@ -283,7 +292,7 @@ export default function DashboardPage() {
                             <select
                                 className="input w-auto py-1 text-sm"
                                 value={selectedProgram ? selectedProgram.programId : ALL_PROGRAMS}
-                                onChange={(event) => setSelectedProgramId(event.target.value)}
+                                onChange={(event) => selectProgram(event.target.value)}
                                 id="dashboard-program-filter"
                             >
                                 <option value={ALL_PROGRAMS}>전체 ({displayProjects.length}개)</option>

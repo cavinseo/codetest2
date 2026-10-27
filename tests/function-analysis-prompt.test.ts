@@ -240,7 +240,7 @@ describe('외부 AI가 따라야 할 FAST 분석 계약', () => {
         const rules = withoutInput(buildFunctionAnalysisPrompt(answers()));
         const finalTable = rules.slice(rules.indexOf('### 최종 표. WS-2 엑셀 붙여넣기용'));
         expect(rules.indexOf('### 최종 표. WS-2 엑셀 붙여넣기용')).toBeGreaterThan(rules.indexOf('### 8. 리스크와 다음 확인사항'));
-        expect(finalTable).toContain('표 머리글: 핵심기술 | 세부기술 | 세세부기술 | 적용기술');
+        expect(finalTable).toContain('표 머리글: 핵심기능 | 세부기능 | 세세부기능 | 적용기술');
         expect(finalTable).toContain('4절에서 검토한 현행 기능');
         expect(finalTable).toContain('rowspan·colspan');
         expect(finalTable).toMatch(/상위 핵심·세부 이름을[^\n]*매 행 반복/);
@@ -280,7 +280,7 @@ describe('외부 AI가 따라야 할 FAST 분석 계약', () => {
         const rules = withoutInput(buildFunctionAnalysisPrompt(answers()));
         const headers = rules.split('\n').filter(line => line.trim().startsWith('|') || line.startsWith('표 머리글:'))
             .map(line => line.replace(/^표 머리글:\s*/, '').replace(/^\||\|$/g, '').split('|').map(cell => cell.trim()));
-        expect(headers).toContainEqual(['핵심기술', '세부기술', '세세부기술', '적용기술']);
+        expect(headers).toContainEqual(['핵심기능', '세부기능', '세세부기능', '적용기술']);
         expect(headers.some(row => row.some(cell => /WHY/i.test(cell)) && row.some(cell => /HOW/i.test(cell)))).toBe(true);
         expect(rules).toContain('양방향');
         expect(rules).toContain('분기점');
