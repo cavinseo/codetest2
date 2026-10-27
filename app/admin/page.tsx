@@ -2,37 +2,17 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { PASSWORD_MIN_LENGTH, getPasswordChangeError } from '@/lib/password-policy';
 import AdminLoginForm from '@/components/admin/AdminLoginForm';
 import MembersTab, { type User } from '@/components/admin/MembersTab';
 import InvitesTab from '@/components/admin/InvitesTab';
 import ProgramsTab from '@/components/admin/ProgramsTab';
 import ThemeToggle from '@/components/ThemeToggle';
-import MentorAssign from '@/components/admin/MentorAssign';
-import ProjectTransfer from '@/components/admin/ProjectTransfer';
+import AdminProjectsTab, { type AdminProject } from '@/components/admin/AdminProjectsTab';
+import AdminPasswordTab from '@/components/admin/AdminPasswordTab';
+import DeleteConfirmDialog, { type DeleteConfirmState, type DeleteUserOptions } from '@/components/admin/DeleteConfirmDialog';
 import { MEMBER_ROLE_LABELS, canAssignMentor, canIssueInviteCode, canManagePrograms, type MemberRole } from '@/lib/member-roles';
-import { deleteActionFor, cancelGoesBack, type DeleteStage } from '@/lib/delete-confirmation';
-import {
-    DELETION_REASONS, DELETION_REASON_LABELS, describeMenteeDeletion,
-    type DeletionReason, type MenteeDeletionPreview,
-} from '@/lib/account-deletion';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-interface Project {
-    id: string;
-    name: string;
-    description?: string;
-    ownerId: string;
-    programId: string;
-    createdAt: string;
-    updatedAt: string;
-    ownerEmail: string | null;
-    ownerName: string | null;
-    reqCount: number;
-    responseCount: number;
-    memberCount: number;
-}
 
 interface Stats {
     totalProjects: number;
@@ -51,27 +31,12 @@ export default function AdminModePage() {
     const [tab, setTab] = useState<Tab>('overview');
     const [stats, setStats] = useState<Stats | null>(null);
     const [users, setUsers] = useState<User[]>([]);
-    const [projects, setProjects] = useState<Project[]>([]);
+    const [projects, setProjects] = useState<AdminProject[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
-    const [searchProject, setSearchProject] = useState('');
-    const [projectProgramId, setProjectProgramId] = useState('');
     const [projectPrograms, setProjectPrograms] = useState<{ id: string; name: string; organization: string }[]>([]);
-    // 프로젝트 삭제는 되돌릴 수 없고 하위 22개 모델을 함께 지운다. 그래서 확인을
-    // 두 번 받는다. stage 1 은 "무엇을 지우는지", stage 2 는 "정말 지울 것인지"다.
-    // 사용자 삭제는 서버가 409 로 되물어보는 자체 2단계가 있어 stage 1 에서 요청을
-    // 보낸다. 멘티는 그 409 에 사전 점검 결과가 실려 오고, 화면이 그것을 stage 2 에
-    // 담아 사유까지 받는다.
-    const [confirmDelete, setConfirmDelete] = useState<{
-        type: 'user' | 'project';
-        id: string;
-        name: string;
-        stage: DeleteStage;
-        preview?: MenteeDeletionPreview;
-        reason?: DeletionReason;
-        cascadeWarning?: string;
-        error?: string;
-    } | null>(null);
+    // 삭제 확인 단계(components/admin/DeleteConfirmDialog 참고).
+    const [confirmDelete, setConfirmDelete] = useState<DeleteConfirmState | null>(null);
     // 사용자·프로젝트 삭제가 함께 쓴다. 확정 버튼을 연달아 누르면 삭제 요청이 두 번 나갔다(B17).
     const [isDeleting, setIsDeleting] = useState(false);
     // 렌더가 끝나기 전 같은 순간의 연타는 state 로 못 막아 ref 를 함께 둔다.
@@ -84,15 +49,7 @@ export default function AdminModePage() {
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
     const [accessDenied, setAccessDenied] = useState(false);
     const [needsLogin, setNeedsLogin] = useState(false);
-    const [passwordForm, setPasswordForm] = useState({
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: '',
-    });
-    const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-    const [isChangingPassword, setIsChangingPassword] = useState(false);
     const [role, setRole] = useState<MemberRole | null>(null);
-    const [openMentorAssign, setOpenMentorAssign] = useState<Record<string, boolean>>({});
     const [loadedAt, setLoadedAt] = useState<string | null>(null);
 
     const load = useCallback(async () => {
@@ -146,7 +103,7 @@ export default function AdminModePage() {
 
     const handleDeleteUser = async (
         userId: string,
-        options: { confirmCascade?: boolean; reason?: DeletionReason; previewToken?: string } = {}
+        options: DeleteUserOptions = {}
     ) => {
         if (deletingRef.current) return;
         deletingRef.current = true;
@@ -308,38 +265,6 @@ export default function AdminModePage() {
         }
     };
 
-    const handleChangePassword = async (event: React.FormEvent) => {
-        event.preventDefault();
-        setPasswordMsg(null);
-
-        // 서버에 보내기 전에 같은 규칙으로 한 번 걸러 왕복을 줄인다.
-        const localError = getPasswordChangeError(passwordForm);
-        if (localError) {
-            setPasswordMsg({ type: 'error', msg: localError });
-            return;
-        }
-
-        setIsChangingPassword(true);
-        try {
-            const res = await fetch('/api/admin/password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(passwordForm),
-            });
-            const data = await res.json().catch(() => null);
-            if (!res.ok) {
-                setPasswordMsg({ type: 'error', msg: data?.error || '비밀번호 변경에 실패했습니다.' });
-                return;
-            }
-            setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-            setPasswordMsg({ type: 'success', msg: data?.message || '비밀번호를 변경했습니다.' });
-        } catch {
-            setPasswordMsg({ type: 'error', msg: '비밀번호 변경에 실패했습니다.' });
-        } finally {
-            setIsChangingPassword(false);
-        }
-    };
-
     // 초대 발행·멘토 배정 API 는 시스템 역할(canIssueInviteCode/canAssignMentor)로
     // 막는다. ADMIN_EMAILS 로 들어온 MENTEE 계정이 이 컨트롤을 열면 API 가 403 을
     // 주므로, 화면도 같은 역할 기준으로 감춘다. 화면 전체 접근은 서버 requireAdmin(403)이 막는다.
@@ -347,13 +272,7 @@ export default function AdminModePage() {
     const canAssignMentorUI = role !== null && canAssignMentor(role);
     const canManageProgramsUI = role !== null && canManagePrograms(role);
 
-    const toggleMentorAssign = (projectId: string) => {
-        setOpenMentorAssign((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
-    };
-
     const handleProjectTransferred = async () => {
-        // 대상 멘티의 다른 프로젝트도 멘토가 바뀔 수 있어 모든 배정 패널을 닫는다.
-        setOpenMentorAssign({});
         const [statsRes, projectsRes] = await Promise.all([
             fetch('/api/admin/stats', { cache: 'no-store' }),
             fetch('/api/admin/projects', { cache: 'no-store' }),
@@ -366,16 +285,6 @@ export default function AdminModePage() {
         setLoadedAt(new Date().toLocaleString('ko-KR'));
         showMsg('success', '프로젝트를 새 멘티에게 이관했습니다.');
     };
-
-    const filteredProjects = projects.filter((p) => {
-        if (projectProgramId && p.programId !== projectProgramId) return false;
-        const q = searchProject.toLowerCase();
-        return (
-            p.name.toLowerCase().includes(q) ||
-            (p.ownerEmail ?? '').toLowerCase().includes(q) ||
-            (p.ownerName ?? '').toLowerCase().includes(q)
-        );
-    });
 
     // 마지막 확인창에서 "무엇이 몇 개 사라지는지" 실제 숫자로 보여주기 위해
     // 대상 프로젝트를 찾아둔다. 목록에서 이미 받아온 값이라 추가 조회가 없다.
@@ -532,143 +441,14 @@ export default function AdminModePage() {
                 </div>
             )}
 
-            {/* Delete Confirm Modal */}
-            {confirmDelete && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                    <div role="dialog" aria-modal="true" aria-labelledby="admin-delete-title" className="card max-w-sm w-full mx-4 max-h-[90vh] overflow-y-auto border-rose-500/20">
-                        <div className="w-12 h-12 rounded-xl bg-rose-500/20 flex items-center justify-center mb-4">
-                            <svg className="w-6 h-6 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                        </div>
-                        <h3 id="admin-delete-title" className="text-lg font-bold text-white mb-2">
-                            {confirmDelete.stage === 2
-                                ? '마지막 확인'
-                                : confirmDelete.type === 'user' ? '사용자 삭제' : '프로젝트 삭제'}
-                        </h3>
-
-                        {confirmDelete.stage === 2 ? (
-                            <>
-                                <p className="text-sm text-gray-400 mb-3">
-                                    <span className="text-white font-medium">&quot;{confirmDelete.name}&quot;</span>을(를)
-                                    정말 삭제합니까? 이 작업은 <span className="text-rose-300 font-medium">되돌릴 수 없습니다.</span>
-                                </p>
-                                {deleteTargetProject && (
-                                    <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.06] px-4 py-3 mb-4">
-                                        <p className="text-[11px] text-rose-300/80 mb-2">함께 삭제되는 데이터</p>
-                                        <ul className="space-y-1 text-xs text-gray-300">
-                                            <li>요구사항 {deleteTargetProject.reqCount}개</li>
-                                            <li>Kano 응답 {deleteTargetProject.responseCount}개</li>
-                                            <li>참여 멤버 {deleteTargetProject.memberCount}명의 접근 권한</li>
-                                            <li>QFD 행렬·기술특성·설문 초대 전체</li>
-                                        </ul>
-                                    </div>
-                                )}
-
-                                {confirmDelete.cascadeWarning && !confirmDelete.preview && (
-                                    <p className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 mb-4 text-sm text-amber-300">
-                                        {confirmDelete.cascadeWarning}
-                                    </p>
-                                )}
-
-                                {confirmDelete.preview && (
-                                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 mb-4">
-                                        <p className="text-[11px] text-amber-300/80 mb-2">삭제하면 이렇게 됩니다</p>
-                                        <ul className="space-y-1 text-xs text-gray-300">
-                                            {describeMenteeDeletion(confirmDelete.preview).map((line) => (
-                                                <li key={line}>{line}</li>
-                                            ))}
-                                            <li>이름·연락처·소속 등 개인정보는 파기됩니다.</li>
-                                            <li>재가입해도 이전 프로젝트는 돌아오지 않습니다.</li>
-                                        </ul>
-                                        <p className="text-[11px] text-gray-500 mt-2">
-                                            접근만 막으려면 삭제 대신 승인 취소를 쓰세요.
-                                        </p>
-                                    </div>
-                                )}
-
-                                {confirmDelete.preview && (
-                                    <div className="mb-4">
-                                        <p className="text-[11px] text-gray-400 mb-2">삭제 사유</p>
-                                        <div className="space-y-1.5">
-                                            {DELETION_REASONS.map((reason) => (
-                                                <label key={reason} className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
-                                                    <input
-                                                        type="radio"
-                                                        name="deletion-reason"
-                                                        value={reason}
-                                                        checked={confirmDelete.reason === reason}
-                                                        onChange={() => setConfirmDelete({ ...confirmDelete, reason })}
-                                                    />
-                                                    {DELETION_REASON_LABELS[reason]}
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-sm text-gray-400 mb-1">
-                                    <span className="text-white font-medium">&quot;{confirmDelete.name}&quot;</span>을(를) 삭제하시겠습니까?
-                                </p>
-                                {confirmDelete.type === 'project' && (
-                                    <p className="text-xs text-rose-400 mt-1 mb-4">⚠️ 프로젝트의 모든 데이터(요구사항, QFD, Kano 응답 등)가 함께 삭제됩니다.</p>
-                                )}
-                                {confirmDelete.type === 'user' && (
-                                    <p className="text-xs text-amber-400 mt-1 mb-4">⚠️ 이 작업은 되돌릴 수 없습니다.</p>
-                                )}
-                            </>
-                        )}
-
-                        {confirmDelete.error && (
-                            <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
-                                {confirmDelete.error}
-                            </p>
-                        )}
-
-                        <div className="flex gap-3 mt-4">
-                            <button
-                                onClick={() => cancelGoesBack(confirmDelete)
-                                    // 되돌아갈 자리를 준다. 마지막 확인에서 취소만 가능하면
-                                    // 실수로 다음 단계에 온 사람이 처음부터 다시 해야 한다.
-                                    ? setConfirmDelete({ ...confirmDelete, stage: 1, error: undefined })
-                                    : setConfirmDelete(null)
-                                }
-                                className="btn-ghost flex-1"
-                                id="admin-cancel-delete-btn"
-                                disabled={isDeleting}
-                            >
-                                {confirmDelete.stage === 2 ? '뒤로' : '취소'}
-                            </button>
-                            <button
-                                onClick={() => {
-                                    // 몇 번 더 물어볼지는 lib/delete-confirmation 이 정한다.
-                                    if (deleteActionFor(confirmDelete) === 'advance') {
-                                        setConfirmDelete({ ...confirmDelete, stage: 2 });
-                                        return;
-                                    }
-                                    if (confirmDelete.type === 'user') {
-                                        // 확정은 점검 결과를 보고 있는 stage 2 에서만 한다. preview 만
-                                        // 보고 판단하면, "뒤로"로 stage 1 에 돌아온 뒤 다시 누를 때
-                                        // 마지막 확인을 건너뛰고 지워진다 — preview 는 남아 있으므로.
-                                        handleDeleteUser(confirmDelete.id, confirmDelete.stage === 2 && (confirmDelete.preview || confirmDelete.cascadeWarning)
-                                            ? { confirmCascade: true, reason: confirmDelete.reason, previewToken: confirmDelete.preview?.previewToken }
-                                            : {});
-                                        return;
-                                    }
-                                    handleDeleteProject(confirmDelete.id);
-                                }}
-                                // 사유를 고르기 전에는 확정할 수 없다. 서버도 400 으로 막지만,
-                                // 되돌릴 수 없는 조작이라 누르기 전에 알려 주는 편이 낫다.
-                                disabled={isDeleting || (confirmDelete.stage === 2 && Boolean(confirmDelete.preview) && !confirmDelete.reason)}
-                                className="flex-1 px-4 py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-sm font-medium hover:bg-rose-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                id="admin-confirm-delete-btn"
-                            >
-                                {isDeleting ? '처리 중...' : deleteActionFor(confirmDelete) === 'advance' ? '계속' : '삭제'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <DeleteConfirmDialog
+                confirmDelete={confirmDelete}
+                onChange={setConfirmDelete}
+                isDeleting={isDeleting}
+                targetProject={deleteTargetProject}
+                onDeleteUser={handleDeleteUser}
+                onDeleteProject={handleDeleteProject}
+            />
 
             <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 page-enter">
 
@@ -845,193 +625,24 @@ export default function AdminModePage() {
 
                         {/* ── Programs Tab ─────────────────────────────── */}
                         {tab === 'programs' && canManageProgramsUI && <ProgramsTab canCreate={role === 'ADMIN'} canDelete={role === 'ADMIN'}
-                            onDeleted={id => {
-                                setProjectPrograms(prev => prev.filter(p => p.id !== id));
-                                setProjectProgramId(prev => prev === id ? '' : prev);
-                            }} />}
+                            // 프로젝트 탭의 프로그램 필터는 탭 안에 있고, 이 탭에 있는 동안 프로젝트 탭은
+                            // 마운트되지 않으므로 지운 프로그램이 필터에 남지 않는다.
+                            onDeleted={id => setProjectPrograms(prev => prev.filter(p => p.id !== id))} />}
 
                         {/* ── Projects Tab ─────────────────────────────── */}
                         {tab === 'projects' && (
-                            <div className="space-y-4">
-                                <div className="flex flex-wrap items-center gap-3">
-                                    <div className="relative w-full sm:flex-1 sm:max-w-sm">
-                                        <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                        <input
-                                            type="text"
-                                            placeholder="프로젝트 이름 또는 소유자 검색..."
-                                            value={searchProject}
-                                            onChange={(e) => setSearchProject(e.target.value)}
-                                            className="input pl-10 w-full"
-                                            id="admin-project-search"
-                                        />
-                                    </div>
-                                    <select
-                                        id="admin-project-program-filter"
-                                        aria-label="프로그램별 프로젝트 보기"
-                                        className="input w-full sm:w-72"
-                                        value={projectProgramId}
-                                        onChange={(e) => setProjectProgramId(e.target.value)}
-                                    >
-                                        <option value="">전체 프로그램</option>
-                                        {projectPrograms.map(program => (
-                                            <option key={program.id} value={program.id}>{program.name} ({program.organization})</option>
-                                        ))}
-                                    </select>
-                                    <span className="text-sm text-gray-500" aria-live="polite">{filteredProjects.length}개</span>
-                                </div>
-
-                                {filteredProjects.length === 0 ? (
-                                    <div className="card text-center py-16">
-                                        <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-4">
-                                            <svg className="w-8 h-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                                        </div>
-                                        <p className="text-gray-500 text-sm">{searchProject || projectProgramId ? '선택한 조건에 맞는 프로젝트가 없습니다.' : '등록된 프로젝트가 없습니다.'}</p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {filteredProjects.map((project) => (
-                                            <div key={project.id} className="card hover:border-white/[0.1] transition-all duration-200">
-                                                <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
-                                                    <div className="flex items-start gap-4 flex-1 min-w-0">
-                                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center flex-shrink-0">
-                                                            <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center gap-2 flex-wrap">
-                                                                <h3 className="text-sm font-semibold text-white truncate">{project.name}</h3>
-                                                                <span className="text-[10px] font-mono text-gray-600 flex-shrink-0">{project.id}</span>
-                                                            </div>
-                                                            {project.description && (
-                                                                <p className="text-xs text-gray-500 mt-0.5 truncate">{project.description}</p>
-                                                            )}
-                                                            <div className="mt-1.5 flex items-center gap-1.5">
-                                                                <span className="inline-flex items-center gap-1 rounded-md border border-primary-500/20 bg-primary-500/10 px-2 py-0.5 text-[11px] text-primary-300">
-                                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                                                                    소유자 {project.ownerName || '이름 없음'}
-                                                                </span>
-                                                                <span className="truncate text-[11px] text-gray-500">
-                                                                    {project.ownerEmail || '계정 정보 없음'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex items-center gap-4 mt-2 flex-wrap">
-                                                                <span className="text-[11px] text-gray-600 flex items-center gap-1">
-                                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                                                                    요구사항 {project.reqCount}개
-                                                                </span>
-                                                                <span className="text-[11px] text-gray-600 flex items-center gap-1">
-                                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                                                                    응답 {project.responseCount}개
-                                                                </span>
-                                                                <span className="text-[11px] text-gray-600 flex items-center gap-1">
-                                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                                                                    멤버 {project.memberCount}명
-                                                                </span>
-                                                                <span className="text-[11px] text-gray-600">
-                                                                    {new Date(project.createdAt).toLocaleDateString('ko-KR')}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                                                        {role === 'ADMIN' && <ProjectTransfer projectId={project.id} onTransferred={handleProjectTransferred} />}
-                                                        <Link
-                                                            href={`/project/${project.id}`}
-                                                            className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-300 hover:bg-white/[0.08] transition-colors"
-                                                            id={`admin-view-project-${project.id}`}
-                                                        >
-                                                            보기
-                                                        </Link>
-                                                        <button
-                                                            onClick={() => setConfirmDelete({ type: 'project', id: project.id, name: project.name, stage: 1 })}
-                                                            className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"
-                                                            id={`admin-delete-project-${project.id}`}
-                                                        >
-                                                            삭제
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                {canAssignMentorUI && (
-                                                    <>
-                                                        <div className="divider my-4" />
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toggleMentorAssign(project.id)}
-                                                            className="btn-secondary text-sm"
-                                                            id={`admin-mentor-assign-toggle-${project.id}`}
-                                                        >
-                                                            {openMentorAssign[project.id] ? '멘토 배정 닫기' : '멘토 배정'}
-                                                        </button>
-                                                        {openMentorAssign[project.id] && (
-                                                            <div className="mt-3">
-                                                                <MentorAssign projectId={project.id} />
-                                                            </div>
-                                                        )}
-                                                    </>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                            <AdminProjectsTab
+                                projects={projects}
+                                programs={projectPrograms}
+                                role={role}
+                                canAssignMentor={canAssignMentorUI}
+                                onDelete={(project) => setConfirmDelete({ type: 'project', id: project.id, name: project.name, stage: 1 })}
+                                onTransferred={handleProjectTransferred}
+                            />
                         )}
 
                         {/* ── Password Tab ─────────────────────────────── */}
-                        {tab === 'password' && (
-                            <div className="max-w-md">
-                                <div className="card">
-                                    <h2 className="text-base font-bold text-white mb-1">관리자 비밀번호 변경</h2>
-                                    <p className="text-xs text-gray-500 mb-5">
-                                        지금 로그인한 계정의 비밀번호만 바꿉니다. 변경 후에도 로그인 상태는 유지됩니다.
-                                    </p>
-
-                                    {passwordMsg && (
-                                        <div
-                                            className={`mb-4 rounded-lg border px-4 py-3 text-sm ${passwordMsg.type === 'success'
-                                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-                                                : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
-                                                }`}
-                                            id="admin-password-message"
-                                        >
-                                            {passwordMsg.msg}
-                                        </div>
-                                    )}
-
-                                    <form onSubmit={handleChangePassword} className="space-y-4">
-                                        {([
-                                            { key: 'currentPassword', label: '현재 비밀번호', autoComplete: 'current-password' },
-                                            { key: 'newPassword', label: '새 비밀번호', autoComplete: 'new-password' },
-                                            { key: 'confirmPassword', label: '새 비밀번호 확인', autoComplete: 'new-password' },
-                                        ] as const).map((field) => (
-                                            <label key={field.key} className="block">
-                                                <span className="mb-1.5 block text-sm font-medium text-gray-300">{field.label}</span>
-                                                <input
-                                                    type="password"
-                                                    value={passwordForm[field.key]}
-                                                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                                                    disabled={isChangingPassword}
-                                                    autoComplete={field.autoComplete}
-                                                    className="input w-full"
-                                                    id={`admin-${field.key}`}
-                                                />
-                                            </label>
-                                        ))}
-
-                                        <p className="text-xs text-gray-500">
-                                            새 비밀번호는 최소 {PASSWORD_MIN_LENGTH}자 이상이어야 합니다.
-                                        </p>
-
-                                        <button
-                                            type="submit"
-                                            disabled={isChangingPassword}
-                                            className="btn-primary w-full disabled:opacity-50"
-                                            id="admin-change-password-submit"
-                                        >
-                                            {isChangingPassword ? '변경 중...' : '비밀번호 변경'}
-                                        </button>
-                                    </form>
-                                </div>
-                            </div>
-                        )}
+                        {tab === 'password' && <AdminPasswordTab />}
                     </>
             </main>
         </div>
