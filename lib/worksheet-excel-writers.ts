@@ -33,7 +33,7 @@ function writeSpecSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext
         }
     }
     const includeDetailColumn = !project.specDetailCollapsed || specRows.some(row => row[2]);
-    addTable(sheet, '(AS-IS) 스펙표', includeDetailColumn ? ['핵심스펙(기능)', '세부스펙(기능)', '세세부기술', '기술적 특성'] : ['핵심스펙(기능)', '세부스펙(기능)', '기술적 특성'], includeDetailColumn ? specRows : specRows.map(row => [row[0], row[1], row[3]]), { mergeColumns: [0, 1] });
+    addTable(sheet, '(AS-IS) 스펙표', includeDetailColumn ? ['핵심스펙(기능)', '세부스펙(기능)', '세세부기능', '기술적 특성'] : ['핵심스펙(기능)', '세부스펙(기능)', '기술적 특성'], includeDetailColumn ? specRows : specRows.map(row => [row[0], row[1], row[3]]), { mergeColumns: [0, 1] });
 }
 
 function writeAttributesSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
