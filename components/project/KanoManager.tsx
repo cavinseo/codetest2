@@ -4,21 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import KanoSurveyPreview from '@/components/KanoSurveyPreview';
 import KanoOfflineFormPreview from '@/components/KanoOfflineFormPreview';
-import Kano2DChart from '@/components/Kano2DChart';
-import CategoryPieChart from '@/components/CategoryPieChart';
-import KanoAggregationTable from '@/components/project/KanoAggregationTable';
-import KanoRespondentTable from '@/components/project/KanoRespondentTable';
+import KanoAnalysisPanel, { type KanoAnalysisData, type KanoAnalysisViewMode } from '@/components/project/KanoAnalysisPanel';
+import KanoInviteModal from '@/components/project/KanoInviteModal';
 import HeaderToast from '@/components/HeaderToast';
-import UploadWritePolicyPrompt, { type UploadWritePolicy } from './UploadWritePolicyPrompt';
+import KanoResponseCollection from './KanoResponseCollection';
+import { useKanoResponseCollection } from './useKanoResponseCollection';
 import { useToast } from '@/components/useToast';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
 import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
-import {
-    GOOGLE_FORMS_DISABLED_MESSAGE,
-    GOOGLE_FORMS_INTEGRATION_ENABLED,
-} from '@/lib/feature-flags';
 import { readJsonOrThrow } from '@/lib/client-fetch';
-import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
 
 interface Requirement {
     id: string;
@@ -41,101 +35,27 @@ interface Invitation {
     respondedAt?: string;
 }
 
-interface BulkInviteResult {
-    email: string;
-    status: 'invited' | 'skipped' | 'failed';
-    reason?: string;
-}
-
-interface BulkInviteSummary {
-    invited: number;
-    skipped: number;
-    failed: number;
-    emailSent: number;
-}
-
-interface OfflineUploadFileResult {
-    fileName: string;
-    status: 'ok' | 'failed';
-    answerCount?: number;
-    reason?: string;
-    warning?: string;
-}
-
-interface AnalysisResult {
-    requirementId: string;
-    responseCount: number;
-    aggregated: {
-        M: number;
-        O: number;
-        A: number;
-        I: number;
-        R: number;
-        Q: number;
-        total: number;
-        dominantCategory: any;
-    };
-    better: number;
-    worse: number;
-    kanoWeight?: number | null;
-    timkoCategory?: string | null;
-    quadrant: string;
-}
-
-interface AnalysisData {
-    totalResponses: number;
-    uniqueRespondents: number;
-    requirements: AnalysisResult[];
-}
-
 interface KanoManagerProps {
     projectId: string;
     initialView?: 'manage' | 'analysis';
 }
 
-type ExcelUploadFormat = 'template' | 'googleForms';
-
 export default function KanoManager({ projectId, initialView }: KanoManagerProps) {
-    const kanoUploadTemplateUrl = `/api/projects/${projectId}/kano/upload-template`;
-    const kanoFormScriptUrl = `/api/projects/${projectId}/kano/form-script`;
     const [activeTab, setActiveTab] = useState<'manage' | 'analysis'>('manage');
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [showInviteModal, setShowInviteModal] = useState(false);
-    const [inviteEmail, setInviteEmail] = useState('');
-    const [isInviting, setIsInviting] = useState(false);
-    const [inviteError, setInviteError] = useState('');
-    // 한 명씩 보낼지, 여러 명을 한 번에 보낼지
-    const [inviteMode, setInviteMode] = useState<'single' | 'bulk'>('single');
-    const [bulkEmailText, setBulkEmailText] = useState('');
-    const [bulkFile, setBulkFile] = useState<File | null>(null);
-    const [inviteResults, setInviteResults] = useState<BulkInviteResult[] | null>(null);
-    const [inviteSummary, setInviteSummary] = useState<BulkInviteSummary | null>(null);
-    const bulkFileInputRef = useRef<HTMLInputElement | null>(null);
     const [showPreview, setShowPreview] = useState(false);
     const [showOfflinePreview, setShowOfflinePreview] = useState(false);
     const [googleConfigured, setGoogleConfigured] = useState(false);
-    const [isCreatingForm, setIsCreatingForm] = useState(false);
-    const [createdFormUrl, setCreatedFormUrl] = useState('');
-    const [createdFormId, setCreatedFormId] = useState('');
-    const [isImporting, setIsImporting] = useState(false);
     const [isResettingResponses, setIsResettingResponses] = useState(false);
     const [isResettingInvitations, setIsResettingInvitations] = useState(false);
-    const [isUploadingExcel, setIsUploadingExcel] = useState(false);
-    const [excelFile, setExcelFile] = useState<File | null>(null);
-    const [pendingUpload, setPendingUpload] = useState<'excel' | 'offline' | null>(null);
-    const [excelUploadFormat, setExcelUploadFormat] = useState<ExcelUploadFormat>('template');
-    const [collectMode, setCollectMode] = useState<'file' | 'offline' | 'googleForms'>('file');
-    const [offlineFiles, setOfflineFiles] = useState<File[]>([]);
-    const [offlineResults, setOfflineResults] = useState<OfflineUploadFileResult[]>([]);
-    const [isUploadingOffline, setIsUploadingOffline] = useState(false);
-    const [importMessage, setImportMessage] = useState('');
     const [projectName, setProjectName] = useState('');
 
-    const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
-    const [analysisViewMode, setAnalysisViewMode] = useState<'list' | 'charts' | 'respondents'>('charts');
+    const [analysis, setAnalysis] = useState<KanoAnalysisData | null>(null);
+    const [analysisViewMode, setAnalysisViewMode] = useState<KanoAnalysisViewMode>('charts');
     const [respondentData, setRespondentData] = useState<any[]>([]);
 
     // Kano 질문 직접 입력 관리
@@ -147,8 +67,6 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [isSavingQuestions, setIsSavingQuestions] = useState(false);
 
     const { toast, showToast } = useToast(3500);
-    const excelInputRef = useRef<HTMLInputElement | null>(null);
-    const offlineInputRef = useRef<HTMLInputElement | null>(null);
 
     // 화면 전체 로딩은 처음 열 때만 쓴다. 저장·초대·업로드 뒤 다시 불러올 때마다 전체를
     // 로딩으로 바꾸면 하위 화면이 통째로 내려갔다 올라와, 방금 뜬 완료 알림이 사라지고 스크롤이
@@ -217,162 +135,13 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         }
     }, [projectId]);
 
-    const handleInvite = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setInviteError('');
-        setIsInviting(true);
-        try {
-            const response = await fetch(`/api/projects/${projectId}/kano/invite`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: inviteEmail }),
-            });
-            const data = await readJsonOrThrow(response, '초대 실패');
-            await loadData();
-            setShowInviteModal(false);
-            setInviteEmail('');
-            showToast(data.message || `${inviteEmail}에게 초대가 생성되었습니다!`, 'success');
-        } catch (error: any) {
-            setInviteError(error.message);
-        } finally {
-            setIsInviting(false);
-        }
-    };
-
-    const closeInviteModal = () => {
-        setShowInviteModal(false);
-        setInviteEmail('');
-        setInviteError('');
-        setBulkEmailText('');
-        setBulkFile(null);
-        setInviteResults(null);
-        setInviteSummary(null);
-        if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-    };
-
-    // 붙여 넣은 주소 목록 또는 업로드한 명단 파일로 한 번에 초대한다.
-    const handleBulkInvite = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setInviteError('');
-        setInviteResults(null);
-        setInviteSummary(null);
-
-        if (!bulkFile && !bulkEmailText.trim()) {
-            setInviteError('초대할 이메일을 입력하거나 명단 파일을 선택하세요.');
-            return;
-        }
-
-        setIsInviting(true);
-        try {
-            let response: Response;
-
-            if (bulkFile) {
-                const formData = new FormData();
-                formData.append('file', bulkFile);
-                response = await fetch(`/api/projects/${projectId}/kano/invite/bulk`, {
-                    method: 'POST',
-                    body: formData,
-                });
-            } else {
-                response = await fetch(`/api/projects/${projectId}/kano/invite/bulk`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: bulkEmailText }),
-                });
-            }
-
-            const data = await readJsonOrThrow(response, '일괄 초대에 실패했습니다.');
-
-            await loadData();
-            setInviteResults(data.results || []);
-            setInviteSummary(data.summary || null);
-            setBulkEmailText('');
-            setBulkFile(null);
-            if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-            showToast(data.message || '일괄 초대를 처리했습니다.', 'success');
-        } catch (error: any) {
-            setInviteError(error.message);
-        } finally {
-            setIsInviting(false);
-        }
-    };
-
-    const handleBulkFileChange = (file: File | null) => {
-        if (!file) {
-            setBulkFile(null);
-            return;
-        }
-        if (!isExcelFileName(file.name)) {
-            setInviteError(EXCEL_FILE_TYPE_ERROR);
-            if (bulkFileInputRef.current) bulkFileInputRef.current.value = '';
-            return;
-        }
-        setInviteError('');
-        setBulkFile(file);
-    };
-
     const copyInvitationLink = (token: string) => {
         const link = `${window.location.origin}/survey/${token}`;
         navigator.clipboard.writeText(link);
         showToast('초대 링크가 복사되었습니다!', 'info');
     };
 
-    const handleCreateGoogleForm = async () => {
-        setIsCreatingForm(true);
-        setImportMessage('');
-        try {
-            const res = await fetch(`/api/projects/${projectId}/kano/create-form`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ projectName }),
-            });
-            const data = await res.json();
-            if (data.needsAuth) {
-                const returnUrl = `/project/${projectId}/kano`;
-                window.location.href = `/api/auth/google?returnUrl=${encodeURIComponent(returnUrl)}&projectId=${projectId}`;
-                return;
-            }
-            if (!res.ok) throw new Error(data.error);
-            setCreatedFormUrl(data.formUrl);
-            setCreatedFormId(data.formId);
-            showToast(`Google Forms 설문지가 생성되었습니다! (${data.questionCount}개 질문 세트)`, 'success');
-        } catch (error: any) {
-            showToast(`오류: ${error.message}`, 'error');
-        } finally {
-            setIsCreatingForm(false);
-        }
-    };
-
-    const handleImportResponses = async () => {
-        if (!createdFormId) {
-            showToast('먼저 Google Forms 설문지를 생성하세요.', 'error');
-            return;
-        }
-        setIsImporting(true);
-        setImportMessage('');
-        try {
-            const res = await fetch(`/api/projects/${projectId}/kano/form-responses`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ formId: createdFormId }),
-            });
-            const data = await res.json();
-            if (data.needsAuth) {
-                const returnUrl = `/project/${projectId}/kano`;
-                window.location.href = `/api/auth/google?returnUrl=${encodeURIComponent(returnUrl)}&projectId=${projectId}`;
-                return;
-            }
-            if (!res.ok) throw new Error(data.error);
-            setImportMessage(`success:${data.message}`);
-            showToast(data.message, 'success');
-            await loadData();
-        } catch (error: any) {
-            setImportMessage(`error:${error.message}`);
-            showToast(error.message, 'error');
-        } finally {
-            setIsImporting(false);
-        }
-    };
+    const collection = useKanoResponseCollection({ projectId, projectName, loadData, showToast });
 
     // 다른 프로젝트로 바뀌면 이전 프로젝트 값이 보이지 않게 다시 전체 로딩부터 한다.
     useEffect(() => {
@@ -381,106 +150,18 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     }, [loadData]);
     useEffect(() => { if (initialView) setActiveTab(initialView); }, [initialView]);
 
-    const handleUploadExcelResponses = async (writePolicy: UploadWritePolicy, replaceExistingRespondents = false) => {
-        if (!excelFile) {
-            showToast('업로드할 엑셀 파일을 선택하세요.', 'error');
-            return;
-        }
-
-        setIsUploadingExcel(true);
-        setImportMessage('');
-        try {
-            const formData = new FormData();
-            formData.append('file', excelFile);
-            formData.append('format', collectMode === 'googleForms' ? 'googleForms' : excelUploadFormat);
-            formData.append('writePolicy', writePolicy);
-            if (replaceExistingRespondents) formData.append('replaceExistingRespondents', 'true');
-
-            const res = await fetch(`/api/projects/${projectId}/kano/upload-excel`, {
-                method: 'POST',
-                body: formData,
-            });
-            const data = await readJsonOrThrow(res, '엑셀 업로드에 실패했습니다.');
-
-            setImportMessage(`success:${data.message}`);
-            showToast(data.message, 'success');
-            setExcelFile(null);
-            if (excelInputRef.current) excelInputRef.current.value = '';
-            await loadData();
-        } catch (error: any) {
-            const message = error.message || '엑셀 업로드에 실패했습니다.';
-            setImportMessage(`error:${message}`);
-            showToast(message, 'error');
-        } finally {
-            setIsUploadingExcel(false);
-            setPendingUpload(null);
-        }
-    };
-
-    const handleCollectModeChange = (mode: 'file' | 'offline' | 'googleForms') => {
-        if (mode === collectMode) return;
-        setCollectMode(mode);
-        setPendingUpload(null);
-        setExcelFile(null);
-        if (excelInputRef.current) excelInputRef.current.value = '';
-        setOfflineResults([]);
-    };
-
-    const handleUploadOfflineResponses = async (writePolicy: UploadWritePolicy, replaceExistingRespondents = false) => {
-        if (offlineFiles.length === 0) {
-            showToast('업로드할 HTML 응답지를 선택하세요.', 'error');
-            return;
-        }
-
-        setIsUploadingOffline(true);
-        setOfflineResults([]);
-        try {
-            const formData = new FormData();
-            for (const file of offlineFiles) {
-                formData.append('files', file);
-            }
-            formData.append('writePolicy', writePolicy);
-            if (replaceExistingRespondents) formData.append('replaceExistingRespondents', 'true');
-
-            const res = await fetch(`/api/projects/${projectId}/kano/upload-offline`, {
-                method: 'POST',
-                body: formData,
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                if (res.status === 400 && Array.isArray(data.results)) {
-                    setOfflineResults(data.results);
-                }
-                throw new Error(data.error || '오프라인 응답지 업로드에 실패했습니다.');
-            }
-
-            setOfflineResults(data.results || []);
-            showToast(data.message, 'success');
-            setOfflineFiles([]);
-            if (offlineInputRef.current) offlineInputRef.current.value = '';
-            await loadData();
-        } catch (error: any) {
-            showToast(error.message || '오프라인 응답지 업로드에 실패했습니다.', 'error');
-        } finally {
-            setIsUploadingOffline(false);
-            setPendingUpload(null);
-        }
-    };
-
     const handleResetResponses = async () => {
         const ok = window.confirm('현재 프로젝트의 Kano 응답 데이터와 응답 완료 상태를 모두 리셋할까요? 이 작업은 되돌릴 수 없습니다.');
         if (!ok) return;
 
         setIsResettingResponses(true);
-        setImportMessage('');
         try {
             const res = await fetch(`/api/projects/${projectId}/kano/responses`, {
                 method: 'DELETE',
             });
             const data = await readJsonOrThrow(res, '응답 데이터 리셋에 실패했습니다.');
 
-            setCreatedFormId('');
-            setCreatedFormUrl('');
+            collection.forgetCreatedForm();
             setRespondentData([]);
             setAnalysis({ totalResponses: 0, uniqueRespondents: 0, requirements: [] });
             showToast(data.message || '응답 데이터가 리셋되었습니다.', 'success');
@@ -497,15 +178,13 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         if (!ok) return;
 
         setIsResettingInvitations(true);
-        setImportMessage('');
         try {
             const res = await fetch(`/api/projects/${projectId}/kano/responses?includeInvitations=true`, {
                 method: 'DELETE',
             });
             const data = await readJsonOrThrow(res, '초대 내역 리셋에 실패했습니다.');
 
-            setCreatedFormId('');
-            setCreatedFormUrl('');
+            collection.forgetCreatedForm();
             setInvitations([]);
             setRespondentData([]);
             setAnalysis({ totalResponses: 0, uniqueRespondents: 0, requirements: [] });
@@ -555,45 +234,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
         }
     };
 
-    const getRequirementInfo = (reqId: string) => requirements.find(r => r.id === reqId);
-
     const openResponseResults = () => {
         setAnalysisViewMode('respondents');
         setActiveTab('analysis');
-    };
-
-    const getCategoryColor = (category: string) => {
-        const colors: Record<string, string> = {
-            M: 'bg-red-500/20 text-red-300 border-red-500/40',
-            O: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-            A: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-            I: 'bg-gray-500/20 text-gray-300 border-gray-500/40',
-            R: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-            Q: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
-        };
-        return colors[category] || 'bg-gray-500/20 text-gray-300 border-gray-500/40';
-    };
-
-    const getCategoryName = (category: string) => {
-        const names: Record<string, string> = {
-            M: 'Must-be (당연적)',
-            O: 'One-dimensional (일원적)',
-            A: 'Attractive (매력적)',
-            I: 'Indifferent (무관심)',
-            R: 'Reverse (역)',
-            Q: 'Questionable (의문)',
-        };
-        return names[category] || category;
-    };
-
-    const getQuadrantInfo = (quadrant: string) => {
-        const info: Record<string, { name: string; description: string }> = {
-            HIGH_IMPACT: { name: '높은 영향력', description: '구현 시 만족도 크게 증가, 미구현 시 불만 높음' },
-            PERFORMANCE: { name: '성능형', description: '구현 시 만족, 미구현 시 불만' },
-            EXCITEMENT: { name: '흥분형', description: '구현 시 크게 만족, 미구현 시 무관심' },
-            LOW_IMPACT: { name: '낮은 영향력', description: '구현 여부와 무관하게 만족도 변화 적음' },
-        };
-        return info[quadrant] || { name: quadrant, description: '' };
     };
 
     if (isLoading) {
@@ -729,341 +372,15 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
 
                     {/* 응답 수집 방식은 목적이 달라 한 카드 안에서 선택해야 혼동이 없다. */}
                     {requirements.length > 0 && (
-                        <div className="card">
-                            <h2 className="text-lg font-display font-bold text-white flex items-center gap-2 mb-4">
-                                <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 16V4m0 12l-4-4m4 4l4-4M4 20h16" />
-                                </svg>
-                                응답 수집
-                            </h2>
-
-                            <div className="flex flex-wrap gap-1 p-1 bg-white/[0.04] border border-white/[0.06] rounded-xl w-fit mb-5">
-                                <button
-                                    type="button"
-                                    onClick={() => handleCollectModeChange('file')}
-                                    disabled={isUploadingExcel || isUploadingOffline}
-                                    className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${collectMode === 'file'
-                                        ? 'bg-primary-600 text-white shadow-sm'
-                                        : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
-                                        }`}
-                                >
-                                    응답 파일로 업로드
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleCollectModeChange('offline')}
-                                    disabled={isUploadingExcel || isUploadingOffline}
-                                    className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${collectMode === 'offline'
-                                        ? 'bg-primary-600 text-white shadow-sm'
-                                        : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
-                                        }`}
-                                >
-                                    오프라인 응답파일 업로드
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleCollectModeChange('googleForms')}
-                                    disabled={isUploadingExcel || isUploadingOffline}
-                                    className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${collectMode === 'googleForms'
-                                        ? 'bg-primary-600 text-white shadow-sm'
-                                        : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
-                                        }`}
-                                >
-                                    <span className="flex items-center gap-2">
-                                        Google Forms 연동
-                                        <span className="text-[10px] bg-white/[0.08] text-gray-300 border border-white/[0.10] px-1.5 py-0.5 rounded-full">자동 연동 개발 중</span>
-                                    </span>
-                                </button>
-                            </div>
-
-                            {collectMode === 'googleForms' && (
-                                <div className="space-y-4">
-                                    <div>
-                                        <h3 className="text-white text-sm font-semibold">Google Forms 연동</h3>
-                                        <p className="text-sm text-gray-500 mt-1">저장된 Kano 질문으로 Google Forms 설문지를 만들 수 있는 Apps Script를 받으세요.</p>
-                                    </div>
-                                    <div className="rounded-xl border border-blue-500/25 bg-blue-500/[0.07] p-4">
-                                        <h4 className="text-sm font-semibold text-blue-200">Kano 설문지 Google Forms 스크립트</h4>
-                                        <p className="mt-2 text-xs leading-5 text-gray-400">
-                                            질문을 저장한 뒤 파일을 내려받아 Google Apps Script에 붙여넣고 createKanoForm()을 실행하세요.
-                                            생성된 설문지의 응답 시트는 Google Forms 형식으로 업로드할 수 있습니다.
-                                        </p>
-                                        <a href={kanoFormScriptUrl} className="btn-secondary mt-3 inline-flex items-center gap-1.5 text-xs">
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
-                                            </svg>
-                                            Kano 설문지 Apps Script 받기
-                                        </a>
-                                    </div>
-                                    {!GOOGLE_FORMS_INTEGRATION_ENABLED && (
-                                        <p className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-gray-400">
-                                            {GOOGLE_FORMS_DISABLED_MESSAGE}
-                                        </p>
-                                    )}
-                                    {/* 자동 연동 3단계 진행 흐름 */}
-                                    <h4 className="text-xs font-semibold text-gray-400">자동 연동</h4>
-                                    <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3 ${GOOGLE_FORMS_INTEGRATION_ENABLED ? '' : 'opacity-60 grayscale'}`}>
-                                        {/* 1단계: 미리보기 */}
-                                        <div className="p-4 bg-white/[0.03] border border-white/[0.08] rounded-xl flex flex-col">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className="w-5 h-5 rounded-full bg-emerald-500/15 text-emerald-300 text-[11px] font-bold flex items-center justify-center">1</span>
-                                                <span className="text-[11px] text-emerald-400">
-                                                    {GOOGLE_FORMS_INTEGRATION_ENABLED ? '준비됨' : '개발 중'}
-                                                </span>
-                                            </div>
-                                            <h3 className="text-white text-sm font-semibold mb-3">미리보기</h3>
-                                            <button
-                                                onClick={() => setShowPreview(true)}
-                                                disabled={!GOOGLE_FORMS_INTEGRATION_ENABLED}
-                                                className="mt-auto w-full px-3 py-2 rounded-lg border border-white/[0.10] bg-white/[0.04] hover:bg-white/[0.08] disabled:hover:bg-white/[0.04] disabled:cursor-not-allowed text-gray-200 text-xs font-semibold transition-colors"
-                                            >
-                                                양식 확인
-                                            </button>
-                                        </div>
-
-                                        {/* 2단계: 설문지 생성 (Google 연동 필요) */}
-                                        <div className={`p-4 rounded-xl flex flex-col border ${GOOGLE_FORMS_INTEGRATION_ENABLED && googleConfigured
-                                            ? 'bg-blue-500/[0.08] border-blue-500/20'
-                                            : 'bg-amber-500/[0.06] border-amber-500/25'
-                                            }`}>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className={`w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${GOOGLE_FORMS_INTEGRATION_ENABLED && googleConfigured
-                                                    ? 'bg-blue-500/15 text-blue-300'
-                                                    : 'bg-amber-500/15 text-amber-300'
-                                                    }`}>2</span>
-                                                {GOOGLE_FORMS_INTEGRATION_ENABLED && googleConfigured ? (
-                                                    <span className="text-[11px] text-blue-400">연동됨</span>
-                                                ) : GOOGLE_FORMS_INTEGRATION_ENABLED ? (
-                                                    <span className="text-[11px] text-amber-400 flex items-center gap-1">
-                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                                        </svg>
-                                                        설정 필요
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-[11px] text-gray-500">개발 중</span>
-                                                )}
-                                            </div>
-                                            <h3 className="text-white text-sm font-semibold mb-1">설문지 생성</h3>
-                                            <p className="text-xs text-gray-500 mb-3">{requirements.length}개 질문 세트</p>
-                                            {!GOOGLE_FORMS_INTEGRATION_ENABLED ? (
-                                                <button
-                                                    type="button"
-                                                    disabled
-                                                    className="mt-auto w-full px-3 py-2 rounded-lg border border-white/[0.10] bg-white/[0.04] text-gray-400 text-xs font-semibold cursor-not-allowed"
-                                                >
-                                                    개발 중
-                                                </button>
-                                            ) : googleConfigured ? (
-                                                <button
-                                                    onClick={handleCreateGoogleForm}
-                                                    disabled={isCreatingForm}
-                                                    className="mt-auto w-full px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 disabled:opacity-50 text-blue-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
-                                                >
-                                                    {isCreatingForm && <span className="w-3 h-3 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" />}
-                                                    {isCreatingForm ? '생성 중...' : 'Google Forms 생성'}
-                                                </button>
-                                            ) : (
-                                                <Link
-                                                    href="/settings"
-                                                    className="mt-auto w-full px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
-                                                >
-                                                    Google 설정하기
-                                                </Link>
-                                            )}
-                                        </div>
-
-                                        {/* 3단계: 응답 가져오기 */}
-                                        <div className={`p-4 rounded-xl flex flex-col border ${GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId
-                                            ? 'bg-emerald-500/[0.08] border-emerald-500/20'
-                                            : 'bg-white/[0.02] border-white/[0.06]'
-                                            }`}>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className={`w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center ${GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId
-                                                    ? 'bg-emerald-500/15 text-emerald-300'
-                                                    : 'bg-white/[0.06] text-gray-500'
-                                                    }`}>3</span>
-                                                <span className={`text-[11px] ${GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId ? 'text-emerald-400' : 'text-gray-500'}`}>
-                                                    {GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId ? '수집 가능' : '2단계 후 진행'}
-                                                </span>
-                                            </div>
-                                            <h3 className={`text-sm font-semibold mb-3 ${GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId ? 'text-white' : 'text-gray-500'}`}>응답 가져오기</h3>
-                                            <button
-                                                onClick={handleImportResponses}
-                                                disabled={!GOOGLE_FORMS_INTEGRATION_ENABLED || isImporting || !createdFormId}
-                                                className="mt-auto w-full px-3 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/15 hover:bg-emerald-500/25 disabled:opacity-40 disabled:hover:bg-emerald-500/15 text-emerald-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
-                                            >
-                                                {GOOGLE_FORMS_INTEGRATION_ENABLED && isImporting && <span className="w-3 h-3 border-2 border-emerald-300 border-t-transparent rounded-full animate-spin" />}
-                                                {GOOGLE_FORMS_INTEGRATION_ENABLED && isImporting ? '가져오는 중...' : GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormId ? '응답 가져오기' : '대기 중'}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* 생성된 폼 URL */}
-                                    {GOOGLE_FORMS_INTEGRATION_ENABLED && createdFormUrl && (
-                                        <div className="bg-emerald-500/[0.06] border border-emerald-500/20 rounded-xl p-4">
-                                            <h4 className="text-emerald-300 font-semibold text-sm mb-3 flex items-center gap-2">
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                </svg>
-                                                Google Forms 설문지가 생성되었습니다
-                                            </h4>
-                                            <div className="flex items-center gap-2">
-                                                <input type="text" readOnly value={createdFormUrl}
-                                                    className="flex-1 px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white text-sm" />
-                                                <button onClick={() => { navigator.clipboard.writeText(createdFormUrl); showToast('링크가 복사되었습니다!', 'info'); }}
-                                                    className="btn-secondary text-sm whitespace-nowrap flex items-center gap-1.5">
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                    </svg>
-                                                    복사
-                                                </button>
-                                                <a href={createdFormUrl} target="_blank" rel="noopener noreferrer"
-                                                    className="btn-primary text-sm whitespace-nowrap flex items-center gap-1.5">
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                    </svg>
-                                                    열기
-                                                </a>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {pendingUpload && (
-                                <UploadWritePolicyPrompt
-                                    title={pendingUpload === 'excel' ? (collectMode === 'googleForms' ? 'Google Forms 설문결과 업로드' : '엑셀 양식 업로드') : 'HTML 응답지 업로드'}
-                                    fileName={pendingUpload === 'excel' ? excelFile?.name ?? '' : offlineFiles.map(file => file.name).join(', ')}
-                                    targetLabel="Kano 응답"
-                                    isUploading={isUploadingExcel || isUploadingOffline}
-                                    replaceDescription="기존 데이터 지우고 업로드를 선택하면 기존 응답과 초대 데이터가 삭제됩니다."
-                                    onSelect={policy => pendingUpload === 'excel'
-                                        ? handleUploadExcelResponses(policy) : handleUploadOfflineResponses(policy)}
-                                    onReplaceRespondents={() => pendingUpload === 'excel'
-                                        ? handleUploadExcelResponses('append', true) : handleUploadOfflineResponses('append', true)}
-                                    onCancel={() => {
-                                        if (pendingUpload === 'excel') {
-                                            setExcelFile(null);
-                                            if (excelInputRef.current) excelInputRef.current.value = '';
-                                        } else {
-                                            setOfflineFiles([]);
-                                            if (offlineInputRef.current) offlineInputRef.current.value = '';
-                                        }
-                                        setPendingUpload(null);
-                                    }}
-                                />
-                            )}
-
-                            {(collectMode === 'file' || collectMode === 'googleForms') && (
-                                <div>
-                                    <h3 className="text-white text-sm font-semibold">{collectMode === 'googleForms' ? 'Google Forms 설문결과 업로드' : '응답 파일로 업로드'}</h3>
-                                    <p className="text-sm text-gray-500 mt-1 mb-4">
-                                        {collectMode === 'googleForms'
-                                            ? 'Google Forms의 응답 CSV 또는 연결된 Google Sheets에서 내려받은 Excel 파일을 올려 주세요.'
-                                            : '여러 명의 답변을 파일 하나에 정리해 한 번에 등록합니다'}
-                                    </p>
-                                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
-                                        {collectMode === 'file' && <select
-                                            value={excelUploadFormat}
-                                            disabled={isUploadingExcel || isUploadingOffline}
-                                            onChange={(event) => setExcelUploadFormat(event.target.value as ExcelUploadFormat)}
-                                            className="px-3 py-2 rounded-lg border border-amber-500/25 bg-black/20 text-amber-100 text-xs font-semibold outline-none focus:border-amber-500/50 lg:flex-shrink-0"
-                                        >
-                                            <option value="template">전용 양식</option>
-                                            <option value="googleForms">Google Forms 형식</option>
-                                        </select>}
-
-                                        {collectMode === 'file' && <a
-                                            href={`${kanoUploadTemplateUrl}?format=${excelUploadFormat}`}
-                                            className="px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
-                                            </svg>
-                                            양식 받기
-                                        </a>}
-
-                                        <input
-                                            ref={excelInputRef}
-                                            type="file"
-                                            accept={collectMode === 'googleForms' ? '.xlsx,.xls,.csv' : '.xlsx,.xls'}
-                                            disabled={isUploadingExcel || isUploadingOffline}
-                                            onChange={(event) => { setExcelFile(event.target.files?.[0] ?? null); setPendingUpload(null); }}
-                                            className="flex-1 min-w-0 text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-200 hover:file:bg-amber-500/25"
-                                        />
-
-                                        <button
-                                            onClick={() => setPendingUpload('excel')}
-                                            disabled={isUploadingExcel || !excelFile}
-                                            className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:hover:bg-amber-600 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
-                                        >
-                                            {isUploadingExcel && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                                            {isUploadingExcel ? '업로드 중...' : '업로드'}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {collectMode === 'offline' && (
-                                <div>
-                                    <h3 className="text-white text-sm font-semibold">오프라인 응답파일 업로드</h3>
-                                    <p className="text-sm text-gray-500 mt-1 mb-4">각자 작성한 HTML 응답지를 낱장으로, 여러 장을 한 번에 등록합니다</p>
-                                    <div className="flex flex-wrap gap-2 mb-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowOfflinePreview(true)}
-                                            className="btn-secondary text-sm"
-                                        >
-                                            양식 확인
-                                        </button>
-                                        <a
-                                            href={`/api/projects/${projectId}/kano/offline-form`}
-                                            className="btn-secondary text-sm"
-                                        >
-                                            오프라인 HTML 받기
-                                        </a>
-                                    </div>
-
-                                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3 flex flex-col lg:flex-row lg:items-center gap-3">
-                                        <input
-                                            ref={offlineInputRef}
-                                            type="file"
-                                            multiple
-                                            accept=".html,.htm"
-                                            disabled={isUploadingExcel || isUploadingOffline}
-                                            onChange={(event) => { setOfflineFiles(Array.from(event.target.files ?? [])); setPendingUpload(null); }}
-                                            className="flex-1 min-w-0 text-xs text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-emerald-200 hover:file:bg-emerald-500/25"
-                                        />
-                                        {offlineFiles.length > 0 && (
-                                            <span className="text-xs font-semibold text-emerald-300 lg:flex-shrink-0">{offlineFiles.length}장 선택됨</span>
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={() => setPendingUpload('offline')}
-                                            disabled={isUploadingOffline || offlineFiles.length === 0}
-                                            className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:hover:bg-emerald-600 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 lg:flex-shrink-0"
-                                        >
-                                            {isUploadingOffline && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                                            {isUploadingOffline ? '업로드 중...' : '업로드'}
-                                        </button>
-                                    </div>
-
-                                    {offlineResults.length > 0 && (
-                                        <div className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 max-h-[200px] overflow-auto space-y-1">
-                                            {offlineResults.map((result, index) => (
-                                                <div key={`${result.fileName}-${index}`} className={`flex items-center gap-2 text-[11px] ${result.status === 'ok' ? 'text-emerald-300' : 'text-red-300'}`}>
-                                                    <span>{result.status === 'ok' ? '●' : '×'}</span>
-                                                    <span>{result.fileName}</span>
-                                                    <span>— {result.status === 'ok' ? `${result.answerCount ?? 0}개 응답` : result.reason}</span>
-                                                    {result.warning && <span className="text-amber-300">⚠ {result.warning}</span>}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                        <KanoResponseCollection
+                            projectId={projectId}
+                            requirementCount={requirements.length}
+                            googleConfigured={googleConfigured}
+                            collection={collection}
+                            showToast={showToast}
+                            onOpenPreview={() => setShowPreview(true)}
+                            onOpenOfflinePreview={() => setShowOfflinePreview(true)}
+                        />
                     )}
 
                     {/* 설문 질문 구성 */}
@@ -1279,125 +596,18 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
 
             {/* ===== 분석 결과 탭 ===== */}
             {activeTab === 'analysis' && (
-                <div className="space-y-6 animate-fade-in">
-                    {!analysis || analysis.totalResponses === 0 ? (
-                        <div className="card text-center py-16">
-                            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
-                                <svg className="w-8 h-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                </svg>
-                            </div>
-                            <h3 className="text-lg font-display font-semibold text-gray-300 mb-2">아직 응답이 없습니다</h3>
-                            <p className="text-gray-500 text-sm mb-6">응답자를 초대하고 설문 응답을 수집하세요</p>
-                            <button onClick={() => setActiveTab('manage')} className="btn-primary inline-flex">
-                                설문 관리로 이동
-                            </button>
-                        </div>
-                    ) : (
-                        <>
-                            {/* 분석 통계 */}
-                            <div className="grid grid-cols-3 gap-4">
-                                {[
-                                    { label: '총 응답 수', value: `${analysis.totalResponses}개`, color: 'text-blue-400' },
-                                    { label: '응답자 수', value: `${analysis.uniqueRespondents}명`, color: 'text-emerald-400' },
-                                    { label: '분석 항목', value: `${analysis.requirements.length}개`, color: 'text-purple-400' },
-                                ].map(item => (
-                                    <div key={item.label} className="card text-center">
-                                        <p className="text-xs text-gray-500 mb-1">{item.label}</p>
-                                        <p className={`text-2xl font-bold font-display ${item.color}`}>{item.value}</p>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="flex justify-end">
-                                <button
-                                    onClick={handleResetResponses}
-                                    disabled={isResettingResponses || analysis.totalResponses === 0}
-                                    className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50 disabled:hover:bg-red-500/10"
-                                >
-                                    {isResettingResponses ? (
-                                        <div className="w-4 h-4 border-2 border-red-300 border-t-transparent rounded-full animate-spin" />
-                                    ) : (
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4h6v3m-8 0h10" />
-                                        </svg>
-                                    )}
-                                    응답 데이터 리셋
-                                </button>
-                            </div>
-
-                            {/* 보기 토글 */}
-                            <div className="flex justify-center">
-                                <div className="flex gap-1 p-1 bg-white/[0.04] border border-white/[0.06] rounded-xl flex-wrap">
-                                    <button
-                                        onClick={() => setAnalysisViewMode('charts')}
-                                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${analysisViewMode === 'charts' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}`}
-                                    >
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
-                                        </svg>
-                                        TIMKO
-                                    </button>
-                                    <button
-                                        onClick={() => setAnalysisViewMode('respondents')}
-                                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${analysisViewMode === 'respondents' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}`}
-                                    >
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                                        </svg>
-                                        응답자별 보기
-                                    </button>
-                                </div>
-                            </div>
-
-
-                            {/* 차트 뷰 */}
-                            {analysisViewMode === 'charts' && (
-                                <div className="space-y-6">
-                                    <div className="card">
-                                        <h3 className="text-lg font-display font-bold text-white mb-4">TIMKO 분석 차트</h3>
-                                        <div className="flex justify-center">
-                                            <Kano2DChart
-                                                requirements={analysis.requirements.map((result, idx) => {
-                                                    const reqInfo = getRequirementInfo(result.requirementId);
-                                                    const dominantCategory = Object.entries(result.aggregated).reduce(
-                                                        (max, [cat, count]) => count > max.count ? { category: cat, count } : max,
-                                                        { category: 'I', count: 0 }
-                                                    );
-                                                    return {
-                                                        id: result.requirementId,
-                                                        name: reqInfo?.requirement || `요구사항 ${idx + 1}`,
-                                                        better: result.better,
-                                                        worse: result.worse,
-                                                        category: dominantCategory.category,
-                                                    };
-                                                })}
-                                            />
-                                        </div>
-                                    </div>
-                                    <KanoAggregationTable
-                                        projectId={projectId}
-                                        onWeightsSaved={loadData}
-                                        analysis={analysis.requirements.map(req => ({
-                                            ...req,
-                                            requirementName: getRequirementInfo(req.requirementId)?.requirement
-                                        }))}
-                                    />
-                                </div>
-                            )}
-
-                            {/* 집계표 표 뷰 */}
-                            {/* 제출자별 보기 */}
-                            {analysisViewMode === 'respondents' && (
-                                <KanoRespondentTable 
-                                    respondents={respondentData}
-                                    requirements={requirements}
-                                />
-                            )}
-                        </>
-                    )}
-                </div>
+                <KanoAnalysisPanel
+                    projectId={projectId}
+                    analysis={analysis}
+                    requirements={requirements}
+                    respondentData={respondentData}
+                    analysisViewMode={analysisViewMode}
+                    setAnalysisViewMode={setAnalysisViewMode}
+                    onGoToManage={() => setActiveTab('manage')}
+                    handleResetResponses={handleResetResponses}
+                    isResettingResponses={isResettingResponses}
+                    loadData={loadData}
+                />
             )}
 
             {/* 설문 미리보기 모달 */}
@@ -1413,187 +623,13 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             )}
 
             {/* 초대 모달 */}
-            {showInviteModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-                    <div className="glass-strong max-w-xl w-full p-6 max-h-[88vh] overflow-y-auto">
-                        <div className="flex items-center justify-between mb-5">
-                            <h3 className="text-xl font-display font-bold text-white flex items-center gap-2">
-                                <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                </svg>
-                                응답자 초대
-                            </h3>
-                            <button
-                                onClick={closeInviteModal}
-                                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/[0.06] transition-colors"
-                            >
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        {/* 초대 방식 선택 */}
-                        <div className="glass-strong inline-flex p-1 rounded-xl mb-5">
-                            <button
-                                type="button"
-                                onClick={() => { setInviteMode('single'); setInviteError(''); }}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${inviteMode === 'single'
-                                    ? 'bg-primary-600/20 text-white border border-primary-500/25'
-                                    : 'text-gray-400 hover:text-white'
-                                    }`}
-                            >
-                                한 명 초대
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => { setInviteMode('bulk'); setInviteError(''); }}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${inviteMode === 'bulk'
-                                    ? 'bg-purple-600/20 text-white border border-purple-500/25'
-                                    : 'text-gray-400 hover:text-white'
-                                    }`}
-                            >
-                                여러 명 한번에
-                            </button>
-                        </div>
-
-                        {inviteError && (
-                            <div className="bg-red-500/[0.08] border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-4 text-sm">{inviteError}</div>
-                        )}
-
-                        {inviteMode === 'single' ? (
-                            // key 를 주지 않으면 모드를 바꿀 때 React 가 두 폼의 input 을 같은 자리로 보고 재사용해
-                            // controlled/uncontrolled 경고가 난다.
-                            <form key="invite-single" onSubmit={handleInvite} className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-300 mb-2">이메일 주소 *</label>
-                                    <input
-                                        type="email"
-                                        required
-                                        value={inviteEmail}
-                                        onChange={e => setInviteEmail(e.target.value)}
-                                        className="input w-full"
-                                        placeholder="customer@example.com"
-                                        autoFocus
-                                    />
-                                </div>
-                                <div className="flex gap-3 pt-2">
-                                    <button type="button" onClick={closeInviteModal} className="flex-1 btn-secondary py-3">
-                                        취소
-                                    </button>
-                                    <button type="submit" disabled={isInviting} className="flex-1 btn-primary py-3 disabled:opacity-50">
-                                        {isInviting ? '발송 중...' : '초대 보내기'}
-                                    </button>
-                                </div>
-                            </form>
-                        ) : (
-                            <form key="invite-bulk" onSubmit={handleBulkInvite} className="space-y-4">
-                                {/* 양식 다운로드 + 업로드 */}
-                                <div className="rounded-xl border border-purple-500/20 bg-purple-500/[0.05] p-4">
-                                    <div className="flex items-center justify-between gap-3 mb-3">
-                                        <div>
-                                            <p className="text-sm font-semibold text-purple-200">명단 양식으로 초대</p>
-                                            <p className="text-[11px] text-gray-500 mt-0.5">양식을 내려받아 이메일을 채운 뒤 업로드하세요.</p>
-                                        </div>
-                                        <a
-                                            href={`/api/projects/${projectId}/kano/invite-template`}
-                                            className="btn-secondary text-xs flex items-center gap-1.5 flex-shrink-0"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" />
-                                            </svg>
-                                            양식 다운로드
-                                        </a>
-                                    </div>
-                                    <input
-                                        ref={bulkFileInputRef}
-                                        type="file"
-                                        accept=".xlsx,.xls"
-                                        onChange={(event) => handleBulkFileChange(event.target.files?.[0] ?? null)}
-                                        className="hidden"
-                                        id={`kano-invite-upload-${projectId}`}
-                                    />
-                                    <label
-                                        htmlFor={`kano-invite-upload-${projectId}`}
-                                        className={`btn-secondary text-sm w-full flex items-center justify-center gap-1.5 ${isInviting ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
-                                    >
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                        </svg>
-                                        {bulkFile ? bulkFile.name : '명단 파일 선택 (.xlsx)'}
-                                    </label>
-                                    {bulkFile && (
-                                        <button
-                                            type="button"
-                                            onClick={() => handleBulkFileChange(null)}
-                                            className="mt-2 text-[11px] text-gray-500 hover:text-gray-300"
-                                        >
-                                            선택한 파일 지우기
-                                        </button>
-                                    )}
-                                </div>
-
-                                {/* 직접 붙여넣기 */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                                        또는 이메일 직접 입력
-                                    </label>
-                                    <textarea
-                                        value={bulkEmailText}
-                                        onChange={e => setBulkEmailText(e.target.value)}
-                                        rows={4}
-                                        disabled={Boolean(bulkFile)}
-                                        className="input w-full resize-y disabled:opacity-40"
-                                        placeholder={'a@example.com\nb@example.com, c@example.com'}
-                                    />
-                                    <p className="text-[11px] text-gray-600 mt-1">
-                                        줄바꿈·쉼표·세미콜론으로 구분해 여러 명을 입력할 수 있습니다. 중복과 잘못된 주소는 자동으로 걸러집니다.
-                                    </p>
-                                </div>
-
-                                {/* 처리 결과 */}
-                                {inviteSummary && (
-                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
-                                        <div className="flex items-center gap-4 text-xs">
-                                            <span className="text-emerald-300">초대 {inviteSummary.invited}명</span>
-                                            <span className="text-amber-300">건너뜀 {inviteSummary.skipped}명</span>
-                                            {inviteSummary.failed > 0 && (
-                                                <span className="text-red-300">실패 {inviteSummary.failed}명</span>
-                                            )}
-                                        </div>
-                                        {inviteResults && inviteResults.length > 0 && (
-                                            <div className="mt-3 max-h-[160px] overflow-auto space-y-1">
-                                                {inviteResults.map((result, index) => (
-                                                    <div key={index} className="flex items-center gap-2 text-[11px]">
-                                                        <span className={
-                                                            result.status === 'invited' ? 'text-emerald-400'
-                                                                : result.status === 'skipped' ? 'text-amber-400'
-                                                                    : 'text-red-400'
-                                                        }>
-                                                            {result.status === 'invited' ? '●' : result.status === 'skipped' ? '○' : '×'}
-                                                        </span>
-                                                        <span className="text-gray-300">{result.email}</span>
-                                                        {result.reason && <span className="text-gray-600">— {result.reason}</span>}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                <div className="flex gap-3 pt-2">
-                                    <button type="button" onClick={closeInviteModal} className="flex-1 btn-secondary py-3">
-                                        닫기
-                                    </button>
-                                    <button type="submit" disabled={isInviting} className="flex-1 btn-primary py-3 disabled:opacity-50">
-                                        {isInviting ? '발송 중...' : '일괄 초대 보내기'}
-                                    </button>
-                                </div>
-                            </form>
-                        )}
-                    </div>
-                </div>
-            )}
+            <KanoInviteModal
+                projectId={projectId}
+                open={showInviteModal}
+                onClose={() => setShowInviteModal(false)}
+                onInvited={loadData}
+                showToast={showToast}
+            />
         </div>
     );
 }
