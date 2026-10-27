@@ -290,7 +290,7 @@ export default function SpecFastWizard({ projectId, project, existingRowCount, o
                         <div className="space-y-4">
                             <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4 text-sm leading-6 text-blue-100">
                                 <p className="font-semibold text-white">작성에 필요한 내용 안내.</p>
-                                <p className="mt-2">프로젝트명, 프로젝트 설명, 기존 WS-2 항목은 자동으로 참고합니다. 추가로는 세부설명과 원하는 기능만 입력하면 FAST 결과표를 핵심기술, 세부기술, 세세부기술, 적용기술 순서로 제시합니다.</p>
+                                <p className="mt-2">프로젝트명, 프로젝트 설명, 기존 WS-2 항목은 자동으로 참고합니다. 추가로는 세부설명과 원하는 기능만 입력하면 FAST 결과표를 핵심기능, 세부기능, 세세부기능, 적용기술 순서로 제시합니다.</p>
                             </div>
                             <div className="grid gap-3 md:grid-cols-3">
                                 <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
@@ -401,9 +401,9 @@ export default function SpecFastWizard({ projectId, project, existingRowCount, o
                                 <table className="w-full min-w-[900px] border-collapse text-xs">
                                     <thead className="bg-gray-900">
                                         <tr>
-                                            <th className="border border-white/10 p-2 text-left">핵심기술</th>
-                                            <th className="border border-white/10 p-2 text-left">세부기술</th>
-                                            <th className="border border-white/10 p-2 text-left">세세부기술</th>
+                                            <th className="border border-white/10 p-2 text-left">핵심기능</th>
+                                            <th className="border border-white/10 p-2 text-left">세부기능</th>
+                                            <th className="border border-white/10 p-2 text-left">세세부기능</th>
                                             <th className="border border-white/10 p-2 text-left">적용기술</th>
                                             <th className="border border-white/10 p-2 w-[56px]" />
                                         </tr>

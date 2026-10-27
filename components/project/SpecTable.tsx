@@ -99,10 +99,10 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ specDetailCollapsed: collapsed }),
             });
-            if (!response.ok) throw new Error('세세부기술 열 상태 저장 실패');
+            if (!response.ok) throw new Error('세세부기능 열 상태 저장 실패');
         } catch {
             setIsDetailColumnCollapsed(previous);
-            showToast('세세부기술 열 상태를 저장하지 못했습니다.', 'error');
+            showToast('세세부기능 열 상태를 저장하지 못했습니다.', 'error');
         } finally {
             setIsSavingDetailVisibility(false);
         }
@@ -518,10 +518,10 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                     disabled={hasDetailContent || isSavingDetailVisibility}
                     aria-expanded={showDetailColumn}
                     aria-controls={`spec-table-${projectId}`}
-                    title={hasDetailContent ? '세세부기술 내용이 있어 열을 표시합니다.' : '세세부기술이 모두 비어 있으면 열을 접을 수 있습니다.'}
+                    title={hasDetailContent ? '세세부기능 내용이 있어 열을 표시합니다.' : '세세부기능이 모두 비어 있으면 열을 접을 수 있습니다.'}
                     className="ml-auto rounded border border-gray-600 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    {showDetailColumn ? '세세부기술 접기' : '세세부기술 펼치기'}
+                    {showDetailColumn ? '세세부기능 접기' : '세세부기능 펼치기'}
                 </button>}
             </div>
 
@@ -574,9 +574,9 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                             <thead>
                                 <tr className="bg-gray-800">
                                     <th className="border border-gray-700 p-2 text-gray-300 font-medium text-center w-[50px]">No</th>
-                                    <th className="border border-gray-700 p-2 text-blue-400 font-medium text-center">핵심기술</th>
-                                    <th className="border border-gray-700 p-2 text-purple-400 font-medium text-center">세부기술</th>
-                                    {showDetailColumn && <th className="border border-gray-700 p-2 text-emerald-400 font-medium text-center">세세부기술</th>}
+                                    <th className="border border-gray-700 p-2 text-blue-400 font-medium text-center">핵심기능</th>
+                                    <th className="border border-gray-700 p-2 text-purple-400 font-medium text-center">세부기능</th>
+                                    {showDetailColumn && <th className="border border-gray-700 p-2 text-emerald-400 font-medium text-center">세세부기능</th>}
                                     <th className="border border-gray-700 p-2 text-amber-400 font-medium text-center">적용기술</th>
                                     <th className="border border-gray-700 p-2 text-gray-500 font-medium text-center w-[116px]"></th>
                                 </tr>

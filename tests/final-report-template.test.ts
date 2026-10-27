@@ -31,7 +31,7 @@ it.each(['', ' \t\n '])('WS-2 세세부기술이 비어 있으면 열만 제외�
     const model = buildFinalReportModel(overview, worksheets, EMPTY_REPORT_FREE_INPUT, []);
     const index = model.blocks.findIndex(block => block.kind === 'dataTable' && block.title === 'WS-2 AS-IS 스펙표');
     expect(model.blocks[index]).toMatchObject({
-        headers: ['No', '핵심기술', '세부기술', '적용기술'],
+        headers: ['No', '핵심기능', '세부기능', '적용기술'],
         rows: [['1', '핵심', '', '핵심 기술'], ['2', '핵심', '수집', '통신'], ['3', '핵심', '수집', '기록 장치']],
     });
     const tables = layoutReportPages(model.blocks).flatMap(page => page.items).filter(item => item.kind === 'table').filter(item => item.blockIndex === index);
@@ -45,7 +45,7 @@ it('세세부기술 값이 없어도 펼친 선택을 보고서에 유지한다'
         { id: 'sub', level: 'SUB', parentId: 'core', name: '수집', technology: '통신' },
     ] }, EMPTY_REPORT_FREE_INPUT, []);
     expect(model.blocks.find(block => block.kind === 'dataTable' && block.title === 'WS-2 AS-IS 스펙표')).toMatchObject({
-        headers: ['No', '핵심기술', '세부기술', '세세부기술', '적용기술'],
+        headers: ['No', '핵심기능', '세부기능', '세세부기능', '적용기술'],
     });
 });
 
@@ -56,7 +56,7 @@ it('WS-2 세세부기술이 하나라도 있으면 빈 행과 함께 전체 열�
         { id: 'detail', level: 'DETAIL', parentId: 'sub', name: '기록', technology: '기록 장치' },
     ] }, EMPTY_REPORT_FREE_INPUT, []);
     expect(model.blocks.find(block => block.kind === 'dataTable' && block.title === 'WS-2 AS-IS 스펙표')).toMatchObject({
-        headers: ['No', '핵심기술', '세부기술', '세세부기술', '적용기술'],
+        headers: ['No', '핵심기능', '세부기능', '세세부기능', '적용기술'],
         rows: [['1', '핵심', '수집', '', '통신'], ['2', '핵심', '수집', '기록', '기록 장치']],
     });
 });
@@ -85,7 +85,7 @@ it('멘토 분석 원문을 해당 표보다 앞에 놓고 WS-3 제공혜택을 
         fundingPlans: [{ category: '소요자금', item: '설비', year1: 0, year2: null, year3: null }],
     };
     const model = buildFinalReportModel(overview, worksheets, EMPTY_REPORT_FREE_INPUT, [], { spec: { analysis: '스펙 분석 원문' }, attributes: { analysis: '속성 분석 원문' } });
-    for (const [analysis, header] of [['스펙 분석 원문', '핵심기술'], ['속성 분석 원문', '제공혜택']]) {
+    for (const [analysis, header] of [['스펙 분석 원문', '핵심기능'], ['속성 분석 원문', '제공혜택']]) {
         const prose = model.blocks.findIndex(b => b.kind === 'paragraph' && b.text === analysis);
         const table = model.blocks.findIndex(b => b.kind === 'dataTable' && b.headers.includes(header));
         expect(prose).toBeGreaterThan(-1); expect(prose).toBeLessThan(table);

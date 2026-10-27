@@ -393,7 +393,7 @@ export function validateSpecDraft(specs: SpecAiSpecFunction[]): SpecAiIssue[] {
 
     const coreCount = specs.filter((spec) => spec.level === 'CORE').length;
     if (coreCount < 2) {
-        issues.push({ severity: 'info', message: '핵심기술이 2개 미만입니다. 원하는 기능을 더 구체적으로 입력하면 결과가 좋아집니다.' });
+        issues.push({ severity: 'info', message: '핵심기능이 2개 미만입니다. 원하는 기능을 더 구체적으로 입력하면 결과가 좋아집니다.' });
     }
 
     return issues;
