@@ -10,6 +10,8 @@ import { findMissingTechnicalCharNames, normalizeTechnicalName } from '@/lib/qfd
 import { buildTechnicalGroups } from '@/lib/qfd-technical-groups';
 import { useQfdRelationshipAutosave, type Relationship } from './useQfdRelationshipAutosave';
 import { useLeaveGuard } from './useLeaveGuard';
+import { TECHNICAL_FIELD_LABELS, useQfdTechnicalDrafts, type TechnicalTextField } from './useQfdTechnicalDrafts';
+import { DEFAULT_COMPETITOR_COMPANY, getCompetitorLabel, SELF_COMPANY, splitBenchmarkKey, useQfdBenchmarks, type Benchmark } from './useQfdBenchmarks';
 
 interface Requirement {
     id: string;
@@ -33,12 +35,6 @@ interface TechTreeEntry {
     coreSpec?: string | null;
 }
 
-interface Benchmark {
-    requirementId: string;
-    company: string;
-    score: number;
-}
-
 /** 기술특성 × 회사의 스펙 실측값. 위 Benchmark(요구사항 × 회사의 5점)와 축이 다르다. */
 interface TechnicalBenchmark {
     technicalCharId: string;
@@ -54,19 +50,9 @@ interface QFDMatrixProps {
 
 type DisplayTechnical = TechnicalChar;
 type TechnicalGroup = ReturnType<typeof buildTechnicalGroups<TechnicalChar>>[number];
-/** 표 아래쪽에서 직접 고쳐 쓰는 기술특성 칸. 둘 다 TechnicalCharacteristic 의 열이다. */
-type TechnicalTextField = 'unit' | 'targetValue';
 type VisibleTechnicalColumn = { tech: DisplayTechnical };
-type PendingBenchmarkScores = Record<string, number>;
 
 const SCORE_OPTIONS = [0, 1, 2, 3, 4, 5];
-const TECHNICAL_FIELD_LABELS: Record<TechnicalTextField, string> = {
-    unit: '측정단위',
-    targetValue: '설계 목표치',
-};
-const SELF_COMPANY = 'self';
-const DEFAULT_COMPETITOR_COMPANY = 'competitor';
-const DEFAULT_COMPETITOR_LABEL = '경쟁사';
 
 const RELATIONSHIP_OPTIONS: Array<{
     value: Relationship['strength'];
@@ -83,19 +69,6 @@ const RELATIONSHIP_OPTIONS: Array<{
 function formatNumber(value: number | undefined | null, digits = 1) {
     if (!Number.isFinite(value ?? NaN) || value === 0) return '-';
     return Number(value).toFixed(digits);
-}
-
-function normalizeCompetitorName(value: string) {
-    const name = value.trim();
-    return name === DEFAULT_COMPETITOR_LABEL ? DEFAULT_COMPETITOR_COMPANY : name;
-}
-
-function getCompetitorLabel(company: string) {
-    return company === DEFAULT_COMPETITOR_COMPANY ? DEFAULT_COMPETITOR_LABEL : company;
-}
-
-function benchmarkKey(requirementId: string, company: string) {
-    return `${requirementId}::${company}`;
 }
 
 function getRequirementGroupRowSpan(
@@ -131,7 +104,6 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
     } = useQfdRelationshipAutosave(projectId, onDirtyChange);
     const [benchmarksData, setBenchmarksData] = useState<Benchmark[]>([]);
     const [technicalBenchmarks, setTechnicalBenchmarks] = useState<TechnicalBenchmark[]>([]);
-    const [pendingBenchmarks, setPendingBenchmarks] = useState<PendingBenchmarkScores>({});
     const [isSavingBenchmarks, setIsSavingBenchmarks] = useState(false);
     const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     const loadRequest = useRef(0);
@@ -144,35 +116,13 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [isResetting, setIsResetting] = useState(false);
     const [newTech, setNewTech] = useState({ name: '', unit: '', targetValue: '' });
-    const [newCompetitorName, setNewCompetitorName] = useState('');
-    const [extraCompetitors, setExtraCompetitors] = useState<string[]>([]);
-    const [isAddingCompetitor, setIsAddingCompetitor] = useState(false);
     const [collapsedTechnicalGroups, setCollapsedTechnicalGroups] = useState<Record<number, boolean> | null>(null);
-    const [removingCompetitor, setRemovingCompetitor] = useState<string | null>(null);
-    const [techFieldDrafts, setTechFieldDrafts] = useState<Record<string, string>>({});
-    // 저장 요청을 보냈지만 아직 화면 데이터(tech)에 반영되지 않은 값. 측정단위를 고치고 바로
-    // 목표치를 고치면, 목표치 요청이 아직 옛 단위를 담은 tech 로 단위를 덮어써 되돌렸다(B21).
-    const pendingTechValues = useRef<Record<string, string>>({});
     const [deletingTech, setDeletingTech] = useState<DisplayTechnical | null>(null);
     const [deletingGroup, setDeletingGroup] = useState<TechnicalGroup | null>(null);
     const [isDeletingTech, setIsDeletingTech] = useState(false);
     const { toast, showToast } = useToast();
     const [dataError, setDataError] = useState<string | null>(null);
 
-    const competitorColumns = useMemo(() => {
-        const companies = [
-            ...benchmarksData
-                .map((item) => item.company)
-                .filter((company) => company && company !== SELF_COMPANY),
-            ...extraCompetitors,
-        ];
-        const uniqueCompanies = Array.from(new Set(companies));
-        return uniqueCompanies.length > 0 ? uniqueCompanies : [DEFAULT_COMPETITOR_COMPANY];
-    }, [benchmarksData, extraCompetitors]);
-    const competitorNameOptions = useMemo(
-        () => Array.from(new Set(competitorColumns.map((company) => getCompetitorLabel(company)).filter(Boolean))),
-        [competitorColumns]
-    );
     const technicalNameOptions = useMemo(
         () => findMissingTechnicalCharNames(techTreeEntries.map(entry => entry.subSpec ?? ''), technicalChars.map(tech => tech.name)),
         [technicalChars, techTreeEntries]
@@ -185,10 +135,6 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
         () => Array.from(new Set(technicalChars.map((tech) => (tech.targetValue || '').trim()).filter(Boolean))),
         [technicalChars]
     );
-
-    const benchmarkColumnCount = 1 + competitorColumns.length;
-    const rightSideColumnSpan = 8 + competitorColumns.length;
-    const scoreSelectClassName = 'h-[31px] w-full cursor-pointer border-none bg-white p-1 text-center font-semibold text-slate-950 outline-none hover:bg-cyan-50';
 
     const loadData = useCallback(async () => {
         const snapshot = captureSnapshot();
@@ -241,6 +187,23 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
         }
     }, [applyServerData, captureSnapshot, isCurrentSnapshot, projectId, refreshAnalysis, showToast]);
 
+    const {
+        getTechFieldValue, setTechFieldDraft, commitTechField,
+        getTechBenchmarkValue, setTechBenchmarkDraft, commitTechBenchmark,
+        worksheetDraftSaves, clearTechDrafts, forgetTechDrafts,
+    } = useQfdTechnicalDrafts({ projectId, technicalBenchmarks, loadData, showToast });
+    const {
+        pendingBenchmarks, competitorColumns, competitorNameOptions,
+        newCompetitorName, setNewCompetitorName, isAddingCompetitor, removingCompetitor,
+        setBenchmark, getBenchmark, saveBenchmarks, handleAddCompetitor, handleRemoveCompetitor, clearPendingBenchmarks,
+    } = useQfdBenchmarks({
+        projectId, requirements, benchmarksData, setBenchmarksData, loadData, showToast, hasUnsavedRelationships, setIsSavingBenchmarks,
+    });
+
+    const benchmarkColumnCount = 1 + competitorColumns.length;
+    const rightSideColumnSpan = 8 + competitorColumns.length;
+    const scoreSelectClassName = 'h-[31px] w-full cursor-pointer border-none bg-white p-1 text-center font-semibold text-slate-950 outline-none hover:bg-cyan-50';
+
     useEffect(() => {
         setRequirements([]);
         setTechnicalChars([]);
@@ -248,9 +211,6 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
         setCollapsedTechnicalGroups(null);
         setBenchmarksData([]);
         setTechnicalBenchmarks([]);
-        setPendingBenchmarks({});
-        setTechFieldDrafts({});
-        setExtraCompetitors([]);
         setDeletingTech(null);
         setDeletingGroup(null);
         setAddingToGroup(null);
@@ -340,121 +300,6 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
         }
     };
 
-    // 측정단위·설계 목표치는 입력 중에는 초안으로 들고 있다가 포커스를 뗄 때 한 번만
-    // 저장한다. 글자마다 PATCH 를 보내면 요청이 타자 수만큼 늘고 순서가 뒤집힐 수 있다.
-    const techFieldKey = (techId: string, field: TechnicalTextField) => `${techId}:${field}`;
-
-    const getTechFieldValue = (tech: DisplayTechnical, field: TechnicalTextField) => {
-        const key = techFieldKey(tech.id, field);
-        if (key in techFieldDrafts) return techFieldDrafts[key];
-        return (field === 'unit' ? tech.unit : tech.targetValue) || '';
-    };
-
-    // 같은 기술특성의 다른 칸 값. 보내 놓고 아직 반영되지 않은 값이 있으면 그것이 최신이다.
-    const latestTechFieldValue = (tech: DisplayTechnical, field: TechnicalTextField) => {
-        const pending = pendingTechValues.current[techFieldKey(tech.id, field)];
-        return pending ?? ((field === 'unit' ? tech.unit : tech.targetValue) || '');
-    };
-
-    const commitTechField = async (tech: DisplayTechnical, field: TechnicalTextField) => {
-        const key = techFieldKey(tech.id, field);
-        if (!(key in techFieldDrafts)) return;
-
-        const nextValue = techFieldDrafts[key].trim();
-        const currentValue = latestTechFieldValue(tech, field).trim();
-
-        // 초안을 먼저 지운다. 남겨 두면 저장 뒤 서버가 돌려준 값 대신 초안이 계속 보인다.
-        setTechFieldDrafts((drafts) => {
-            const next = { ...drafts };
-            delete next[key];
-            return next;
-        });
-
-        if (nextValue === currentValue) return;
-
-        pendingTechValues.current[key] = nextValue;
-        // 저장이 실패하면 입력한 값을 칸에 되돌려 놓는다. 초안을 이미 지웠기 때문에 그대로 두면
-        // 사용자가 친 값이 사라지고 옛 값만 남았다(B21). 그사이 새로 친 초안이 있으면 그것을 둔다.
-        const restoreDraft = () => {
-            if (pendingTechValues.current[key] === nextValue) delete pendingTechValues.current[key];
-            setTechFieldDrafts((drafts) => (key in drafts ? drafts : { ...drafts, [key]: nextValue }));
-        };
-
-        let res: Response;
-        try {
-            res = await fetch(`/api/projects/${projectId}/qfd/technical`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    id: tech.id,
-                    name: tech.name,
-                    unit: field === 'unit' ? nextValue : latestTechFieldValue(tech, 'unit'),
-                    targetValue: field === 'targetValue' ? nextValue : latestTechFieldValue(tech, 'targetValue'),
-                }),
-            });
-        } catch {
-            restoreDraft();
-            showToast(`${TECHNICAL_FIELD_LABELS[field]}을(를) 저장하지 못했습니다. 연결을 확인하세요.`, 'error');
-            return;
-        }
-
-        if (!res.ok) {
-            restoreDraft();
-            const errorData = await res.json().catch(() => null);
-            showToast(errorData?.error || `${TECHNICAL_FIELD_LABELS[field]}을(를) 저장하지 못했습니다.`, 'error');
-            return;
-        }
-
-        await loadData();
-        // 다시 불러온 tech 가 이 값을 담았으니 보류 값을 치운다. 그사이 더 새 값을 보냈으면 둔다.
-        if (pendingTechValues.current[key] === nextValue) delete pendingTechValues.current[key];
-        showToast(`${TECHNICAL_FIELD_LABELS[field]}을(를) 저장했습니다.`);
-    };
-
-    // 자사·경쟁사 줄도 같은 초안·blur 방식을 쓴다. 열쇠에 회사명이 더 붙을 뿐이다.
-    const techBenchmarkKey = (techId: string, company: string) => `bench:${techId}:${company}`;
-
-    const getTechBenchmarkValue = (tech: DisplayTechnical, company: string) => {
-        const key = techBenchmarkKey(tech.id, company);
-        if (key in techFieldDrafts) return techFieldDrafts[key];
-        return technicalBenchmarks.find(
-            (item) => item.technicalCharId === tech.id && item.company === company
-        )?.value || '';
-    };
-
-    const commitTechBenchmark = async (tech: DisplayTechnical, company: string, label: string) => {
-        const key = techBenchmarkKey(tech.id, company);
-        if (!(key in techFieldDrafts)) return;
-
-        const nextValue = techFieldDrafts[key].trim();
-        const currentValue = (technicalBenchmarks.find(
-            (item) => item.technicalCharId === tech.id && item.company === company
-        )?.value || '').trim();
-
-        setTechFieldDrafts((drafts) => {
-            const next = { ...drafts };
-            delete next[key];
-            return next;
-        });
-
-        if (nextValue === currentValue) return;
-
-        const res = await fetch(`/api/projects/${projectId}/qfd/technical-benchmarks`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ technicalCharId: tech.id, company, value: nextValue }),
-        });
-
-        if (!res.ok) {
-            const errorData = await res.json().catch(() => null);
-            showToast(errorData?.error || `${label} 값을 저장하지 못했습니다.`, 'error');
-            return;
-        }
-
-        await loadData();
-        showToast(`${label} 값을 저장했습니다.`);
-    };
-
     // 지울 열에 실제로 입력해 둔 관계 강도가 몇 개인지. 확인창이 "정말?"을 한 번 더
     // 묻는 대신 무엇을 잃는지 숫자로 보여 주게 한다 — 반사적으로 누르는 두 번째 확인보다
     // 이쪽이 실수를 막는다.
@@ -483,8 +328,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
             deletedIds.forEach(id => clearSavedRelationships(id));
             setTechnicalChars(items => items.filter(tech => !deletedIds.includes(tech.id)));
             setTechnicalBenchmarks(items => items.filter(item => !deletedIds.includes(item.technicalCharId)));
-            setTechFieldDrafts(drafts => Object.fromEntries(Object.entries(drafts).filter(([key]) =>
-                !deletedIds.some(id => key.startsWith(id + ':') || key.startsWith('bench:' + id + ':')))));
+            forgetTechDrafts(deletedIds);
             setDeletingTech(null);
             setDeletingGroup(null);
             void refreshAnalysis();
@@ -493,45 +337,6 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
             if (isCurrentSnapshot(snapshot)) showToast(error instanceof Error ? error.message : '세부기능을 삭제하지 못했습니다.', 'error');
         } finally {
             if (isCurrentSnapshot(snapshot)) setIsDeletingTech(false);
-        }
-    };
-
-    const setBenchmark = (requirementId: string, company: string, score: number) => {
-        setPendingBenchmarks((items) => ({
-            ...items,
-            [benchmarkKey(requirementId, company)]: score,
-        }));
-    };
-
-    const saveBenchmarks = async () => {
-        if (hasUnsavedRelationships()) return;
-        const entries = Object.entries(pendingBenchmarks);
-        if (entries.length === 0) {
-            showToast('저장할 비교 점수가 없습니다.', 'error');
-            return;
-        }
-
-        setIsSavingBenchmarks(true);
-        try {
-            const responses = await Promise.all(entries.map(([key, score]) => {
-                const [requirementId, company] = key.split('::');
-                return fetch(`/api/projects/${projectId}/qfd/benchmarks`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ requirementId, company, score }),
-                });
-            }));
-
-            if (responses.some((response) => !response.ok)) {
-                showToast('비교 점수를 저장하지 못했습니다.', 'error');
-                return;
-            }
-
-            setPendingBenchmarks({});
-            await loadData();
-            showToast('중요도 및 경쟁 비교 점수를 저장했습니다.');
-        } finally {
-            setIsSavingBenchmarks(false);
         }
     };
 
@@ -551,129 +356,20 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                 }
             };
 
-            for (const tech of technicalChars) {
-                if (techFieldKey(tech.id, 'unit') in techFieldDrafts || techFieldKey(tech.id, 'targetValue') in techFieldDrafts) {
-                    await save('technical', 'PATCH', {
-                        id: tech.id,
-                        name: tech.name,
-                        unit: getTechFieldValue(tech, 'unit').trim(),
-                        targetValue: getTechFieldValue(tech, 'targetValue').trim(),
-                    });
-                }
-                for (const company of [SELF_COMPANY, ...competitorColumns]) {
-                    if (techBenchmarkKey(tech.id, company) in techFieldDrafts) {
-                        await save('technical-benchmarks', 'POST', {
-                            technicalCharId: tech.id,
-                            company,
-                            value: getTechBenchmarkValue(tech, company).trim(),
-                        });
-                    }
-                }
+            for (const draft of worksheetDraftSaves(technicalChars, [SELF_COMPANY, ...competitorColumns])) {
+                await save(draft.path, draft.method, draft.body);
             }
             for (const [key, score] of Object.entries(pendingBenchmarks)) {
-                const [requirementId, company] = key.split('::');
-                await save('benchmarks', 'POST', { requirementId, company, score });
+                await save('benchmarks', 'POST', { ...splitBenchmarkKey(key), score });
             }
-            setTechFieldDrafts({});
-            setPendingBenchmarks({});
+            clearTechDrafts();
+            clearPendingBenchmarks();
             await loadData();
             showToast('워크시트를 저장했습니다.');
         } catch (error) {
             showToast(error instanceof Error ? error.message : 'QFD 저장에 실패했습니다. 다시 저장해주세요.', 'error');
         } finally {
             setIsSavingBenchmarks(false);
-        }
-    };
-
-    const saveBenchmarkImmediately = async (requirementId: string, company: string, score: number) => {
-        const res = await fetch(`/api/projects/${projectId}/qfd/benchmarks`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ requirementId, company, score }),
-        });
-
-        if (!res.ok) {
-            showToast('비교 점수를 저장하지 못했습니다.', 'error');
-            return;
-        }
-        await loadData();
-    };
-
-    const addCompetitor = async (competitorName: string) => {
-        const company = normalizeCompetitorName(competitorName);
-
-        if (!company) {
-            showToast('추가할 경쟁사명을 입력하세요.', 'error');
-            return;
-        }
-        if (company === SELF_COMPANY) {
-            showToast('자사는 경쟁사명으로 사용할 수 없습니다.', 'error');
-            return;
-        }
-        if (competitorColumns.includes(company)) {
-            showToast('이미 추가된 경쟁사입니다.', 'error');
-            return;
-        }
-
-        setIsAddingCompetitor(true);
-
-        try {
-            if (requirements.length > 0) {
-                const responses = await Promise.all(requirements.map((requirement) => fetch(`/api/projects/${projectId}/qfd/benchmarks`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ requirementId: requirement.id, company, score: 0 }),
-                })));
-
-                if (responses.some((response) => !response.ok)) {
-                    showToast('경쟁사 열을 저장하지 못했습니다.', 'error');
-                    return;
-                }
-
-                await loadData();
-            }
-
-            setExtraCompetitors((items) => [...items, company]);
-            showToast(`${getCompetitorLabel(company)} 열을 추가했습니다.`);
-        } finally {
-            setIsAddingCompetitor(false);
-        }
-    };
-
-    const handleAddCompetitor = async () => {
-        await addCompetitor(newCompetitorName);
-        setNewCompetitorName('');
-    };
-
-    const handleRemoveCompetitor = async (company: string) => {
-        if (company === SELF_COMPANY) return;
-
-        const label = getCompetitorLabel(company);
-        if (!window.confirm(`${label} 열과 입력된 점수를 삭제할까요?`)) {
-            return;
-        }
-
-        setRemovingCompetitor(company);
-        try {
-            const res = await fetch(`/api/projects/${projectId}/qfd/benchmarks?company=${encodeURIComponent(company)}`, {
-                method: 'DELETE',
-            });
-
-            if (!res.ok) {
-                const body = await res.json().catch(() => null);
-                showToast(body?.error || '경쟁사 열을 삭제하지 못했습니다.', 'error');
-                return;
-            }
-
-            setExtraCompetitors((items) => items.filter((item) => item !== company));
-            setBenchmarksData((items) => items.filter((item) => item.company !== company));
-            setPendingBenchmarks((items) => Object.fromEntries(
-                Object.entries(items).filter(([key]) => !key.endsWith(`::${company}`))
-            ));
-            await loadData();
-            showToast(`${label} 열을 삭제했습니다.`);
-        } finally {
-            setRemovingCompetitor(null);
         }
     };
 
@@ -699,7 +395,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                 throw new Error('QFD 초기화에 실패했습니다. 다시 시도해주세요.');
             }
             clearSavedRelationships();
-            setPendingBenchmarks({});
+            clearPendingBenchmarks();
             setShowResetConfirm(false);
             await loadData();
             showToast('QFD 매트릭스를 초기화했습니다.');
@@ -712,12 +408,6 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
 
     const getRelationship = (requirementId: string, technicalCharId: string): Relationship['strength'] =>
         relationships.find((item) => item.requirementId === requirementId && item.technicalCharId === technicalCharId)?.strength || 'NONE';
-
-    const getBenchmark = (requirementId: string, company: string) => {
-        const key = benchmarkKey(requirementId, company);
-        if (key in pendingBenchmarks) return pendingBenchmarks[key];
-        return benchmarksData.find((item) => item.requirementId === requirementId && item.company === company)?.score || 0;
-    };
 
     const getReqAnalysis = (requirementId: string) => reqAnalysis.find((item) => item.requirementId === requirementId);
     const getTechAnalysis = (technicalCharId: string) => techAnalysis.find((item) => item.technicalCharId === technicalCharId);
@@ -1241,10 +931,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                         type="text"
                                                         value={getTechBenchmarkValue(tech, company)}
                                                         onFocus={(event) => { event.currentTarget.placeholder = ''; }}
-                                                        onChange={(event) => setTechFieldDrafts((drafts) => ({
-                                                            ...drafts,
-                                                            [techBenchmarkKey(tech.id, company)]: event.target.value,
-                                                        }))}
+                                                        onChange={(event) => setTechBenchmarkDraft(tech.id, company, event.target.value)}
                                                         onBlur={(event) => {
                                                             event.currentTarget.placeholder = '-';
                                                             if (!(event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-worksheet-save'))) {
@@ -1270,10 +957,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                         type="text"
                                                         value={getTechFieldValue(tech, editableField)}
                                                         onFocus={(event) => { event.currentTarget.placeholder = ''; }}
-                                                        onChange={(event) => setTechFieldDrafts((drafts) => ({
-                                                            ...drafts,
-                                                            [techFieldKey(tech.id, editableField)]: event.target.value,
-                                                        }))}
+                                                        onChange={(event) => setTechFieldDraft(tech.id, editableField, event.target.value)}
                                                         onBlur={(event) => {
                                                             event.currentTarget.placeholder = '-';
                                                             if (!(event.relatedTarget instanceof HTMLElement && event.relatedTarget.hasAttribute('data-worksheet-save'))) {
