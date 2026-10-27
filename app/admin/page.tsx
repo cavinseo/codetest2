@@ -625,10 +625,9 @@ export default function AdminModePage() {
 
                         {/* ── Programs Tab ─────────────────────────────── */}
                         {tab === 'programs' && canManageProgramsUI && <ProgramsTab canCreate={role === 'ADMIN'} canDelete={role === 'ADMIN'}
-                            onDeleted={id => {
-                                setProjectPrograms(prev => prev.filter(p => p.id !== id));
-                                setProjectProgramId(prev => prev === id ? '' : prev);
-                            }} />}
+                            // 프로젝트 탭의 프로그램 필터는 탭 안에 있고, 이 탭에 있는 동안 프로젝트 탭은
+                            // 마운트되지 않으므로 지운 프로그램이 필터에 남지 않는다.
+                            onDeleted={id => setProjectPrograms(prev => prev.filter(p => p.id !== id))} />}
 
                         {/* ── Projects Tab ─────────────────────────────── */}
                         {tab === 'projects' && (
