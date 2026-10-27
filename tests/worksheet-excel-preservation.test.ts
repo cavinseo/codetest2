@@ -6,12 +6,13 @@ import { buildWorksheetExcel } from '../lib/worksheet-excel';
 import { worksheetExcelProject } from './fixtures/worksheet-excel-project';
 
 // c52f6a5 출력에서 이번 수정 대상인 WS-9를 제외한 모든 시트의 내용과 서식을 비교한다.
+// WS-2 세세부 열 이름을 '세세부기술'에서 '세세부기능'으로 바꾼 뒤 그 열이 보이는 네 시나리오의 값을 갱신했다.
 const baselineHashes = {
-    complete: 'bd89d578fc5e410cb3b35478b9293db1c16f262efc3a1e94279846b1421421ff',
-    empty: '477d0bda31fe3ac61673ae6e298f5dd4295b69c7f15a642a95ad2b5e1550e639',
+    complete: 'a334f1606ac2bae1280e23e9f31ab991e53632774b7cf623f765d357f0260040',
+    empty: '4473b33a07627d03a54abe4ae92ac222261a95064650f1c5d3ed222fa2298c42',
     collapsed: '4b561c1c961052665524d3e7a395c6fa3f868cb92418c5685fbe636501b7356a',
-    expanded: '4610cee6f42bbddccd60e5a879f8f108fee6a1e4b6b72c8f0cefc6e0447eb143',
-    long: '64774aec4bd60a394dd7fe54ec2f5db68e4ea0c1b8e6d8d17f194f8cdd4ba870',
+    expanded: 'a298b254ba78249c82e96cd3d297e8018ca5cba84e8f184055d5b6196b1cf89c',
+    long: '2ac95cdf68be64aed679e71a11f49b025558b0ec0c2a1d9b9d625e1c18b1955b',
 };
 
 function projectForScenario(scenario: keyof typeof baselineHashes) {
