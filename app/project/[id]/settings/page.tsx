@@ -486,7 +486,7 @@ export default function ProjectSettingsPage() {
                                     placeholder="teammate@example.com"
                                 />
                                 <p className="text-xs text-gray-500 mt-1">
-                                    초대할 사용자는 먼저 회원가입이 되어 있어야 합니다.
+                                    같은 프로그램에서 이용 중인 멘티만 초대할 수 있습니다.
                                 </p>
                             </div>
 

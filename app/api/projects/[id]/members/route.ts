@@ -5,6 +5,9 @@ import { generateId } from '@/lib/id';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { canOwnProjectIn } from '@/lib/program';
+import { isUserAccessExpired } from '@/lib/invite-access';
+import { parseMemberRole } from '@/lib/member-roles';
 
 const log = createLogger('api/members');
 
@@ -16,6 +19,10 @@ const inviteSchema = z.object({
         errorMap: () => ({ message: 'Only EDITOR can be invited.' }),
     }),
 });
+
+// 없는 이메일과 초대할 수 없는 계정을 같은 문구로 돌려준다. 다르게 답하면 멘티 누구나 이
+// 경로로 임의 이메일의 가입 여부와 이름을 알아낼 수 있다(2026-11-08 코드 리뷰 4번).
+const INVITEE_NOT_ELIGIBLE = '같은 프로그램에서 이용 중인 멘티만 팀원으로 초대할 수 있습니다. 이메일을 확인하세요.';
 
 // POST: 팀원 초대
 
@@ -46,16 +53,27 @@ export async function POST(
             return NextResponse.json({ error: '프로젝트 소유자만 팀원을 초대할 수 있습니다.' }, { status: 403 });
         }
 
-        // 초대 대상 사용자 확인
-        const invitedUser = await prisma.user.findUnique({
-            where: { email },
+        // 초대 대상은 이 프로젝트의 프로그램에서 이용 중인 멘티로 한정한다. 예전에는 아무
+        // 가입자나(승인 대기·다른 프로그램·이용 만료 계정까지) 편집자로 붙일 수 있었다.
+        // 관리자가 만든 계정은 입력한 대소문자 그대로 저장되므로 대소문자를 무시하고 찾는다.
+        const invitedUser = await prisma.user.findFirst({
+            where: { email: { equals: email.trim(), mode: 'insensitive' } },
+            select: {
+                id: true, email: true, name: true, role: true, status: true, isAdmin: true,
+                accessExpiresAt: true, programId: true,
+                usedInviteCode: {
+                    select: {
+                        usedAt: true, expiresAt: true, accessExpiresAt: true, accessDurationDays: true, programId: true,
+                        program: { select: { endsAt: true } },
+                    },
+                },
+            },
         });
-
-        if (!invitedUser) {
-            return NextResponse.json(
-                { error: '해당 이메일의 사용자를 찾을 수 없습니다. 먼저 회원가입이 필요합니다.' },
-                { status: 404 }
-            );
+        const invitedRole = invitedUser ? parseMemberRole(invitedUser.role) : null;
+        if (!invitedUser || !invitedRole || invitedUser.isAdmin || invitedUser.status !== 'APPROVED'
+            || !canOwnProjectIn({ role: invitedRole, programId: invitedUser.programId }, project.programId)
+            || isUserAccessExpired(invitedUser)) {
+            return NextResponse.json({ error: INVITEE_NOT_ELIGIBLE }, { status: 404 });
         }
 
         if (invitedUser.id === project.ownerId) {
