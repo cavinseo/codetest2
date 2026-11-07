@@ -9,7 +9,7 @@ import {
     type MentorAppliedRow,
     type MentorDraftRow,
 } from '@/lib/attribute-mentor-utils';
-import { normalizeSegmentRows, type AttributeSpecFunctionLike } from '@/lib/product-attributes-utils';
+import { collapseCustomerRowsToSegments, type AttributeSpecFunctionLike } from '@/lib/product-attributes-utils';
 import { describeAiEngine } from '@/lib/ai/engine-label';
 import type { ValueAnalysisContext } from '@/lib/ai/types';
 import AttributeValueAnalysis from './AttributeValueAnalysis';
@@ -110,7 +110,7 @@ export default function AttributeMentorWizard({
 
             const data = await res.json();
             // 외부 AI 가 고객마다 행을 나눠 답해도 세분시장 단위로 합쳐서 보여 준다.
-            const rows: MentorDraftRow[] = normalizeSegmentRows<MentorDraftRow>((data.rows || []).map((row: Record<string, string>, index: number) => ({
+            const rows: MentorDraftRow[] = collapseCustomerRowsToSegments<MentorDraftRow>((data.rows || []).map((row: Record<string, string>, index: number) => ({
                 id: `mentor_${index}_${Math.random().toString(36).slice(2, 6)}`,
                 marketSegment: row.marketSegment || '',
                 customerName: row.customerName || '',

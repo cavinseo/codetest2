@@ -199,9 +199,11 @@ function splitLines(raw: string | undefined): string[] {
     return unique((raw ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
 }
 
+// 자릿수 쉼표(12,000)를 나누면 합칠 때 "12, 000" 으로 값이 바뀌므로 앞뒤가 모두 숫자면 구분자로 보지 않는다.
+const ANSWER_VALUE_SEPARATOR = /(?<!\d),|,(?!\d)|[;/·]/;
+
 function splitValues(raw: string): string[] {
-    // 자릿수 쉼표(12,000)를 나누면 합칠 때 "12, 000" 으로 값이 바뀌므로 앞뒤가 모두 숫자면 구분자로 보지 않는다.
-    return unique(raw.split(/(?<!\d),|,(?!\d)|[;/·]/).map((value) => value.trim()).filter(Boolean));
+    return unique(raw.split(ANSWER_VALUE_SEPARATOR).map((value) => value.trim()).filter(Boolean));
 }
 
 function unique(values: string[]): string[] {

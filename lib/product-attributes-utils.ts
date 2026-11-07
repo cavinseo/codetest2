@@ -70,9 +70,11 @@ export function dedupeByAttributeName<T extends AttributeNameRowLike>(rows: T[])
 
 // 스키마를 바꾸지 않으려고 한 세분시장의 고객명 여러 개를 기존 customerName 칸 하나에 담는다.
 // 엑셀 칸에서 사람이 그대로 읽고 고칠 수 있도록 쉼표 구분을 쓰고, 칸 안 줄바꿈도 구분자로 받아 준다.
+// 앞뒤가 모두 숫자인 쉼표는 자릿수 표기(12,000)이므로 나누지 않는다. 나누면 저장할 때 "12, 000" 으로 값이 바뀐다.
+const CUSTOMER_NAME_SEPARATOR = /(?<!\d)[,，]|[,，](?!\d)|[\r\n]/;
+
 export function splitCustomerNames(value: string | null | undefined): string[] {
-    // 앞뒤가 모두 숫자인 쉼표는 자릿수 표기(12,000)이므로 나누지 않는다. 나누면 저장할 때 "12, 000" 으로 값이 바뀐다.
-    const names = (value ?? '').split(/(?<!\d)[,，]|[,，](?!\d)|[\r\n]/).map(name => name.trim()).filter(Boolean);
+    const names = (value ?? '').split(CUSTOMER_NAME_SEPARATOR).map(name => name.trim()).filter(Boolean);
     return Array.from(new Set(names));
 }
 
@@ -108,7 +110,7 @@ export function mergeSegmentCustomerNames<T extends AttributeMarketCustomerRowLi
 // 예전에는 고객명마다 행을 따로 두어 니즈·혜택·속성이 똑같은 행이 반복됐다. 고객명을 세분시장으로
 // 옮기면 이 행들은 완전히 같아지므로 첫 행만 남긴다. 적합도 행렬은 속성명이 같은 행 중 첫 행의 id 를
 // 쓰기 때문에(dedupeByAttributeName) 첫 행을 남겨야 저장된 평가가 끊기지 않는다.
-export function normalizeSegmentRows<T extends AttributeSegmentRowLike>(rows: T[]): T[] {
+export function collapseCustomerRowsToSegments<T extends AttributeSegmentRowLike>(rows: T[]): T[] {
     const seen = new Set<string>();
     return mergeSegmentCustomerNames(rows).filter(row => {
         const marketSegment = row.marketSegment?.trim();

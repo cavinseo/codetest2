@@ -3,7 +3,7 @@ import {
     buildCustomerNamesByMarketSegment,
     joinCustomerNames,
     mergeSegmentCustomerNames,
-    normalizeSegmentRows,
+    collapseCustomerRowsToSegments,
     splitCustomerNames,
     buildSpecPickerRows,
     dedupeByAttributeName,
@@ -217,7 +217,7 @@ describe('product attribute technology linking', () => {
             { marketSegment: '제조', customerName: '을', customerNeed: 'n', benefit: 'b', attribute: 'a' },
         ];
         expect(buildCustomerNamesByMarketSegment(rows)).toEqual({ 제조: ['12,000명 고객사', '을'] });
-        expect(normalizeSegmentRows(rows).map(row => row.customerName)).toEqual(['12,000명 고객사, 을']);
+        expect(collapseCustomerRowsToSegments(rows).map(row => row.customerName)).toEqual(['12,000명 고객사, 을']);
     });
 
     it('shares customer names across all rows of a segment, including non-adjacent ones', () => {
@@ -237,7 +237,7 @@ describe('product attribute technology linking', () => {
             { id: '1', marketSegment: 'X', customerName: 'A', customerNeed: '니즈1', benefit: '혜택1', attribute: '속성1' },
             { id: '2', marketSegment: 'X', customerName: 'B', customerNeed: '니즈2', benefit: '혜택2', attribute: '속성2' },
         ];
-        expect(normalizeSegmentRows(rows)).toEqual([
+        expect(collapseCustomerRowsToSegments(rows)).toEqual([
             { ...rows[0], customerName: 'A, B' },
             { ...rows[1], customerName: 'A, B' },
         ]);
@@ -245,7 +245,7 @@ describe('product attribute technology linking', () => {
 
     it('drops only rows that become identical, keeping the first id for WS-4 references', () => {
         const row = { marketSegment: 'X', customerNeed: '니즈', benefit: '혜택', attribute: '속성' };
-        const normalized = normalizeSegmentRows([
+        const normalized = collapseCustomerRowsToSegments([
             { ...row, id: 'first', customerName: 'A' },
             { ...row, id: 'other-attribute', customerName: 'A', attribute: '다른 속성' },
             { ...row, id: 'duplicate', customerName: 'B' },

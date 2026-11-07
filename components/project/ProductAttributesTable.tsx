@@ -17,7 +17,7 @@ import {
     getMarketSegmentSpan,
     joinCustomerNames,
     mergeSegmentCustomerNames,
-    normalizeSegmentRows,
+    collapseCustomerRowsToSegments,
     splitCustomerNames,
 } from '@/lib/product-attributes-utils';
 import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
@@ -35,14 +35,96 @@ interface ProductAttributeRow {
     order: number;
 }
 
-function toStoredRow({ customerNames, ...row }: ProductAttributeRow) {
+type StoredAttributeRow = Omit<ProductAttributeRow, 'customerNames'> & { customerName: string };
+
+function toStoredRow({ customerNames, ...row }: ProductAttributeRow): StoredAttributeRow {
     return { ...row, customerName: joinCustomerNames(customerNames) };
 }
 
+function fromStoredRow({ customerName, ...row }: StoredAttributeRow): ProductAttributeRow {
+    return { ...row, customerNames: splitCustomerNames(customerName) };
+}
+
 // 세분시장 이름이 겹치게 되면 양쪽 고객명을 하나로 합친다.
-function syncSegmentCustomerNames(rows: ProductAttributeRow[]): ProductAttributeRow[] {
-    return mergeSegmentCustomerNames(rows.map(row => ({ ...row, customerName: joinCustomerNames(row.customerNames) })))
-        .map(({ customerName, ...row }) => ({ ...row, customerNames: splitCustomerNames(customerName) }));
+function mergeNamesOfSameSegments(rows: ProductAttributeRow[]): ProductAttributeRow[] {
+    return mergeSegmentCustomerNames(rows.map(toStoredRow)).map(fromStoredRow);
+}
+
+// 쉼표로 여러 이름을 붙여 넣거나 입력했으면 칸을 나눠서, 저장 후 다시 불러온 모습과 같게 한다.
+// 나눌 칸이 없으면 null 을 돌려 불필요한 상태 갱신을 막는다.
+function splitTypedCustomerNames(customerNames: string[]): string[] | null {
+    const split = customerNames.flatMap(name => {
+        const names = splitCustomerNames(name);
+        return names.length > 1 ? names : [name];
+    });
+    return split.length !== customerNames.length ? split : null;
+}
+
+interface CustomerNamesCellProps {
+    rowId: string;
+    rowSpan: number;
+    customerNames: string[];
+    nameOptions: string[];
+    onChange: (customerNames: string[]) => void;
+}
+
+// 고객명 - 세분시장 전체에 걸친 칸 하나에 여러 이름을 입력한다.
+function CustomerNamesCell({ rowId, rowSpan, customerNames, nameOptions, onChange }: CustomerNamesCellProps) {
+    // 고객명이 없는 세분시장도 입력칸 하나는 보여야 한다.
+    const visibleNames = customerNames.length > 0 ? customerNames : [''];
+    const datalistId = `customer_name_list_${rowId}`;
+    const filledCount = visibleNames.filter(name => name.trim()).length;
+
+    return (
+        <td rowSpan={rowSpan} className="p-0 align-top bg-white/[0.01] border-r border-white/[0.04]">
+            <div className="flex h-full min-h-[44px] flex-col">
+                {visibleNames.map((name, nameIndex) => (
+                    <div key={nameIndex} className="flex items-center">
+                        <input
+                            type="text"
+                            list={datalistId}
+                            aria-label={`고객명 ${nameIndex + 1}`}
+                            value={name}
+                            onChange={(e) => onChange(visibleNames.map((item, i) => i === nameIndex ? e.target.value : item))}
+                            onBlur={() => {
+                                const split = splitTypedCustomerNames(visibleNames);
+                                if (split) onChange(split);
+                            }}
+                            className="min-w-0 flex-1 px-3 py-2 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
+                            placeholder="입력"
+                        />
+                        {visibleNames.length > 1 && (
+                            <button
+                                type="button"
+                                onClick={() => onChange(visibleNames.filter((_, i) => i !== nameIndex))}
+                                className="mr-1 flex-shrink-0 rounded px-1 text-xs text-gray-600 hover:text-rose-400 transition-colors"
+                                title="고객명 삭제"
+                                aria-label={`고객명 ${nameIndex + 1} 삭제`}
+                            >
+                                ×
+                            </button>
+                        )}
+                    </div>
+                ))}
+                <datalist id={datalistId}>
+                    {nameOptions.map((v, i) => <option key={i} value={v} />)}
+                </datalist>
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2">
+                    <span className="text-[10px] text-gray-600 whitespace-nowrap">
+                        {filledCount}개 고객명
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => onChange([...visibleNames, ''])}
+                        className="rounded-md border border-cyan-500/20 px-2 py-1 text-[10px] text-cyan-300 hover:bg-cyan-500/10 transition-colors whitespace-nowrap"
+                        title="이 세분시장에 고객명 추가"
+                    >
+                        + 고객명
+                    </button>
+                </div>
+            </div>
+        </td>
+    );
 }
 
 interface SpecFunction {
@@ -247,7 +329,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 if (!Array.isArray(data.attributes)) throw new Error('제품 속성 응답 형식 오류');
                 loadedAttrs = data.attributes;
                 // 고객명별로 저장된 기존 행도 세분시장 단위로 합쳐 보여 준다. DB 는 사용자가 저장할 때만 바뀐다.
-                setRows(normalizeSegmentRows<any>(loadedAttrs).map((a: any) => ({
+                setRows(collapseCustomerRowsToSegments<any>(loadedAttrs).map((a: any) => ({
                     id: a.id,
                     productName: a.productName || '',
                     customerNames: splitCustomerNames(a.customerName),
@@ -509,15 +591,6 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         ));
     };
 
-    // 쉼표로 여러 이름을 붙여 넣거나 입력했으면 칸을 나눠서, 저장 후 다시 불러온 모습과 같게 한다.
-    const expandCustomerNames = (row: ProductAttributeRow, customerNames: string[]) => {
-        const expanded = customerNames.flatMap(name => {
-            const names = splitCustomerNames(name);
-            return names.length > 1 ? names : [name];
-        });
-        if (expanded.length !== customerNames.length) updateSegmentCustomerNames(row, expanded);
-    };
-
     // 병합된 칸을 수정하면 묶여 있던 행 전체에 같은 값을 적용한다.
     const updateCustomerNeedGroup = (startIndex: number, value: string) => {
         const span = getCustomerNeedRowSpan(startIndex);
@@ -588,7 +661,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             attribute: row.attribute,
         }));
 
-        setRows(syncSegmentCustomerNames([...rows, ...appended]).map((r, order) => ({ ...r, order })));
+        setRows(mergeNamesOfSameSegments([...rows, ...appended]).map((r, order) => ({ ...r, order })));
 
         // 스펙에서 가져온 속성은 표에서 색으로 구분되도록 표시해 둔다.
         const specNames = new Set(specFunctions.map((spec) => spec.name));
@@ -782,7 +855,6 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         <tbody>
                             {rows.map((row, idx) => {
                                 const marketSegmentRowSpan = getMarketSegmentRowSpan(idx);
-                                const customerNames = row.customerNames.length > 0 ? row.customerNames : [''];
                                 const customerNeedRowSpan = getCustomerNeedRowSpan(idx);
                                 const benefitRowSpan = getBenefitRowSpan(idx);
 
@@ -800,7 +872,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                                     list={`ms_list_${row.id}`}
                                                     value={row.marketSegment}
                                                     onChange={(e) => updateMarketSegmentGroup(idx, e.target.value)}
-                                                    onBlur={() => setRows(syncSegmentCustomerNames)}
+                                                    onBlur={() => setRows(mergeNamesOfSameSegments)}
                                                     className="w-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
                                                     placeholder="입력"
                                                 />
@@ -823,53 +895,14 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                             </div>
                                         </td>
                                     )}
-                                    {/* 고객명 - 세분시장 전체에 걸친 칸 하나에 여러 이름을 입력한다 */}
                                     {marketSegmentRowSpan > 0 && (
-                                        <td rowSpan={marketSegmentRowSpan} className="p-0 align-top bg-white/[0.01] border-r border-white/[0.04]">
-                                            <div className="flex h-full min-h-[44px] flex-col">
-                                                {customerNames.map((name, nameIndex) => (
-                                                    <div key={nameIndex} className="flex items-center">
-                                                        <input
-                                                            type="text"
-                                                            list={`customer_name_list_${row.id}`}
-                                                            aria-label={`고객명 ${nameIndex + 1}`}
-                                                            value={name}
-                                                            onChange={(e) => updateSegmentCustomerNames(row, customerNames.map((item, i) => i === nameIndex ? e.target.value : item))}
-                                                            onBlur={() => expandCustomerNames(row, customerNames)}
-                                                            className="min-w-0 flex-1 px-3 py-2 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                                            placeholder="입력"
-                                                        />
-                                                        {customerNames.length > 1 && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => updateSegmentCustomerNames(row, customerNames.filter((_, i) => i !== nameIndex))}
-                                                                className="mr-1 flex-shrink-0 rounded px-1 text-xs text-gray-600 hover:text-rose-400 transition-colors"
-                                                                title="고객명 삭제"
-                                                                aria-label={`고객명 ${nameIndex + 1} 삭제`}
-                                                            >
-                                                                ×
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                                <datalist id={`customer_name_list_${row.id}`}>
-                                                    {customerNameOptions.map((v, i) => <option key={i} value={v} />)}
-                                                </datalist>
-                                                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2">
-                                                    <span className="text-[10px] text-gray-600 whitespace-nowrap">
-                                                        {customerNames.filter(item => item.trim()).length}개 고객명
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => updateSegmentCustomerNames(row, [...customerNames, ''])}
-                                                        className="rounded-md border border-cyan-500/20 px-2 py-1 text-[10px] text-cyan-300 hover:bg-cyan-500/10 transition-colors whitespace-nowrap"
-                                                        title="이 세분시장에 고객명 추가"
-                                                    >
-                                                        + 고객명
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </td>
+                                        <CustomerNamesCell
+                                            rowId={row.id}
+                                            rowSpan={marketSegmentRowSpan}
+                                            customerNames={row.customerNames}
+                                            nameOptions={customerNameOptions}
+                                            onChange={(customerNames) => updateSegmentCustomerNames(row, customerNames)}
+                                        />
                                     )}
 
                                     {/* 고객 니즈 - 같은 세분시장에서 값이 같으면 병합 */}
