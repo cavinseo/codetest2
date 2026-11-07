@@ -31,6 +31,7 @@ import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import { useRouter } from 'next/navigation';
 import { isProjectWriteRole } from '@/lib/project-roles';
 import { useProjectOverviewEditor } from '@/components/project/useProjectOverviewEditor';
+import { UNSAVED_WORKSHEET_MESSAGE, WorksheetDirtyContext } from '@/components/project/useUnsavedWorksheet';
 
 interface ProjectData extends ProductOverview {
     id: string;
@@ -77,10 +78,17 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
     const setMentorAnalysisDirty = useCallback((dirty: boolean) => { mentorAnalysisDirty.current = dirty; }, []);
     const qfdDirty = useRef(false);
     const setQfdDirty = useCallback((dirty: boolean) => { qfdDirty.current = dirty; }, []);
+    // 나머지 워크시트 표는 useUnsavedWorksheet 가 이 통로로 편집 상태를 알린다.
+    const dirtyWorksheets = useRef(new Set<string>());
+    const setWorksheetDirty = useCallback((reporterId: string, dirty: boolean) => {
+        if (dirty) dirtyWorksheets.current.add(reporterId);
+        else dirtyWorksheets.current.delete(reporterId);
+    }, []);
     const changeTab = (next: string) => {
         if (next === activeTab) return;
         if (mentorAnalysisDirty.current && !window.confirm('저장하지 않은 멘토 분석이 있습니다. 저장하지 않고 이동할까요?')) return;
         if (qfdDirty.current && !window.confirm('저장 중이거나 저장하지 못한 관계 강도가 있습니다. 저장하지 않고 이동할까요?')) return;
+        if (dirtyWorksheets.current.size > 0 && !window.confirm(UNSAVED_WORKSHEET_MESSAGE)) return;
         setActiveTab(next);
     };
     const [project, setProject] = useState<ProjectData | null>(null);
@@ -332,7 +340,9 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         if (tabComponents[tabId]) {
             return (
                 <WorksheetImageExport key={tabId} title={tabs.find(tab => tab.id === tabId)?.name ?? tabId} projectId={projectId} worksheetId={tabId}>
-                    <fieldset disabled={!canWriteProject && tabId !== 'qfd'} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
+                    <WorksheetDirtyContext.Provider value={setWorksheetDirty}>
+                        <fieldset disabled={!canWriteProject && tabId !== 'qfd'} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
+                    </WorksheetDirtyContext.Provider>
                 </WorksheetImageExport>
             );
         }

@@ -6,6 +6,7 @@ import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import { useWorksheetLoad } from './useWorksheetLoad';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 import { buildFlatSpecRowsFromFunctions, groupSpecRows, renameSpecGroup } from '@/lib/spec-table-utils';
 import FunctionAnalysisAssistant from '@/components/project/FunctionAnalysisAssistant';
 import SpecFastWizard from './SpecFastWizard';
@@ -87,6 +88,9 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         setRows(buildRowsFromSpecs(loadedSpecs));
         setIsDetailColumnCollapsed(specData.specDetailCollapsed === true);
     }, (error) => console.error('데이터 로딩 실패:', error));
+
+    // 세세부기능 열 접기는 PATCH 로 바로 저장되므로 편집 판정에서 뺀다.
+    const { markSaved } = useUnsavedWorksheet(rows, isReady);
 
     const updateDetailVisibility = async (collapsed: boolean) => {
         const previous = isDetailColumnCollapsed;
@@ -220,6 +224,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
 
             const loadedSpecs: SpecFunction[] = data.specFunctions || [];
             setRows(buildRowsFromSpecs(loadedSpecs));
+            markSaved();
             setActiveMode('manual');
             showToast(`${data.sheetName || '엑셀'}에서 AS-IS 스펙 ${data.specCount || loadedSpecs.length}개를 반영했습니다.`, 'success');
         } catch (error) {
@@ -312,6 +317,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                 body: JSON.stringify({ specFunctions: finalSpecs }),
             });
             if (res.ok) {
+                markSaved();
                 if (moveNext) {
                     showToast('저장되었습니다. 제품속성서로 이동합니다...', 'success');
                     setTimeout(() => {
@@ -346,6 +352,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
             }
 
             setRows([]);
+            markSaved();
             setShowResetConfirm(false);
             showToast('AS-IS 스펙표가 초기화되었습니다.', 'success');
         } catch (error) {

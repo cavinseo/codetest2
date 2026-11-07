@@ -8,6 +8,7 @@ import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import { useWorksheetLoad } from './useWorksheetLoad';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 
 type SalesPeriod = 'Y' | 'Y_PLUS_1';
 
@@ -126,6 +127,8 @@ export default function SalesTable({ projectId, onSaved }: Props) {
         }
     });
 
+    const { markSaved } = useUnsavedWorksheet(rows, isReady);
+
     const addRow = (period: SalesPeriod) => {
         setRows((current) => {
             const periodRows = current.filter((row) => row.period === period);
@@ -175,6 +178,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                     competitor: r.competitor ?? '',
                     order: r.order,
                 })));
+                markSaved();
                 showToast('저장되었습니다. 다음 워크시트로 이동합니다.');
                 setTimeout(() => onSaved?.(), 1000);
             } else {
@@ -198,6 +202,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
             });
             if (res.ok) {
                 setRows([createRow('Y'), createRow('Y_PLUS_1')]);
+                markSaved();
                 setShowResetConfirm(false);
                 showToast('초기화되었습니다.');
             }

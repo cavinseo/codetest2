@@ -6,6 +6,7 @@ import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import { useWorksheetLoad } from './useWorksheetLoad';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 import { buildImprovementSuggestionsFromQfd } from '@/lib/worksheet-links';
 
 interface ImprovementRow {
@@ -143,6 +144,8 @@ export default function ImprovementsTable({ projectId }: Props) {
         });
     }, [rows]);
 
+    const { markSaved } = useUnsavedWorksheet({ rows, features }, isReady);
+
     const customerNeedOptions = Array.from(new Set([
         ...getQfdSuggestions().map((suggestion) => suggestion.customerNeed),
         ...rows.map((row) => row.customerNeed),
@@ -276,6 +279,7 @@ export default function ImprovementsTable({ projectId }: Props) {
 
             const data = await response.json();
             applySavedItems(data.items || []);
+            markSaved();
             showToast('저장되었습니다.');
         } catch (error) {
             console.error(error);
@@ -302,6 +306,7 @@ export default function ImprovementsTable({ projectId }: Props) {
 
             setRows([]);
             setFeatures(createBlankFeatures());
+            markSaved();
             setShowResetConfirm(false);
             showToast('입력 내용이 초기화되었습니다.');
         } catch (error) {

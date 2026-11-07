@@ -9,6 +9,7 @@ import KanoInviteModal from '@/components/project/KanoInviteModal';
 import HeaderToast from '@/components/HeaderToast';
 import KanoResponseCollection from './KanoResponseCollection';
 import { useKanoResponseCollection } from './useKanoResponseCollection';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 import { useToast } from '@/components/useToast';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
 import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
@@ -150,6 +151,11 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     }, [loadData]);
     useEffect(() => { if (initialView) setActiveTab(initialView); }, [initialView]);
 
+    // 다시 불러오기는 화면을 둔 채 값만 바꿔 ready 가 내려가지 않으므로, 저장 뒤 기준은
+    // markSaved() 로만 다시 잡힌다. 초대·업로드 뒤 다시 불러와도 손대지 않은 질문은 서버
+    // 기본값 그대로라 기준과 같다.
+    const { markSaved } = useUnsavedWorksheet(kanoQuestions, !isLoading);
+
     const handleResetResponses = async () => {
         const ok = window.confirm('현재 프로젝트의 Kano 응답 데이터와 응답 완료 상태를 모두 리셋할까요? 이 작업은 되돌릴 수 없습니다.');
         if (!ok) return;
@@ -226,6 +232,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             
             showToast('Kano \uc124\ubb38 \uc9c8\ubb38\uc774 \uc800\uc7a5\ub418\uc5c8\uc2b5\ub2c8\ub2e4!', 'success');
             await loadData(); // \ucd5c\uc2e0 \ub370\uc774\ud130 \ub2e4\uc2dc \ubd88\ub7ec\uc624\uae30
+            markSaved();
         } catch (error: any) {
             console.error('Kano Save Error:', error);
             showToast(`\uc624\ub958: ${error.message}`, 'error');

@@ -6,6 +6,7 @@ import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import WorksheetLoadError from './WorksheetLoadError';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 import {
     groupRequirementsByCategory,
     getRequirementGroupSpans,
@@ -165,6 +166,24 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         loadRequirements();
     }, [loadRequirements]);
 
+    // 저장 버튼이 보낼 내용과 같은 모양으로 비교한다. 열어 둔 인라인 편집은 저장에 함께
+    // 실리므로 넣되, 값을 그대로 두면 원래 행과 같아져 편집으로 치지 않는다. 그룹 정렬을 거치는
+    // 까닭은 바뀐 것 없이 편집을 확정만 해도 행 순서가 다시 매겨져 편집으로 보이기 때문이다.
+    // 새 행 입력칸은 글자를 넣었을 때만 저장에 실리므로 그때만 넣는다.
+    const { markSaved } = useUnsavedWorksheet(
+        {
+            requirements: groupRequirementsByCategory(editingId
+                ? requirements.map((item) => (item.id === editingId ? { ...item, ...editValues } : item))
+                : requirements),
+            newRow: isAddingNew && Object.values(newRow).some(value => value.trim())
+                ? Object.values(newRow).map(value => value.trim())
+                : null,
+        },
+        // generateFromAttributes 도 isLoading 을 올렸다 내리므로 그것으로 판정하면 생성만 하고
+        // 저장하지 않은 결과가 기준이 된다. 불러온 프로젝트가 맞는지로만 본다.
+        !loadFailed && loadedProjectId === projectId,
+    );
+
     const createNewRequirement = (): Requirement | null => {
         if (!newRow.category.trim() || !newRow.requirement.trim()) {
             showToast('카테고리와 요구사항을 입력하세요.', 'error');
@@ -227,6 +246,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                     setNewRow({ category: '', subcategory: '', requirement: '' });
                     setIsAddingNew(false);
                 }
+                markSaved();
             } else {
                 showToast('저장에 실패했습니다.', 'error');
             }
@@ -291,6 +311,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
             const importedCount = data?.appliedCounts?.customerRequirements ?? data?.counts?.customerRequirements ?? 0;
             await loadRequirements();
+            markSaved();
             showToast(`고객요구사항도출표 ${importedCount}개 항목을 엑셀에서 반영했습니다.`, 'success');
         } catch (error) {
             console.error('고객요구사항도출표 엑셀 업로드 실패:', error);

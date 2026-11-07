@@ -6,6 +6,7 @@ import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import { useWorksheetLoad } from './useWorksheetLoad';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 
 type FutureCustomerRow = RoadmapLinkRow;
 
@@ -28,6 +29,8 @@ export default function TechRoadmapTable({ projectId }: Props) {
         const saved = data.rows.map((row: RoadmapLinkRow) => ({ ...row, category: row.category ?? '', techItem: row.techItem ?? '', currentLevel: row.currentLevel ?? '', targetLevel: row.targetLevel ?? row.owner ?? '' }));
         setRows(improvementData ? mergeRoadmapWithCustomerNeeds(saved, getImprovementCustomerNeeds(improvementData.items || [])) : saved);
     });
+
+    const { markSaved } = useUnsavedWorksheet(rows, isReady);
 
     const addRow = () => {
         setRows((prev) => [...prev, {
@@ -86,6 +89,7 @@ export default function TechRoadmapTable({ projectId }: Props) {
                 targetLevel: r.targetLevel ?? r.owner ?? '',
                 order: r.order,
             })));
+            markSaved();
             showToast('저장되었습니다.');
         } catch {
             showToast('저장에 실패했습니다.', 'error');

@@ -5,6 +5,7 @@ import HeaderToast from '@/components/HeaderToast';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 import AttributeMentorWizard from './AttributeMentorWizard';
 import type { MentorAppliedRow } from '@/lib/attribute-mentor-utils';
 import {
@@ -450,6 +451,16 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         loadData();
     }, [loadData]);
 
+    const savedAttributes = mergeSegmentCustomerNames(rows.map(toStoredRow)).map((r, i) => ({
+        ...r,
+        productName: productName,
+        techCapability: techCapability,
+        order: i,
+    }));
+    // 화면 행이 아니라 저장할 모양으로 비교한다. 빈 고객명 칸을 하나 늘리거나 같은 세분시장
+    // 고객명을 합치기만 해도 화면 행은 바뀌지만 저장 내용은 그대로이기 때문이다.
+    const { markSaved } = useUnsavedWorksheet(savedAttributes, !isLoading && !loadFailed && loadedProjectId === projectId);
+
     const createRow = (order: number, overrides: Partial<ProductAttributeRow> = {}): ProductAttributeRow => ({
         id: `attr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         productName: '',
@@ -519,12 +530,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    attributes: mergeSegmentCustomerNames(rows.map(toStoredRow)).map((r, i) => ({
-                        ...r,
-                        productName: productName,
-                        techCapability: techCapability,
-                        order: i,
-                    })),
+                    attributes: savedAttributes,
                     ...(options.confirmCascade ? { confirmCascade: true } : {}),
                 }),
             });
@@ -542,6 +548,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             }
 
             if (res.ok) {
+                markSaved();
                 showToast('저장되었습니다.', 'success');
                 onSaved?.();
             } else {
@@ -598,6 +605,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
 
             const importedCount = data?.appliedCounts?.productAttributes ?? data?.counts?.productAttributes ?? 0;
             await loadData();
+            markSaved();
             showToast(`제품속성표 ${importedCount}개 항목을 엑셀에서 반영했습니다.`, 'success');
         } catch (error) {
             console.error('제품속성표 엑셀 업로드 실패:', error);
@@ -622,6 +630,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             }
             setRows([]);
             setAdditionalTechCapability('');
+            markSaved();
             setShowResetConfirm(false);
             showToast('초기화되었습니다.', 'success');
         } catch (error) {

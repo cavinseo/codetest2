@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import WorksheetLoadError from './WorksheetLoadError';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 
 interface AssetItem {
     id: string;
@@ -46,6 +47,8 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
         loadData();
     }, [loadData]);
 
+    const { markSaved } = useUnsavedWorksheet(assets, !isLoading && !loadFailed && loadedProjectId === projectId);
+
     const addRow = (type: 'CORE' | 'COMPLEMENTARY') => {
         const newRow: AssetItem = {
             id: `new_${Date.now()}`,
@@ -77,6 +80,7 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
                 body: JSON.stringify({ assets })
             });
             if (res.ok) {
+                markSaved();
                 alert('저장되었습니다.');
                 loadData();
             }
