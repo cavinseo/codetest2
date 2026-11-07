@@ -25,7 +25,7 @@ const MENTOR_QUESTIONS_SPEC = `{
 
 const ATTRIBUTE_DRAFT_SPEC = `{
   "rows": [
-    { "marketSegment": "세분시장", "customerName": "고객명",
+    { "marketSegment": "세분시장", "customerName": "고객명1, 고객명2",
       "customerNeed": "고객 니즈", "benefit": "제공혜택" }
   ],
   "issues": [ { "severity": "info | warning | error", "message": "한국어 설명" } ]
@@ -61,7 +61,8 @@ export function buildAttributeDraftPrompts(input: AttributeDraftInput): AiPrompt
     return {
         system: `당신은 제품기획 워크시트(WS-3 제품속성서) 작성을 돕는 멘토입니다.
 사용자의 답변을 표의 행으로 정리하세요.
-같은 세분시장 안에서 고객 니즈와 제공혜택이 동일하면 같은 문장을 그대로 반복해 넣으세요(표에서 병합되어 한 번만 표기됩니다).
+고객명은 세분시장에 속합니다. 고객마다 행을 나누지 말고 그 세분시장의 고객명을 모두 쉼표로 구분해 customerName 한 칸에 넣으세요.
+고객 니즈와 제공혜택은 고객별이 아니라 세분시장 단위로 작성하세요.
 반드시 아래 JSON 형식으로만 답하세요.
 ${ATTRIBUTE_DRAFT_SPEC}`,
         user: `제품명: ${input.project.name}

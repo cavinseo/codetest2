@@ -1,5 +1,6 @@
 // WS-3 제품속성서 작성을 돕는 규칙 기반 멘토링 엔진.
 // 네트워크나 외부 모델 없이 동작하므로 항상 사용할 수 있고, LLM 프로바이더 실패 시 폴백으로도 쓰인다.
+import { joinCustomerNames } from './product-attributes-utils';
 import type {
     AttributeDraftInput,
     AttributeDraftIssue,
@@ -113,15 +114,13 @@ export function generateAttributeDraft(input: AttributeDraftInput): AttributeDra
             issues.push({ severity: 'warning', message: `"${segment}"의 고객 문제가 없어 빈 칸으로 두었습니다.` });
         }
 
-        // 고객명이 여러 명이면 각각 행을 만들고, 문제·혜택은 세분시장 단위로 같은 값을 넣는다.
-        // 같은 값이 반복되면 WS-3 표에서 하나로 병합돼 보인다.
-        const customerNames = names.length > 0 ? names : [''];
-        const customerNeed = problems.join(', ');
-        const benefit = benefits.join(', ');
-
-        for (const customerName of customerNames) {
-            rows.push({ marketSegment: segment, customerName, customerNeed, benefit });
-        }
+        // 고객명은 세분시장에 속하고 문제·혜택도 세분시장 단위이므로 세분시장마다 한 행만 만든다.
+        rows.push({
+            marketSegment: segment,
+            customerName: joinCustomerNames(names),
+            customerNeed: problems.join(', '),
+            benefit: benefits.join(', '),
+        });
     }
 
     if (segments.length > 6) {

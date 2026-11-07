@@ -33,7 +33,7 @@ async function fill(element: HTMLInputElement | null, value: string) {
 }
 
 async function addNeed() {
-    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="같은 고객명에 고객니즈 추가"]')!.click(); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="같은 세분시장 항목 추가"]')!.click(); });
     const newRow = container.querySelectorAll('tbody tr')[1];
     const needInput = newRow.querySelector<HTMLInputElement>('input[list^="cn_list_"]')!;
     await fill(needInput, '외부 인력 도착 전 복구');
@@ -142,7 +142,7 @@ it('세분시장 항목 추가는 기존 행 뒤에 빈 항목을 만들고 다�
     expect(savedRows).toHaveLength(3);
     expect(savedRows[1]).toMatchObject({
         marketSegment: originalRows[0].marketSegment,
-        customerName: '', customerNeed: '', benefit: '', attribute: '', order: 1,
+        customerName: originalRows[0].customerName, customerNeed: '', benefit: '', attribute: '', order: 1,
     });
     expect(savedRows[2]).toMatchObject({ ...originalRows[1], order: 2 });
 });
@@ -176,4 +176,95 @@ it('선택된 제품속성의 적용기술을 자동 표시하고 작성자 추�
     await mount();
     expect(automatic()).toContain('진단 엔진');
     expect(manual().value).toBe('작성자 추가 기술\n현장 경험');
+});
+
+function customerInputs() {
+    return [...container.querySelectorAll<HTMLInputElement>('input[aria-label^="고객명 "]')];
+}
+
+function clickCustomerButton(title: string, index = 0) {
+    return act(async () => { container.querySelectorAll<HTMLButtonElement>(`button[title="${title}"]`)[index].click(); });
+}
+
+const legacyRows = [
+    { ...originalRows[0], id: 'a', customerName: '고객A', customerNeed: '니즈1', benefit: '혜택1', attribute: '속성1', order: 0 },
+    { ...originalRows[0], id: 'b', customerName: '고객B', customerNeed: '니즈2', benefit: '혜택2', attribute: '속성2', order: 1 },
+];
+
+it('세분시장 하나에 고객명을 여러 개 입력하면 모든 행에 합쳐 저장하고 다시 불러온다', async () => {
+    await mount();
+    expect(customerInputs().map(item => item.value)).toEqual(['넥스트텍']);
+    expect(customerInputs()[0].closest('td')?.rowSpan).toBe(2);
+    expect(container.querySelector('button[title="같은 고객명에 고객니즈 추가"]')).toBeNull();
+
+    await clickCustomerButton('이 세분시장에 고객명 추가');
+    await fill(customerInputs()[1], '에이원');
+    await save();
+    expect(savedRows.map(row => row.customerName)).toEqual(['넥스트텍, 에이원', '넥스트텍, 에이원']);
+    expect(savedRows.map(row => row.customerNeed)).toEqual(originalRows.map(row => row.customerNeed));
+    expect(savedRows[0]).not.toHaveProperty('customerNames');
+
+    await act(async () => { root.unmount(); });
+    root = createRoot(container);
+    await mount();
+    expect(customerInputs().map(item => item.value)).toEqual(['넥스트텍', '에이원']);
+
+    await clickCustomerButton('고객명 삭제');
+    await save();
+    expect(savedRows.map(row => row.customerName)).toEqual(['에이원', '에이원']);
+});
+
+it('고객 니즈는 고객명을 고르지 않고 세분시장 단위로 추가되며 고객명을 이어받는다', async () => {
+    await mount();
+    const newId = await addNeed();
+    await save();
+    expect(savedRows.find(row => row.id === newId)).toMatchObject({
+        marketSegment: originalRows[0].marketSegment, customerName: '넥스트텍', customerNeed: '외부 인력 도착 전 복구',
+    });
+});
+
+it('쉼표로 입력한 고객명은 칸을 벗어나면 나뉘고 빈 칸은 저장되지 않는다', async () => {
+    await mount();
+    await fill(customerInputs()[0], '갑, 을');
+    await act(async () => { customerInputs()[0].focus(); customerInputs()[0].blur(); });
+    expect(customerInputs().map(item => item.value)).toEqual(['갑', '을']);
+
+    await clickCustomerButton('이 세분시장에 고객명 추가');
+    await save();
+    expect(savedRows[0].customerName).toBe('갑, 을');
+});
+
+it('고객명별로 다른 니즈가 저장된 기존 데이터는 니즈를 모두 남기고 고객명만 합치며 저장 전에는 DB 를 쓰지 않는다', async () => {
+    savedRows = legacyRows.map(row => ({ ...row }));
+    await mount();
+    expect(customerInputs().map(item => item.value)).toEqual(['고객A', '고객B']);
+    expect(input('a', 'cn')?.value).toBe('니즈1');
+    expect(input('b', 'cn')?.value).toBe('니즈2');
+    const posts = () => vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(posts()).toHaveLength(0);
+
+    await save();
+    expect(savedRows.map(row => [row.id, row.customerName, row.customerNeed, row.benefit, row.attribute])).toEqual([
+        ['a', '고객A, 고객B', '니즈1', '혜택1', '속성1'],
+        ['b', '고객A, 고객B', '니즈2', '혜택2', '속성2'],
+    ]);
+});
+
+it('고객명만 달랐던 같은 내용의 행은 첫 행 하나로 합친다', async () => {
+    savedRows = [legacyRows[0], { ...legacyRows[0], id: 'dup', customerName: '고객B', order: 1 }];
+    await mount();
+    await save();
+    expect(savedRows.map(row => [row.id, row.customerName])).toEqual([['a', '고객A, 고객B']]);
+});
+
+it('떨어져 있는 같은 세분시장도 고객명을 함께 바꾸고, 다른 세분시장은 건드리지 않는다', async () => {
+    savedRows = [
+        { ...legacyRows[0], customerName: '고객A' },
+        { ...legacyRows[1], marketSegment: '다른 시장', customerName: '고객C' },
+        { ...legacyRows[1], id: 'c', customerNeed: '니즈3', customerName: '고객A', order: 2 },
+    ];
+    await mount();
+    await fill(customerInputs()[0], '고객Z');
+    await save();
+    expect(savedRows.map(row => row.customerName)).toEqual(['고객Z', '고객C', '고객Z']);
 });

@@ -35,7 +35,7 @@ describe('WS-3 멘토링 문진', () => {
 });
 
 describe('WS-3 초안 생성', () => {
-    it('세분시장별 고객명마다 행을 만들고 니즈·혜택은 같은 값을 넣는다', () => {
+    it('세분시장마다 한 행을 만들고 여러 고객명을 한 칸에 합친다', () => {
         const result = generateAttributeDraft({
             project,
             answers: {
@@ -49,13 +49,7 @@ describe('WS-3 초안 생성', () => {
         expect(result.rows).toEqual([
             {
                 marketSegment: '소규모 비영리 동호회',
-                customerName: '운영진',
-                customerNeed: '명단과 회비를 혼자 관리',
-                benefit: '운영 시간 절감',
-            },
-            {
-                marketSegment: '소규모 비영리 동호회',
-                customerName: '총무',
+                customerName: '운영진, 총무',
                 customerNeed: '명단과 회비를 혼자 관리',
                 benefit: '운영 시간 절감',
             },

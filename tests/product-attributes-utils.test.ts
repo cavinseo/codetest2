@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildCustomerNamesByMarketSegment,
+    joinCustomerNames,
+    mergeSegmentCustomerNames,
+    normalizeSegmentRows,
+    splitCustomerNames,
     buildSpecPickerRows,
     dedupeByAttributeName,
     getBenefitSpan,
-    getCustomerNameSpan,
     getCustomerNeedSpan,
     getMarketSegmentSpan,
     getAppliedTechnologiesForAttributes,
@@ -83,7 +86,7 @@ describe('product attribute technology linking', () => {
             .toEqual(['AI 분석', '통신 기술']);
     });
 
-    it('groups a customer across multiple needs within the same market segment', () => {
+    it('groups rows of the same market segment regardless of customer name', () => {
         const rows = [
             { marketSegment: '구매자시장', customerName: '1020 팬덤 소비자' },
             { marketSegment: '구매자시장', customerName: '1020 팬덤 소비자' },
@@ -93,10 +96,6 @@ describe('product attribute technology linking', () => {
 
         expect(getMarketSegmentSpan(rows, 0)).toBe(3);
         expect(getMarketSegmentSpan(rows, 1)).toBe(0);
-        expect(getCustomerNameSpan(rows, 0)).toBe(2);
-        expect(getCustomerNameSpan(rows, 1)).toBe(0);
-        expect(getCustomerNameSpan(rows, 2)).toBe(1);
-        expect(getCustomerNameSpan(rows, 3)).toBe(1);
     });
 
     it('merges identical customer needs and benefits inside one market segment', () => {
@@ -178,6 +177,55 @@ describe('product attribute technology linking', () => {
             구매자시장: ['1020 팬덤 소비자', '창작 의뢰자'],
             작가시장: ['프리랜서 작가'],
         });
+    });
+
+    it('splits comma-joined customer names into WS-4 sub segments', () => {
+        expect(buildCustomerNamesByMarketSegment([
+            { marketSegment: '시장', customerName: 'A, B' },
+            { marketSegment: '시장', customerName: 'B，C\nD' },
+        ])).toEqual({ 시장: ['A', 'B', 'C', 'D'] });
+    });
+
+    it('joins customer names without blanks or duplicates', () => {
+        expect(splitCustomerNames(' A , ,B,A ')).toEqual(['A', 'B']);
+        expect(splitCustomerNames(null)).toEqual([]);
+        expect(joinCustomerNames(['A', ' ', 'B, C', 'A', null])).toBe('A, B, C');
+    });
+
+    it('shares customer names across all rows of a segment, including non-adjacent ones', () => {
+        const merged = mergeSegmentCustomerNames([
+            { id: '1', marketSegment: 'X', customerName: 'A' },
+            { id: '2', marketSegment: 'Y', customerName: 'C' },
+            { id: '3', marketSegment: ' X ', customerName: 'B' },
+            { id: '4', marketSegment: '', customerName: '미분류, 고객' },
+            { id: '5', marketSegment: null, customerName: null },
+        ]);
+        expect(merged.map(row => row.customerName)).toEqual(['A, B', 'C', 'A, B', '미분류, 고객', '']);
+        expect(merged.map(row => row.id)).toEqual(['1', '2', '3', '4', '5']);
+    });
+
+    it('keeps every different need when merging customers of a segment', () => {
+        const rows = [
+            { id: '1', marketSegment: 'X', customerName: 'A', customerNeed: '니즈1', benefit: '혜택1', attribute: '속성1' },
+            { id: '2', marketSegment: 'X', customerName: 'B', customerNeed: '니즈2', benefit: '혜택2', attribute: '속성2' },
+        ];
+        expect(normalizeSegmentRows(rows)).toEqual([
+            { ...rows[0], customerName: 'A, B' },
+            { ...rows[1], customerName: 'A, B' },
+        ]);
+    });
+
+    it('drops only rows that become identical, keeping the first id for WS-4 references', () => {
+        const row = { marketSegment: 'X', customerNeed: '니즈', benefit: '혜택', attribute: '속성' };
+        const normalized = normalizeSegmentRows([
+            { ...row, id: 'first', customerName: 'A' },
+            { ...row, id: 'other-attribute', customerName: 'A', attribute: '다른 속성' },
+            { ...row, id: 'duplicate', customerName: 'B' },
+            { id: 'blank-1', marketSegment: '', customerName: '', customerNeed: '', benefit: '', attribute: '' },
+            { id: 'blank-2', marketSegment: '', customerName: '', customerNeed: '', benefit: '', attribute: '' },
+        ]);
+        expect(normalized.map(item => item.id)).toEqual(['first', 'other-attribute', 'blank-1', 'blank-2']);
+        expect(normalized[0].customerName).toBe('A, B');
     });
 
     it('keeps only the first row for duplicate product attributes', () => {

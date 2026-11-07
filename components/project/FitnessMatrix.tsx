@@ -6,6 +6,7 @@ import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import {
     buildCustomerNamesByMarketSegment,
+    splitCustomerNames,
     dedupeByAttributeName,
 } from '@/lib/product-attributes-utils';
 
@@ -82,7 +83,8 @@ function createSubSegmentsFromCustomerNames(customerNames: string[], fallbackPre
 function mergeCustomerNamesIntoSubSegments(market: Market, customerNames: string[]): Market {
     if (customerNames.length === 0) return market;
 
-    const existingNames = new Set(market.subSegments.map((subSegment) => subSegment.name.trim()).filter(Boolean));
+    // 예전에 "A, B" 한 칸으로 입력해 평가까지 저장된 세분화가 있으면 A·B 빈 열을 또 만들지 않는다.
+    const existingNames = new Set(market.subSegments.flatMap((subSegment) => splitCustomerNames(subSegment.name)));
     const missingSubSegments = customerNames
         .filter((customerName) => !existingNames.has(customerName))
         .map((customerName, index) => ({

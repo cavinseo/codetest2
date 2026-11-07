@@ -4,6 +4,7 @@ import type { ProductOverview } from './product-overview';
 import type { WorksheetAnalysis } from './mentor-worksheet-analysis';
 import { formatMoney } from './money';
 import { buildAssetReportTables, buildFitnessReportTables, buildFundingPlanReportTable, buildFundingSourceReportTable, buildKanoReportTable, buildQfdReportTables } from './final-report-worksheet-tables';
+import { normalizeSegmentRows } from './product-attributes-utils';
 import { fitImageToBody, A4_PORTRAIT_BODY } from './report-image-fit';
 import { buildSpecTree } from './spec-tree';
 
@@ -101,7 +102,7 @@ function appendProductDiagnosis(writer: ReportWriter, worksheets: FinalReportWor
     writer.startWorksheetPage('제품속성표 (WS-3)', 'WS-3', analysis.attributes?.analysis);
     writer.addParagraph(`제품(서비스) 명 : ${displayValue(worksheets.productAttributes.find(row => row.productName?.trim())?.productName)}`);
     writer.addTable('WS-3 제품속성서', ['No', '세분시장', '고객명', '고객 니즈', '제공혜택', '제품속성'],
-        worksheets.productAttributes.map((row, index) => [index + 1, row.marketSegment, row.customerName, row.customerNeed, row.benefit, row.attribute]), [24, 53, 46, 139, 131, 118], [1, 2, 3, 4]);
+        normalizeSegmentRows(worksheets.productAttributes).map((row, index) => [index + 1, row.marketSegment, row.customerName, row.customerNeed, row.benefit, row.attribute]), [24, 53, 46, 139, 131, 118], [1, 2, 3, 4]);
     const capabilities = Array.from(new Set(worksheets.productAttributes.map(row => row.techCapability).filter((text): text is string => Boolean(text?.trim()))));
     if (capabilities.length) { writer.addHeading('공통 기술 역량 (WS-3)'); writer.addTable('WS-3 기술 역량', ['기술 역량'], capabilities.map(text => [text])); }
 

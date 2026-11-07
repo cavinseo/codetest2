@@ -13,22 +13,36 @@ import {
     getAdditionalTechnologies,
     getAppliedTechnologiesForAttributes,
     getBenefitSpan,
-    getCustomerNameSpan,
     getCustomerNeedSpan,
     getMarketSegmentSpan,
+    joinCustomerNames,
+    mergeSegmentCustomerNames,
+    normalizeSegmentRows,
+    splitCustomerNames,
 } from '@/lib/product-attributes-utils';
 import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
 
 interface ProductAttributeRow {
     id: string;
     productName: string;
-    customerName: string;
+    // 입력 중인 빈 칸을 유지해야 하므로 화면에서는 배열로 들고, 저장할 때 customerName 한 칸으로 합친다.
+    customerNames: string[];
     marketSegment: string;
     customerNeed: string;
     benefit: string;
     attribute: string;
     techCapability: string;
     order: number;
+}
+
+function toStoredRow({ customerNames, ...row }: ProductAttributeRow) {
+    return { ...row, customerName: joinCustomerNames(customerNames) };
+}
+
+// 세분시장 이름이 겹치게 되면 양쪽 고객명을 하나로 합친다.
+function syncSegmentCustomerNames(rows: ProductAttributeRow[]): ProductAttributeRow[] {
+    return mergeSegmentCustomerNames(rows.map(row => ({ ...row, customerName: joinCustomerNames(row.customerNames) })))
+        .map(({ customerName, ...row }) => ({ ...row, customerNames: splitCustomerNames(customerName) }));
 }
 
 interface SpecFunction {
@@ -206,6 +220,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const excelInputRef = useRef<HTMLInputElement | null>(null);
     const automaticTechnologies = getAppliedTechnologiesForAttributes(specFunctions, rows.map(row => row.attribute));
     const techCapability = combineTechnologies(automaticTechnologies, additionalTechCapability);
+    const customerNameOptions = [...new Set(rows.flatMap(row => row.customerNames.map(name => name.trim())).filter(Boolean))];
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -231,10 +246,11 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 const data = await attrRes.json();
                 if (!Array.isArray(data.attributes)) throw new Error('제품 속성 응답 형식 오류');
                 loadedAttrs = data.attributes;
-                setRows(loadedAttrs.map((a: any) => ({
+                // 고객명별로 저장된 기존 행도 세분시장 단위로 합쳐 보여 준다. DB 는 사용자가 저장할 때만 바뀐다.
+                setRows(normalizeSegmentRows<any>(loadedAttrs).map((a: any) => ({
                     id: a.id,
                     productName: a.productName || '',
-                    customerName: a.customerName || '',
+                    customerNames: splitCustomerNames(a.customerName),
                     marketSegment: a.marketSegment || '',
                     customerNeed: a.customerNeed || '',
                     benefit: a.benefit || '',
@@ -285,7 +301,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const createRow = (order: number, overrides: Partial<ProductAttributeRow> = {}): ProductAttributeRow => ({
         id: `attr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         productName: '',
-        customerName: '',
+        customerNames: [],
         marketSegment: '',
         customerNeed: '',
         benefit: '',
@@ -317,14 +333,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     };
 
     const addMarketSegmentRow = (row: ProductAttributeRow) => {
-        addRowAfter(row, { marketSegment: row.marketSegment });
-    };
-
-    const addCustomerNeedRow = (row: ProductAttributeRow) => {
-        addRowAfter(row, {
-            marketSegment: row.marketSegment,
-            customerName: row.customerName,
-        });
+        addRowAfter(row, { marketSegment: row.marketSegment, customerNames: row.customerNames });
     };
 
     const addProductAttribute = (row: ProductAttributeRow) => {
@@ -333,14 +342,13 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             if (targetIndex === -1) return currentRows;
             const sameCustomerNeedAndBenefit = (item: ProductAttributeRow) =>
                 item.marketSegment === row.marketSegment &&
-                item.customerName === row.customerName &&
                 item.customerNeed === row.customerNeed &&
                 item.benefit === row.benefit;
             let insertIndex = targetIndex + 1;
             while (insertIndex < currentRows.length && sameCustomerNeedAndBenefit(currentRows[insertIndex])) insertIndex++;
             return insertRowAt(currentRows, insertIndex, {
                 marketSegment: row.marketSegment,
-                customerName: row.customerName,
+                customerNames: row.customerNames,
                 customerNeed: row.customerNeed,
                 benefit: row.benefit,
             });
@@ -359,7 +367,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    attributes: rows.map((r, i) => ({
+                    attributes: mergeSegmentCustomerNames(rows.map(toStoredRow)).map((r, i) => ({
                         ...r,
                         productName: productName,
                         techCapability: techCapability,
@@ -470,16 +478,12 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         }
     };
 
-    const getUniqueValues = (field: 'marketSegment' | 'customerName' | 'customerNeed' | 'benefit' | 'attribute' | 'techCapability') => {
+    const getUniqueValues = (field: 'marketSegment' | 'customerNeed' | 'benefit' | 'attribute' | 'techCapability') => {
         return [...new Set(rows.map(r => r[field]).filter(Boolean))];
     };
 
     const getMarketSegmentRowSpan = (index: number) => {
         return getMarketSegmentSpan(rows, index);
-    };
-
-    const getCustomerNameRowSpan = (index: number) => {
-        return getCustomerNameSpan(rows, index);
     };
 
     // 같은 세분시장의 고객니즈를 묶고, 제공혜택은 같은 니즈 안에서만 병합한다.
@@ -497,10 +501,21 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         setRows(rows.map(r => targetIds.has(r.id) ? { ...r, marketSegment: value } : r));
     };
 
-    const updateCustomerNameGroup = (startIndex: number, value: string) => {
-        const span = getCustomerNameRowSpan(startIndex);
-        const targetIds = new Set(rows.slice(startIndex, startIndex + span).map(r => r.id));
-        setRows(rows.map(r => targetIds.has(r.id) ? { ...r, customerName: value } : r));
+    // 같은 세분시장이 떨어진 위치에 있어도 고객명은 하나이므로 세분시장 이름으로 찾아 모두 바꾼다.
+    const updateSegmentCustomerNames = (row: ProductAttributeRow, customerNames: string[]) => {
+        const segment = row.marketSegment.trim();
+        setRows(current => current.map(item =>
+            item.id === row.id || (segment && item.marketSegment.trim() === segment) ? { ...item, customerNames } : item
+        ));
+    };
+
+    // 쉼표로 여러 이름을 붙여 넣거나 입력했으면 칸을 나눠서, 저장 후 다시 불러온 모습과 같게 한다.
+    const expandCustomerNames = (row: ProductAttributeRow, customerNames: string[]) => {
+        const expanded = customerNames.flatMap(name => {
+            const names = splitCustomerNames(name);
+            return names.length > 1 ? names : [name];
+        });
+        if (expanded.length !== customerNames.length) updateSegmentCustomerNames(row, expanded);
     };
 
     // 병합된 칸을 수정하면 묶여 있던 행 전체에 같은 값을 적용한다.
@@ -567,13 +582,13 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         const startOrder = rows.length;
         const appended = mentorRows.map((row, index) => createRow(startOrder + index, {
             marketSegment: row.marketSegment,
-            customerName: row.customerName,
+            customerNames: splitCustomerNames(row.customerName),
             customerNeed: row.customerNeed,
             benefit: row.benefit,
             attribute: row.attribute,
         }));
 
-        setRows([...rows, ...appended].map((r, order) => ({ ...r, order })));
+        setRows(syncSegmentCustomerNames([...rows, ...appended]).map((r, order) => ({ ...r, order })));
 
         // 스펙에서 가져온 속성은 표에서 색으로 구분되도록 표시해 둔다.
         const specNames = new Set(specFunctions.map((spec) => spec.name));
@@ -614,7 +629,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-xl font-display font-bold text-white">[WS-3] 제품속성서</h2>
-                    <p className="text-sm text-gray-500 mt-1">세분시장별로 여러 고객명, 고객 니즈, 제공혜택, 제품속성, 기술역량을 행 단위로 정의합니다</p>
+                    <p className="text-sm text-gray-500 mt-1">세분시장별로 고객명을 여러 개 입력하고, 고객 니즈·제공혜택·제품속성은 세분시장 단위로 추가합니다</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <button
@@ -767,7 +782,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         <tbody>
                             {rows.map((row, idx) => {
                                 const marketSegmentRowSpan = getMarketSegmentRowSpan(idx);
-                                const customerNameRowSpan = getCustomerNameRowSpan(idx);
+                                const customerNames = row.customerNames.length > 0 ? row.customerNames : [''];
                                 const customerNeedRowSpan = getCustomerNeedRowSpan(idx);
                                 const benefitRowSpan = getBenefitRowSpan(idx);
 
@@ -785,6 +800,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                                     list={`ms_list_${row.id}`}
                                                     value={row.marketSegment}
                                                     onChange={(e) => updateMarketSegmentGroup(idx, e.target.value)}
+                                                    onBlur={() => setRows(syncSegmentCustomerNames)}
                                                     className="w-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
                                                     placeholder="입력"
                                                 />
@@ -807,32 +823,49 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                             </div>
                                         </td>
                                     )}
-                                    {/* 고객명 */}
-                                    {customerNameRowSpan > 0 && (
-                                        <td rowSpan={customerNameRowSpan} className="p-0 align-top bg-white/[0.01] border-r border-white/[0.04]">
+                                    {/* 고객명 - 세분시장 전체에 걸친 칸 하나에 여러 이름을 입력한다 */}
+                                    {marketSegmentRowSpan > 0 && (
+                                        <td rowSpan={marketSegmentRowSpan} className="p-0 align-top bg-white/[0.01] border-r border-white/[0.04]">
                                             <div className="flex h-full min-h-[44px] flex-col">
-                                                <input
-                                                    type="text"
-                                                    list={`customer_name_list_${row.id}`}
-                                                    value={row.customerName}
-                                                    onChange={(e) => updateCustomerNameGroup(idx, e.target.value)}
-                                                    className="w-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                                    placeholder="입력"
-                                                />
+                                                {customerNames.map((name, nameIndex) => (
+                                                    <div key={nameIndex} className="flex items-center">
+                                                        <input
+                                                            type="text"
+                                                            list={`customer_name_list_${row.id}`}
+                                                            aria-label={`고객명 ${nameIndex + 1}`}
+                                                            value={name}
+                                                            onChange={(e) => updateSegmentCustomerNames(row, customerNames.map((item, i) => i === nameIndex ? e.target.value : item))}
+                                                            onBlur={() => expandCustomerNames(row, customerNames)}
+                                                            className="min-w-0 flex-1 px-3 py-2 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
+                                                            placeholder="입력"
+                                                        />
+                                                        {customerNames.length > 1 && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => updateSegmentCustomerNames(row, customerNames.filter((_, i) => i !== nameIndex))}
+                                                                className="mr-1 flex-shrink-0 rounded px-1 text-xs text-gray-600 hover:text-rose-400 transition-colors"
+                                                                title="고객명 삭제"
+                                                                aria-label={`고객명 ${nameIndex + 1} 삭제`}
+                                                            >
+                                                                ×
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
                                                 <datalist id={`customer_name_list_${row.id}`}>
-                                                    {getUniqueValues('customerName').map((v, i) => <option key={i} value={v} />)}
+                                                    {customerNameOptions.map((v, i) => <option key={i} value={v} />)}
                                                 </datalist>
                                                 <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2">
                                                     <span className="text-[10px] text-gray-600 whitespace-nowrap">
-                                                        {customerNameRowSpan > 1 ? `${customerNameRowSpan}개 니즈` : '1개 니즈'}
+                                                        {customerNames.filter(item => item.trim()).length}개 고객명
                                                     </span>
                                                     <button
                                                         type="button"
-                                                        onClick={() => addCustomerNeedRow(row)}
+                                                        onClick={() => updateSegmentCustomerNames(row, [...customerNames, ''])}
                                                         className="rounded-md border border-cyan-500/20 px-2 py-1 text-[10px] text-cyan-300 hover:bg-cyan-500/10 transition-colors whitespace-nowrap"
-                                                        title="같은 고객명에 고객니즈 추가"
+                                                        title="이 세분시장에 고객명 추가"
                                                     >
-                                                        + 니즈
+                                                        + 고객명
                                                     </button>
                                                 </div>
                                             </div>
@@ -983,7 +1016,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 <AttributeMentorWizard
                     projectId={projectId}
                     specFunctions={specFunctions}
-                    analysisContext={{ productName, existingRows: rows.map(row => ({ ...row, techCapability })) }}
+                    analysisContext={{ productName, existingRows: rows.map(row => ({ ...toStoredRow(row), techCapability })) }}
                     onApply={applyMentorResult}
                     onClose={() => setShowMentor(false)}
                     onNotify={showToast}
