@@ -17,7 +17,7 @@ export function inviteAccessExpiresAt(invite: InviteAccess): Date {
     }
     const deadlines = [invite.program.endsAt.getTime()];
     if (invite.usedAt) {
-        // 명시된 이용만료일이 없는 구형 계정만 기존 기간 규칙을 적용한다.
+        // 이용만료일이 저장되지 않은 코드는 첫 로그인 시점부터 기간을 센다.
         deadlines.push(invite.usedAt.getTime() + invite.accessDurationDays * 86_400_000);
     } else {
         deadlines.push(invite.expiresAt.getTime());

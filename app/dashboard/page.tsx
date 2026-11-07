@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { groupProjectsByProgram } from '@/lib/project-grouping';
 import Link from 'next/link';
 import { canCreateProject, type MemberRole } from '@/lib/member-roles';
+import { clearStoredProgramFilter } from '@/lib/member-program-filter';
 import ThemeToggle from '@/components/ThemeToggle';
 import ProjectRequestsPanel from '@/components/ProjectRequestsPanel';
 import NewProjectModal from '@/components/dashboard/NewProjectModal';
@@ -108,6 +109,7 @@ export default function DashboardPage() {
             const response = await fetch('/api/auth/logout', { method: 'POST' });
             if (!response.ok) throw new Error('로그아웃 실패');
             clearSelectedProgramId();
+            clearStoredProgramFilter();
             window.location.href = '/login';
         } catch (error) {
             console.error(error);

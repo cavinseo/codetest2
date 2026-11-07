@@ -132,15 +132,13 @@ describe('초대 코드 발행 규칙', () => {
         expect(createInvite).not.toHaveBeenCalled();
     });
 
-    it('신규 코드는 지정한 한국 날짜의 마지막 시각을 가입과 이용 기한에 저장한다', async () => {
+    it('신규 코드는 지정한 한국 날짜의 마지막 시각을 최초 접속 기한에만 저장한다', async () => {
         const res = await POST(jsonRequest('POST', {
             email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', expiresAt: '2026-10-15',
         }));
         expect(res.status).toBe(200);
-        expect(createInvite.mock.calls[0][0].data).toMatchObject({
-            expiresAt: new Date('2026-10-15T14:59:59.999Z'),
-            accessExpiresAt: new Date('2026-10-15T14:59:59.999Z'),
-        });
+        expect(createInvite.mock.calls[0][0].data.expiresAt).toEqual(new Date('2026-10-15T14:59:59.999Z'));
+        expect(createInvite.mock.calls[0][0].data).not.toHaveProperty('accessExpiresAt');
         expect((await res.json()).invite.expiresAt).toBe('2026-10-15T14:59:59.999Z');
         expect(sendMail.mock.calls[0][0].html).toContain('/login?mode=invite');
         expect(lock).toHaveBeenCalled();
@@ -192,7 +190,7 @@ describe('초대 코드 발행 규칙', () => {
         }));
 
         expect(res.status).toBe(200);
-        expect(createInvite.mock.calls[0][0].data).toMatchObject({ expiresAt: endsAt, accessExpiresAt: endsAt });
+        expect(createInvite.mock.calls[0][0].data).toMatchObject({ expiresAt: endsAt });
     });
 
     it('멘토 역할로는 코드를 만들 수 없다', async () => {
@@ -267,7 +265,7 @@ describe('초대 코드 발행 규칙', () => {
         expect(createInvite.mock.calls[0][0].data.programId).toBe('prog_1');
     });
 
-    it('발급 메일은 멘티 초대코드 로그인으로 연결하고 실제 지정일을 안내한다', async () => {
+    it('발급 메일은 멘티 초대코드 로그인으로 연결하고 첫 로그인 기한과 이용 기간을 나눠 안내한다', async () => {
         const res = await POST(jsonRequest('POST', {
             email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', expiresAt: '2026-10-15',
         }));
@@ -277,16 +275,16 @@ describe('초대 코드 발행 규칙', () => {
             to: 'm@x.com', html: expect.stringContaining('href="http://localhost/login?mode=invite"'),
         }));
         expect(sendMail.mock.calls[0][0].html).toContain('2026-10-15');
-        expect(sendMail.mock.calls[0][0].html).not.toContain('첫 로그인 후');
-        expect(sendMail.mock.calls[0][0].html).not.toContain('90일');
-        expect(sendMail.mock.calls[0][0].html).toContain('같은 코드로 로그인');
+        expect(sendMail.mock.calls[0][0].html).toContain('첫 로그인 후');
+        expect(sendMail.mock.calls[0][0].html).toContain('90일');
+        expect(sendMail.mock.calls[0][0].html).not.toContain('회원 이용만료일');
     });
 
-    it('기존 코드 호환용 기본 기간 90일과 명시적 이용 기한을 함께 담는다', async () => {
+    it('첫 로그인 후 이용 기간 90일을 담고 이용만료일은 미리 정하지 않는다', async () => {
         await POST(jsonRequest('POST', { email: 'm@x.com', role: 'MENTEE', programId: 'prog_1' }));
 
         expect(createInvite.mock.calls[0][0].data.accessDurationDays).toBe(90);
-        expect(createInvite.mock.calls[0][0].data.accessExpiresAt).toEqual(new Date('2026-09-17T14:59:59.999Z'));
+        expect(createInvite.mock.calls[0][0].data.accessExpiresAt).toBeUndefined();
     });
 
     it('메일 발송이 실패하면 코드는 만들되 실패를 알린다', async () => {

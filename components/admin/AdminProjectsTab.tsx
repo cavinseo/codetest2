@@ -9,6 +9,7 @@ import Link from 'next/link';
 import MentorAssign from './MentorAssign';
 import ProjectTransfer from './ProjectTransfer';
 import type { MemberRole } from '@/lib/member-roles';
+import { mentorAssignToggleLabel } from '@/lib/mentor-assignment-client';
 
 export interface AdminProject {
     id: string;
@@ -20,6 +21,7 @@ export interface AdminProject {
     updatedAt: string;
     ownerEmail: string | null;
     ownerName: string | null;
+    mentorName: string | null;
     reqCount: number;
     responseCount: number;
     memberCount: number;
@@ -33,9 +35,11 @@ interface Props {
     onDelete: (project: AdminProject) => void;
     /** 이관이 끝나면 목록을 다시 불러온다. 실패하면 던진다(이관 창이 오류를 보여 준다). */
     onTransferred: () => Promise<void>;
+    /** 멘토 배정·해제 뒤 카드의 멘토 표시를 갱신한다. 같은 멘티의 다른 프로젝트도 함께 바뀐다. */
+    onMentorChanged: () => void;
 }
 
-export default function AdminProjectsTab({ projects, programs, role, canAssignMentor, onDelete, onTransferred }: Props) {
+export default function AdminProjectsTab({ projects, programs, role, canAssignMentor, onDelete, onTransferred, onMentorChanged }: Props) {
     const [searchProject, setSearchProject] = useState('');
     const [projectProgramId, setProjectProgramId] = useState('');
     const [openMentorAssign, setOpenMentorAssign] = useState<Record<string, boolean>>({});
@@ -162,17 +166,24 @@ export default function AdminProjectsTab({ projects, programs, role, canAssignMe
                             {canAssignMentor && (
                                 <>
                                     <div className="divider my-4" />
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleMentorAssign(project.id)}
-                                        className="btn-secondary text-sm"
-                                        id={`admin-mentor-assign-toggle-${project.id}`}
-                                    >
-                                        {openMentorAssign[project.id] ? '멘토 배정 닫기' : '멘토 배정'}
-                                    </button>
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleMentorAssign(project.id)}
+                                            className="btn-secondary text-sm"
+                                            id={`admin-mentor-assign-toggle-${project.id}`}
+                                        >
+                                            {mentorAssignToggleLabel(project.mentorName, !!openMentorAssign[project.id])}
+                                        </button>
+                                        {project.mentorName && (
+                                            <span className="text-sm text-gray-400" id={`admin-project-mentor-${project.id}`}>
+                                                담당 멘토 {project.mentorName}
+                                            </span>
+                                        )}
+                                    </div>
                                     {openMentorAssign[project.id] && (
                                         <div className="mt-3">
-                                            <MentorAssign projectId={project.id} />
+                                            <MentorAssign projectId={project.id} onChanged={onMentorChanged} />
                                         </div>
                                     )}
                                 </>

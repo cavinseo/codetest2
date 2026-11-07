@@ -19,6 +19,7 @@ import {
 } from '@/lib/admin-user-deletion';
 import { memberAccessExpirySchema } from '@/lib/member-access-expiry';
 import { setMemberAccessExpiry } from '@/lib/member-access-management';
+import { relatedProgramIds } from '@/lib/member-program-filter';
 import {
     accessExpiryFrom, canTransitionRole, parseDirectCreateRole,
     parseMemberRole, MEMBER_ROLE_LABELS, type MemberRole,
@@ -52,15 +53,19 @@ export async function GET(request: NextRequest) {
                 // 있게 함께 내린다. 멘티가 아닌 역할은 항상 null 이다.
                 programId: true,
                 program: { select: { name: true } },
+                // 멘토·매니저는 programId 가 없어 프로그램별 보기에 넣으려면 관계를 함께 내려야 한다.
+                assignedMentees: { select: { mentee: { select: { programId: true } } } },
+                managedPrograms: { select: { id: true } },
             },
             // 승인 대기가 먼저 보이도록 정렬한다.
             orderBy: [{ status: 'desc' }, { createdAt: 'desc' }],
         });
 
         return NextResponse.json({
-            users: users.map(({ program, usedInviteCode, ...rest }) => ({
+            users: users.map(({ program, usedInviteCode, assignedMentees, managedPrograms, ...rest }) => ({
                 ...rest,
                 programName: program?.name ?? null,
+                relatedProgramIds: relatedProgramIds({ assignedMentees, managedPrograms }),
                 inviteExpiresAt: usedInviteCode?.expiresAt ?? null,
             })),
         });

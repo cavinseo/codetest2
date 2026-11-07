@@ -18,7 +18,12 @@ interface Candidate {
     role: MemberRole;
 }
 
-export default function MentorAssign({ projectId, menteeId }: { projectId?: string; menteeId?: string }) {
+export default function MentorAssign({ projectId, menteeId, onChanged }: {
+    projectId?: string;
+    menteeId?: string;
+    /** 배정·해제가 성공한 뒤 이 패널 밖의 멘토 표시를 갱신하기 위해 부른다. */
+    onChanged?: () => void;
+}) {
     const endpoint = menteeId ? `/api/mentees/${menteeId}/mentor` : `/api/projects/${projectId}/mentors`;
     const [busy, setBusy] = useState(false);
     const [mentors, setMentors] = useState<Mentor[]>([]);
@@ -66,6 +71,7 @@ export default function MentorAssign({ projectId, menteeId }: { projectId?: stri
                 : { type: 'error', text: result.error ?? '배정에 실패했습니다.' });
             setSelectedMentorId('');
             await loadMentorAssignment();
+            if (result.ok) onChanged?.();
         } catch {
             setMessage({ type: 'error', text: '배정에 실패했습니다. 연결을 확인하세요.' });
         } finally {
@@ -82,6 +88,7 @@ export default function MentorAssign({ projectId, menteeId }: { projectId?: stri
                 ? { type: 'success', text: '해제했습니다.' }
                 : { type: 'error', text: result.error ?? '해제에 실패했습니다.' });
             await loadMentorAssignment();
+            if (result.ok) onChanged?.();
         } catch {
             setMessage({ type: 'error', text: '해제에 실패했습니다. 연결을 확인하세요.' });
         } finally {

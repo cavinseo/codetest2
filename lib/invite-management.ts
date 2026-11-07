@@ -72,7 +72,8 @@ export async function issueMenteeInvite(input: IssueInviteInput, manager: Invite
             role: input.role,
             programId: program.id,
             expiresAt: expiry.expiresAt,
-            accessExpiresAt: expiry.expiresAt,
+            // 최초 접속 기한을 이용만료일로 굳히면 짧은 기한으로 초대한 멘티가 가입 직후 이용이 막힌다.
+            // 비워 두면 첫 로그인 시점에 accessDurationDays 와 프로그램 종료일로 정해진다.
             accessDurationDays: input.accessDurationDays,
             issuedById: manager.userId,
         } });
@@ -154,9 +155,11 @@ export async function extendMenteeInvite(inviteId: string, requestedExpiresAt: D
         const updateError = await updateMenteeExpiry(tx, invite, mentee, email, expiresAt);
         if (updateError) return updateError;
 
-        const initialAccessExpiry = mentee?.accessExpiresAt ?? new Date(Math.max(
-            expiresAt.getTime(), invite.accessExpiresAt?.getTime() ?? 0,
-        ));
+        // 이용만료일이 미리 저장된 이전 코드만 기한을 넘지 않게 함께 늘린다. 비어 있는 코드에 값을 채우면
+        // 연장한 날짜가 이용만료일로 굳어 분리가 깨진다.
+        const initialAccessExpiry = mentee?.accessExpiresAt ?? (invite.accessExpiresAt
+            ? new Date(Math.max(expiresAt.getTime(), invite.accessExpiresAt.getTime()))
+            : null);
         await tx.inviteCode.update({ where: { id: invite.id }, data: {
             expiresAt,
             ...(!invite.usedAt ? { accessExpiresAt: initialAccessExpiry } : {}),

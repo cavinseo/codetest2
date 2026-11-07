@@ -45,8 +45,10 @@ function buildLinkPreview({ invite, email, member, otherInvites }: Awaited<Retur
     if (member.usedInviteCode || otherInvites.some((other) => inviteAccessExpiresAt(other) > now)) {
         throw new InviteMemberLinkError('다른 초대 코드가 연결되어 있거나 유효합니다. 초대 정보를 먼저 정리하세요.', 409);
     }
+    // 만료일이 없는 회원은 첫 로그인과 같은 규칙을 따른다. 초대 기한이 더 길면 그 기한 안에는 접속할 수 있어야 하므로 그쪽을 쓴다.
+    const initialAccessExpiresAt = invite.accessExpiresAt ?? inviteAccessExpiresAt({ ...invite, usedAt: now });
     const accessExpiresAt = member.accessExpiresAt ?? new Date(Math.max(
-        invite.expiresAt.getTime(), invite.accessExpiresAt?.getTime() ?? 0,
+        invite.expiresAt.getTime(), initialAccessExpiresAt.getTime(),
     ));
     if (accessExpiresAt < invite.expiresAt) {
         throw new InviteMemberLinkError('초대 기한은 회원 이용만료일보다 늦을 수 없습니다. 회원관리에서 이용만료일을 먼저 연장하세요.', 400);

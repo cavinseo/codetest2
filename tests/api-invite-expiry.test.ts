@@ -175,7 +175,7 @@ describe('초대 연장의 날짜 경계', () => {
         const res = await PATCH(patchRequest());
 
         expect(res.status).toBe(200);
-        expect(updateInvite).toHaveBeenCalledWith({ where: { id: 'inv_1' }, data: { expiresAt: endsAt, accessExpiresAt: endsAt } });
+        expect(updateInvite).toHaveBeenCalledWith({ where: { id: 'inv_1' }, data: { expiresAt: endsAt, accessExpiresAt: null } });
         expect((await res.json()).invite.expiresAt).toBe(endsAt.toISOString());
     });
 
@@ -204,7 +204,7 @@ describe('초대 연장과 연결 계정', () => {
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ success: true, invite: { id: 'inv_1', expiresAt: TARGET_EXPIRY.toISOString(), usedAt: null } });
         expect(updateInvite).toHaveBeenCalledWith({
-            where: { id: 'inv_1' }, data: { expiresAt: TARGET_EXPIRY, accessExpiresAt: TARGET_EXPIRY },
+            where: { id: 'inv_1' }, data: { expiresAt: TARGET_EXPIRY, accessExpiresAt: null },
         });
         expect(updateUsers).not.toHaveBeenCalled();
         expect(sendMail).not.toHaveBeenCalled();
@@ -230,7 +230,7 @@ describe('초대 연장과 연결 계정', () => {
         expect(res.status).toBe(200);
         expect(await res.json()).toMatchObject({ invite: { usedAt: null, expiresAt: TARGET_EXPIRY.toISOString() } });
         expect(updateUsers).not.toHaveBeenCalled();
-        expect(updateInvite).toHaveBeenCalledWith({ where: { id: 'inv_1' }, data: { expiresAt: TARGET_EXPIRY, accessExpiresAt: TARGET_EXPIRY } });
+        expect(updateInvite).toHaveBeenCalledWith({ where: { id: 'inv_1' }, data: { expiresAt: TARGET_EXPIRY, accessExpiresAt: null } });
         expect(sendMail).not.toHaveBeenCalled();
     });
 
@@ -241,7 +241,7 @@ describe('초대 연장과 연결 계정', () => {
         findUser.mockResolvedValue({ ...usedInviteRecord().usedBy, usedInviteCode: null, ...changes });
 
         expect((await PATCH(patchRequest())).status).toBe(200);
-        expect(updateInvite.mock.calls[0][0].data).toEqual({ expiresAt: TARGET_EXPIRY, accessExpiresAt: TARGET_EXPIRY });
+        expect(updateInvite.mock.calls[0][0].data).toEqual({ expiresAt: TARGET_EXPIRY, accessExpiresAt: null });
         expect(updateUsers).not.toHaveBeenCalled();
     });
 
@@ -261,11 +261,20 @@ describe('초대 연장과 연결 계정', () => {
         expect(updateUsers).not.toHaveBeenCalled();
     });
 
+    it.each([
+        ['기한보다 이르면 기한까지 늘린다', new Date(0), TARGET_EXPIRY],
+        ['기한보다 늦으면 그대로 둔다', new Date('2026-12-31T14:59:59.999Z'), new Date('2026-12-31T14:59:59.999Z')],
+    ])('이용만료일이 저장된 이전 코드를 연장할 때 %s', async (_case, saved, expected) => {
+        findLockedInvite.mockResolvedValue({ ...inviteRecord(), accessExpiresAt: saved });
+        expect((await PATCH(patchRequest())).status).toBe(200);
+        expect(updateInvite.mock.calls[0][0].data).toEqual({ expiresAt: TARGET_EXPIRY, accessExpiresAt: expected });
+    });
+
     it('회원 연결 전 만료 초대를 연장해도 회원을 승인하거나 코드를 사용 처리하지 않는다', async () => {
         findLockedInvite.mockResolvedValue({ ...inviteRecord(), expiresAt: new Date(0) });
         findUser.mockResolvedValue({ ...usedInviteRecord().usedBy, status: 'PENDING', programId: null, accessExpiresAt: null, usedInviteCode: null });
         expect((await PATCH(patchRequest())).status).toBe(200);
-        expect(updateInvite.mock.calls[0][0].data).toEqual({ expiresAt: TARGET_EXPIRY, accessExpiresAt: TARGET_EXPIRY });
+        expect(updateInvite.mock.calls[0][0].data).toEqual({ expiresAt: TARGET_EXPIRY, accessExpiresAt: null });
         expect(updateUsers).not.toHaveBeenCalled();
     });
 

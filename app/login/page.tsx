@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ThemeToggle from '@/components/ThemeToggle';
 import { clearSelectedProgramId } from '@/lib/dashboard-program-filter';
+import { clearStoredProgramFilter } from '@/lib/member-program-filter';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -26,6 +27,8 @@ export default function LoginPage() {
     // 가입 직후 리다이렉트로 들어온 경우 승인 대기 안내를 보여준다.
     useEffect(() => {
         mountedRef.current = true;
+        // 세션 만료로 로그아웃 버튼을 거치지 않고 온 경우에도 다음 로그인은 '전체'에서 시작한다.
+        clearStoredProgramFilter();
         const params = new URLSearchParams(window.location.search);
         if (params.get('mode') === 'invite' || params.get('error') === 'invite_required') {
             setRole('MENTEE');
