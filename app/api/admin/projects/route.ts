@@ -16,7 +16,10 @@ export async function GET(request: NextRequest) {
         const [projects, programs] = await Promise.all([prisma.project.findMany({
             include: {
                 owner: {
-                    select: { email: true, name: true },
+                    select: {
+                        email: true, name: true,
+                        mentorAssignment: { select: { mentor: { select: { name: true, email: true } } } },
+                    },
                 },
                 _count: {
                     select: {
@@ -32,20 +35,25 @@ export async function GET(request: NextRequest) {
             orderBy: [{ name: 'asc' }, { id: 'asc' }],
         })]);
 
-        const formattedProjects = projects.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            ownerId: p.ownerId,
-            programId: p.programId,
-            ownerEmail: p.owner?.email ?? null,
-            ownerName: p.owner?.name ?? null,
-            createdAt: p.createdAt.toISOString(),
-            updatedAt: p.updatedAt.toISOString(),
-            reqCount: p._count.requirements,
-            responseCount: p._count.kanoResponses,
-            memberCount: p._count.members + 1, // +1 for owner
-        }));
+        const formattedProjects = projects.map((p: any) => {
+            const mentor = p.owner?.mentorAssignment?.mentor;
+            return {
+                id: p.id,
+                name: p.name,
+                description: p.description,
+                ownerId: p.ownerId,
+                programId: p.programId,
+                ownerEmail: p.owner?.email ?? null,
+                ownerName: p.owner?.name ?? null,
+                // 배정은 멘티 단위라 소유 멘티의 모든 프로젝트에 같은 멘토가 표시된다. 이름이 비어 있으면 ID 로 식별한다.
+                mentorName: mentor ? mentor.name || mentor.email : null,
+                createdAt: p.createdAt.toISOString(),
+                updatedAt: p.updatedAt.toISOString(),
+                reqCount: p._count.requirements,
+                responseCount: p._count.kanoResponses,
+                memberCount: p._count.members + 1, // +1 for owner
+            };
+        });
 
         return NextResponse.json({ projects: formattedProjects, programs });
     } catch (error: unknown) {

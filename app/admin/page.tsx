@@ -101,6 +101,17 @@ export default function AdminModePage() {
         setTimeout(() => setActionMsg(null), 3500);
     };
 
+    // load 는 화면 전체를 로딩 상태로 바꿔 열어 둔 배정 패널과 결과 메시지를 닫으므로 목록만 받는다.
+    const refreshProjects = async () => {
+        try {
+            const res = await fetch('/api/admin/projects', { cache: 'no-store' });
+            if (!res.ok) throw new Error('목록 갱신 실패');
+            setProjects((await res.json()).projects);
+        } catch {
+            showMsg('error', '프로젝트 목록을 갱신하지 못했습니다. 새로고침하세요.');
+        }
+    };
+
     const handleDeleteUser = async (
         userId: string,
         options: DeleteUserOptions = {}
@@ -638,6 +649,7 @@ export default function AdminModePage() {
                                 canAssignMentor={canAssignMentorUI}
                                 onDelete={(project) => setConfirmDelete({ type: 'project', id: project.id, name: project.name, stage: 1 })}
                                 onTransferred={handleProjectTransferred}
+                                onMentorChanged={refreshProjects}
                             />
                         )}
 

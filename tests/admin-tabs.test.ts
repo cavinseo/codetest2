@@ -16,7 +16,7 @@ let root: Root;
 const fetchMock = vi.fn();
 
 const project = (id: string, name: string, programId: string, ownerName: string): AdminProject => ({
-    id, name, programId, ownerName, ownerId: `owner_${id}`, ownerEmail: `${id}@example.com`,
+    id, name, programId, ownerName, mentorName: null, ownerId: `owner_${id}`, ownerEmail: `${id}@example.com`,
     createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', reqCount: 1, responseCount: 2, memberCount: 3,
 });
 const projects = [project('p1', '스마트 화분', 'prog_a', '김멘티'), project('p2', '배달 로봇', 'prog_b', '이멘티')];
@@ -54,7 +54,7 @@ describe('AdminProjectsTab', () => {
     const onDelete = vi.fn();
     const onTransferred = vi.fn(async () => undefined);
     const render = (canAssignMentor = true) => act(async () => root.render(createElement(AdminProjectsTab, {
-        projects, programs, role: 'ADMIN', canAssignMentor, onDelete, onTransferred,
+        projects, programs, role: 'ADMIN', canAssignMentor, onDelete, onTransferred, onMentorChanged: vi.fn(),
     })));
 
     it('이름·소유자로 찾고 프로그램으로 좁힌다', async () => {

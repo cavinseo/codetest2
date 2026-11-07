@@ -4,6 +4,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import MentorAssign from '../components/admin/MentorAssign';
+import { mentorAssignToggleLabel } from '../lib/mentor-assignment-client';
 
 const manager = { id: 'manager', name: '담당 매니저', email: 'manager@example.com', role: 'PROGRAM_MANAGER' };
 const fetchMock = vi.fn();
@@ -112,4 +113,29 @@ it('해제 응답이 JSON이 아니어도 기존 배정을 유지하고 기본 �
     await click('해제');
     expect(container.textContent).toContain('해제에 실패했습니다.');
     expect(container.querySelector('li')?.textContent).toContain(manager.name);
+});
+
+it('배정·해제가 성공할 때만 바깥 표시 갱신을 알린다', async () => {
+    const onChanged = vi.fn();
+    assignmentEndpoint = '/api/projects/project/mentors';
+    await act(async () => root.render(createElement(MentorAssign, { projectId: 'project', onChanged })));
+    await selectManager();
+    await click('배정');
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    await click('해제');
+    expect(onChanged).toHaveBeenCalledTimes(2);
+
+    fetchMock.mockImplementationOnce(async () => json({ error: '거절' }, 403));
+    await selectManager();
+    await click('배정');
+    expect(onChanged).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+    [null, false, '멘토 배정'],
+    [null, true, '멘토 배정 닫기'],
+    ['김멘토', false, '멘토 변경'],
+    ['김멘토', true, '멘토 변경 닫기'],
+])('멘토 %s, 패널 열림 %s 이면 버튼은 %s 이다', (mentorName, isOpen, label) => {
+    expect(mentorAssignToggleLabel(mentorName, isOpen)).toBe(label);
 });

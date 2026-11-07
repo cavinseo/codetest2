@@ -2,8 +2,9 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MembersTab, { type User } from '../components/admin/MembersTab';
+import { ALL_PROGRAMS, clearStoredProgramFilter } from '../lib/member-program-filter';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -85,4 +86,82 @@ it('멘토의 프로젝트 개설 허용 상태를 표시하고 선택한 멘토
         method: 'PATCH', body: JSON.stringify({ userId: 'mentor', action: 'setMentorProjectCreation', enabled: true }),
     }));
     expect(container.textContent).toContain('프로젝트 생성을 활성화했습니다.');
+});
+
+describe('프로그램별 보기', () => {
+    const programs = [{ id: 'a', name: '가 프로그램', organization: '기관' }, { id: 'b', name: '나 프로그램', organization: '기관' }];
+    const roster: User[] = [
+        { ...member('mentee-a', '가 멘티'), programId: 'a' },
+        { ...member('mentee-b', '나 멘티'), programId: 'b' },
+        { ...member('mentor-a', '가 멘토'), role: 'MENTOR', relatedProgramIds: ['a'] },
+        { ...member('manager-b', '나 매니저'), role: 'PROGRAM_MANAGER', relatedProgramIds: ['b'] },
+        { ...member('admin', '관리자'), role: 'ADMIN', relatedProgramIds: [] },
+    ];
+    const rows = () => [...container.querySelectorAll('tbody tr')].map(row => row.querySelector('p')!.textContent);
+    const filterSelect = () => container.querySelector<HTMLSelectElement>('#admin-member-program-filter')!;
+    const choose = async (value: string) => {
+        await act(async () => {
+            Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(filterSelect(), value);
+            filterSelect().dispatchEvent(new Event('change', { bubbles: true }));
+        });
+    };
+
+    beforeEach(() => {
+        window.localStorage.clear();
+        vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ programs }) } as Response);
+    });
+
+    it('처음에는 전체를 보여주고 프로그램을 고르면 그 멘티·멘토·매니저만 남기며 역할별 수도 함께 바뀐다', async () => {
+        await renderMembers(roster);
+        expect(filterSelect().value).toBe(ALL_PROGRAMS);
+        expect(rows()).toHaveLength(5);
+
+        await choose('a');
+        expect(rows()).toEqual(['가 멘티', '가 멘토']);
+        expect(container.querySelector('#admin-member-filter-ALL')!.textContent).toContain('2');
+        expect(container.querySelector('#admin-member-filter-MENTOR')!.textContent).toContain('1');
+        expect(container.querySelector('#admin-member-filter-PROGRAM_MANAGER')!.textContent).toContain('0');
+
+        await choose('b');
+        expect(rows()).toEqual(['나 멘티', '나 매니저']);
+        expect(container.querySelector('tbody')!.textContent).toContain('나 프로그램');
+    });
+
+    it('화면을 벗어났다 돌아와도 선택을 유지하고, 로그아웃으로 지우면 전체로 돌아간다', async () => {
+        await renderMembers(roster);
+        await choose('a');
+        await act(async () => { root.unmount(); });
+
+        root = createRoot(container);
+        await renderMembers(roster);
+        expect(filterSelect().value).toBe('a');
+        expect(rows()).toEqual(['가 멘티', '가 멘토']);
+        await act(async () => { root.unmount(); });
+
+        clearStoredProgramFilter();
+        root = createRoot(container);
+        await renderMembers(roster);
+        expect(filterSelect().value).toBe(ALL_PROGRAMS);
+        expect(rows()).toHaveLength(5);
+    });
+
+    it('저장된 프로그램이 사라졌으면 전체를 보여준다', async () => {
+        window.localStorage.setItem('admin-program-filter', 'deleted');
+        await renderMembers(roster);
+        expect(filterSelect().value).toBe(ALL_PROGRAMS);
+        expect(rows()).toHaveLength(5);
+    });
+
+    it('프로그램 목록을 받지 못하면 저장값으로 목록을 거르지 않는다', async () => {
+        window.localStorage.setItem('admin-program-filter', 'a');
+        vi.mocked(fetch).mockRejectedValue(new Error('offline'));
+        await renderMembers(roster);
+        expect(rows()).toHaveLength(5);
+    });
+
+    it('해당 회원이 없는 프로그램은 그 사실을 안내한다', async () => {
+        await renderMembers([roster[0]]);
+        await choose('b');
+        expect(container.textContent).toContain('선택한 프로그램에 해당하는 회원이 없습니다');
+    });
 });

@@ -517,18 +517,19 @@ it('선택을 바꾼 프로그램에 모든 주소를 발급하고 재조회 후
     expect(container.querySelector<HTMLInputElement>('#invites-expires-at')!.max).toBe('2098-10-31');
 });
 
-it('신규 이용 기한은 빈 필수 입력이며 한국 시간 오늘과 프로그램 종료일을 범위로 표시한다', async () => {
+it('신규 이용 기한은 기본 1주일 뒤의 필수 입력이며 한국 시간 오늘과 프로그램 종료일을 범위로 표시한다', async () => {
     await renderInvites();
     await enterEmails('mentee@example.com');
     const input = container.querySelector<HTMLInputElement>('#invites-expires-at')!;
     expect(input.type).toBe('date');
-    expect(input.value).toBe('');
+    expect(input.value).toBe('2026-09-24');
     expect(input.required).toBe(true);
     expect(input.min).toBe('2026-09-17');
     expect(input.max).toBe('2099-12-31');
     expect(container.textContent).toContain('최초 접속');
-    expect(container.textContent).toContain('회원관리에서 더 길게 조정');
+    expect(container.textContent).toContain('이 기한과 별개로 첫 로그인 후 90일');
     expect(container.textContent).toContain('한국 시간');
+    await enterExpiry('');
     expect(container.querySelector<HTMLButtonElement>('#invites-issue-submit')!.disabled).toBe(true);
     await issue();
     expect(postMock).not.toHaveBeenCalled();
@@ -636,4 +637,72 @@ it('기한 저장을 두 번 눌러도 한 번만 요청하고 완료 전 모든
     await act(async () => { pending.resolve(response({ success: true, invite: { id: 'existing', expiresAt: '2099-02-01T14:59:59.999Z' } })); });
     expect(container.querySelector('#invites-expiry-existing')?.textContent).toBe('2099-02-01');
     expect(container.querySelector<HTMLButtonElement>('#invites-issue-submit')!.disabled).toBe(false);
+});
+
+it('기한을 고치지 않고 발급하면 1주일 뒤로 발행하고, 조정하면 그 날짜로 발행한다', async () => {
+    await renderInvites();
+    await enterEmails('one@example.com');
+    await issue();
+    expect(postMock.mock.calls[0][0].expiresAt).toBe('2026-09-24');
+
+    await enterExpiry('2026-10-15');
+    await enterEmails('two@example.com');
+    await issue();
+    expect(postMock.mock.calls[1][0].expiresAt).toBe('2026-10-15');
+});
+
+it('프로그램 종료가 1주일보다 빠르면 기본 기한은 종료일이고, 직접 고른 날짜는 프로그램을 바꿔도 유지한다', async () => {
+    const soon = { id: 'program_soon', name: '곧 끝남', organization: '기관', endsAt: '2026-09-20T14:59:59.999Z' };
+    fetchMock.mockImplementation(async (url: string) => response(url === '/api/programs' ? { programs: [...programs, soon] } : { invites: [] }));
+    await renderInvites();
+    const select = async (value: string) => {
+        const element = container.querySelector<HTMLSelectElement>('#invites-program')!;
+        await act(async () => {
+            Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(element, value);
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+    };
+    const value = () => container.querySelector<HTMLInputElement>('#invites-expires-at')!.value;
+    await select(soon.id);
+    expect(value()).toBe('2026-09-20');
+    await select('program_1');
+    expect(value()).toBe('2026-09-24');
+    await enterExpiry('2026-10-15');
+    await select(soon.id);
+    expect(value()).toBe('2026-10-15');
+});
+
+it('프로그램별로 초대 코드를 나눠 보고 다시 열어도 선택을 유지한다', async () => {
+    window.localStorage.clear();
+    const other = { id: 'program_2', name: '다른 프로그램', organization: '기관', endsAt: invite.programEndsAt };
+    const otherInvite = { ...invite, id: 'other', email: 'other@example.test', programId: other.id, programName: other.name };
+    fetchMock.mockImplementation(async (url: string) => response(url === '/api/programs'
+        ? { programs: [...programs, other] } : { invites: [invite, otherInvite] }));
+    const emails = () => [...container.querySelectorAll('tbody tr')].map((row) => row.querySelector('td')!.textContent);
+    const filter = () => container.querySelector<HTMLSelectElement>('#invites-program-filter')!;
+    try {
+        await renderInvites();
+        expect(filter().value).toBe('ALL');
+        expect(emails()).toEqual([invite.email, otherInvite.email]);
+        await act(async () => {
+            Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(filter(), other.id);
+            filter().dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        expect(emails()).toEqual([otherInvite.email]);
+
+        await act(async () => { root.unmount(); });
+        root = createRoot(container);
+        await renderInvites();
+        expect(filter().value).toBe(other.id);
+        expect(emails()).toEqual([otherInvite.email]);
+
+        fetchMock.mockImplementation(async (url: string) => response(url === '/api/programs'
+            ? { programs: [...programs, other] } : { invites: [invite] }));
+        await act(async () => { root.unmount(); });
+        root = createRoot(container);
+        await renderInvites();
+        expect(container.textContent).toContain('선택한 프로그램의 초대 코드가 없습니다.');
+    } finally {
+        window.localStorage.clear();
+    }
 });
