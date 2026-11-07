@@ -7,12 +7,13 @@ import { worksheetExcelProject } from './fixtures/worksheet-excel-project';
 
 // c52f6a5 출력에서 이번 수정 대상인 WS-9를 제외한 모든 시트의 내용과 서식을 비교한다.
 // WS-2 세세부 열 이름을 '세세부기술'에서 '세세부기능'으로 바꾼 뒤 그 열이 보이는 네 시나리오의 값을 갱신했다.
+// 2026-11-08 매출·자금 시트의 금액 단위 표기를 '원'에서 '백만원'으로 고친 뒤 다섯 시나리오의 값을 갱신했다.
 const baselineHashes = {
-    complete: 'a334f1606ac2bae1280e23e9f31ab991e53632774b7cf623f765d357f0260040',
-    empty: '4473b33a07627d03a54abe4ae92ac222261a95064650f1c5d3ed222fa2298c42',
-    collapsed: '4b561c1c961052665524d3e7a395c6fa3f868cb92418c5685fbe636501b7356a',
-    expanded: 'a298b254ba78249c82e96cd3d297e8018ca5cba84e8f184055d5b6196b1cf89c',
-    long: '2ac95cdf68be64aed679e71a11f49b025558b0ec0c2a1d9b9d625e1c18b1955b',
+    complete: 'df00a3b4719d6039a39552be60ea0decc4dbf37acb5390f18ce53c39ad9044a6',
+    empty: 'ad981baf111f774a1a60cc1b4c312fe15d2beaf065c7540bc7f4614b84f3b49a',
+    collapsed: 'ca6b15a2e9a9800591323fa9e43292611d28f21206c9c643d17abe1b5ef31877',
+    expanded: '4f23e4f7c2016684947c28bfd747de3be333c47793f9ab211d664c4a8546ec7d',
+    long: 'd6c4391b08bca9b39d616772f39baf58947dbc029b652e204df088aa08b9ce39',
 };
 
 function projectForScenario(scenario: keyof typeof baselineHashes) {

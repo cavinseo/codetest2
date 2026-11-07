@@ -165,3 +165,13 @@ it('WS-16 같은 구분의 여러 세부행과 3개년 출처·금액을 모두 
     expect(result(sheet.getCell('F10'))).toBe(200);
     expect(result(sheet.getCell('H10'))).toBe(500);
 });
+
+it('매출·자금 시트의 금액 단위는 화면·최종 보고서와 같은 백만원으로 표기한다', async () => {
+    // 화면은 백만원 단위로 입력받으므로 엑셀이 '원'으로 적으면 금액이 100만 배 다르게 읽힌다.
+    for (const id of ['sales', 'funding-plan', 'funding-source'] as const) {
+        const texts: string[] = [];
+        (await load(id)).worksheets[0].eachRow(row => row.eachCell(cell => { if (typeof cell.value === 'string') texts.push(cell.value); }));
+        expect(texts.filter(text => text.includes('단위:')), id).not.toHaveLength(0);
+        expect(texts.filter(text => text.includes('단위:')).every(text => text.includes('(단위: 백만원)')), id).toBe(true);
+    }
+});
