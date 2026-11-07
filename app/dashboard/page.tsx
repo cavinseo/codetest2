@@ -7,6 +7,7 @@ import {
     readAndSerializeBusinessPlanFile,
 } from '@/lib/business-plan-file';
 import { canCreateProject, canCreateProjectForOthers, type MemberRole } from '@/lib/member-roles';
+import { clearStoredProgramFilter } from '@/lib/member-program-filter';
 import ThemeToggle from '@/components/ThemeToggle';
 import ProjectRequestsPanel from '@/components/ProjectRequestsPanel';
 
@@ -205,6 +206,7 @@ export default function DashboardPage() {
         try {
             const response = await fetch('/api/auth/logout', { method: 'POST' });
             if (!response.ok) throw new Error('로그아웃 실패');
+            clearStoredProgramFilter();
             window.location.href = '/login';
         } catch (error) {
             console.error(error);

@@ -9,6 +9,7 @@ import InvitesTab from '@/components/admin/InvitesTab';
 import ProgramsTab from '@/components/admin/ProgramsTab';
 import ThemeToggle from '@/components/ThemeToggle';
 import MentorAssign from '@/components/admin/MentorAssign';
+import { mentorAssignToggleLabel } from '@/lib/mentor-assignment-client';
 import ProjectTransfer from '@/components/admin/ProjectTransfer';
 import { MEMBER_ROLE_LABELS, canAssignMentor, canIssueInviteCode, canManagePrograms, type MemberRole } from '@/lib/member-roles';
 import { deleteActionFor, cancelGoesBack, type DeleteStage } from '@/lib/delete-confirmation';
@@ -29,6 +30,7 @@ interface Project {
     updatedAt: string;
     ownerEmail: string | null;
     ownerName: string | null;
+    mentorName: string | null;
     reqCount: number;
     responseCount: number;
     memberCount: number;
@@ -134,6 +136,17 @@ export default function AdminModePage() {
     const showMsg = (type: 'success' | 'error', msg: string) => {
         setActionMsg({ type, msg });
         setTimeout(() => setActionMsg(null), 3500);
+    };
+
+    // load 는 화면 전체를 로딩 상태로 바꿔 열어 둔 배정 패널과 결과 메시지를 닫으므로 목록만 받는다.
+    const refreshProjects = async () => {
+        try {
+            const res = await fetch('/api/admin/projects', { cache: 'no-store' });
+            if (!res.ok) throw new Error('목록 갱신 실패');
+            setProjects((await res.json()).projects);
+        } catch {
+            showMsg('error', '프로젝트 목록을 갱신하지 못했습니다. 새로고침하세요.');
+        }
     };
 
     const handleDeleteUser = async (
@@ -939,17 +952,24 @@ export default function AdminModePage() {
                                                 {canAssignMentorUI && (
                                                     <>
                                                         <div className="divider my-4" />
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toggleMentorAssign(project.id)}
-                                                            className="btn-secondary text-sm"
-                                                            id={`admin-mentor-assign-toggle-${project.id}`}
-                                                        >
-                                                            {openMentorAssign[project.id] ? '멘토 배정 닫기' : '멘토 배정'}
-                                                        </button>
+                                                        <div className="flex flex-wrap items-center gap-3">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleMentorAssign(project.id)}
+                                                                className="btn-secondary text-sm"
+                                                                id={`admin-mentor-assign-toggle-${project.id}`}
+                                                            >
+                                                                {mentorAssignToggleLabel(project.mentorName, !!openMentorAssign[project.id])}
+                                                            </button>
+                                                            {project.mentorName && (
+                                                                <span className="text-sm text-gray-400" id={`admin-project-mentor-${project.id}`}>
+                                                                    담당 멘토 {project.mentorName}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         {openMentorAssign[project.id] && (
                                                             <div className="mt-3">
-                                                                <MentorAssign projectId={project.id} />
+                                                                <MentorAssign projectId={project.id} onChanged={refreshProjects} />
                                                             </div>
                                                         )}
                                                     </>

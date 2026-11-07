@@ -107,6 +107,15 @@ describe('관리자 회원 연결 확인', () => {
         expect(mocks.updateMember).not.toHaveBeenCalled();
     });
 
+    it.each([
+        ['이용 기간 안에 프로그램이 끝나면 종료일', { accessDurationDays: 90 }, 60],
+        ['이용 기간이 먼저 끝나면 기간 만료일', { accessDurationDays: 30 }, 30],
+        ['최초 접속 기한이 더 길면 그 기한', { accessDurationDays: 30, expiresAt: after(40) }, 40],
+    ])('이용만료일이 없는 초대와 회원을 연결하면 %s까지로 정한다', async (_case, invite, days) => {
+        mocks.findInvite.mockResolvedValue({ ...inviteRecord(), accessExpiresAt: null, ...invite });
+        expect((await preview()).accessExpiresAt).toBe(after(days).toISOString());
+    });
+
     it('깨진 요청 본문은 400으로 처리한다', async () => {
         const broken = new NextRequest('http://localhost/api/invites/invite_1/link', { method: 'POST', body: '{' });
         expect((await POST(broken, props())).status).toBe(400);

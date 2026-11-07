@@ -8,6 +8,7 @@ import {
     MEMBER_ROLES, MEMBER_ROLE_LABELS, canTransitionRole,
     DEFAULT_ACCESS_DURATION_DAYS, type MemberRole,
 } from '@/lib/member-roles';
+import { ALL_PROGRAMS, belongsToProgram, readStoredProgramFilter, storeProgramFilter } from '@/lib/member-program-filter';
 
 interface ProgramOption {
     id: string;
@@ -31,6 +32,8 @@ export interface User {
     /** 멘티만 프로그램에 속한다. 다른 역할은 항상 null 이다. */
     programId?: string | null;
     programName?: string | null;
+    /** 멘토·매니저가 담당 멘티나 직접 담당으로 관계된 프로그램. */
+    relatedProgramIds?: string[];
 }
 
 /** 역할별로 나눠 보는 필터. '전체' 를 앞에 두고 나머지는 역할 순서를 따른다. */
@@ -73,6 +76,8 @@ export default function MembersTab({
 }: MembersTabProps) {
     const [searchMember, setSearchMember] = useState('');
     const [roleFilter, setRoleFilter] = useState<RoleFilter>('ALL');
+    // 이 탭은 클릭해야 렌더되는 클라이언트 전용 화면이라 저장값을 바로 읽어도 수화 불일치가 없다.
+    const [programFilter, setProgramFilter] = useState(readStoredProgramFilter);
     const [showCreate, setShowCreate] = useState(false);
     const [newMember, setNewMember] = useState({ name: '', email: '', role: 'MENTEE' as 'MENTOR' | 'MENTEE', programId: '' });
     const [newProfile, setNewProfile] = useState<ProfileValue>(EMPTY_PROFILE);
@@ -112,12 +117,17 @@ export default function MembersTab({
             .catch(() => { /* 프로그램 없이도 멘토 계정은 만들 수 있어야 하므로 조용히 무시한다 */ });
     }, []);
 
+    // 삭제된 프로그램이 저장돼 있거나 목록을 못 받았으면 선택지에 없는 값으로 목록만
+    // 걸러져 원인을 알 수 없게 된다. 선택지에 있을 때만 적용한다.
+    const activeProgram = programs.some((p) => p.id === programFilter) ? programFilter : ALL_PROGRAMS;
+    const programMembers = members.filter((m) => belongsToProgram(m, activeProgram));
+
     const roleCounts = MEMBER_ROLES.reduce(
-        (acc, role) => ({ ...acc, [role]: members.filter((m) => m.role === role).length }),
+        (acc, role) => ({ ...acc, [role]: programMembers.filter((m) => m.role === role).length }),
         {} as Record<MemberRole, number>
     );
 
-    const filteredMembers = members
+    const filteredMembers = programMembers
         .filter((m) => roleFilter === 'ALL' || m.role === roleFilter)
         .filter(
             (m) => (m.name ?? '').toLowerCase().includes(searchMember.toLowerCase()) || m.email.toLowerCase().includes(searchMember.toLowerCase())
@@ -189,6 +199,18 @@ export default function MembersTab({
                         id="admin-member-search"
                     />
                 </div>
+                <select
+                    aria-label="프로그램별 보기"
+                    value={activeProgram}
+                    onChange={(e) => { setProgramFilter(e.target.value); storeProgramFilter(e.target.value); }}
+                    className="input w-auto"
+                    id="admin-member-program-filter"
+                >
+                    <option value={ALL_PROGRAMS}>전체 프로그램</option>
+                    {programs.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                </select>
                 <span className="text-sm text-gray-500">{filteredMembers.length}명</span>
                 <button
                     type="button"
@@ -213,7 +235,7 @@ export default function MembersTab({
                     >
                         {ROLE_FILTER_LABELS[filter]}
                         <span className="ml-1.5 text-[11px] opacity-70">
-                            {filter === 'ALL' ? members.length : roleCounts[filter]}
+                            {filter === 'ALL' ? programMembers.length : roleCounts[filter]}
                         </span>
                     </button>
                 ))}
@@ -287,7 +309,9 @@ export default function MembersTab({
                     <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-4">
                         <svg className="w-8 h-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                     </div>
-                    <p className="text-gray-500 text-sm">{searchMember ? '검색 결과가 없습니다' : '등록된 회원이 없습니다'}</p>
+                    <p className="text-gray-500 text-sm">
+                        {searchMember ? '검색 결과가 없습니다' : activeProgram !== ALL_PROGRAMS ? '선택한 프로그램에 해당하는 회원이 없습니다' : '등록된 회원이 없습니다'}
+                    </p>
                 </div>
             ) : (
                 <div className="card overflow-hidden p-0">
@@ -341,7 +365,9 @@ export default function MembersTab({
                                         {/* 프로그램에 속하는 것은 멘티뿐이다. 이미 등록된 멘티도
                                             여기서 바로 배정하거나 옮길 수 있다. */}
                                         {m.role !== 'MENTEE' ? (
-                                            <span className="text-xs text-gray-600">—</span>
+                                            <span className="text-xs text-gray-600">
+                                                {programs.filter((p) => m.relatedProgramIds?.includes(p.id)).map((p) => p.name).join(', ') || '—'}
+                                            </span>
                                         ) : programs.length === 0 ? (
                                             <span className="text-xs text-gray-600">개설된 프로그램 없음</span>
                                         ) : (

@@ -169,6 +169,31 @@ describe('admin projects GET', () => {
             orderBy: [{ name: 'asc' }, { id: 'asc' }],
         });
     });
+    it.each([
+        [{ name: '김멘토', email: 'mentor@example.test' }, '김멘토'],
+        [{ name: null, email: 'mentor@example.test' }, 'mentor@example.test'],
+        [{ name: '', email: 'mentor@example.test' }, 'mentor@example.test'],
+    ])('소유 멘티에게 배정된 멘토를 표시 이름으로 내린다 (%j)', async (mentor, expected) => {
+        findManyProject.mockResolvedValue([{
+            id: 'proj_1', name: '과제', programId: 'program_1', ownerId: 'owner',
+            owner: { email: 'mentee@example.test', name: '멘티', mentorAssignment: { mentor } },
+            createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'),
+            _count: { requirements: 0, kanoResponses: 0, members: 0 },
+        }]);
+        const body = await (await GET(new NextRequest('http://localhost/api/admin/projects'))).json();
+        expect(body.projects[0].mentorName).toBe(expected);
+        expect(body.projects[0]).not.toHaveProperty('owner');
+    });
+    it('배정이 없으면 mentorName 은 null 이다', async () => {
+        findManyProject.mockResolvedValue([{
+            id: 'proj_1', name: '과제', programId: 'program_1', ownerId: 'owner',
+            owner: { email: 'mentee@example.test', name: '멘티', mentorAssignment: null },
+            createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'),
+            _count: { requirements: 0, kanoResponses: 0, members: 0 },
+        }]);
+        const body = await (await GET(new NextRequest('http://localhost/api/admin/projects'))).json();
+        expect(body.projects[0].mentorName).toBeNull();
+    });
     it('관리자가 아니면 목록을 볼 수 없다', async () => {
         requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Admin access required.' }, { status: 403 }));
 

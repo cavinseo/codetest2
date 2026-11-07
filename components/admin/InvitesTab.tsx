@@ -6,7 +6,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { INVITE_BATCH_LIMIT, parseInviteEmails, runInviteBatch, type InviteBatchResult } from '@/lib/invite-batch';
-import { formatInviteExpiryDate, getInviteExpiryInputError } from '@/lib/invite-expiry';
+import { DEFAULT_INVITE_EXPIRY_DAYS, defaultInviteExpiryDate, formatInviteExpiryDate, getInviteExpiryInputError } from '@/lib/invite-expiry';
+import { ALL_PROGRAMS, belongsToProgram, readStoredProgramFilter, storeProgramFilter } from '@/lib/member-program-filter';
 import InviteExpiryCell from './InviteExpiryCell';
 import InviteMemberLinkDialog from './InviteMemberLinkDialog';
 
@@ -14,6 +15,7 @@ interface Invite {
     id: string;
     code?: string;
     email: string;
+    programId: string;
     programName: string;
     programEndsAt: string;
     expiresAt: string;
@@ -34,7 +36,10 @@ export default function InvitesTab() {
     const [programs, setPrograms] = useState<ProgramOption[]>([]);
     const [email, setEmail] = useState('');
     const [programId, setProgramId] = useState('');
-    const [expiresAt, setExpiresAt] = useState('');
+    // null 이면 아직 손대지 않은 것이다. 이때만 프로그램 종료일에 맞춘 기본값을 따라가고, 직접 고른 날짜는 프로그램을 바꿔도 덮어쓰지 않는다.
+    const [editedExpiry, setEditedExpiry] = useState<string | null>(null);
+    // 이 탭은 클릭해야 렌더되는 클라이언트 전용 화면이라 저장값을 바로 읽어도 수화 불일치가 없다.
+    const [programFilter, setProgramFilter] = useState(readStoredProgramFilter);
     const [editingExpiry, setEditingExpiry] = useState<{ id: string; value: string; error: string } | null>(null);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [operation, setOperation] = useState<'issue' | 'revoke' | 'delete' | 'resend' | 'extend' | 'link' | null>(null);
@@ -51,6 +56,10 @@ export default function InvitesTab() {
     const isBusy = operation !== null;
     const parsedEmails = parseInviteEmails(email);
     const selectedProgram = programs.find((program) => program.id === programId);
+    const expiresAt = editedExpiry ?? (selectedProgram ? defaultInviteExpiryDate(selectedProgram.endsAt) : '');
+    // 삭제된 프로그램이 저장돼 있거나 목록을 못 받았으면 선택지에 없는 값으로 목록만 걸러져 원인을 알 수 없게 된다.
+    const activeProgram = programs.some((program) => program.id === programFilter) ? programFilter : ALL_PROGRAMS;
+    const visibleInvites = invites.filter((invite) => belongsToProgram(invite, activeProgram));
     const issueExpiryError = selectedProgram ? getInviteExpiryInputError(expiresAt, selectedProgram.endsAt) : '';
     const today = formatInviteExpiryDate(new Date());
 
@@ -270,7 +279,7 @@ export default function InvitesTab() {
                         최초 접속 기한 (필수)
                         <input type="date" className="input mt-2" value={expiresAt} required min={today}
                             max={selectedProgram ? formatInviteExpiryDate(selectedProgram.endsAt) : undefined}
-                            disabled={isBusy || isLoading || !selectedProgram} onChange={(e) => setExpiresAt(e.target.value)}
+                            disabled={isBusy || isLoading || !selectedProgram} onChange={(e) => setEditedExpiry(e.target.value)}
                             aria-describedby="invites-expiry-help" id="invites-expires-at" />
                     </label>
                     <button type="button" onClick={issue} disabled={isBusy || isLoading || !parsedEmails.emails.length || parsedEmails.emails.length > INVITE_BATCH_LIMIT || !selectedProgram || !!issueExpiryError}
@@ -279,7 +288,7 @@ export default function InvitesTab() {
                     </button>
                 </div>
                 <p className="text-xs text-gray-500">줄바꿈, 공백, 쉼표 또는 세미콜론으로 구분해 최대 {INVITE_BATCH_LIMIT}명까지 입력하세요. 이메일별로 다른 코드와 개별 메일을 보냅니다.</p>
-                <p className="text-xs text-gray-500" id="invites-expiry-help">초대 코드는 선택한 날짜까지 최초 접속할 수 있습니다. 회원 이용만료일도 처음에는 같은 날짜로 설정되며, 가입 후 회원관리에서 더 길게 조정할 수 있습니다. 날짜는 한국 시간 기준입니다.</p>
+                <p className="text-xs text-gray-500" id="invites-expiry-help">초대 코드는 선택한 날짜까지 최초 접속할 수 있습니다. 기본값은 오늘부터 {DEFAULT_INVITE_EXPIRY_DAYS}일 뒤이며(프로그램 종료일이 더 빠르면 종료일) 직접 조정할 수 있습니다. 회원 이용만료일은 이 기한과 별개로 첫 로그인 후 90일(프로그램 종료일이 더 빠르면 종료일)까지이며, 가입 후 회원관리에서 조정할 수 있습니다. 날짜는 한국 시간 기준입니다.</p>
                 {issueExpiryError && (expiresAt || parsedEmails.emails.length > 0) && <p className="text-xs text-rose-400" role="alert">{issueExpiryError}</p>}
                 {parsedEmails.duplicateCount > 0 && <p className="text-xs text-amber-400">중복 이메일 {parsedEmails.duplicateCount}개를 제외했습니다.</p>}
                 {parsedEmails.invalid.length > 0 && <p className="text-xs text-rose-400 break-words" role="alert">잘못된 이메일은 발급에서 제외됩니다. {parsedEmails.invalid.join(', ')}</p>}
@@ -312,12 +321,27 @@ export default function InvitesTab() {
                 </ul>
             </div>}
 
+            <div className="flex flex-wrap items-center gap-3">
+                <select
+                    aria-label="프로그램별 보기"
+                    value={activeProgram}
+                    onChange={(e) => { setProgramFilter(e.target.value); storeProgramFilter(e.target.value); }}
+                    className="input w-auto"
+                    id="invites-program-filter"
+                >
+                    <option value={ALL_PROGRAMS}>전체 프로그램</option>
+                    {programs.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                </select>
+                <span className="text-sm text-gray-500">{visibleInvites.length}건</span>
+            </div>
             <p className="text-xs text-gray-500">미사용이며 회원이 연결되지 않은 초대 코드만 삭제할 수 있습니다. 만료·회수된 코드도 이 조건이면 삭제할 수 있습니다.</p>
             {isLoading ? (
                 <div className="card text-center py-16"><p className="text-gray-500 text-sm">초대 정보를 불러오는 중...</p></div>
-            ) : invites.length === 0 ? (!loadError && (
+            ) : visibleInvites.length === 0 ? (!loadError && (
                 <div className="card text-center py-16">
-                    <p className="text-gray-500 text-sm">발행된 초대 코드가 없습니다.</p>
+                    <p className="text-gray-500 text-sm">{activeProgram !== ALL_PROGRAMS ? '선택한 프로그램의 초대 코드가 없습니다.' : '발행된 초대 코드가 없습니다.'}</p>
                 </div>
             )) : (
                 <div className="card overflow-hidden p-0">
@@ -334,7 +358,7 @@ export default function InvitesTab() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/[0.04]">
-                            {invites.map((invite) => (
+                            {visibleInvites.map((invite) => (
                                 <tr key={invite.id} className="hover:bg-white/[0.02] transition-colors">
                                     <td className="px-5 py-4 text-sm text-white">{invite.email}</td>
                                     <td className="px-5 py-4 text-xs text-gray-300 font-mono whitespace-nowrap">{invite.code ?? '관리자만 열람 가능'}</td>

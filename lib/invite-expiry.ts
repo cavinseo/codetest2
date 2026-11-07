@@ -1,12 +1,21 @@
 // 초대 기한의 날짜 입력과 표시를 한국 시간 기준으로 통일한다.
 import { z } from 'zod';
 
+export const DEFAULT_INVITE_EXPIRY_DAYS = 7;
+
 export const inviteExpirySchema = z.string({ required_error: '최초 접속 기한을 입력하세요.' })
     .date('올바른 최초 접속 기한 날짜를 입력하세요.')
     .transform((value) => new Date(`${value}T23:59:59.999+09:00`));
 
 export function formatInviteExpiryDate(value: string | Date): string {
     return new Date(new Date(value).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** 발행 폼의 기본 기한. 프로그램 종료 후 날짜는 서버가 거부하므로 종료일을 넘기지 않는다. */
+export function defaultInviteExpiryDate(programEndsAt: string, now: Date = new Date()): string {
+    const weekLater = formatInviteExpiryDate(new Date(now.getTime() + DEFAULT_INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000));
+    const programEnd = formatInviteExpiryDate(programEndsAt);
+    return weekLater < programEnd ? weekLater : programEnd;
 }
 
 export function getInviteExpiryInputError(value: string, programEndsAt: string, memberAccessExpiresAt?: string | null): string {
