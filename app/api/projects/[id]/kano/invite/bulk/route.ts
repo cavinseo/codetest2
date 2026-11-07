@@ -5,6 +5,7 @@ import { sendSurveyInvitation } from '@/lib/email';
 import { generateId } from '@/lib/id';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
+import { guardUploadedExcel } from '@/lib/upload-guard';
 import {
     parseInviteEmailText,
     parseKanoInviteWorkbook,
@@ -25,28 +26,45 @@ interface InviteResult {
     surveyLink?: string;
 }
 
+/**
+ * 사용자에게 그대로 보여 줄 수 있는 명단 오류. 바깥 catch 는 이 오류의 문구만 응답에 싣는다.
+ * 예전에는 모든 Error 의 message 를 400 으로 돌려줘 DB·파서 내부 오류 문구(테이블·제약 이름)가
+ * 화면까지 나갔다(2026-11-08 코드 리뷰 6번).
+ */
+class InviteListError extends Error {
+    constructor(message: string, readonly status: 400 | 413 = 400) {
+        super(message);
+    }
+}
+
 async function readInviteList(request: NextRequest): Promise<ParsedInviteList> {
     const contentType = request.headers.get('content-type') ?? '';
 
     if (contentType.includes('multipart/form-data')) {
-        const formData = await request.formData();
-        const file = formData.get('file');
-        if (!(file instanceof File)) {
-            throw new Error('업로드할 명단 파일이 없습니다.');
+        const formData = await request.formData().catch(() => {
+            throw new InviteListError('업로드한 명단 파일을 읽을 수 없습니다.');
+        });
+        // 크기·확장자 검사 없이 xlsx 를 동기 파싱하면 큰 파일이나 압축 폭탄 하나로 서버가 멈춘다.
+        // 다른 엑셀 업로드 라우트와 같은 검사를 거친다.
+        const upload = guardUploadedExcel(formData.get('file'));
+        if (!upload.ok) throw new InviteListError(upload.failure.error, upload.failure.status);
+        const buffer = Buffer.from(await upload.file.arrayBuffer());
+        try {
+            return parseKanoInviteWorkbook(buffer);
+        } catch {
+            throw new InviteListError('명단 파일을 읽을 수 없습니다. 내려받은 양식의 엑셀 파일인지 확인하세요.');
         }
-        const buffer = Buffer.from(await file.arrayBuffer());
-        return parseKanoInviteWorkbook(buffer);
     }
 
     const body = await request.json().catch(() => ({}));
-    if (Array.isArray(body.emails)) {
+    if (Array.isArray(body?.emails)) {
         return parseInviteEmailText(body.emails.join('\n'));
     }
-    if (typeof body.text === 'string') {
+    if (typeof body?.text === 'string') {
         return parseInviteEmailText(body.text);
     }
 
-    throw new Error('초대할 이메일 주소가 없습니다.');
+    throw new InviteListError('초대할 이메일 주소가 없습니다.');
 }
 
 export async function POST(
@@ -153,8 +171,10 @@ export async function POST(
                     : `${invited}명을 초대했습니다. 메일 설정이 없어 ${invited - emailSentCount}명은 링크를 직접 공유해야 합니다.`,
         });
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : '일괄 초대에 실패했습니다.';
+        if (error instanceof InviteListError) {
+            return NextResponse.json({ error: error.message }, { status: error.status });
+        }
         log.error('Kano 일괄 초대 오류', error);
-        return NextResponse.json({ error: message }, { status: 400 });
+        return NextResponse.json({ error: '일괄 초대에 실패했습니다. 잠시 후 다시 시도하세요.' }, { status: 500 });
     }
 }
