@@ -123,10 +123,19 @@ describe('프로그램 개설 규칙', () => {
         expect(createProgram).not.toHaveBeenCalled();
     });
 
-    it('종료일이 시작일과 같으면 막는다', async () => {
-        const res = await POST(postRequest({ ...validBody, startsAt: '2026-09-01', endsAt: '2026-09-01' }));
+    it('종료일이 시작일보다 앞서면 막는다', async () => {
+        const res = await POST(postRequest({ ...validBody, startsAt: '2026-09-02', endsAt: '2026-09-01' }));
 
         expect(res.status).toBe(400);
+        expect(createProgram).not.toHaveBeenCalled();
+    });
+
+    it('종료일은 그날 한국 시간 하루 끝으로 저장해 하루짜리 프로그램도 열 수 있다', async () => {
+        // UTC 자정(한국 오전 9시)으로 저장하면 초대 회원의 이용이 종료일 아침에 끊긴다.
+        const res = await POST(postRequest({ ...validBody, startsAt: '2026-09-01', endsAt: '2026-09-01' }));
+
+        expect(res.status).toBe(200);
+        expect(createProgram.mock.calls[0][0].data.endsAt).toEqual(new Date('2026-09-01T23:59:59.999+09:00'));
     });
 
     it('프로그램명이 없으면 막는다', async () => {

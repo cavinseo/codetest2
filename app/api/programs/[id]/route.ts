@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 import { canManagePrograms } from '@/lib/member-roles';
 import { canManageThisProgram, isValidProgramPeriod } from '@/lib/program';
+import { endOfProgramDay } from '@/lib/invite-expiry';
 import { requireAdmin } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { errorCodeOf, toErrorResponse } from '@/lib/api-error';
@@ -25,9 +26,9 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
     const { id } = await props.params;
     const parsed = editSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: '프로그램명, 주관기관명과 올바른 날짜를 입력해 주세요.' }, { status: 400 });
-    const data = { ...parsed.data, startsAt: new Date(parsed.data.startsAt), endsAt: new Date(parsed.data.endsAt) };
+    const data = { ...parsed.data, startsAt: new Date(parsed.data.startsAt), endsAt: endOfProgramDay(new Date(parsed.data.endsAt)) };
     if (!isValidProgramPeriod(data.startsAt, data.endsAt)) {
-        return NextResponse.json({ error: '종료일은 시작일보다 뒤여야 합니다.' }, { status: 400 });
+        return NextResponse.json({ error: '종료일은 시작일보다 앞설 수 없습니다.' }, { status: 400 });
     }
     try {
         const current = await prisma.program.findUnique({ where: { id }, select: { managerId: true } });
