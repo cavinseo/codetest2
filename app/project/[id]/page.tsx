@@ -38,6 +38,7 @@ interface ProjectData extends ProductOverview {
     description?: string;
     detailedDescription?: string;
     businessPlanFile?: string;
+    ownerName?: string | null;
     createdAt: string;
     memberCount: number;
     role: string;
@@ -138,6 +139,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                         description: overviewData.project.description || '',
                         detailedDescription: overviewData.project.detailedDescription || '',
                         businessPlanFile: overviewData.project.businessPlanFile || '',
+                        ownerName: overviewData.project.ownerName ?? null,
                         productName: overviewData.project.productName,
                         relatedImages: overviewData.project.relatedImages,
                         productImageDataUrl: overviewData.project.productImageDataUrl,
@@ -405,7 +407,8 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                             <div className="w-px h-6 bg-white/10" />
                             <div>
                                 <h1 className="text-xl font-display font-bold text-white">{project.name}</h1>
-                                <p className="text-xs text-gray-500 mt-0.5">{project.description}</p>
+                                {/* 설명은 길고 마크다운 기호가 그대로 보여 상단을 덮었다. 설명은 개요 탭에서만 보이고 여기는 누구의 프로젝트인지만 밝힌다. */}
+                                {project.ownerName && <p className="text-xs text-gray-500 mt-0.5">멘티 {project.ownerName}</p>}
                             </div>
                         </div>
                         <div className="flex items-center gap-3">

@@ -96,3 +96,27 @@ it('건수 요청이 실패해도 프로젝트 화면은 뜨고 그 건수만 0 
     expect(container.textContent).toContain('응답 대기 중');
     expect(container.textContent).toContain('아직 작성되지 않음');
 });
+
+it('상단에는 프로젝트명과 멘티 이름만 보이고 설명은 보이지 않는다', async () => {
+    const description = '**싹스캔**은 감정 기록 솔루션입니다. - **개인:** 앱';
+    fetchMock.mockImplementation(async (url: string) => (url.endsWith('/overview')
+        ? json({ project: { ...project, description, ownerName: '김멘티' } }) : respond(url)));
+
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+
+    const header = container.querySelector('header')!;
+    expect(header.querySelector('h1')?.textContent).toBe('스마트 화분');
+    expect(header.textContent).toContain('멘티 김멘티');
+    expect(header.textContent).not.toContain('싹스캔');
+});
+
+it('멘티 이름이 없으면 상단에 프로젝트명만 보인다', async () => {
+    fetchMock.mockImplementation(async (url: string) => (url.endsWith('/overview')
+        ? json({ project: { ...project, ownerName: null } }) : respond(url)));
+
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+
+    const header = container.querySelector('header')!;
+    expect(header.textContent).not.toContain('멘티');
+    expect(header.textContent).not.toContain('설명');
+});

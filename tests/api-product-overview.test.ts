@@ -137,3 +137,13 @@ it('추가 시장 자료가 제한을 초과하면 기존 내용을 덮어쓰지
     expect(m.update).not.toHaveBeenCalled();
     expect(stored.additionalMarketData).toBe('기존 자료');
 });
+it('소유 멘티의 이름만 ownerName 으로 내보내고 owner 객체는 응답에 남기지 않는다', async () => {
+    stored = { ...stored, owner: { name: ' 김멘티 ' } };
+    const body = await (await GET(request(), params)).json();
+    expect(m.find.mock.calls[0][0].select.owner).toEqual({ select: { name: true } });
+    expect(body.project.ownerName).toBe('김멘티');
+    expect(body.project).not.toHaveProperty('owner');
+
+    stored = { ...stored, owner: { name: null } };
+    expect((await (await GET(request(), params)).json()).project.ownerName).toBeNull();
+});
