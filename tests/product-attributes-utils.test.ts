@@ -192,6 +192,34 @@ describe('product attribute technology linking', () => {
         expect(joinCustomerNames(['A', ' ', 'B, C', 'A', null])).toBe('A, B, C');
     });
 
+    it('앞뒤가 모두 숫자인 쉼표는 나누지 않아 저장값이 원문과 같다', () => {
+        expect(splitCustomerNames('12,000명 고객사')).toEqual(['12,000명 고객사']);
+        expect(joinCustomerNames(['12,000명 고객사'])).toBe('12,000명 고객사');
+        expect(splitCustomerNames('1,234,567명 고객사')).toEqual(['1,234,567명 고객사']);
+        // 전각 쉼표도 같은 규칙을 따른다.
+        expect(splitCustomerNames('12，000명 고객사')).toEqual(['12，000명 고객사']);
+        expect(splitCustomerNames('갑，을')).toEqual(['갑', '을']);
+        expect(splitCustomerNames('12,000명 고객사, 을')).toEqual(['12,000명 고객사', '을']);
+    });
+
+    it('한쪽이라도 숫자가 아닌 쉼표는 지금처럼 구분자다', () => {
+        expect(splitCustomerNames('Acme, Inc.')).toEqual(['Acme', 'Inc.']);
+        expect(splitCustomerNames('12, 000명')).toEqual(['12', '000명']);
+        expect(splitCustomerNames('갑,1공장')).toEqual(['갑', '1공장']);
+        expect(splitCustomerNames('1공장,2공장')).toEqual(['1공장', '2공장']);
+        expect(splitCustomerNames('1,,2')).toEqual(['1', '2']);
+        expect(splitCustomerNames('갑\n을\r\n병')).toEqual(['갑', '을', '병']);
+    });
+
+    it('숫자 쉼표 고객명은 세분시장 병합과 행 정리에서도 한 고객이다', () => {
+        const rows = [
+            { marketSegment: '제조', customerName: '12,000명 고객사', customerNeed: 'n', benefit: 'b', attribute: 'a' },
+            { marketSegment: '제조', customerName: '을', customerNeed: 'n', benefit: 'b', attribute: 'a' },
+        ];
+        expect(buildCustomerNamesByMarketSegment(rows)).toEqual({ 제조: ['12,000명 고객사', '을'] });
+        expect(normalizeSegmentRows(rows).map(row => row.customerName)).toEqual(['12,000명 고객사, 을']);
+    });
+
     it('shares customer names across all rows of a segment, including non-adjacent ones', () => {
         const merged = mergeSegmentCustomerNames([
             { id: '1', marketSegment: 'X', customerName: 'A' },

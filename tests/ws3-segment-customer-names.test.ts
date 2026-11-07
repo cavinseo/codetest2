@@ -55,6 +55,36 @@ it('WS-4 에 "갑, 을" 한 칸으로 평가된 기존 열이 있으면 빈 열�
     expect(names).not.toContain('을');
 });
 
+it('WS-4 는 숫자 쉼표 고객명을 한 열로 만들고, 평가가 저장된 그 열을 유지한다', async () => {
+    const numberComma = { ...attribute, customerName: '12,000명 고객사' };
+    expect(await subSegmentNames([numberComma], null)).toContain('12,000명 고객사');
+    expect(await subSegmentNames([numberComma], null)).not.toContain('12');
+
+    const kept = await subSegmentNames([numberComma], [{ id: 's1', name: '12,000명 고객사' }]);
+    expect(kept.filter(name => name === '12,000명 고객사')).toHaveLength(1);
+    expect(kept).not.toContain('12');
+    expect(kept).not.toContain('000명 고객사');
+});
+
+it('보고서는 숫자 쉼표 고객명을 원문 그대로 표기한다', () => {
+    const empty: FinalReportWorksheetData = {
+        salesEstimates: [], specFunctions: [], productAttributes: [], requirements: [], kanoAggregation: [],
+        competitiveAssessment: [], improvementNeeds: [], improvementFeatures: [], techTree: [], targetSpecs: [],
+        improvementDirections: [], assets: [], fundingPlans: [], fundingSources: [],
+    };
+    const model = buildFinalReportModel(
+        { projectName: '장비', companyName: '회사', description: '', detailedDescription: '', coachName: '', generatedAt: '2026.11.07' },
+        { ...empty, productAttributes: [
+            { productName: '장비', marketSegment: '제조', techCapability: null, customerName: '12,000명 고객사', customerNeed: '니즈1', benefit: '혜택1', attribute: '속성1' },
+        ] },
+        EMPTY_REPORT_FREE_INPUT,
+        [],
+    );
+    expect(model.blocks.find(block => block.kind === 'dataTable' && block.title === 'WS-3 제품속성서')).toMatchObject({
+        rows: [['1', '제조', '12,000명 고객사', '니즈1', '혜택1', '속성1']],
+    });
+});
+
 it('보고서는 아직 저장 전인 고객명별 행도 WS-3 화면과 같이 세분시장 단위로 표기한다', () => {
     const empty: FinalReportWorksheetData = {
         salesEstimates: [], specFunctions: [], productAttributes: [], requirements: [], kanoAggregation: [],

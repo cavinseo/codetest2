@@ -62,6 +62,25 @@ describe('WS-3 초안 생성', () => {
         ]);
     });
 
+    it('답변의 숫자 쉼표는 나누지 않아 고객명과 니즈 값이 원문과 같다', () => {
+        const result = generateAttributeDraft({
+            project,
+            answers: {
+                marketSegments: '제조',
+                customerNames: '제조: 12,000명 고객사, 을',
+                customerProblems: '제조: 연 1,000만원 손실',
+                expectedBenefits: '제조: 비용 절감, 시간 단축',
+            },
+        });
+
+        expect(result.rows).toEqual([{
+            marketSegment: '제조',
+            customerName: '12,000명 고객사, 을',
+            customerNeed: '연 1,000만원 손실',
+            benefit: '비용 절감, 시간 단축',
+        }]);
+    });
+
     it('세분시장 접두사가 없는 답변은 모든 세분시장에 공통 적용한다', () => {
         const result = generateAttributeDraft({
             project,

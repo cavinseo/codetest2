@@ -234,6 +234,21 @@ it('쉼표로 입력한 고객명은 칸을 벗어나면 나뉘고 빈 칸은 �
     expect(savedRows[0].customerName).toBe('갑, 을');
 });
 
+it('숫자 쉼표 고객명은 칸을 벗어나도 나뉘지 않고 원문 그대로 저장·재로드된다', async () => {
+    await mount();
+    await fill(customerInputs()[0], '12,000명 고객사');
+    await act(async () => { customerInputs()[0].focus(); customerInputs()[0].blur(); });
+    expect(customerInputs().map(item => item.value)).toEqual(['12,000명 고객사']);
+
+    await save();
+    expect(savedRows.map(row => row.customerName)).toEqual(['12,000명 고객사', '12,000명 고객사']);
+
+    await act(async () => { root.unmount(); });
+    root = createRoot(container);
+    await mount();
+    expect(customerInputs().map(item => item.value)).toEqual(['12,000명 고객사']);
+});
+
 it('고객명별로 다른 니즈가 저장된 기존 데이터는 니즈를 모두 남기고 고객명만 합치며 저장 전에는 DB 를 쓰지 않는다', async () => {
     savedRows = legacyRows.map(row => ({ ...row }));
     await mount();

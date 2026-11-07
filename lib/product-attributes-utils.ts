@@ -71,7 +71,8 @@ export function dedupeByAttributeName<T extends AttributeNameRowLike>(rows: T[])
 // 스키마를 바꾸지 않으려고 한 세분시장의 고객명 여러 개를 기존 customerName 칸 하나에 담는다.
 // 엑셀 칸에서 사람이 그대로 읽고 고칠 수 있도록 쉼표 구분을 쓰고, 칸 안 줄바꿈도 구분자로 받아 준다.
 export function splitCustomerNames(value: string | null | undefined): string[] {
-    const names = (value ?? '').split(/[,，\r\n]+/).map(name => name.trim()).filter(Boolean);
+    // 앞뒤가 모두 숫자인 쉼표는 자릿수 표기(12,000)이므로 나누지 않는다. 나누면 저장할 때 "12, 000" 으로 값이 바뀐다.
+    const names = (value ?? '').split(/(?<!\d)[,，]|[,，](?!\d)|[\r\n]/).map(name => name.trim()).filter(Boolean);
     return Array.from(new Set(names));
 }
 

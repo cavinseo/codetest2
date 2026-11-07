@@ -200,7 +200,8 @@ function splitLines(raw: string | undefined): string[] {
 }
 
 function splitValues(raw: string): string[] {
-    return unique(raw.split(/[,;/·]+/).map((value) => value.trim()).filter(Boolean));
+    // 자릿수 쉼표(12,000)를 나누면 합칠 때 "12, 000" 으로 값이 바뀌므로 앞뒤가 모두 숫자면 구분자로 보지 않는다.
+    return unique(raw.split(/(?<!\d),|,(?!\d)|[;/·]/).map((value) => value.trim()).filter(Boolean));
 }
 
 function unique(values: string[]): string[] {
