@@ -33,7 +33,7 @@ async function fill(element: HTMLInputElement | null, value: string) {
 }
 
 async function addNeed() {
-    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="같은 세분시장 항목 추가"]')!.click(); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="같은 세분시장에 고객니즈 추가"]')!.click(); });
     const newRow = container.querySelectorAll('tbody tr')[1];
     const needInput = newRow.querySelector<HTMLInputElement>('input[list^="cn_list_"]')!;
     await fill(needInput, '외부 인력 도착 전 복구');
@@ -135,7 +135,7 @@ it('같은 고객 니즈에 여러 제품속성을 추가하고 저장 후 다�
 it('세분시장 항목 추가는 기존 행 뒤에 빈 항목을 만들고 다른 니즈를 보존한다', async () => {
     await mount();
     await act(async () => {
-        container.querySelector<HTMLButtonElement>('button[title="같은 세분시장 항목 추가"]')!.click();
+        container.querySelector<HTMLButtonElement>('button[title="같은 세분시장에 고객니즈 추가"]')!.click();
     });
 
     await save();
@@ -282,4 +282,14 @@ it('떨어져 있는 같은 세분시장도 고객명을 함께 바꾸고, 다�
     await fill(customerInputs()[0], '고객Z');
     await save();
     expect(savedRows.map(row => row.customerName)).toEqual(['고객Z', '고객C', '고객Z']);
+});
+
+it('WS-3 버튼 문구는 세분고객 추가와 + 고객니즈이고 행 추가·+ 항목은 남지 않는다', async () => {
+    await mount();
+    const labels = [...container.querySelectorAll('button')].map(button => button.textContent?.trim());
+    expect(labels.filter(label => label === '세분고객 추가')).toHaveLength(2);
+    expect(labels).toContain('+ 고객니즈');
+    expect(labels).not.toContain('행 추가');
+    expect(labels).not.toContain('+ 항목');
+    expect(container.querySelector('button[title="같은 세분시장에 고객니즈 추가"]')?.textContent?.trim()).toBe('+ 고객니즈');
 });

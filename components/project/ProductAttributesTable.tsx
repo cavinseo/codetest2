@@ -674,7 +674,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
-                        행 추가
+                        세분고객 추가
                     </button>
                     <button onClick={() => handleSave()} disabled={isSaving} className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -754,7 +754,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         </svg>
                     </div>
                     <h3 className="text-lg font-display font-semibold text-gray-300 mb-2">데이터가 없습니다</h3>
-                    <p className="text-sm text-gray-500 mb-6">우상단의 &apos;행 추가&apos; 버튼을 눌러 입력을 시작하세요</p>
+                    <p className="text-sm text-gray-500 mb-6">우상단의 &apos;세분고객 추가&apos; 버튼을 눌러 입력을 시작하세요</p>
                     <button onClick={addRow} className="btn-primary inline-flex items-center gap-2 mx-auto">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -812,9 +812,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                                         type="button"
                                                         onClick={() => addMarketSegmentRow(row)}
                                                         className="rounded-md border border-primary-500/20 px-2 py-1 text-[10px] text-primary-300 hover:bg-primary-500/10 transition-colors whitespace-nowrap"
-                                                        title="같은 세분시장 항목 추가"
+                                                        title="같은 세분시장에 고객니즈 추가"
                                                     >
-                                                        + 항목
+                                                        + 고객니즈
                                                     </button>
                                                 </div>
                                                 <datalist id={`ms_list_${row.id}`}>
@@ -966,7 +966,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
-                        행 추가
+                        세분고객 추가
                     </button>
                 </div>
             )}
