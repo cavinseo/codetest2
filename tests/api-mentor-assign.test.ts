@@ -134,6 +134,12 @@ it('후보는 승인된 멘토·매니저로 제한하고 만료자는 제외한
     expect((await response.json()).candidates).toEqual([{ id: 'ok' }]);
     expect(mocks.users.mock.calls[0][0].where).toEqual({ role: { in: ['MENTOR', 'PROGRAM_MANAGER'] }, status: 'APPROVED' });
 });
+it('후보 목록은 서비스 전체 멘토·매니저의 이메일을 싣지 않는다', async () => {
+    mocks.users.mockResolvedValue([{ id: 'ok', name: '김멘토', role: 'MENTOR', accessExpiresAt: null }]);
+    const response = await GET(new NextRequest('http://localhost/api/projects/p1/mentors?candidates=1'), params);
+    expect(mocks.users.mock.calls[0][0].select).not.toHaveProperty('email');
+    expect(JSON.stringify(await response.json())).not.toContain('@');
+});
 it('없는 프로젝트는 404로 처리한다', async () => {
     mocks.project.mockResolvedValue(null);
     expect((await POST(request(), params)).status).toBe(404);
