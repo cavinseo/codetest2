@@ -127,6 +127,76 @@ function CustomerNamesCell({ rowId, rowSpan, customerNames, nameOptions, onChang
     );
 }
 
+interface MergedValueCellProps {
+    rowId: string;
+    rowSpan: number;
+    // datalist id 앞부분이다. 테스트와 기존 화면이 cn_list_·bn_list_ 로 칸을 찾으므로 그대로 둔다.
+    listPrefix: 'cn' | 'bn';
+    value: string;
+    options: string[];
+    onChange: (value: string) => void;
+}
+
+// 고객 니즈·제공혜택 - 값이 같은 연속 행을 한 칸으로 병합해 보여 주므로, 바꾼 값은 묶인 행 전체에 적용된다.
+function MergedValueCell({ rowId, rowSpan, listPrefix, value, options, onChange }: MergedValueCellProps) {
+    const datalistId = `${listPrefix}_list_${rowId}`;
+    return (
+        <td rowSpan={rowSpan} className="p-0 align-top">
+            <input
+                type="text"
+                list={datalistId}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className="w-full h-full min-h-[44px] px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
+                placeholder="입력"
+            />
+            <datalist id={datalistId}>
+                {options.map((v, i) => <option key={i} value={v} />)}
+            </datalist>
+        </td>
+    );
+}
+
+interface AttributeCellProps {
+    rowId: string;
+    value: string;
+    options: string[];
+    // 스펙에서 가져온 값이면 직접 입력한 값과 색으로 구분한다.
+    imported: boolean;
+    onChange: (value: string) => void;
+    onPickFromSpec: () => void;
+}
+
+// 제품속성 - 행마다 하나씩 직접 입력하거나 AS-IS 스펙표에서 고른다.
+function AttributeCell({ rowId, value, options, imported, onChange, onPickFromSpec }: AttributeCellProps) {
+    const datalistId = `attribute_list_${rowId}`;
+    return (
+        <td className="p-0 bg-cyan-500/[0.04] relative">
+            <input
+                type="text"
+                list={datalistId}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className={`w-full px-3 pr-8 py-2.5 bg-transparent text-sm outline-none focus:bg-cyan-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-cyan-500/30 transition-colors ${imported ? 'text-cyan-300' : 'text-gray-300'}`}
+                placeholder="입력"
+            />
+            <datalist id={datalistId}>
+                {options.map((v, i) => <option key={i} value={v} />)}
+            </datalist>
+            <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onPickFromSpec(); }}
+                className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-cyan-500 hover:text-cyan-300 hover:bg-cyan-500/20 rounded transition-colors cursor-pointer z-10"
+                title="AS-IS 스펙에서 가져오기"
+            >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+            </button>
+        </td>
+    );
+}
+
 interface SpecFunction {
     id: string;
     level: 'CORE' | 'SUB' | 'DETAIL';
@@ -564,21 +634,8 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         return [...new Set(rows.map(r => r[field]).filter(Boolean))];
     };
 
-    const getMarketSegmentRowSpan = (index: number) => {
-        return getMarketSegmentSpan(rows, index);
-    };
-
-    // 같은 세분시장의 고객니즈를 묶고, 제공혜택은 같은 니즈 안에서만 병합한다.
-    const getCustomerNeedRowSpan = (index: number) => {
-        return getCustomerNeedSpan(rows, index);
-    };
-
-    const getBenefitRowSpan = (index: number) => {
-        return getBenefitSpan(rows, index);
-    };
-
     const updateMarketSegmentGroup = (startIndex: number, value: string) => {
-        const span = getMarketSegmentRowSpan(startIndex);
+        const span = getMarketSegmentSpan(rows, startIndex);
         const targetIds = new Set(rows.slice(startIndex, startIndex + span).map(r => r.id));
         setRows(rows.map(r => targetIds.has(r.id) ? { ...r, marketSegment: value } : r));
     };
@@ -592,14 +649,15 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     };
 
     // 병합된 칸을 수정하면 묶여 있던 행 전체에 같은 값을 적용한다.
+    // 고객니즈는 같은 세분시장 안에서, 제공혜택은 같은 니즈 안에서만 묶인다(getBenefitSpan).
     const updateCustomerNeedGroup = (startIndex: number, value: string) => {
-        const span = getCustomerNeedRowSpan(startIndex);
+        const span = getCustomerNeedSpan(rows, startIndex);
         const targetIds = new Set(rows.slice(startIndex, startIndex + Math.max(span, 1)).map(r => r.id));
         setRows(rows.map(r => targetIds.has(r.id) ? { ...r, customerNeed: value } : r));
     };
 
     const updateBenefitGroup = (startIndex: number, value: string) => {
-        const span = getBenefitRowSpan(startIndex);
+        const span = getBenefitSpan(rows, startIndex);
         const targetIds = new Set(rows.slice(startIndex, startIndex + Math.max(span, 1)).map(r => r.id));
         setRows(rows.map(r => targetIds.has(r.id) ? { ...r, benefit: value } : r));
     };
@@ -854,9 +912,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         </thead>
                         <tbody>
                             {rows.map((row, idx) => {
-                                const marketSegmentRowSpan = getMarketSegmentRowSpan(idx);
-                                const customerNeedRowSpan = getCustomerNeedRowSpan(idx);
-                                const benefitRowSpan = getBenefitRowSpan(idx);
+                                const marketSegmentRowSpan = getMarketSegmentSpan(rows, idx);
+                                const customerNeedRowSpan = getCustomerNeedSpan(rows, idx);
+                                const benefitRowSpan = getBenefitSpan(rows, idx);
 
                                 return (
                                 <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] group transition-colors">
@@ -907,62 +965,36 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
 
                                     {/* 고객 니즈 - 같은 세분시장에서 값이 같으면 병합 */}
                                     {customerNeedRowSpan > 0 && (
-                                        <td rowSpan={customerNeedRowSpan} className="p-0 align-top">
-                                            <input
-                                                type="text"
-                                                list={`cn_list_${row.id}`}
-                                                value={row.customerNeed}
-                                                onChange={(e) => updateCustomerNeedGroup(idx, e.target.value)}
-                                                className="w-full h-full min-h-[44px] px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                                placeholder="입력"
-                                            />
-                                            <datalist id={`cn_list_${row.id}`}>
-                                                {getUniqueValues('customerNeed').map((v, i) => <option key={i} value={v} />)}
-                                            </datalist>
-                                        </td>
+                                        <MergedValueCell
+                                            rowId={row.id}
+                                            rowSpan={customerNeedRowSpan}
+                                            listPrefix="cn"
+                                            value={row.customerNeed}
+                                            options={getUniqueValues('customerNeed')}
+                                            onChange={(value) => updateCustomerNeedGroup(idx, value)}
+                                        />
                                     )}
 
                                     {/* 제공혜택 - 같은 세분시장과 고객니즈 안에서 값이 같으면 병합 */}
                                     {benefitRowSpan > 0 && (
-                                        <td rowSpan={benefitRowSpan} className="p-0 align-top">
-                                            <input
-                                                type="text"
-                                                list={`bn_list_${row.id}`}
-                                                value={row.benefit}
-                                                onChange={(e) => updateBenefitGroup(idx, e.target.value)}
-                                                className="w-full h-full min-h-[44px] px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                                placeholder="입력"
-                                            />
-                                            <datalist id={`bn_list_${row.id}`}>
-                                                {getUniqueValues('benefit').map((v, i) => <option key={i} value={v} />)}
-                                            </datalist>
-                                        </td>
+                                        <MergedValueCell
+                                            rowId={row.id}
+                                            rowSpan={benefitRowSpan}
+                                            listPrefix="bn"
+                                            value={row.benefit}
+                                            options={getUniqueValues('benefit')}
+                                            onChange={(value) => updateBenefitGroup(idx, value)}
+                                        />
                                     )}
 
-                                    {/* 제품속성 */}
-                                    <td className="p-0 bg-cyan-500/[0.04] relative">
-                                        <input
-                                            type="text"
-                                            list={`attribute_list_${row.id}`}
-                                            value={row.attribute}
-                                            onChange={(e) => handleManualInput(row.id, e.target.value)}
-                                            className={`w-full px-3 pr-8 py-2.5 bg-transparent text-sm outline-none focus:bg-cyan-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-cyan-500/30 transition-colors ${isImported(row.id, 'attribute') ? 'text-cyan-300' : 'text-gray-300'}`}
-                                            placeholder="입력"
-                                        />
-                                        <datalist id={`attribute_list_${row.id}`}>
-                                            {getUniqueValues('attribute').map((v, i) => <option key={i} value={v} />)}
-                                        </datalist>
-                                        <button
-                                            type="button"
-                                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSpecPicker({ rowId: row.id, field: 'attribute' }); }}
-                                            className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-cyan-500 hover:text-cyan-300 hover:bg-cyan-500/20 rounded transition-colors cursor-pointer z-10"
-                                            title="AS-IS 스펙에서 가져오기"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                            </svg>
-                                        </button>
-                                    </td>
+                                    <AttributeCell
+                                        rowId={row.id}
+                                        value={row.attribute}
+                                        options={getUniqueValues('attribute')}
+                                        imported={isImported(row.id, 'attribute')}
+                                        onChange={(value) => handleManualInput(row.id, value)}
+                                        onPickFromSpec={() => setShowSpecPicker({ rowId: row.id, field: 'attribute' })}
+                                    />
 
                                     {/* 속성 추가 및 행 삭제 */}
                                     <td className="px-2 py-2 text-center">
