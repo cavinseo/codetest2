@@ -29,3 +29,20 @@ it('공백 관계를 순위에서 빼고 실제 표시되는 세부기능 수를
     expect(body.technicals).toEqual([expect.objectContaining({ id: 'valid', rank: 1, totalScore: 2 })]);
     expect(body.totals.technicalScore).toBe(2);
 });
+
+it('직접 넣은 Kano 가중치 0 은 중요도 0 으로, 빈칸은 자동 가중치로 쓴다', async () => {
+    // TIMKO 와 같은 규칙이다(2026-11-08 코드 리뷰 11번). 응답이 1건이면 자동 가중치가 0 보다 크다.
+    m.requirements.mockResolvedValue([
+        { id: 'zero', category: '품질', requirement: '안정성', kanoWeight: 0 },
+        { id: 'blank', category: '품질', requirement: '속도', kanoWeight: null },
+    ]);
+    m.responses.mockResolvedValue([
+        { requirementId: 'zero', positiveAnswer: 1, negativeAnswer: 5 },
+        { requirementId: 'blank', positiveAnswer: 1, negativeAnswer: 5 },
+    ]);
+    const response = await GET(new NextRequest('http://localhost/api/projects/p/qfd/analysis'), { params: Promise.resolve({ id: 'p' }) });
+    const { requirements } = await response.json();
+    const importance = (id: string) => requirements.find((row: { id: string }) => row.id === id).importance;
+    expect(importance('zero')).toBe(0);
+    expect(importance('blank')).toBeGreaterThan(0);
+});

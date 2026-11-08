@@ -110,7 +110,8 @@ it('QFD의 적용 가중치와 관계 점수, 경쟁 비교, 중요도, 순위�
     expect(sheet.getCell('W3').value).toBe('경쟁기업');
 });
 
-it('TIMKO의 수동 가중치 0도 보존하고 QFD에는 기존 양식의 가중치 규칙을 적용한다', async () => {
+it('수동 가중치 0은 TIMKO와 QFD 모두 0으로 쓴다', async () => {
+    // 예전에는 QFD 만 0 을 자동값(3.2)으로 바꿔 두 시트가 달랐다(2026-11-08 코드 리뷰 11번).
     const project = worksheetExcelProject();
     project.requirements[0].kanoWeight = 0;
     const timko = (await load('timko', project)).worksheets[0];
@@ -118,7 +119,7 @@ it('TIMKO의 수동 가중치 0도 보존하고 QFD에는 기존 양식의 가�
     expect(timko.getCell('I7').value).toBe('일원적 품질');
     expect(timko.getCell('D7').numFmt).toBe('0.00');
     const qfd = (await load('qfd', project)).worksheets[0];
-    expect(qfd.getCell('T4').value).toBe(3.2);
+    expect(qfd.getCell('T4').value).toBe(0);
 });
 
 it('매출의 0과 빈칸을 구분하고 자동 연동 매출 및 자금 합계는 이중 합산하지 않는다', async () => {

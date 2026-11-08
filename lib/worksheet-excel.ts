@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import type { Prisma } from '@prisma/client';
 import { aggregateKanoResponses, calculateBetterWorse, calculateSatisfactionGraphWeight, type KanoAnswer } from './kano-algorithm';
 import { calculateQfdWorksheet } from './qfd-worksheet';
+import { resolveKanoWeight } from './kano-weight';
 import { WORKSHEET_EXCEL_SHEETS, type WorksheetExcelId } from './worksheet-excel-sheets';
 import { createWorksheet, sortByOrder } from './worksheet-excel-layout';
 import { writeWorksheetContents } from './worksheet-excel-writers';
@@ -28,14 +29,12 @@ function prepareWorksheetData(project: WorksheetExcelProject) {
         const counts = aggregateKanoResponses(responses.map(response => ({ positive: response.positiveAnswer as KanoAnswer, negative: response.negativeAnswer as KanoAnswer })));
         const { better, worse } = calculateBetterWorse(counts);
         const autoKanoWeight = responses.length ? calculateSatisfactionGraphWeight(better, worse) : 0;
-        return {
-            requirement, counts, better, worse, autoKanoWeight,
-            timkoWeight: requirement.kanoWeight ?? autoKanoWeight,
-            qfdWeight: requirement.kanoWeight != null && requirement.kanoWeight > 0 ? requirement.kanoWeight : autoKanoWeight,
-        };
+        // TIMKO 시트와 QFD 시트가 같은 가중치를 쓴다(직접 넣은 0 포함, 2026-11-08 코드 리뷰 11번).
+        const kanoWeight = resolveKanoWeight(requirement.kanoWeight, autoKanoWeight);
+        return { requirement, counts, better, worse, autoKanoWeight, kanoWeight };
     });
     const technicalCharacteristics = [...project.technicalCharacteristics].filter(row => row.name.trim()).sort((a, b) => a.groupIndex - b.groupIndex || a.columnOrder - b.columnOrder || a.name.localeCompare(b.name));
-    const qfdAnalysis = calculateQfdWorksheet({ requirements: kanoAnalysis.map(row => ({ ...row.requirement, importance: row.qfdWeight })), technicals: technicalCharacteristics, relationships: project.qfdMatrices, benchmarks: project.benchmarks });
+    const qfdAnalysis = calculateQfdWorksheet({ requirements: kanoAnalysis.map(row => ({ ...row.requirement, importance: row.kanoWeight })), technicals: technicalCharacteristics, relationships: project.qfdMatrices, benchmarks: project.benchmarks });
     return { project, requirements, kanoAnalysis, technicalCharacteristics, qfdAnalysis };
 }
 

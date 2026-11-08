@@ -112,7 +112,7 @@ function writeKanoAggregationSheet(sheet: ExcelJS.Worksheet, context: WorksheetE
 function writeTimkoSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
     const { kanoAnalysis } = context;
     const quadrantLabels = { ATTRACTIVE: '매력적 품질', ONE_DIMENSIONAL: '일원적 품질', MUST_BE: '당연적 품질', INDIFFERENT: '무관심 품질' };
-    const table = addTable(sheet, 'TIMKO / 만족계수', ['번호', '설문항목', '만족계수', '불만족계수', '품질 분류', '자동 가중치', '적용 가중치', '사분면'], kanoAnalysis.map((row, index) => [index + 1, row.requirement.requirement, row.counts.total ? row.better : null, row.counts.total ? row.worse : null, row.counts.total ? getWeightedTimkoCategory(row.timkoWeight) ?? '' : '', row.autoKanoWeight, row.timkoWeight, row.counts.total ? quadrantLabels[getSatisfactionQuadrant(row.better, row.worse)] : '']));
+    const table = addTable(sheet, 'TIMKO / 만족계수', ['번호', '설문항목', '만족계수', '불만족계수', '품질 분류', '자동 가중치', '적용 가중치', '사분면'], kanoAnalysis.map((row, index) => [index + 1, row.requirement.requirement, row.counts.total ? row.better : null, row.counts.total ? row.worse : null, row.counts.total ? getWeightedTimkoCategory(row.kanoWeight) ?? '' : '', row.autoKanoWeight, row.kanoWeight, row.counts.total ? quadrantLabels[getSatisfactionQuadrant(row.better, row.worse)] : '']));
     kanoAnalysis.forEach((_, index) => { sheet.getCell(table.start + index, 4).numFmt = '0.00'; sheet.getCell(table.start + index, 5).numFmt = '0.00'; });
 }
 
