@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import WorksheetLoadError from './WorksheetLoadError';
 import { useUnsavedWorksheet } from './useUnsavedWorksheet';
+import HeaderToast from '@/components/HeaderToast';
+import { useToast } from '@/components/useToast';
 
 interface AssetItem {
     id: string;
@@ -18,6 +20,7 @@ interface AssetsTableProps {
 
 export default function AssetsTable({ projectId }: AssetsTableProps) {
     const [assets, setAssets] = useState<AssetItem[]>([]);
+    const { toast, showToast } = useToast();
     const [isLoading, setIsLoading] = useState(true);
     const [loadFailed, setLoadFailed] = useState(false);
     const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
@@ -79,26 +82,33 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ assets })
             });
+            // 실패해도 아무 표시가 없어 저장된 줄 알고 떠나면 입력이 사라졌다(2026-11-08 코드 리뷰 9번).
             if (res.ok) {
                 markSaved();
-                alert('저장되었습니다.');
+                showToast('저장되었습니다.');
                 loadData();
+            } else {
+                showToast('저장에 실패했습니다. 다시 시도하세요.', 'error');
             }
         } catch (error) {
             console.error('Failed to save assets:', error);
+            showToast('저장에 실패했습니다. 연결을 확인하고 다시 시도하세요.', 'error');
         } finally {
             setIsSaving(false);
         }
     };
 
-    if (loadFailed) return <WorksheetLoadError onRetry={loadData} />;
-    if (isLoading || loadedProjectId !== projectId) return <div className="p-8 text-center text-gray-400">로딩 중...</div>;
+    // 저장 뒤 다시 불러오는 동안에도 저장 결과 알림이 보이도록 로딩 화면에도 둔다.
+    const toastElement = toast && <HeaderToast message={toast.message} type={toast.type} />;
+    if (loadFailed) return <>{toastElement}<WorksheetLoadError onRetry={loadData} /></>;
+    if (isLoading || loadedProjectId !== projectId) return <>{toastElement}<div className="p-8 text-center text-gray-400">로딩 중...</div></>;
 
     const coreAssets = assets.filter(a => a.type === 'CORE');
     const compAssets = assets.filter(a => a.type === 'COMPLEMENTARY');
 
     return (
         <div className="space-y-8">
+            {toastElement}
             <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-white">[WS-14] 핵심자산 및 보완자산 도출표</h2>
                 <button
