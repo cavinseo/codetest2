@@ -69,6 +69,30 @@ describe('Kano Google Forms upload parser', () => {
         ]);
     });
 
+    // 표시 열이 있는 시트에서 빈 답을 위치 기준 열로 채우면, 성별 같은 열이 끼어 있어
+    // 다른 질문의 답이 그 질문의 답으로 지어 넣어졌다(2026-11-08 코드 리뷰 12번).
+    it('skips a blank labeled answer instead of borrowing another column', () => {
+        const answers = parseGoogleFormsResponseRows([
+            {
+                '성별': '남',
+                '👍 [긍정] 빠른 주문 완료': 1,
+                '👎 [부정] 빠른 주문 완료': 5,
+                '👍 [긍정] 결제 안전성': '',
+                '👎 [부정] 결제 안전성': 4,
+            },
+        ], 2);
+
+        expect(answers.map((answer) => answer.requirementIndex)).toEqual([0]);
+    });
+
+    it('still reads unlabeled sheets by column position', () => {
+        const answers = parseGoogleFormsResponseRows([
+            { 'Q1 좋음': 1, 'Q1 나쁨': 5, 'Q2 좋음': 2, 'Q2 나쁨': 4 },
+        ], 2);
+
+        expect(answers.map((answer) => [answer.positiveAnswer, answer.negativeAnswer])).toEqual([[1, 5], [2, 4]]);
+    });
+
     it('reads the dedicated upload workbook even when the header starts on row 3', () => {
         const buffer = writeKanoUploadTemplateBuffer([
             { requirement: '빠른 주문 완료' },
