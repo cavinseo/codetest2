@@ -6,7 +6,7 @@ import { useToast } from '@/components/useToast';
 import Link from 'next/link';
 import WorksheetLoadError from './WorksheetLoadError';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
-import { useUnsavedWorksheet } from './useUnsavedWorksheet';
+import { UNSAVED_BEFORE_EXCEL_MESSAGE, useUnsavedWorksheet } from './useUnsavedWorksheet';
 import {
     groupRequirementsByCategory,
     getRequirementGroupSpans,
@@ -170,7 +170,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     // 실리므로 넣되, 값을 그대로 두면 원래 행과 같아져 편집으로 치지 않는다. 그룹 정렬을 거치는
     // 까닭은 바뀐 것 없이 편집을 확정만 해도 행 순서가 다시 매겨져 편집으로 보이기 때문이다.
     // 새 행 입력칸은 글자를 넣었을 때만 저장에 실리므로 그때만 넣는다.
-    const { markSaved } = useUnsavedWorksheet(
+    const { isDirty, markSaved } = useUnsavedWorksheet(
         {
             requirements: groupRequirementsByCategory(editingId
                 ? requirements.map((item) => (item.id === editingId ? { ...item, ...editValues } : item))
@@ -261,6 +261,10 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         if (!file) return;
         if (!isExcelFileName(file.name)) {
             showToast(EXCEL_FILE_TYPE_ERROR, 'error');
+            if (excelInputRef.current) excelInputRef.current.value = '';
+            return;
+        }
+        if (isDirty && !window.confirm(UNSAVED_BEFORE_EXCEL_MESSAGE)) {
             if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }

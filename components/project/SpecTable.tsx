@@ -6,7 +6,7 @@ import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import { useWorksheetLoad } from './useWorksheetLoad';
-import { useUnsavedWorksheet } from './useUnsavedWorksheet';
+import { UNSAVED_BEFORE_EXCEL_MESSAGE, useUnsavedWorksheet } from './useUnsavedWorksheet';
 import { buildFlatSpecRowsFromFunctions, groupSpecRows, renameSpecGroup } from '@/lib/spec-table-utils';
 import FunctionAnalysisAssistant from '@/components/project/FunctionAnalysisAssistant';
 import SpecFastWizard from './SpecFastWizard';
@@ -90,7 +90,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     }, (error) => console.error('데이터 로딩 실패:', error));
 
     // 세세부기능 열 접기는 PATCH 로 바로 저장되므로 편집 판정에서 뺀다.
-    const { markSaved } = useUnsavedWorksheet(rows, isReady);
+    const { isDirty, markSaved } = useUnsavedWorksheet(rows, isReady);
 
     const updateDetailVisibility = async (collapsed: boolean) => {
         const previous = isDetailColumnCollapsed;
@@ -196,6 +196,10 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         if (!file) return;
         if (!isExcelFileName(file.name)) {
             showToast(EXCEL_FILE_TYPE_ERROR, 'error');
+            if (excelInputRef.current) excelInputRef.current.value = '';
+            return;
+        }
+        if (isDirty && !window.confirm(UNSAVED_BEFORE_EXCEL_MESSAGE)) {
             if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }

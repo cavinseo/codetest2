@@ -5,7 +5,7 @@ import HeaderToast from '@/components/HeaderToast';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
-import { useUnsavedWorksheet } from './useUnsavedWorksheet';
+import { UNSAVED_BEFORE_EXCEL_MESSAGE, useUnsavedWorksheet } from './useUnsavedWorksheet';
 import AttributeMentorWizard from './AttributeMentorWizard';
 import type { MentorAppliedRow } from '@/lib/attribute-mentor-utils';
 import {
@@ -459,7 +459,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     }));
     // 화면 행이 아니라 저장할 모양으로 비교한다. 빈 고객명 칸을 하나 늘리거나 같은 세분시장
     // 고객명을 합치기만 해도 화면 행은 바뀌지만 저장 내용은 그대로이기 때문이다.
-    const { markSaved } = useUnsavedWorksheet(savedAttributes, !isLoading && !loadFailed && loadedProjectId === projectId);
+    const { isDirty, markSaved } = useUnsavedWorksheet(savedAttributes, !isLoading && !loadFailed && loadedProjectId === projectId);
 
     const createRow = (order: number, overrides: Partial<ProductAttributeRow> = {}): ProductAttributeRow => ({
         id: `attr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -566,6 +566,10 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         if (!file) return;
         if (!isExcelFileName(file.name)) {
             showToast(EXCEL_FILE_TYPE_ERROR, 'error');
+            if (excelInputRef.current) excelInputRef.current.value = '';
+            return;
+        }
+        if (isDirty && !window.confirm(UNSAVED_BEFORE_EXCEL_MESSAGE)) {
             if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }

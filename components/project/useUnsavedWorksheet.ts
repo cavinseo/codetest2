@@ -9,6 +9,11 @@ import { createContext, useCallback, useContext, useEffect, useId, useRef, useSt
 import { useLeaveGuard } from './useLeaveGuard';
 
 export const UNSAVED_WORKSHEET_MESSAGE = '저장하지 않은 워크시트 변경이 있습니다. 저장하지 않고 이동할까요?';
+/**
+ * 엑셀 반영은 서버에 쓴 뒤 표를 서버 상태로 다시 채우므로 저장하지 않은 편집이 사라진다
+ * (2026-11-08 코드 리뷰 10번). 반영 전에 묻는다.
+ */
+export const UNSAVED_BEFORE_EXCEL_MESSAGE = '저장하지 않은 변경이 있습니다. 엑셀을 반영하면 저장하지 않은 변경은 사라집니다. 계속할까요?';
 
 /**
  * 프로젝트 화면이 탭을 바꾸기 전에 물을 수 있도록 표가 편집 상태를 알리는 통로. 한 탭 안에 표가

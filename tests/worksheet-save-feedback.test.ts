@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import AssetsTable from '../components/project/AssetsTable';
 import SalesTable from '../components/project/SalesTable';
+import RequirementsTable from '../components/project/RequirementsTable';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -89,4 +90,28 @@ it('WS-1 저장 뒤 고치지 않으면 1초 뒤 다음 워크시트로 넘어�
     await act(async () => root.render(createElement('div')));
     await act(async () => { vi.advanceTimersByTime(1000); });
     expect(onSaved).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+    ['편집이 없으면 묻지 않고', false, undefined, true],
+    ['편집이 있으면 묻고 취소하면 반영하지 않으며', true, false, false],
+    ['편집이 있어도 계속하면', true, true, true],
+])('WS-5 엑셀 반영 전 %s 반영 방식 선택으로 넘어간다', async (_label, edit, confirmed, expectPrompt) => {
+    // 엑셀 반영은 표를 서버 상태로 다시 채워 저장하지 않은 편집을 지운다(2026-11-08 코드 리뷰 10번).
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(confirmed ?? true);
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({
+        requirements: [{ id: 'r1', category: '배송', subcategory: '', requirement: '빠른 배송', order: 0 }], attributes: [],
+    }) }));
+    await act(async () => root.render(createElement(RequirementsTable, { projectId: 'project' })));
+    if (edit) {
+        await act(async () => button('행 추가')!.click());
+        const newInput = [...container.querySelectorAll<HTMLInputElement>('input[type="text"]')].find(input => input.value === '');
+        await act(async () => setInput(newInput!, '새 항목'));
+    }
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['x'], 'requirements.xlsx')] });
+    await act(async () => fileInput.dispatchEvent(new Event('change', { bubbles: true })));
+
+    expect(confirm).toHaveBeenCalledTimes(edit ? 1 : 0);
+    expect(container.textContent?.includes('requirements.xlsx 파일을')).toBe(expectPrompt);
 });
