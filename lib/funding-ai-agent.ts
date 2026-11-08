@@ -144,12 +144,19 @@ export function generateFundingAiDraft({
     };
 }
 
+// 가져오기한 자금조달표는 엑셀 표시 문자열("1,200원", "₩1,200")을 그대로 담는다. 쉼표만 지우면
+// 0 이 되어 AI 초안이 그 칸을 빈 칸으로 보고 덮어쓰고 엑셀에도 0 으로 나갔다(2026-11-08 코드
+// 리뷰 13번). 가져오기의 numberValue 와 같은 기호를 지운다.
+function stripAmountText(token: string): string {
+    return token.replace(/[,\s₩￦$]|원/g, '');
+}
+
 function toAmountNumber(amount: unknown): number {
-    return Number(String(amount).replace(/,/g, '')) || 0;
+    return Number(stripAmountText(String(amount))) || 0;
 }
 
 function isNumericToken(token: string): boolean {
-    const stripped = token.replace(/,/g, '').trim();
+    const stripped = stripAmountText(token);
     return stripped !== '' && Number.isFinite(Number(stripped));
 }
 
