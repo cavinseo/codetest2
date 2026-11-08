@@ -60,9 +60,19 @@ it('기존 JSON 백업은 그대로 유지하고 엑셀 생성 오류는 내부 
     expect(backup.customerRequirements).toHaveLength(2);
     expect(json.headers.get('Content-Type')).toContain('application/json');
     const project = worksheetExcelProject();
-    project.fitnessMatrix!.marketsJson = 'invalid-private-data';
+    Object.defineProperty(project, 'salesEstimates', { get() { throw new Error('invalid-private-data'); } });
     findUnique.mockResolvedValueOnce(project);
     const response = await GET(request('?format=xlsx'), params);
     expect(response.status).toBe(500);
     expect(await response.text()).not.toContain('invalid-private-data');
+});
+
+it('WS-4 저장값이 깨져 있어도 그 표만 비우고 엑셀 전체를 만든다', async () => {
+    // 깨진 적합도 JSON 하나로 모든 시트의 내보내기가 실패했다(2026-11-08 코드 리뷰 7번).
+    const project = worksheetExcelProject();
+    project.fitnessMatrix!.marketsJson = '[{"id":"market","name":"제조"}]';
+    project.fitnessMatrix!.matrixJson = '{broken';
+    findUnique.mockResolvedValueOnce(project);
+    const response = await GET(request('?format=xlsx'), params);
+    expect(response.status).toBe(200);
 });

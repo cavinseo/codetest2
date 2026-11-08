@@ -11,6 +11,7 @@ import { parseSourceYear } from './funding-ai-agent';
 import { buildFundingPlansWithSales, buildTargetSpecAdditionsFromTechTree } from './worksheet-links';
 import { addTable, addTotals, sortByOrder, cachedFormula, textDisplayWidth, writeNumericFormula, type ExcelCellValue } from './worksheet-excel-layout';
 import { buildSpecTree } from './spec-tree';
+import { readFitnessMatrixData } from './fitness-matrix-data';
 
 function writeSalesSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
     const { project } = context;
@@ -44,8 +45,7 @@ function writeAttributesSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelC
 function writeFitnessSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
     const { project } = context;
     const savedFitness = project.fitnessMatrix;
-    const markets = JSON.parse(savedFitness?.marketsJson || '[]') as Array<{ id: string; name: string; subSegments: Array<{ id: string; name: string }> }>;
-    const matrix = JSON.parse(savedFitness?.matrixJson || '{}') as Record<string, Record<string, Record<string, string>>>;
+    const { markets, matrix } = readFitnessMatrixData(savedFitness);
     const columns = markets.flatMap(market => market.subSegments.map(customer => ({ market, customer })));
     const attributes = dedupeByAttributeName(sortByOrder(project.productAttributes));
     const table = addTable(sheet, '제품 속성 적합도', ['속성', ...columns.map(column => column.customer.name)], attributes.map(row => [row.attribute ?? '', ...columns.map(column => matrix[row.id]?.[column.market.id]?.[column.customer.id] ?? '')]), { groupHeaders: ['속성', ...columns.map(column => column.market.name)] });
