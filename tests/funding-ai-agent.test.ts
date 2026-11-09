@@ -76,3 +76,18 @@ it.each([null, 0, 1234.56789])('AI leaves future revenue %s untouched', (value) 
     const plans = [{ id: 'revenue', category: '매출액', item: '매출액', year1: 100, year2: value, year3: value, order: 0 }];
     expect(generateFundingAiDraft({ plans, sources: [] }).plans).toEqual(plans);
 });
+
+// 가져오기한 자금조달표는 "1,200원"·"₩1,200" 같은 표시 문자열을 담는다. 쉼표만 지우면 0 이 되어
+// AI 초안이 그 칸을 빈 칸으로 보고 덮어썼다(2026-11-08 코드 리뷰 13번).
+it.each([
+    ['정부 : 1,200원', '정부 ', 1200],
+    ['정부:₩1,200', '정부', 1200],
+    ['1,200원', '', 1200],
+    ['₩ 1,200', '', 1200],
+    ['$300', '', 300],
+    ['자기자본:500', '자기자본', 500],
+])('출처 칸 %s 의 금액을 숫자로 읽는다', (value, source, amountNumber) => {
+    const parsed = parseSourceYear(value);
+    expect(parsed.source).toBe(source);
+    expect(parsed.amountNumber).toBe(amountNumber);
+});

@@ -5,10 +5,11 @@ import { MEMBER_ROLE_LABELS, type MemberRole } from '@/lib/member-roles';
 import { requestMentorAssignment } from '@/lib/mentor-assignment-client';
 import { readJsonOrThrow } from '@/lib/client-fetch';
 
-type Mentor = { id: string; name: string | null; email: string; role: MemberRole };
+// 멘토 후보 응답에는 이메일이 없다(lib/mentor-assignment-route.ts).
+type Mentor = { id: string; name: string | null; role: MemberRole };
 type Mentee = {
     id: string; name: string | null; email: string;
-    mentorAssignment?: { mentorId: string; mentor: { name: string | null; email: string } } | null;
+    mentorAssignment?: { mentorId: string; mentor: { name: string | null; email?: string } } | null;
 };
 
 export default function ProgramMentors({ programId }: { programId: string }) {
@@ -73,7 +74,7 @@ export default function ProgramMentors({ programId }: { programId: string }) {
             }
         }
         setSelectedMenteeIds(ids => ids.filter(id => !assignedMenteeIds.includes(id)));
-        setMessage(`${mentor.name || mentor.email} 멘토에게 ${assignedMenteeIds.length}명을 배정했습니다.`);
+        setMessage(`${mentor.name || '이름 없는'} 멘토에게 ${assignedMenteeIds.length}명을 배정했습니다.`);
         setFailures(assignmentErrors);
         setBusy(false);
     };
@@ -101,7 +102,7 @@ export default function ProgramMentors({ programId }: { programId: string }) {
                 {mentees.length === 0 ? <p className="text-sm text-gray-400">프로그램에 소속된 멘티가 없습니다.</p> : <>
                     <select className="input" aria-label="여러 멘티에게 배정할 멘토" value={selectedMentorId} disabled={busy} onChange={e => setSelectedMentorId(e.target.value)}>
                         <option value="">멘토를 선택하세요</option>
-                        {candidates.map(m => <option key={m.id} value={m.id}>{m.name || m.email} ({MEMBER_ROLE_LABELS[m.role]})</option>)}
+                        {candidates.map(m => <option key={m.id} value={m.id}>{m.name || '이름 없음'} ({MEMBER_ROLE_LABELS[m.role]})</option>)}
                     </select>
                     {candidates.length === 0 && <p className="text-sm text-gray-400">배정 가능한 멘토가 없습니다.</p>}
                     <label className="flex items-center gap-2 text-sm text-gray-300">
@@ -117,7 +118,7 @@ export default function ProgramMentors({ programId }: { programId: string }) {
                                 <span>{m.name || m.email}<span className="ml-2 text-xs text-gray-500">{m.email}</span></span>
                             </label>
                             <div className="flex items-center gap-2">
-                                <span className="text-gray-400">담당 멘토: {m.mentorAssignment ? m.mentorAssignment.mentor.name || m.mentorAssignment.mentor.email : '미배정'}</span>
+                                <span className="text-gray-400">담당 멘토: {m.mentorAssignment ? m.mentorAssignment.mentor.name || m.mentorAssignment.mentor.email || '이름 없음' : '미배정'}</span>
                                 {m.mentorAssignment && <button type="button" className="text-xs text-rose-400" disabled={busy}
                                     aria-label={`${m.name || m.email} 멘토 배정 해제`} onClick={() => unassignMentor(m)}>해제</button>}
                             </div>

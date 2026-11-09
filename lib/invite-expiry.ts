@@ -11,6 +11,15 @@ export function endOfKoreanDay(value: string): Date {
     return new Date(`${value}T23:59:59.999+09:00`);
 }
 
+/**
+ * 프로그램 종료일을 그날 한국 시간 하루 끝으로 맞춘다. 날짜 입력(YYYY-MM-DD)을 그대로 Date 로
+ * 바꾸면 UTC 자정, 즉 한국 시간 오전 9시로 저장되어 초대 회원의 이용이 종료일 아침에 끊겼다
+ * (2026-11-08 코드 리뷰). 읽는 쪽은 저장된 시각을 정확한 종료 시각으로 쓰므로 저장할 때 맞춘다.
+ */
+export function endOfProgramDay(endsAt: Date): Date {
+    return endOfKoreanDay(formatInviteExpiryDate(endsAt));
+}
+
 export const inviteExpirySchema = z.string({ required_error: '최초 접속 기한을 입력하세요.' })
     .date('올바른 최초 접속 기한 날짜를 입력하세요.')
     .transform(endOfKoreanDay);

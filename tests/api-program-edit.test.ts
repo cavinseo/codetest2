@@ -42,15 +42,20 @@ describe('프로그램 내용 수정', () => {
         if (role === 'ADMIN') findUnique.mockResolvedValue({ managerId: 'other' });
         expect((await call()).status).toBe(200);
         expect(update).toHaveBeenCalledWith({ where: { id: 'program_1' }, data: {
-            name: '수정 프로그램', organization: '기관', startsAt: new Date(valid.startsAt), endsAt: new Date(valid.endsAt),
+            name: '수정 프로그램', organization: '기관', startsAt: new Date(valid.startsAt), endsAt: new Date('2026-10-31T23:59:59.999+09:00'),
         }, select: { id: true, name: true, organization: true, startsAt: true, endsAt: true } });
     });
     it.each([
         { name: ' ' }, { organization: '' }, { startsAt: '2026-02-30' }, { endsAt: '2026-08-31' },
-        { endsAt: '2026-09-01' }, { endsAt: null }, { managerId: 'attacker' }, { startsAt: 'invalid' },
+        { endsAt: null }, { managerId: 'attacker' }, { startsAt: 'invalid' },
     ])('잘못된 입력 또는 허용하지 않은 변경을 거절한다. %j', async changes => {
         expect((await call({ ...valid, ...changes })).status).toBe(400);
         expect(update).not.toHaveBeenCalled();
+    });
+    it('종료일이 시작일과 같으면 그날 한국 시간 하루 끝으로 저장한다', async () => {
+        requireAuth.mockResolvedValue({ userId: 'manager_1', role: 'ADMIN' });
+        expect((await call({ ...valid, endsAt: '2026-09-01' })).status).toBe(200);
+        expect(update.mock.calls[0][0].data.endsAt).toEqual(new Date('2026-09-01T23:59:59.999+09:00'));
     });
     it('없는 프로그램은 404를 반환한다', async () => {
         findUnique.mockResolvedValue(null);

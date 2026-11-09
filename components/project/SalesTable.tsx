@@ -3,11 +3,12 @@
 import MoneyInput from '@/components/ui/MoneyInput';
 import { formatMoney } from '@/lib/money';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import { useWorksheetLoad } from './useWorksheetLoad';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 
 type SalesPeriod = 'Y' | 'Y_PLUS_1';
 
@@ -126,6 +127,15 @@ export default function SalesTable({ projectId, onSaved }: Props) {
         }
     });
 
+    const { isDirty, markSaved } = useUnsavedWorksheet(rows, isReady);
+    // 저장 1초 뒤 다음 워크시트로 넘어갈 때, 그 사이 다시 고친 내용이 있으면 넘어가지 않는다.
+    // 예전에는 그대로 넘어가 저장 직후 이어서 고친 내용이 사라졌다(2026-11-08 코드 리뷰 8번).
+    const isDirtyRef = useRef(isDirty);
+    useEffect(() => { isDirtyRef.current = isDirty; }, [isDirty]);
+    // 그 1초 안에 사용자가 직접 다른 탭으로 옮겼으면, 떠난 표가 탭을 다시 바꾸지 않게 취소한다.
+    const moveNextTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => { if (moveNextTimer.current) clearTimeout(moveNextTimer.current); }, []);
+
     const addRow = (period: SalesPeriod) => {
         setRows((current) => {
             const periodRows = current.filter((row) => row.period === period);
@@ -175,8 +185,15 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                     competitor: r.competitor ?? '',
                     order: r.order,
                 })));
+                markSaved();
                 showToast('저장되었습니다. 다음 워크시트로 이동합니다.');
-                setTimeout(() => onSaved?.(), 1000);
+                moveNextTimer.current = setTimeout(() => {
+                    if (isDirtyRef.current) {
+                        showToast('저장 뒤 고친 내용이 있어 이동하지 않았습니다. 다시 저장하세요.', 'info');
+                        return;
+                    }
+                    onSaved?.();
+                }, 1000);
             } else {
                 showToast('저장에 실패했습니다.', 'error');
             }
@@ -198,6 +215,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
             });
             if (res.ok) {
                 setRows([createRow('Y'), createRow('Y_PLUS_1')]);
+                markSaved();
                 setShowResetConfirm(false);
                 showToast('초기화되었습니다.');
             }

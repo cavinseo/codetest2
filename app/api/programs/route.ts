@@ -10,6 +10,7 @@ import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { canManagePrograms, canCreateProgram } from '@/lib/member-roles';
 import { isValidProgramPeriod } from '@/lib/program';
+import { endOfProgramDay } from '@/lib/invite-expiry';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/programs');
@@ -84,10 +85,11 @@ export async function POST(request: NextRequest) {
         if (!parsed.success) {
             return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
         }
-        const { name, organization, startsAt, endsAt, managerId } = parsed.data;
+        const { name, organization, startsAt, managerId } = parsed.data;
+        const endsAt = endOfProgramDay(parsed.data.endsAt);
 
         if (!isValidProgramPeriod(startsAt, endsAt)) {
-            return NextResponse.json({ error: '종료일은 시작일보다 뒤여야 합니다.' }, { status: 400 });
+            return NextResponse.json({ error: '종료일은 시작일보다 앞설 수 없습니다.' }, { status: 400 });
         }
 
         if (managerId) {

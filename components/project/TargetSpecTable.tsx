@@ -5,6 +5,7 @@ import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import { useWorksheetLoad } from './useWorksheetLoad';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 import { getGroupedCellSpans } from '@/lib/final-report-table-merge';
 
 interface TargetSpecRow {
@@ -62,6 +63,8 @@ export default function TargetSpecTable({ projectId }: Props) {
             })));
         }
     });
+
+    const { markSaved } = useUnsavedWorksheet(rows, isReady);
 
     const addFeature = () => {
         const feature = suggestions.find((item) => item.id === newFeatureId);
@@ -154,6 +157,7 @@ export default function TargetSpecTable({ projectId }: Props) {
                 note: r.note ?? '',
                 order: r.order,
             })));
+            markSaved();
             showToast('저장되었습니다.');
         } catch {
             showToast('저장에 실패했습니다.', 'error');

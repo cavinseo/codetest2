@@ -26,7 +26,9 @@ export async function handleMentorAssignment(request: NextRequest, id: string, b
         }
         if (request.method === 'GET') {
             if (request.nextUrl.searchParams.get('candidates') === '1') {
-                const users = await prisma.user.findMany({ where: { role: { in: ['MENTOR', 'PROGRAM_MANAGER'] }, status: 'APPROVED' }, select: { id: true, name: true, email: true, role: true, accessExpiresAt: true }, orderBy: { name: 'asc' } });
+                // 후보는 서비스 전체의 멘토·매니저라 이메일을 싣지 않는다. 어느 매니저든 남의 연락처를
+                // 모아 갈 수 있었다(2026-11-08 코드 리뷰 5번, 멘티 후보는 2026-10-25 B12 에서 막았다).
+                const users = await prisma.user.findMany({ where: { role: { in: ['MENTOR', 'PROGRAM_MANAGER'] }, status: 'APPROVED' }, select: { id: true, name: true, role: true, accessExpiresAt: true }, orderBy: { name: 'asc' } });
                 return NextResponse.json({ candidates: users.filter(user => !isAccessExpired(user.accessExpiresAt)).map(({ accessExpiresAt: _expiry, ...user }) => user) });
             }
             const assignment = await prisma.mentorAssignment.findUnique({ where: { menteeId: mentee.id }, include: { mentor: { select: { name: true, email: true, role: true } } } });

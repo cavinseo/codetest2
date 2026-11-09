@@ -5,6 +5,7 @@ import HeaderToast from '@/components/HeaderToast';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
+import { UNSAVED_BEFORE_EXCEL_MESSAGE, useUnsavedWorksheet } from './useUnsavedWorksheet';
 import AttributeMentorWizard from './AttributeMentorWizard';
 import type { MentorAppliedRow } from '@/lib/attribute-mentor-utils';
 import {
@@ -13,22 +14,188 @@ import {
     getAdditionalTechnologies,
     getAppliedTechnologiesForAttributes,
     getBenefitSpan,
-    getCustomerNameSpan,
     getCustomerNeedSpan,
     getMarketSegmentSpan,
+    joinCustomerNames,
+    mergeSegmentCustomerNames,
+    collapseCustomerRowsToSegments,
+    splitCustomerNames,
 } from '@/lib/product-attributes-utils';
 import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
 
 interface ProductAttributeRow {
     id: string;
     productName: string;
-    customerName: string;
+    // 입력 중인 빈 칸을 유지해야 하므로 화면에서는 배열로 들고, 저장할 때 customerName 한 칸으로 합친다.
+    customerNames: string[];
     marketSegment: string;
     customerNeed: string;
     benefit: string;
     attribute: string;
     techCapability: string;
     order: number;
+}
+
+type StoredAttributeRow = Omit<ProductAttributeRow, 'customerNames'> & { customerName: string };
+
+function toStoredRow({ customerNames, ...row }: ProductAttributeRow): StoredAttributeRow {
+    return { ...row, customerName: joinCustomerNames(customerNames) };
+}
+
+function fromStoredRow({ customerName, ...row }: StoredAttributeRow): ProductAttributeRow {
+    return { ...row, customerNames: splitCustomerNames(customerName) };
+}
+
+// 세분시장 이름이 겹치게 되면 양쪽 고객명을 하나로 합친다.
+function mergeNamesOfSameSegments(rows: ProductAttributeRow[]): ProductAttributeRow[] {
+    return mergeSegmentCustomerNames(rows.map(toStoredRow)).map(fromStoredRow);
+}
+
+// 쉼표로 여러 이름을 붙여 넣거나 입력했으면 칸을 나눠서, 저장 후 다시 불러온 모습과 같게 한다.
+// 나눌 칸이 없으면 null 을 돌려 불필요한 상태 갱신을 막는다.
+function splitTypedCustomerNames(customerNames: string[]): string[] | null {
+    const split = customerNames.flatMap(name => {
+        const names = splitCustomerNames(name);
+        return names.length > 1 ? names : [name];
+    });
+    return split.length !== customerNames.length ? split : null;
+}
+
+interface CustomerNamesCellProps {
+    rowId: string;
+    rowSpan: number;
+    customerNames: string[];
+    nameOptions: string[];
+    onChange: (customerNames: string[]) => void;
+}
+
+// 고객명 - 세분시장 전체에 걸친 칸 하나에 여러 이름을 입력한다.
+function CustomerNamesCell({ rowId, rowSpan, customerNames, nameOptions, onChange }: CustomerNamesCellProps) {
+    // 고객명이 없는 세분시장도 입력칸 하나는 보여야 한다.
+    const visibleNames = customerNames.length > 0 ? customerNames : [''];
+    const datalistId = `customer_name_list_${rowId}`;
+    const filledCount = visibleNames.filter(name => name.trim()).length;
+
+    return (
+        <td rowSpan={rowSpan} className="p-0 align-top bg-white/[0.01] border-r border-white/[0.04]">
+            <div className="flex h-full min-h-[44px] flex-col">
+                {visibleNames.map((name, nameIndex) => (
+                    <div key={nameIndex} className="flex items-center">
+                        <input
+                            type="text"
+                            list={datalistId}
+                            aria-label={`고객명 ${nameIndex + 1}`}
+                            value={name}
+                            onChange={(e) => onChange(visibleNames.map((item, i) => i === nameIndex ? e.target.value : item))}
+                            onBlur={() => {
+                                const split = splitTypedCustomerNames(visibleNames);
+                                if (split) onChange(split);
+                            }}
+                            className="min-w-0 flex-1 px-3 py-2 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
+                            placeholder="입력"
+                        />
+                        {visibleNames.length > 1 && (
+                            <button
+                                type="button"
+                                onClick={() => onChange(visibleNames.filter((_, i) => i !== nameIndex))}
+                                className="mr-1 flex-shrink-0 rounded px-1 text-xs text-gray-600 hover:text-rose-400 transition-colors"
+                                title="고객명 삭제"
+                                aria-label={`고객명 ${nameIndex + 1} 삭제`}
+                            >
+                                ×
+                            </button>
+                        )}
+                    </div>
+                ))}
+                <datalist id={datalistId}>
+                    {nameOptions.map((v, i) => <option key={i} value={v} />)}
+                </datalist>
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2">
+                    <span className="text-[10px] text-gray-600 whitespace-nowrap">
+                        {filledCount}개 고객명
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => onChange([...visibleNames, ''])}
+                        className="rounded-md border border-cyan-500/20 px-2 py-1 text-[10px] text-cyan-300 hover:bg-cyan-500/10 transition-colors whitespace-nowrap"
+                        title="이 세분시장에 고객명 추가"
+                    >
+                        + 고객명
+                    </button>
+                </div>
+            </div>
+        </td>
+    );
+}
+
+interface MergedValueCellProps {
+    rowId: string;
+    rowSpan: number;
+    // datalist id 앞부분이다. 테스트와 기존 화면이 cn_list_·bn_list_ 로 칸을 찾으므로 그대로 둔다.
+    listPrefix: 'cn' | 'bn';
+    value: string;
+    options: string[];
+    onChange: (value: string) => void;
+}
+
+// 고객 니즈·제공혜택 - 값이 같은 연속 행을 한 칸으로 병합해 보여 주므로, 바꾼 값은 묶인 행 전체에 적용된다.
+function MergedValueCell({ rowId, rowSpan, listPrefix, value, options, onChange }: MergedValueCellProps) {
+    const datalistId = `${listPrefix}_list_${rowId}`;
+    return (
+        <td rowSpan={rowSpan} className="p-0 align-top">
+            <input
+                type="text"
+                list={datalistId}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className="w-full h-full min-h-[44px] px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
+                placeholder="입력"
+            />
+            <datalist id={datalistId}>
+                {options.map((v, i) => <option key={i} value={v} />)}
+            </datalist>
+        </td>
+    );
+}
+
+interface AttributeCellProps {
+    rowId: string;
+    value: string;
+    options: string[];
+    // 스펙에서 가져온 값이면 직접 입력한 값과 색으로 구분한다.
+    imported: boolean;
+    onChange: (value: string) => void;
+    onPickFromSpec: () => void;
+}
+
+// 제품속성 - 행마다 하나씩 직접 입력하거나 AS-IS 스펙표에서 고른다.
+function AttributeCell({ rowId, value, options, imported, onChange, onPickFromSpec }: AttributeCellProps) {
+    const datalistId = `attribute_list_${rowId}`;
+    return (
+        <td className="p-0 bg-cyan-500/[0.04] relative">
+            <input
+                type="text"
+                list={datalistId}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className={`w-full px-3 pr-8 py-2.5 bg-transparent text-sm outline-none focus:bg-cyan-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-cyan-500/30 transition-colors ${imported ? 'text-cyan-300' : 'text-gray-300'}`}
+                placeholder="입력"
+            />
+            <datalist id={datalistId}>
+                {options.map((v, i) => <option key={i} value={v} />)}
+            </datalist>
+            <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onPickFromSpec(); }}
+                className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-cyan-500 hover:text-cyan-300 hover:bg-cyan-500/20 rounded transition-colors cursor-pointer z-10"
+                title="AS-IS 스펙에서 가져오기"
+            >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+            </button>
+        </td>
+    );
 }
 
 interface SpecFunction {
@@ -206,6 +373,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     const excelInputRef = useRef<HTMLInputElement | null>(null);
     const automaticTechnologies = getAppliedTechnologiesForAttributes(specFunctions, rows.map(row => row.attribute));
     const techCapability = combineTechnologies(automaticTechnologies, additionalTechCapability);
+    const customerNameOptions = [...new Set(rows.flatMap(row => row.customerNames.map(name => name.trim())).filter(Boolean))];
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -231,10 +399,11 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 const data = await attrRes.json();
                 if (!Array.isArray(data.attributes)) throw new Error('제품 속성 응답 형식 오류');
                 loadedAttrs = data.attributes;
-                setRows(loadedAttrs.map((a: any) => ({
+                // 고객명별로 저장된 기존 행도 세분시장 단위로 합쳐 보여 준다. DB 는 사용자가 저장할 때만 바뀐다.
+                setRows(collapseCustomerRowsToSegments<any>(loadedAttrs).map((a: any) => ({
                     id: a.id,
                     productName: a.productName || '',
-                    customerName: a.customerName || '',
+                    customerNames: splitCustomerNames(a.customerName),
                     marketSegment: a.marketSegment || '',
                     customerNeed: a.customerNeed || '',
                     benefit: a.benefit || '',
@@ -282,10 +451,20 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         loadData();
     }, [loadData]);
 
+    const savedAttributes = mergeSegmentCustomerNames(rows.map(toStoredRow)).map((r, i) => ({
+        ...r,
+        productName: productName,
+        techCapability: techCapability,
+        order: i,
+    }));
+    // 화면 행이 아니라 저장할 모양으로 비교한다. 빈 고객명 칸을 하나 늘리거나 같은 세분시장
+    // 고객명을 합치기만 해도 화면 행은 바뀌지만 저장 내용은 그대로이기 때문이다.
+    const { isDirty, markSaved } = useUnsavedWorksheet(savedAttributes, !isLoading && !loadFailed && loadedProjectId === projectId);
+
     const createRow = (order: number, overrides: Partial<ProductAttributeRow> = {}): ProductAttributeRow => ({
         id: `attr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         productName: '',
-        customerName: '',
+        customerNames: [],
         marketSegment: '',
         customerNeed: '',
         benefit: '',
@@ -317,14 +496,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
     };
 
     const addMarketSegmentRow = (row: ProductAttributeRow) => {
-        addRowAfter(row, { marketSegment: row.marketSegment });
-    };
-
-    const addCustomerNeedRow = (row: ProductAttributeRow) => {
-        addRowAfter(row, {
-            marketSegment: row.marketSegment,
-            customerName: row.customerName,
-        });
+        addRowAfter(row, { marketSegment: row.marketSegment, customerNames: row.customerNames });
     };
 
     const addProductAttribute = (row: ProductAttributeRow) => {
@@ -333,14 +505,13 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             if (targetIndex === -1) return currentRows;
             const sameCustomerNeedAndBenefit = (item: ProductAttributeRow) =>
                 item.marketSegment === row.marketSegment &&
-                item.customerName === row.customerName &&
                 item.customerNeed === row.customerNeed &&
                 item.benefit === row.benefit;
             let insertIndex = targetIndex + 1;
             while (insertIndex < currentRows.length && sameCustomerNeedAndBenefit(currentRows[insertIndex])) insertIndex++;
             return insertRowAt(currentRows, insertIndex, {
                 marketSegment: row.marketSegment,
-                customerName: row.customerName,
+                customerNames: row.customerNames,
                 customerNeed: row.customerNeed,
                 benefit: row.benefit,
             });
@@ -359,12 +530,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    attributes: rows.map((r, i) => ({
-                        ...r,
-                        productName: productName,
-                        techCapability: techCapability,
-                        order: i,
-                    })),
+                    attributes: savedAttributes,
                     ...(options.confirmCascade ? { confirmCascade: true } : {}),
                 }),
             });
@@ -382,6 +548,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             }
 
             if (res.ok) {
+                markSaved();
                 showToast('저장되었습니다.', 'success');
                 onSaved?.();
             } else {
@@ -399,6 +566,10 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         if (!file) return;
         if (!isExcelFileName(file.name)) {
             showToast(EXCEL_FILE_TYPE_ERROR, 'error');
+            if (excelInputRef.current) excelInputRef.current.value = '';
+            return;
+        }
+        if (isDirty && !window.confirm(UNSAVED_BEFORE_EXCEL_MESSAGE)) {
             if (excelInputRef.current) excelInputRef.current.value = '';
             return;
         }
@@ -438,6 +609,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
 
             const importedCount = data?.appliedCounts?.productAttributes ?? data?.counts?.productAttributes ?? 0;
             await loadData();
+            markSaved();
             showToast(`제품속성표 ${importedCount}개 항목을 엑셀에서 반영했습니다.`, 'success');
         } catch (error) {
             console.error('제품속성표 엑셀 업로드 실패:', error);
@@ -462,6 +634,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             }
             setRows([]);
             setAdditionalTechCapability('');
+            markSaved();
             setShowResetConfirm(false);
             showToast('초기화되었습니다.', 'success');
         } catch (error) {
@@ -470,48 +643,34 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         }
     };
 
-    const getUniqueValues = (field: 'marketSegment' | 'customerName' | 'customerNeed' | 'benefit' | 'attribute' | 'techCapability') => {
+    const getUniqueValues = (field: 'marketSegment' | 'customerNeed' | 'benefit' | 'attribute' | 'techCapability') => {
         return [...new Set(rows.map(r => r[field]).filter(Boolean))];
     };
 
-    const getMarketSegmentRowSpan = (index: number) => {
-        return getMarketSegmentSpan(rows, index);
-    };
-
-    const getCustomerNameRowSpan = (index: number) => {
-        return getCustomerNameSpan(rows, index);
-    };
-
-    // 같은 세분시장의 고객니즈를 묶고, 제공혜택은 같은 니즈 안에서만 병합한다.
-    const getCustomerNeedRowSpan = (index: number) => {
-        return getCustomerNeedSpan(rows, index);
-    };
-
-    const getBenefitRowSpan = (index: number) => {
-        return getBenefitSpan(rows, index);
-    };
-
     const updateMarketSegmentGroup = (startIndex: number, value: string) => {
-        const span = getMarketSegmentRowSpan(startIndex);
+        const span = getMarketSegmentSpan(rows, startIndex);
         const targetIds = new Set(rows.slice(startIndex, startIndex + span).map(r => r.id));
         setRows(rows.map(r => targetIds.has(r.id) ? { ...r, marketSegment: value } : r));
     };
 
-    const updateCustomerNameGroup = (startIndex: number, value: string) => {
-        const span = getCustomerNameRowSpan(startIndex);
-        const targetIds = new Set(rows.slice(startIndex, startIndex + span).map(r => r.id));
-        setRows(rows.map(r => targetIds.has(r.id) ? { ...r, customerName: value } : r));
+    // 같은 세분시장이 떨어진 위치에 있어도 고객명은 하나이므로 세분시장 이름으로 찾아 모두 바꾼다.
+    const updateSegmentCustomerNames = (row: ProductAttributeRow, customerNames: string[]) => {
+        const segment = row.marketSegment.trim();
+        setRows(current => current.map(item =>
+            item.id === row.id || (segment && item.marketSegment.trim() === segment) ? { ...item, customerNames } : item
+        ));
     };
 
     // 병합된 칸을 수정하면 묶여 있던 행 전체에 같은 값을 적용한다.
+    // 고객니즈는 같은 세분시장 안에서, 제공혜택은 같은 니즈 안에서만 묶인다(getBenefitSpan).
     const updateCustomerNeedGroup = (startIndex: number, value: string) => {
-        const span = getCustomerNeedRowSpan(startIndex);
+        const span = getCustomerNeedSpan(rows, startIndex);
         const targetIds = new Set(rows.slice(startIndex, startIndex + Math.max(span, 1)).map(r => r.id));
         setRows(rows.map(r => targetIds.has(r.id) ? { ...r, customerNeed: value } : r));
     };
 
     const updateBenefitGroup = (startIndex: number, value: string) => {
-        const span = getBenefitRowSpan(startIndex);
+        const span = getBenefitSpan(rows, startIndex);
         const targetIds = new Set(rows.slice(startIndex, startIndex + Math.max(span, 1)).map(r => r.id));
         setRows(rows.map(r => targetIds.has(r.id) ? { ...r, benefit: value } : r));
     };
@@ -567,13 +726,13 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         const startOrder = rows.length;
         const appended = mentorRows.map((row, index) => createRow(startOrder + index, {
             marketSegment: row.marketSegment,
-            customerName: row.customerName,
+            customerNames: splitCustomerNames(row.customerName),
             customerNeed: row.customerNeed,
             benefit: row.benefit,
             attribute: row.attribute,
         }));
 
-        setRows([...rows, ...appended].map((r, order) => ({ ...r, order })));
+        setRows(mergeNamesOfSameSegments([...rows, ...appended]).map((r, order) => ({ ...r, order })));
 
         // 스펙에서 가져온 속성은 표에서 색으로 구분되도록 표시해 둔다.
         const specNames = new Set(specFunctions.map((spec) => spec.name));
@@ -614,7 +773,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-xl font-display font-bold text-white">[WS-3] 제품속성서</h2>
-                    <p className="text-sm text-gray-500 mt-1">세분시장별로 여러 고객명, 고객 니즈, 제공혜택, 제품속성, 기술역량을 행 단위로 정의합니다</p>
+                    <p className="text-sm text-gray-500 mt-1">세분시장별로 고객명을 여러 개 입력하고, 고객 니즈·제공혜택·제품속성은 세분시장 단위로 추가합니다</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <button
@@ -659,7 +818,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
-                        행 추가
+                        세분고객 추가
                     </button>
                     <button onClick={() => handleSave()} disabled={isSaving} className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -739,7 +898,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         </svg>
                     </div>
                     <h3 className="text-lg font-display font-semibold text-gray-300 mb-2">데이터가 없습니다</h3>
-                    <p className="text-sm text-gray-500 mb-6">우상단의 &apos;행 추가&apos; 버튼을 눌러 입력을 시작하세요</p>
+                    <p className="text-sm text-gray-500 mb-6">우상단의 &apos;세분고객 추가&apos; 버튼을 눌러 입력을 시작하세요</p>
                     <button onClick={addRow} className="btn-primary inline-flex items-center gap-2 mx-auto">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -766,10 +925,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         </thead>
                         <tbody>
                             {rows.map((row, idx) => {
-                                const marketSegmentRowSpan = getMarketSegmentRowSpan(idx);
-                                const customerNameRowSpan = getCustomerNameRowSpan(idx);
-                                const customerNeedRowSpan = getCustomerNeedRowSpan(idx);
-                                const benefitRowSpan = getBenefitRowSpan(idx);
+                                const marketSegmentRowSpan = getMarketSegmentSpan(rows, idx);
+                                const customerNeedRowSpan = getCustomerNeedSpan(rows, idx);
+                                const benefitRowSpan = getBenefitSpan(rows, idx);
 
                                 return (
                                 <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] group transition-colors">
@@ -785,6 +943,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                                     list={`ms_list_${row.id}`}
                                                     value={row.marketSegment}
                                                     onChange={(e) => updateMarketSegmentGroup(idx, e.target.value)}
+                                                    onBlur={() => setRows(mergeNamesOfSameSegments)}
                                                     className="w-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
                                                     placeholder="입력"
                                                 />
@@ -796,9 +955,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                                         type="button"
                                                         onClick={() => addMarketSegmentRow(row)}
                                                         className="rounded-md border border-primary-500/20 px-2 py-1 text-[10px] text-primary-300 hover:bg-primary-500/10 transition-colors whitespace-nowrap"
-                                                        title="같은 세분시장 항목 추가"
+                                                        title="같은 세분시장에 고객니즈 추가"
                                                     >
-                                                        + 항목
+                                                        + 고객니즈
                                                     </button>
                                                 </div>
                                                 <datalist id={`ms_list_${row.id}`}>
@@ -807,96 +966,48 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                                             </div>
                                         </td>
                                     )}
-                                    {/* 고객명 */}
-                                    {customerNameRowSpan > 0 && (
-                                        <td rowSpan={customerNameRowSpan} className="p-0 align-top bg-white/[0.01] border-r border-white/[0.04]">
-                                            <div className="flex h-full min-h-[44px] flex-col">
-                                                <input
-                                                    type="text"
-                                                    list={`customer_name_list_${row.id}`}
-                                                    value={row.customerName}
-                                                    onChange={(e) => updateCustomerNameGroup(idx, e.target.value)}
-                                                    className="w-full px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                                    placeholder="입력"
-                                                />
-                                                <datalist id={`customer_name_list_${row.id}`}>
-                                                    {getUniqueValues('customerName').map((v, i) => <option key={i} value={v} />)}
-                                                </datalist>
-                                                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2">
-                                                    <span className="text-[10px] text-gray-600 whitespace-nowrap">
-                                                        {customerNameRowSpan > 1 ? `${customerNameRowSpan}개 니즈` : '1개 니즈'}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => addCustomerNeedRow(row)}
-                                                        className="rounded-md border border-cyan-500/20 px-2 py-1 text-[10px] text-cyan-300 hover:bg-cyan-500/10 transition-colors whitespace-nowrap"
-                                                        title="같은 고객명에 고객니즈 추가"
-                                                    >
-                                                        + 니즈
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </td>
+                                    {marketSegmentRowSpan > 0 && (
+                                        <CustomerNamesCell
+                                            rowId={row.id}
+                                            rowSpan={marketSegmentRowSpan}
+                                            customerNames={row.customerNames}
+                                            nameOptions={customerNameOptions}
+                                            onChange={(customerNames) => updateSegmentCustomerNames(row, customerNames)}
+                                        />
                                     )}
 
                                     {/* 고객 니즈 - 같은 세분시장에서 값이 같으면 병합 */}
                                     {customerNeedRowSpan > 0 && (
-                                        <td rowSpan={customerNeedRowSpan} className="p-0 align-top">
-                                            <input
-                                                type="text"
-                                                list={`cn_list_${row.id}`}
-                                                value={row.customerNeed}
-                                                onChange={(e) => updateCustomerNeedGroup(idx, e.target.value)}
-                                                className="w-full h-full min-h-[44px] px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                                placeholder="입력"
-                                            />
-                                            <datalist id={`cn_list_${row.id}`}>
-                                                {getUniqueValues('customerNeed').map((v, i) => <option key={i} value={v} />)}
-                                            </datalist>
-                                        </td>
+                                        <MergedValueCell
+                                            rowId={row.id}
+                                            rowSpan={customerNeedRowSpan}
+                                            listPrefix="cn"
+                                            value={row.customerNeed}
+                                            options={getUniqueValues('customerNeed')}
+                                            onChange={(value) => updateCustomerNeedGroup(idx, value)}
+                                        />
                                     )}
 
                                     {/* 제공혜택 - 같은 세분시장과 고객니즈 안에서 값이 같으면 병합 */}
                                     {benefitRowSpan > 0 && (
-                                        <td rowSpan={benefitRowSpan} className="p-0 align-top">
-                                            <input
-                                                type="text"
-                                                list={`bn_list_${row.id}`}
-                                                value={row.benefit}
-                                                onChange={(e) => updateBenefitGroup(idx, e.target.value)}
-                                                className="w-full h-full min-h-[44px] px-3 py-2.5 bg-transparent text-white text-sm outline-none focus:bg-white/[0.04] focus:ring-1 focus:ring-inset focus:ring-primary-500/30 transition-colors"
-                                                placeholder="입력"
-                                            />
-                                            <datalist id={`bn_list_${row.id}`}>
-                                                {getUniqueValues('benefit').map((v, i) => <option key={i} value={v} />)}
-                                            </datalist>
-                                        </td>
+                                        <MergedValueCell
+                                            rowId={row.id}
+                                            rowSpan={benefitRowSpan}
+                                            listPrefix="bn"
+                                            value={row.benefit}
+                                            options={getUniqueValues('benefit')}
+                                            onChange={(value) => updateBenefitGroup(idx, value)}
+                                        />
                                     )}
 
-                                    {/* 제품속성 */}
-                                    <td className="p-0 bg-cyan-500/[0.04] relative">
-                                        <input
-                                            type="text"
-                                            list={`attribute_list_${row.id}`}
-                                            value={row.attribute}
-                                            onChange={(e) => handleManualInput(row.id, e.target.value)}
-                                            className={`w-full px-3 pr-8 py-2.5 bg-transparent text-sm outline-none focus:bg-cyan-500/[0.08] focus:ring-1 focus:ring-inset focus:ring-cyan-500/30 transition-colors ${isImported(row.id, 'attribute') ? 'text-cyan-300' : 'text-gray-300'}`}
-                                            placeholder="입력"
-                                        />
-                                        <datalist id={`attribute_list_${row.id}`}>
-                                            {getUniqueValues('attribute').map((v, i) => <option key={i} value={v} />)}
-                                        </datalist>
-                                        <button
-                                            type="button"
-                                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSpecPicker({ rowId: row.id, field: 'attribute' }); }}
-                                            className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-cyan-500 hover:text-cyan-300 hover:bg-cyan-500/20 rounded transition-colors cursor-pointer z-10"
-                                            title="AS-IS 스펙에서 가져오기"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                            </svg>
-                                        </button>
-                                    </td>
+                                    <AttributeCell
+                                        rowId={row.id}
+                                        value={row.attribute}
+                                        options={getUniqueValues('attribute')}
+                                        imported={isImported(row.id, 'attribute')}
+                                        onChange={(value) => handleManualInput(row.id, value)}
+                                        onPickFromSpec={() => setShowSpecPicker({ rowId: row.id, field: 'attribute' })}
+                                    />
 
                                     {/* 속성 추가 및 행 삭제 */}
                                     <td className="px-2 py-2 text-center">
@@ -933,7 +1044,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
-                        행 추가
+                        세분고객 추가
                     </button>
                 </div>
             )}
@@ -983,7 +1094,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 <AttributeMentorWizard
                     projectId={projectId}
                     specFunctions={specFunctions}
-                    analysisContext={{ productName, existingRows: rows.map(row => ({ ...row, techCapability })) }}
+                    analysisContext={{ productName, existingRows: rows.map(row => ({ ...toStoredRow(row), techCapability })) }}
                     onApply={applyMentorResult}
                     onClose={() => setShowMentor(false)}
                     onNotify={showToast}

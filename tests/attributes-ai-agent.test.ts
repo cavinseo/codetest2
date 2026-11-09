@@ -35,7 +35,7 @@ describe('WS-3 멘토링 문진', () => {
 });
 
 describe('WS-3 초안 생성', () => {
-    it('세분시장별 고객명마다 행을 만들고 니즈·혜택은 같은 값을 넣는다', () => {
+    it('세분시장마다 한 행을 만들고 여러 고객명을 한 칸에 합친다', () => {
         const result = generateAttributeDraft({
             project,
             answers: {
@@ -49,13 +49,7 @@ describe('WS-3 초안 생성', () => {
         expect(result.rows).toEqual([
             {
                 marketSegment: '소규모 비영리 동호회',
-                customerName: '운영진',
-                customerNeed: '명단과 회비를 혼자 관리',
-                benefit: '운영 시간 절감',
-            },
-            {
-                marketSegment: '소규모 비영리 동호회',
-                customerName: '총무',
+                customerName: '운영진, 총무',
                 customerNeed: '명단과 회비를 혼자 관리',
                 benefit: '운영 시간 절감',
             },
@@ -66,6 +60,25 @@ describe('WS-3 초안 생성', () => {
                 benefit: '참여율 향상',
             },
         ]);
+    });
+
+    it('답변의 숫자 쉼표는 나누지 않아 고객명과 니즈 값이 원문과 같다', () => {
+        const result = generateAttributeDraft({
+            project,
+            answers: {
+                marketSegments: '제조',
+                customerNames: '제조: 12,000명 고객사, 을',
+                customerProblems: '제조: 연 1,000만원 손실',
+                expectedBenefits: '제조: 비용 절감, 시간 단축',
+            },
+        });
+
+        expect(result.rows).toEqual([{
+            marketSegment: '제조',
+            customerName: '12,000명 고객사, 을',
+            customerNeed: '연 1,000만원 손실',
+            benefit: '비용 절감, 시간 단축',
+        }]);
     });
 
     it('세분시장 접두사가 없는 답변은 모든 세분시장에 공통 적용한다', () => {

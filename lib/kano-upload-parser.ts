@@ -110,13 +110,15 @@ export function parseGoogleFormsResponseRows(
         const positiveHeaders = headers.filter((key) => isPositiveHeader(key) && !isNegativeHeader(key));
         const respondentEmail = getRespondentEmail(row, rowIndex);
 
+        // 열 이름에 긍정·부정 표시가 있는 시트는 그 열만 쓴다. 표시 열의 빈칸을 위치 기준 열로
+        // 채우면 성별·이름 같은 열이 섞인 위치라 다른 질문의 답이 들어가 분류가 지어졌다
+        // (2026-11-08 코드 리뷰 12번). 위치 기준은 표시가 전혀 없는 시트에서만 쓴다.
+        const hasLabeledColumns = positiveHeaders.length > 0 || negativeHeaders.length > 0;
         for (let reqIndex = 0; reqIndex < requirementCount; reqIndex++) {
-            const orderedPositive = positiveHeaders[reqIndex];
-            const orderedNegative = negativeHeaders[reqIndex];
-            const fallbackPositive = headers[reqIndex * 2];
-            const fallbackNegative = headers[reqIndex * 2 + 1];
-            const positiveAnswer = firstAnswer(row, [orderedPositive, fallbackPositive].filter(Boolean));
-            const negativeAnswer = firstAnswer(row, [orderedNegative, fallbackNegative].filter(Boolean));
+            const positiveKey = hasLabeledColumns ? positiveHeaders[reqIndex] : headers[reqIndex * 2];
+            const negativeKey = hasLabeledColumns ? negativeHeaders[reqIndex] : headers[reqIndex * 2 + 1];
+            const positiveAnswer = firstAnswer(row, [positiveKey].filter(Boolean));
+            const negativeAnswer = firstAnswer(row, [negativeKey].filter(Boolean));
 
             if (positiveAnswer && negativeAnswer) {
                 parsed.push({

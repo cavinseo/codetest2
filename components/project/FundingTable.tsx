@@ -6,6 +6,7 @@ import { formatMoney } from '@/lib/money';
 import { parseSourceYear } from '@/lib/funding-ai-agent';
 import WorksheetLoadError from './WorksheetLoadError';
 import FundingPlanChart from './FundingPlanChart';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 
 interface FundingPlan {
     id: string;
@@ -99,6 +100,12 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
         loadData();
     }, [loadData]);
 
+    // 두 모드가 같은 응답을 불러오지만 저장은 그 모드의 목록만 보내므로, 그 목록만 편집 여부로 본다.
+    const { markSaved } = useUnsavedWorksheet(
+        mode === 'plan' ? plans : sources,
+        !isLoading && !loadFailed && loadedProjectId === projectId,
+    );
+
     const handleSave = async () => {
         if (isLoading || isSaving || !canWrite || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
@@ -113,6 +120,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
             if (!res.ok) throw new Error('저장 실패');
             setAiMessage('저장되었습니다.');
             await loadData();
+            markSaved();
         } catch (error) {
             console.error('Failed to save funding data:', error);
             setAiMessage('저장하지 못했습니다. 입력 내용은 유지됩니다. 다시 저장해 주세요.');

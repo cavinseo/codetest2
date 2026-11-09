@@ -6,6 +6,7 @@ import { parseSourceYear } from './funding-ai-agent';
 import { buildTechnicalGroups } from './qfd-technical-groups';
 import { buildQfdSpecFooterRows } from './qfd-footer-rows';
 import { dedupeByAttributeName } from './product-attributes-utils';
+import { readFitnessMatrixData } from './fitness-matrix-data';
 
 type Cell = string | number | null | undefined;
 type TableOptions = Pick<ReportDataTable, 'columnWidths' | 'mergeColumns' | 'headerGroups' | 'columnSpans' | 'highlightRows'>;
@@ -15,8 +16,7 @@ export function worksheetReportTable(title: string, headers: string[], rows: Cel
 
 export function buildFitnessReportTables(data: FinalReportWorksheetData): ReportDataTable[] {
     if (!data.fitnessMatrix) return [];
-    const markets = JSON.parse(data.fitnessMatrix.marketsJson) as Array<{ id: string; name: string; subSegments: Array<{ id: string; name: string }> }>;
-    const matrix = JSON.parse(data.fitnessMatrix.matrixJson) as Record<string, Record<string, Record<string, string>>>;
+    const { markets, matrix } = readFitnessMatrixData(data.fitnessMatrix);
     const attributes = dedupeByAttributeName(data.productAttributes);
     const columns = markets.flatMap(market => market.subSegments.map(customer => {
         const values = attributes.map(row => matrix[row.id ?? '']?.[market.id]?.[customer.id] ?? '');

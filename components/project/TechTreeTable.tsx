@@ -1,11 +1,12 @@
 'use client';
 // WS-10 기능기술체계도 표를 렌더링하는 클라이언트 컴포넌트입니다.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import { getTopRankedQfdRequirements, type RankedTechTreeRequirement } from '@/lib/tech-tree-qfd';
 import { buildBlankTechTreeRows, buildTechTreeSpecOptions, applyTechTreeSpecSelection, findTechTreeSpecOptions, filterTechTreeSpecOptionsByCore, type TechTreeSpecOption } from '@/lib/tech-tree-utils';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 
 interface SpecFunction {
     id: string;
@@ -79,7 +80,12 @@ export default function TechTreeTable({ projectId }: Props) {
     const buildGeneratedRows = (sourceRequirements: SourceRequirement[], sourceSpecs: SpecFunction[]) =>
         buildBlankTechTreeRows(sourceRequirements, sourceSpecs);
 
+    // 불러오기가 겹치면(개발 모드의 effect 이중 실행, 재시도 후 저장) 늦게 온 앞선 응답이 임의
+    // id 로 만든 빈 행을 다시 덮어써 편집하지 않은 표가 미저장으로 보였다. 마지막 요청만 반영한다.
+    const latestLoad = useRef(0);
     const loadData = useCallback(async () => {
+        const loadId = ++latestLoad.current;
+        const isLatest = () => loadId === latestLoad.current;
         setIsLoading(true);
         setLoadFailed(false);
         try {
@@ -94,33 +100,36 @@ export default function TechTreeTable({ projectId }: Props) {
 
             let nextQfdTopRequirements: RankedTechTreeRequirement[] = [];
 
-            const specData = await specRes.json();
+            const [specData, requirementData, qfdData, treeData] = await Promise.all([
+                specRes.json(), reqRes.json(), qfdRes.ok ? qfdRes.json() : null, treeRes.json(),
+            ]);
+            if (!isLatest()) return;
             const nextSpecs: SpecFunction[] = specData.specFunctions || [];
             setSpecs(nextSpecs);
 
-            const requirementData = await reqRes.json();
             setRequirements(requirementData.requirements || []);
 
-            if (qfdRes.ok) {
-                const data = await qfdRes.json();
-                nextQfdTopRequirements = getTopRankedQfdRequirements(data.requirements || [], 5);
+            if (qfdData) {
+                nextQfdTopRequirements = getTopRankedQfdRequirements(qfdData.requirements || [], 5);
                 setQfdTopRequirements(nextQfdTopRequirements);
             }
 
-            const treeData = await treeRes.json();
             const savedRows = normalizeRows(treeData.entries || []);
             setRows(savedRows.length > 0 ? savedRows : buildGeneratedRows(nextQfdTopRequirements, nextSpecs));
         } catch (error) {
+            if (!isLatest()) return;
             console.error(error);
             setLoadFailed(true);
         } finally {
-            setIsLoading(false);
+            if (isLatest()) setIsLoading(false);
         }
     }, [projectId]);
 
     useEffect(() => {
         loadData();
     }, [loadData]);
+
+    const { markSaved } = useUnsavedWorksheet(rows, !isLoading && !loadFailed);
 
     const save = async (data: TechTreeRow[]) => {
         if (loadFailed) return false;
@@ -142,6 +151,7 @@ export default function TechTreeTable({ projectId }: Props) {
 
         const dataJson = await response.json();
         setRows(normalizeRows(dataJson.entries || []));
+        markSaved();
         return true;
     };
 
@@ -164,6 +174,7 @@ export default function TechTreeTable({ projectId }: Props) {
             const ok = await save([]);
             if (ok) {
                 setRows([]);
+                markSaved();
                 setShowResetConfirm(false);
                 showToast('초기화되었습니다.');
             } else {

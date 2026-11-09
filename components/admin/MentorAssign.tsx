@@ -14,7 +14,6 @@ interface Mentor {
 interface Candidate {
     id: string;
     name: string | null;
-    email: string;
     role: MemberRole;
 }
 
@@ -105,7 +104,7 @@ export default function MentorAssign({ projectId, menteeId, onChanged }: {
                     disabled={busy} aria-label="배정할 멘토" onChange={(e) => setSelectedMentorId(e.target.value)} id={`mentor-select-${menteeId ?? projectId}`}>
                     <option value="">멘토 선택</option>
                     {candidates.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name ?? c.email} ({MEMBER_ROLE_LABELS[c.role]})</option>
+                        <option key={c.id} value={c.id}>{c.name || '이름 없음'} ({MEMBER_ROLE_LABELS[c.role]})</option>
                     ))}
                 </select>
                 <button type="button" onClick={assignSelectedMentor} disabled={!selectedMentorId || busy || !!loadError}

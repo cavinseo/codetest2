@@ -110,7 +110,8 @@ it('QFD의 적용 가중치와 관계 점수, 경쟁 비교, 중요도, 순위�
     expect(sheet.getCell('W3').value).toBe('경쟁기업');
 });
 
-it('TIMKO의 수동 가중치 0도 보존하고 QFD에는 기존 양식의 가중치 규칙을 적용한다', async () => {
+it('수동 가중치 0은 TIMKO와 QFD 모두 0으로 쓴다', async () => {
+    // 예전에는 QFD 만 0 을 자동값(3.2)으로 바꿔 두 시트가 달랐다(2026-11-08 코드 리뷰 11번).
     const project = worksheetExcelProject();
     project.requirements[0].kanoWeight = 0;
     const timko = (await load('timko', project)).worksheets[0];
@@ -118,7 +119,7 @@ it('TIMKO의 수동 가중치 0도 보존하고 QFD에는 기존 양식의 가�
     expect(timko.getCell('I7').value).toBe('일원적 품질');
     expect(timko.getCell('D7').numFmt).toBe('0.00');
     const qfd = (await load('qfd', project)).worksheets[0];
-    expect(qfd.getCell('T4').value).toBe(3.2);
+    expect(qfd.getCell('T4').value).toBe(0);
 });
 
 it('매출의 0과 빈칸을 구분하고 자동 연동 매출 및 자금 합계는 이중 합산하지 않는다', async () => {
@@ -164,4 +165,14 @@ it('WS-16 같은 구분의 여러 세부행과 3개년 출처·금액을 모두 
     expect(result(sheet.getCell('D10'))).toBe(1500.5);
     expect(result(sheet.getCell('F10'))).toBe(200);
     expect(result(sheet.getCell('H10'))).toBe(500);
+});
+
+it('매출·자금 시트의 금액 단위는 화면·최종 보고서와 같은 백만원으로 표기한다', async () => {
+    // 화면은 백만원 단위로 입력받으므로 엑셀이 '원'으로 적으면 금액이 100만 배 다르게 읽힌다.
+    for (const id of ['sales', 'funding-plan', 'funding-source'] as const) {
+        const texts: string[] = [];
+        (await load(id)).worksheets[0].eachRow(row => row.eachCell(cell => { if (typeof cell.value === 'string') texts.push(cell.value); }));
+        expect(texts.filter(text => text.includes('단위:')), id).not.toHaveLength(0);
+        expect(texts.filter(text => text.includes('단위:')).every(text => text.includes('(단위: 백만원)')), id).toBe(true);
+    }
 });

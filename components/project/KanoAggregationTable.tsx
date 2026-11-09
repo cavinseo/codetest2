@@ -3,6 +3,7 @@
 import { KanoCategory } from '@/lib/kano-algorithm';
 import { useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 
 interface AnalysisResult {
     requirementId: string;
@@ -71,6 +72,17 @@ export default function KanoAggregationTable({ analysis, projectId, onWeightsSav
     const [weightDrafts, setWeightDrafts] = useState<Record<string, string>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    // 초안은 손댄 칸만 들고 있다. 고쳤다가 원래 값으로 되돌린 칸은 저장해도 바뀌는 것이 없으므로,
+    // 저장할 때와 같은 방식으로 숫자를 읽어 지금 가중치와 다른 칸만 편집으로 본다.
+    const { markSaved } = useUnsavedWorksheet(
+        analysis.flatMap((item) => {
+            if (!(item.requirementId in weightDrafts)) return [];
+            const value = weightDrafts[item.requirementId].trim();
+            const kanoWeight = value === '' ? null : Number(value);
+            return kanoWeight === (item.kanoWeight ?? null) ? [] : [{ requirementId: item.requirementId, value }];
+        }),
+        Boolean(projectId),
+    );
 
     const handleSave = async () => {
         if (!projectId || isSaving) return;
@@ -98,6 +110,7 @@ export default function KanoAggregationTable({ analysis, projectId, onWeightsSav
             }
             await onWeightsSaved?.();
             setWeightDrafts({});
+            markSaved();
             setToast({ message: '저장되었습니다.', type: 'success' });
         } catch (error) {
             setToast({ message: error instanceof Error ? error.message : '가중치 저장에 실패했습니다.', type: 'error' });

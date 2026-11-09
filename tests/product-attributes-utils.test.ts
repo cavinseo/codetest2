@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildCustomerNamesByMarketSegment,
+    joinCustomerNames,
+    mergeSegmentCustomerNames,
+    collapseCustomerRowsToSegments,
+    splitCustomerNames,
     buildSpecPickerRows,
     dedupeByAttributeName,
     getBenefitSpan,
-    getCustomerNameSpan,
     getCustomerNeedSpan,
     getMarketSegmentSpan,
     getAppliedTechnologiesForAttributes,
@@ -83,7 +86,7 @@ describe('product attribute technology linking', () => {
             .toEqual(['AI 분석', '통신 기술']);
     });
 
-    it('groups a customer across multiple needs within the same market segment', () => {
+    it('groups rows of the same market segment regardless of customer name', () => {
         const rows = [
             { marketSegment: '구매자시장', customerName: '1020 팬덤 소비자' },
             { marketSegment: '구매자시장', customerName: '1020 팬덤 소비자' },
@@ -93,10 +96,6 @@ describe('product attribute technology linking', () => {
 
         expect(getMarketSegmentSpan(rows, 0)).toBe(3);
         expect(getMarketSegmentSpan(rows, 1)).toBe(0);
-        expect(getCustomerNameSpan(rows, 0)).toBe(2);
-        expect(getCustomerNameSpan(rows, 1)).toBe(0);
-        expect(getCustomerNameSpan(rows, 2)).toBe(1);
-        expect(getCustomerNameSpan(rows, 3)).toBe(1);
     });
 
     it('merges identical customer needs and benefits inside one market segment', () => {
@@ -178,6 +177,83 @@ describe('product attribute technology linking', () => {
             구매자시장: ['1020 팬덤 소비자', '창작 의뢰자'],
             작가시장: ['프리랜서 작가'],
         });
+    });
+
+    it('splits comma-joined customer names into WS-4 sub segments', () => {
+        expect(buildCustomerNamesByMarketSegment([
+            { marketSegment: '시장', customerName: 'A, B' },
+            { marketSegment: '시장', customerName: 'B，C\nD' },
+        ])).toEqual({ 시장: ['A', 'B', 'C', 'D'] });
+    });
+
+    it('joins customer names without blanks or duplicates', () => {
+        expect(splitCustomerNames(' A , ,B,A ')).toEqual(['A', 'B']);
+        expect(splitCustomerNames(null)).toEqual([]);
+        expect(joinCustomerNames(['A', ' ', 'B, C', 'A', null])).toBe('A, B, C');
+    });
+
+    it('앞뒤가 모두 숫자인 쉼표는 나누지 않아 저장값이 원문과 같다', () => {
+        expect(splitCustomerNames('12,000명 고객사')).toEqual(['12,000명 고객사']);
+        expect(joinCustomerNames(['12,000명 고객사'])).toBe('12,000명 고객사');
+        expect(splitCustomerNames('1,234,567명 고객사')).toEqual(['1,234,567명 고객사']);
+        // 전각 쉼표도 같은 규칙을 따른다.
+        expect(splitCustomerNames('12，000명 고객사')).toEqual(['12，000명 고객사']);
+        expect(splitCustomerNames('갑，을')).toEqual(['갑', '을']);
+        expect(splitCustomerNames('12,000명 고객사, 을')).toEqual(['12,000명 고객사', '을']);
+    });
+
+    it('한쪽이라도 숫자가 아닌 쉼표는 지금처럼 구분자다', () => {
+        expect(splitCustomerNames('Acme, Inc.')).toEqual(['Acme', 'Inc.']);
+        expect(splitCustomerNames('12, 000명')).toEqual(['12', '000명']);
+        expect(splitCustomerNames('갑,1공장')).toEqual(['갑', '1공장']);
+        expect(splitCustomerNames('1공장,2공장')).toEqual(['1공장', '2공장']);
+        expect(splitCustomerNames('1,,2')).toEqual(['1', '2']);
+        expect(splitCustomerNames('갑\n을\r\n병')).toEqual(['갑', '을', '병']);
+    });
+
+    it('숫자 쉼표 고객명은 세분시장 병합과 행 정리에서도 한 고객이다', () => {
+        const rows = [
+            { marketSegment: '제조', customerName: '12,000명 고객사', customerNeed: 'n', benefit: 'b', attribute: 'a' },
+            { marketSegment: '제조', customerName: '을', customerNeed: 'n', benefit: 'b', attribute: 'a' },
+        ];
+        expect(buildCustomerNamesByMarketSegment(rows)).toEqual({ 제조: ['12,000명 고객사', '을'] });
+        expect(collapseCustomerRowsToSegments(rows).map(row => row.customerName)).toEqual(['12,000명 고객사, 을']);
+    });
+
+    it('shares customer names across all rows of a segment, including non-adjacent ones', () => {
+        const merged = mergeSegmentCustomerNames([
+            { id: '1', marketSegment: 'X', customerName: 'A' },
+            { id: '2', marketSegment: 'Y', customerName: 'C' },
+            { id: '3', marketSegment: ' X ', customerName: 'B' },
+            { id: '4', marketSegment: '', customerName: '미분류, 고객' },
+            { id: '5', marketSegment: null, customerName: null },
+        ]);
+        expect(merged.map(row => row.customerName)).toEqual(['A, B', 'C', 'A, B', '미분류, 고객', '']);
+        expect(merged.map(row => row.id)).toEqual(['1', '2', '3', '4', '5']);
+    });
+
+    it('keeps every different need when merging customers of a segment', () => {
+        const rows = [
+            { id: '1', marketSegment: 'X', customerName: 'A', customerNeed: '니즈1', benefit: '혜택1', attribute: '속성1' },
+            { id: '2', marketSegment: 'X', customerName: 'B', customerNeed: '니즈2', benefit: '혜택2', attribute: '속성2' },
+        ];
+        expect(collapseCustomerRowsToSegments(rows)).toEqual([
+            { ...rows[0], customerName: 'A, B' },
+            { ...rows[1], customerName: 'A, B' },
+        ]);
+    });
+
+    it('drops only rows that become identical, keeping the first id for WS-4 references', () => {
+        const row = { marketSegment: 'X', customerNeed: '니즈', benefit: '혜택', attribute: '속성' };
+        const normalized = collapseCustomerRowsToSegments([
+            { ...row, id: 'first', customerName: 'A' },
+            { ...row, id: 'other-attribute', customerName: 'A', attribute: '다른 속성' },
+            { ...row, id: 'duplicate', customerName: 'B' },
+            { id: 'blank-1', marketSegment: '', customerName: '', customerNeed: '', benefit: '', attribute: '' },
+            { id: 'blank-2', marketSegment: '', customerName: '', customerNeed: '', benefit: '', attribute: '' },
+        ]);
+        expect(normalized.map(item => item.id)).toEqual(['first', 'other-attribute', 'blank-1', 'blank-2']);
+        expect(normalized[0].customerName).toBe('A, B');
     });
 
     it('keeps only the first row for duplicate product attributes', () => {

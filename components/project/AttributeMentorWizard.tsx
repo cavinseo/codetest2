@@ -9,7 +9,7 @@ import {
     type MentorAppliedRow,
     type MentorDraftRow,
 } from '@/lib/attribute-mentor-utils';
-import type { AttributeSpecFunctionLike } from '@/lib/product-attributes-utils';
+import { collapseCustomerRowsToSegments, type AttributeSpecFunctionLike } from '@/lib/product-attributes-utils';
 import { describeAiEngine } from '@/lib/ai/engine-label';
 import type { ValueAnalysisContext } from '@/lib/ai/types';
 import AttributeValueAnalysis from './AttributeValueAnalysis';
@@ -109,13 +109,14 @@ export default function AttributeMentorWizard({
             if (!res.ok) throw new Error('초안 생성에 실패했습니다.');
 
             const data = await res.json();
-            const rows: MentorDraftRow[] = (data.rows || []).map((row: Record<string, string>, index: number) => ({
+            // 외부 AI 가 고객마다 행을 나눠 답해도 세분시장 단위로 합쳐서 보여 준다.
+            const rows: MentorDraftRow[] = collapseCustomerRowsToSegments<MentorDraftRow>((data.rows || []).map((row: Record<string, string>, index: number) => ({
                 id: `mentor_${index}_${Math.random().toString(36).slice(2, 6)}`,
                 marketSegment: row.marketSegment || '',
                 customerName: row.customerName || '',
                 customerNeed: row.customerNeed || '',
                 benefit: row.benefit || '',
-            }));
+            })));
 
             if (rows.length === 0) {
                 onNotify('초안이 비어 있습니다. 세분시장 답변을 확인해 주세요.', 'error');
@@ -335,6 +336,7 @@ export default function AttributeMentorWizard({
                                         >
                                             <p className="text-sm text-white">{row.customerName || '(고객명 없음)'}</p>
                                             <p className="text-[11px] text-gray-500 mt-0.5">{row.marketSegment}</p>
+                                            {row.customerNeed && <p className="text-[11px] text-gray-500 mt-0.5">{row.customerNeed}</p>}
                                             <p className={`text-[11px] mt-1 ${picked.length > 0 ? 'text-cyan-300' : 'text-gray-600'}`}>
                                                 {picked.length > 0 ? picked.join(', ') : '선택된 기능 없음'}
                                             </p>

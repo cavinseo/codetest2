@@ -12,6 +12,7 @@ import {
     calculateQfdWorksheet,
     calculateSatisfactionGraphWeight,
 } from '@/lib/qfd-worksheet';
+import { resolveKanoWeight } from '@/lib/kano-weight';
 
 const log = createLogger('api/qfd/analysis');
 
@@ -54,10 +55,9 @@ export async function GET(
             const kanoCategory = counts.total > 0
                 ? counts.dominantCategory
                 : (reqResponses[0]?.kanoCategory as KanoCategory | undefined) ?? 'I';
-            const savedKanoWeight = Number(req.kanoWeight);
-            const hasSavedKanoWeight = Number.isFinite(savedKanoWeight) && savedKanoWeight > 0;
             const autoKanoWeight = counts.total > 0 ? calculateSatisfactionGraphWeight(better, worse) : 0;
-            const importance = hasSavedKanoWeight ? savedKanoWeight : autoKanoWeight;
+            // 직접 넣은 0 도 그대로 써서 TIMKO 와 같은 가중치를 쓴다(2026-11-08 코드 리뷰 11번).
+            const importance = resolveKanoWeight(req.kanoWeight, autoKanoWeight);
 
             return {
                 id: req.id,

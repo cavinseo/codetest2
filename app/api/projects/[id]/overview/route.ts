@@ -66,6 +66,8 @@ export async function GET(
                     businessPlanFile: true,
                     createdAt: true,
                     updatedAt: true,
+                    // 화면 상단에 누구의 프로젝트인지 보이려고 소유 멘티의 이름만 가져온다(이메일은 내보내지 않는다).
+                    owner: { select: { name: true } },
                 },
             }),
             prisma.salesEstimate.count({ where: { projectId } }),
@@ -117,9 +119,11 @@ export async function GET(
             hasFitnessMatrix: Boolean(fitnessMatrix),
         });
 
+        const { owner, ...projectFields } = project;
         return NextResponse.json({
             project: {
-                ...project,
+                ...projectFields,
+                ownerName: owner?.name?.trim() || null,
                 relatedImages: getProductOverviewImages(project),
                 role: accessResult.role,
                 createdAt: project.createdAt.toISOString(),

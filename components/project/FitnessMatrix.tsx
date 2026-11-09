@@ -1,11 +1,13 @@
 'use client';
 
-import { Fragment, useState, useEffect, useCallback, useMemo } from 'react';
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
+import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 import {
     buildCustomerNamesByMarketSegment,
+    splitCustomerNames,
     dedupeByAttributeName,
 } from '@/lib/product-attributes-utils';
 
@@ -82,7 +84,8 @@ function createSubSegmentsFromCustomerNames(customerNames: string[], fallbackPre
 function mergeCustomerNamesIntoSubSegments(market: Market, customerNames: string[]): Market {
     if (customerNames.length === 0) return market;
 
-    const existingNames = new Set(market.subSegments.map((subSegment) => subSegment.name.trim()).filter(Boolean));
+    // 예전에 "A, B" 한 칸으로 입력해 평가까지 저장된 세분화가 있으면 A·B 빈 열을 또 만들지 않는다.
+    const existingNames = new Set(market.subSegments.flatMap((subSegment) => splitCustomerNames(subSegment.name)));
     const missingSubSegments = customerNames
         .filter((customerName) => !existingNames.has(customerName))
         .map((customerName, index) => ({
@@ -150,7 +153,12 @@ export default function FitnessMatrix({ projectId, reportTableOnly = false }: Pr
     const { toast, showToast } = useToast();
 
     // ── 데이터 로드 ──
+    // 불러오기가 겹치면(개발 모드의 effect 이중 실행, 재시도) 늦게 도착한 앞선 응답이 새 세분시장
+    // 열을 다른 임의 id 로 다시 만들어 덮어쓴다. 마지막 요청의 응답만 반영한다.
+    const latestLoad = useRef(0);
     const loadData = useCallback(async () => {
+        const loadId = ++latestLoad.current;
+        const isLatest = () => loadId === latestLoad.current;
         setIsLoading(true);
         setLoadFailed(false);
         try {
@@ -162,6 +170,7 @@ export default function FitnessMatrix({ projectId, reportTableOnly = false }: Pr
                 .filter((a: ProductAttribute) => a.attribute?.trim())
                 .sort((a: ProductAttribute, b: ProductAttribute) => a.order - b.order);
             const uniqueAttrs = dedupeByAttributeName(loadedAttrs);
+            if (!isLatest()) return;
             setAttrs(uniqueAttrs);
 
             // 세분시장과 세분화명을 제품속성서에서 자동 수집
@@ -175,6 +184,7 @@ export default function FitnessMatrix({ projectId, reportTableOnly = false }: Pr
             let savedData: FitnessData | null = null;
             if (fitnessRes.ok) {
                 const fitnessData = await fitnessRes.json();
+                if (!isLatest()) return;
                 if (!fitnessData || !Object.hasOwn(fitnessData, 'fitnessMatrix')) throw new Error('적합도 응답 형식 오류');
                 if (fitnessData?.fitnessMatrix) {
                     const fm = fitnessData.fitnessMatrix;
@@ -232,14 +242,21 @@ export default function FitnessMatrix({ projectId, reportTableOnly = false }: Pr
             }
             setLoadedProjectId(projectId);
         } catch (e) {
+            if (!isLatest()) return;
             setLoadFailed(true);
             console.error(e);
         } finally {
-            setIsLoading(false);
+            if (isLatest()) setIsLoading(false);
         }
     }, [projectId]);
 
     useEffect(() => { loadData(); }, [loadData]);
+
+    // 컨설턴트 진단은 저장할 때 markets·matrix 로 새로 만들어지므로 편집 대상에서 뺀다.
+    const { markSaved } = useUnsavedWorksheet(
+        { markets, matrix, managerComment },
+        !isLoading && !loadFailed && loadedProjectId === projectId,
+    );
 
     // ── 셀 값 가져오기 ──
     const getCell = (attrId: string, mktId: string, subId: string): Priority => {
@@ -436,6 +453,7 @@ export default function FitnessMatrix({ projectId, reportTableOnly = false }: Pr
                 }),
             });
             if (res.ok) {
+                markSaved();
                 showToast('저장되었습니다. 컨설턴트 진단이 업데이트되었습니다.');
             } else {
                 showToast('저장에 실패했습니다.', 'error');

@@ -11,6 +11,7 @@ import {
     getSatisfactionQuadrant,
 } from '@/lib/kano-algorithm';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { resolveKanoWeight } from '@/lib/kano-weight';
 
 const log = createLogger('api/kano/analysis');
 
@@ -66,7 +67,7 @@ export async function GET(
             const autoKanoWeight = calculateSatisfactionGraphWeight(better, worse);
             const savedKanoWeight = requirementWeights.get(reqId);
             const quadrant = getSatisfactionQuadrant(better, worse);
-            const kanoWeight = savedKanoWeight ?? autoKanoWeight;
+            const kanoWeight = resolveKanoWeight(savedKanoWeight, autoKanoWeight);
             const timkoCategory = getWeightedTimkoCategory(kanoWeight);
 
             return {

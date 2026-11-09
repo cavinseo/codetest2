@@ -31,6 +31,7 @@ import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import { useRouter } from 'next/navigation';
 import { isProjectWriteRole } from '@/lib/project-roles';
 import { useProjectOverviewEditor } from '@/components/project/useProjectOverviewEditor';
+import { UNSAVED_WORKSHEET_MESSAGE, WorksheetDirtyContext } from '@/components/project/useUnsavedWorksheet';
 
 interface ProjectData extends ProductOverview {
     id: string;
@@ -38,6 +39,7 @@ interface ProjectData extends ProductOverview {
     description?: string;
     detailedDescription?: string;
     businessPlanFile?: string;
+    ownerName?: string | null;
     createdAt: string;
     memberCount: number;
     role: string;
@@ -76,10 +78,17 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
     const setMentorAnalysisDirty = useCallback((dirty: boolean) => { mentorAnalysisDirty.current = dirty; }, []);
     const qfdDirty = useRef(false);
     const setQfdDirty = useCallback((dirty: boolean) => { qfdDirty.current = dirty; }, []);
+    // 나머지 워크시트 표는 useUnsavedWorksheet 가 이 통로로 편집 상태를 알린다.
+    const dirtyWorksheets = useRef(new Set<string>());
+    const setWorksheetDirty = useCallback((reporterId: string, dirty: boolean) => {
+        if (dirty) dirtyWorksheets.current.add(reporterId);
+        else dirtyWorksheets.current.delete(reporterId);
+    }, []);
     const changeTab = (next: string) => {
         if (next === activeTab) return;
         if (mentorAnalysisDirty.current && !window.confirm('저장하지 않은 멘토 분석이 있습니다. 저장하지 않고 이동할까요?')) return;
         if (qfdDirty.current && !window.confirm('저장 중이거나 저장하지 못한 관계 강도가 있습니다. 저장하지 않고 이동할까요?')) return;
+        if (dirtyWorksheets.current.size > 0 && !window.confirm(UNSAVED_WORKSHEET_MESSAGE)) return;
         setActiveTab(next);
     };
     const [project, setProject] = useState<ProjectData | null>(null);
@@ -138,6 +147,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                         description: overviewData.project.description || '',
                         detailedDescription: overviewData.project.detailedDescription || '',
                         businessPlanFile: overviewData.project.businessPlanFile || '',
+                        ownerName: overviewData.project.ownerName ?? null,
                         productName: overviewData.project.productName,
                         relatedImages: overviewData.project.relatedImages,
                         productImageDataUrl: overviewData.project.productImageDataUrl,
@@ -330,7 +340,9 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         if (tabComponents[tabId]) {
             return (
                 <WorksheetImageExport key={tabId} title={tabs.find(tab => tab.id === tabId)?.name ?? tabId} projectId={projectId} worksheetId={tabId}>
-                    <fieldset disabled={!canWriteProject && tabId !== 'qfd'} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
+                    <WorksheetDirtyContext.Provider value={setWorksheetDirty}>
+                        <fieldset disabled={!canWriteProject && tabId !== 'qfd'} className="min-w-0 animate-fade-in">{tabComponents[tabId]}</fieldset>
+                    </WorksheetDirtyContext.Provider>
                 </WorksheetImageExport>
             );
         }
@@ -405,7 +417,8 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                             <div className="w-px h-6 bg-white/10" />
                             <div>
                                 <h1 className="text-xl font-display font-bold text-white">{project.name}</h1>
-                                <p className="text-xs text-gray-500 mt-0.5">{project.description}</p>
+                                {/* 설명은 길고 마크다운 기호가 그대로 보여 상단을 덮었다. 설명은 개요 탭에서만 보이고 여기는 누구의 프로젝트인지만 밝힌다. */}
+                                {project.ownerName && <p className="text-xs text-gray-500 mt-0.5">멘티 {project.ownerName}</p>}
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
