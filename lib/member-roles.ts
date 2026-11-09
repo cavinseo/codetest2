@@ -77,6 +77,18 @@ export function canAssignMentor(role: MemberRole): boolean {
 }
 
 /**
+ * 로그인 화면에서 고른 역할로 이 계정이 들어올 수 있는가.
+ *
+ * 매니저는 멘토를 겸할 수 있어(멘토 배정 후보에 들고, 배정된 멘티 프로젝트를 편집한다) 멘토로
+ * 일하는 매니저가 멘토 탭을 고르는 것은 자연스럽다. 예전에는 계정 역할과 정확히 같아야 해서
+ * "역할 불일치"로 막혔다. 들어온 뒤의 권한은 고른 탭이 아니라 계정 역할로 정해지므로, 이 판정은
+ * 권한을 넓히지 않는다. 반대 방향(멘토가 매니저 탭)은 권한 상승처럼 보이므로 막는다.
+ */
+export function canLogInAs(accountRole: MemberRole, selectedRole: MemberRole): boolean {
+    return accountRole === selectedRole || (accountRole === 'PROGRAM_MANAGER' && selectedRole === 'MENTOR');
+}
+
+/**
  * 프로젝트를 새로 만들 수 있는가.
  *
  * 멘티는 자기 프로젝트를 스스로 연다 — 자신이 속한 프로그램 안에, 자신을

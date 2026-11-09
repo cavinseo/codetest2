@@ -187,7 +187,9 @@ export default function LoginPage() {
                             ? '초대받은 이메일과 코드를 입력해 주세요. 최초 등록에는 이름 입력이 필수이며, 이후에는 같은 코드로 로그인할 수 있습니다.'
                             : role === 'MENTEE'
                                 ? '기존 계정의 ID와 비밀번호 또는 Google 계정으로 로그인해 주세요.'
-                                : `${role === 'PROGRAM_MANAGER' ? '프로그램 매니저' : '멘토'} 계정의 ID와 비밀번호 또는 Google 계정으로 로그인해 주세요.`}
+                                : role === 'PROGRAM_MANAGER'
+                                    ? '프로그램 매니저 계정의 ID와 비밀번호 또는 Google 계정으로 로그인해 주세요.'
+                                    : '멘토 계정의 ID와 비밀번호 또는 Google 계정으로 로그인해 주세요. 멘토를 겸하는 프로그램 매니저도 여기서 로그인할 수 있습니다.'}
                     </p>
                     {notice && (
                         <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 px-4 py-3 rounded-xl mb-6 animate-slide-down text-sm">
