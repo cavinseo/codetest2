@@ -7,6 +7,7 @@ import {
     canCreateProject,
     canCreateProjectForOthers,
     canIssueInviteCode,
+    canLogInAs,
     canListAllProjects,
     canManageMembers,
     canManagePrograms,
@@ -295,5 +296,18 @@ describe('canCreateProject 알 수 없는 역할', () => {
         // 세션의 역할 문자열은 DB 에서 오므로 옛 값이 섞일 수 있다. 허용 목록에 없는
         // 값은 거부해야 한다 — "멘토가 아니면 허용"으로 바뀌면 그런 계정이 과제를 연다.
         expect(canCreateProject('USER' as MemberRole)).toBe(false);
+    });
+});
+
+describe('로그인 역할 선택', () => {
+    const roles: MemberRole[] = ['ADMIN', 'PROGRAM_MANAGER', 'MENTOR', 'MENTEE'];
+
+    it('계정 역할과 같은 역할은 언제나 고를 수 있다', () => {
+        roles.forEach(role => expect(canLogInAs(role, role)).toBe(true));
+    });
+
+    it('멘토를 겸하는 매니저만 다른 역할(멘토)로 들어올 수 있다', () => {
+        const allowed = roles.flatMap(account => roles.filter(selected => selected !== account && canLogInAs(account, selected)).map(selected => `${account}->${selected}`));
+        expect(allowed).toEqual(['PROGRAM_MANAGER->MENTOR']);
     });
 });

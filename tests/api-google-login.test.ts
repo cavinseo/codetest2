@@ -33,7 +33,9 @@ vi.mock('../lib/prisma', () => ({
 
 const isAccessExpired = vi.fn();
 const parseMemberRole = vi.fn();
-vi.mock('../lib/member-roles', () => ({
+vi.mock('../lib/member-roles', async (importOriginal) => ({
+    // 로그인 역할 판정은 실제 규칙을 써야 매니저의 멘토 로그인을 검증할 수 있다.
+    canLogInAs: (await importOriginal<typeof import('../lib/member-roles')>()).canLogInAs,
     isAccessExpired: (...args: unknown[]) => isAccessExpired(...(args as [])),
     parseMemberRole: (...args: unknown[]) => parseMemberRole(...(args as [])),
 }));
@@ -379,6 +381,20 @@ describe('Google 회원 로그인 콜백 회원 게이트', () => {
 });
 
 describe('Google 회원 로그인 콜백 성공과 실패', () => {
+    it('멘토를 겸하는 매니저는 멘토로 골라도 세션을 발급하고, 멘토는 매니저로 고를 수 없다', async () => {
+        parseMemberRole.mockReturnValue('PROGRAM_MANAGER');
+        findFirstUser.mockResolvedValue(approvedUser({ role: 'PROGRAM_MANAGER' }));
+        const asMentor = await finishGoogleLogin(validCallbackRequest({ role: 'MENTOR' }));
+        expect(asMentor.headers.get('location')).toBe(`${ORIGIN}/dashboard`);
+        expect(responseCookie(asMentor, 'session')).toBeDefined();
+
+        parseMemberRole.mockReturnValue('MENTOR');
+        findFirstUser.mockResolvedValue(approvedUser({ role: 'MENTOR' }));
+        const asManager = await finishGoogleLogin(validCallbackRequest({ role: 'PROGRAM_MANAGER' }));
+        expect(redirectError(asManager)).toBe('role_mismatch');
+        expect(responseCookie(asManager, 'session')).toBeUndefined();
+    });
+
     it.each(['PROGRAM_MANAGER', 'MENTOR', 'MENTEE'] as const)(
         '%s 역할과 DB 역할이 같으면 세션을 발급한다',
         async role => {

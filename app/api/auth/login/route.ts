@@ -8,7 +8,7 @@ import { setSessionCookie } from '@/lib/session-cookie';
 import { createLogger } from '@/lib/logger';
 import { LOGIN_RATE_LIMIT, clientIpFrom, consumeRateLimit, resetRateLimit } from '@/lib/rate-limit';
 import { isProfileCompleteForRole } from '@/lib/member-profile';
-import { parseMemberRole } from '@/lib/member-roles';
+import { canLogInAs, parseMemberRole } from '@/lib/member-roles';
 import { isUserAccessExpired } from '@/lib/invite-access';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
                 { status: 403 }
             );
         }
-        if (selectedRole ? role !== selectedRole : role !== 'ADMIN') {
+        if (selectedRole ? !canLogInAs(role, selectedRole) : role !== 'ADMIN') {
             log.warn('로그인 거부 — 선택 역할 불일치', { userId: user.id });
             return NextResponse.json(
                 { code: 'LOGIN_ROLE_MISMATCH', error: ROLE_MISMATCH_MSG },

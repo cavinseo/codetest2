@@ -184,6 +184,28 @@ describe('로그인 선택 역할 확인', () => {
         }
     );
 
+    it('멘토를 겸하는 매니저는 멘토로 골라도 로그인한다', async () => {
+        findUniqueUser.mockResolvedValue(approvedUser({ role: 'PROGRAM_MANAGER' }));
+
+        const response = await POST(loginRequest({ email: 'u@x.com', password: 'password123', role: 'MENTOR' }));
+
+        expect(response.status).toBe(200);
+        expect(cookieSet).toHaveBeenCalledOnce();
+    });
+
+    it.each([['MENTOR', 'PROGRAM_MANAGER'], ['PROGRAM_MANAGER', 'MENTEE']] as const)(
+        '%s 계정이 %s를 고르면 거부한다',
+        async (accountRole, selectedRole) => {
+            findUniqueUser.mockResolvedValue(approvedUser({ role: accountRole }));
+
+            const response = await POST(loginRequest({ email: 'u@x.com', password: 'password123', role: selectedRole }));
+
+            expect(response.status).toBe(403);
+            expect(await response.json()).toMatchObject({ code: 'LOGIN_ROLE_MISMATCH' });
+            expect(cookieSet).not.toHaveBeenCalled();
+        }
+    );
+
     it('비밀번호가 틀리면 선택 역할과 DB 역할이 달라도 자격 증명 오류만 반환한다', async () => {
         compare.mockResolvedValue(false);
 
