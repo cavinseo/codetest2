@@ -4,7 +4,7 @@
 // 한다. 양식이 바뀌면 이 파일만 고치면 되고, 실DB 도 Word 도 없이 테스트할 수 있다.
 import { getKanoTopic } from './utils/korean-utils';
 import { getKanoAnswerLabel } from './kano-response-display';
-import { buildKanoSurveyIntroduction } from './kano-survey-introduction';
+import { buildKanoSurveyIntroduction, type KanoSurveyIntroduction } from './kano-survey-introduction';
 
 export interface KanoSurveyRequirement {
     requirement: string;
@@ -62,7 +62,14 @@ export function resolveKanoQuestionPair(requirement: KanoSurveyRequirement): { p
     };
 }
 
-export function buildKanoSurveyDocumentModel(requirements: KanoSurveyRequirement[]): KanoSurveyDocumentModel {
+/**
+ * introduction 은 「설문 질문 구성」에서 저장한 소개문 값이다. 오프라인 HTML 과 같은 값을 써야
+ * 같은 조사에서 종이 설문지와 HTML 응답지의 소개문이 달라지지 않는다.
+ */
+export function buildKanoSurveyDocumentModel(
+    requirements: KanoSurveyRequirement[],
+    introduction?: KanoSurveyIntroduction,
+): KanoSurveyDocumentModel {
     const rows: KanoSurveyRow[] = [];
     requirements.forEach((requirement, index) => {
         const pair = resolveKanoQuestionPair(requirement);
@@ -74,7 +81,7 @@ export function buildKanoSurveyDocumentModel(requirements: KanoSurveyRequirement
     return {
         title: KANO_SURVEY_TITLE,
         guide: KANO_SURVEY_GUIDE,
-        introduction: KANO_SURVEY_INTRODUCTION,
+        introduction: buildKanoSurveyIntroduction(introduction),
         questionHeader: KANO_SURVEY_QUESTION_HEADER,
         answerLabels: kanoSurveyAnswerLabels(),
         rows,

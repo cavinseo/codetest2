@@ -3,6 +3,10 @@
 // 응답자는 인터넷 없이 파일 하나만 열어 답하고 「응답 저장」 을 눌러 답변을 자기 이메일이 붙은
 // 파일 하나에 저장한다. 관리자는 그 파일들을 모아 업로드한다. 답변은 화면 상태가 아니라 JSON 블록에
 // 박히므로 kano-offline-response.ts 가 정규식 하나로 읽을 수 있다.
+//
+// 소개문은 화면의 「설문 질문 구성」에서 입력·저장한 값으로 완성해 내보낸다. 예전에는 파일 안에
+// 빈칸 편집 상자를 두었는데, 응답자에게 배포할 파일에 편집 상자가 남고 고친 내용이 프로젝트에
+// 돌아오지 않아 같은 소개문을 두 곳에서 따로 관리하게 됐다.
 import { escapeHtml } from './html-escape';
 import {
     KANO_SURVEY_CLOSING,
@@ -16,9 +20,6 @@ import {
 import {
     buildKanoSurveyIntroduction,
     EMPTY_KANO_INTRODUCTION,
-    KANO_INTRODUCTION_END,
-    KANO_INTRODUCTION_FIELDS,
-    KANO_INTRODUCTION_MAX_LENGTH,
     type KanoSurveyIntroduction,
 } from './kano-survey-introduction';
 
@@ -63,14 +64,6 @@ function renderAnswerOptions(name: string, labels: string[]): string {
 
 export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
     const introduction = input.introduction ?? EMPTY_KANO_INTRODUCTION;
-    const introductionEditor = input.preview ? '' : `<details class="introduction-editor">
-        <summary>소개문 빈칸 편집</summary>
-        <p>소개문의 빈칸을 입력한 뒤 양식 저장을 누르면 수정한 HTML 파일을 내려받습니다. 이 파일의 수정 내용은 프로젝트에 자동 반영되지 않습니다.</p>
-        <div class="introduction-fields">${KANO_INTRODUCTION_FIELDS.map(({ key, label }) =>
-            `<label for="kano-intro-${key}">${label}<input id="kano-intro-${key}" type="text" maxlength="${KANO_INTRODUCTION_MAX_LENGTH}" value="${escapeHtml(introduction[key])}"></label>`
-        ).join('')}</div>
-        <button type="button" id="kano-save-form">양식 저장</button>
-    </details>`;
     const answerLabels = kanoSurveyAnswerLabels();
     const initialPayload: KanoOfflinePayload = {
         kind: KANO_OFFLINE_PAYLOAD_KIND,
@@ -98,24 +91,10 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
     var payloadElement = document.getElementById('${KANO_OFFLINE_PAYLOAD_ID}');
     var emailInput = document.getElementById('kano-respondent-email');
     var saveButton = document.getElementById('kano-save');
-    var saveFormButton = document.getElementById('kano-save-form');
     var payload = JSON.parse(payloadElement.textContent || '{}');
     // 첫 저장에서 고른 파일과 그때의 이메일. 이후 저장은 같은 파일을 덮어써 결과지가 늘지 않는다.
     var responseFileHandle = null;
     var responseFileEmail = null;
-    var introductionFields = ${JSON.stringify(KANO_INTRODUCTION_FIELDS)};
-
-    function updateIntroduction() {
-        var text = introductionFields.map(function (field) {
-            var input = document.getElementById('kano-intro-' + field.key);
-            input.setAttribute('value', input.value);
-            return field.prefix + '「' + (input.value.trim() || field.blank) + '」';
-        }).join('') + ${JSON.stringify(KANO_INTRODUCTION_END)};
-        document.querySelector('.introduction').textContent = text;
-    }
-    introductionFields.forEach(function (field) {
-        document.getElementById('kano-intro-' + field.key).addEventListener('input', updateIntroduction);
-    });
 
     emailInput.value = payload.respondentEmail || '';
     payload.answers.forEach(function (answer) {
@@ -213,19 +192,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         };
         payloadElement.textContent = JSON.stringify(nextPayload).replace(/</g, '\\\\u003c');
         payload = nextPayload;
-        updateIntroduction();
         return '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
-    }
-
-    function formatTimestamp(date) {
-        var pad = function (value) { return String(value).padStart(2, '0'); };
-        return String(date.getFullYear())
-            + pad(date.getMonth() + 1)
-            + pad(date.getDate())
-            + '-'
-            + pad(date.getHours())
-            + pad(date.getMinutes())
-            + pad(date.getSeconds());
     }
 
     function saveResponse() {
@@ -244,14 +211,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         saveResponseFile(serializeDocument(respondentEmail, answers), respondentEmail);
     }
 
-    // 소개문만 고친 배포용 양식이라 이메일·미응답 확인 없이 시각을 붙인 새 파일로 내려받는다.
-    function saveForm() {
-        var html = serializeDocument(emailInput.value, collectAnswers());
-        downloadHtml(html, 'Kano_오프라인_응답지_' + document.body.dataset.downloadStem + '_' + formatTimestamp(new Date()) + '.html');
-    }
-
     saveButton.addEventListener('click', saveResponse);
-    saveFormButton.addEventListener('click', saveForm);
 }());`;
 
     return `<!DOCTYPE html>
@@ -267,12 +227,6 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         h1 { margin: 0 0 8px; font-size: 30px; }
         .project-name { margin: 0 0 24px; color: #4b5563; }
         .guide, .introduction, .closing { white-space: pre-wrap; }
-        .introduction-editor { margin: 24px 0; padding: 16px; border: 1px solid #c7d2fe; border-radius: 10px; background: #eef2ff; }
-        summary { cursor: pointer; font-weight: 700; }
-        .introduction-editor p { font-size: 14px; color: #4b5563; }
-        .introduction-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
-        .introduction-fields label { display: grid; gap: 6px; }
-        .introduction-fields input { width: 100%; padding: 10px; border: 1px solid #9ca3af; border-radius: 6px; font: inherit; }
         ${input.preview ? '.respondent, .save-hint, button { display: none; }' : ''}
         .requirement { margin: 28px 0; padding-top: 8px; border-top: 1px solid #d1d5db; }
         fieldset { margin: 18px 0; padding: 16px; border: 1px solid #d1d5db; border-radius: 10px; }
@@ -285,7 +239,7 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         .save-hint { margin: 8px 0 0; font-size: 13px; color: #4b5563; }
         button { padding: 12px 20px; border: 0; border-radius: 8px; background: #2563eb; color: white; font: inherit; font-weight: 700; cursor: pointer; }
         @media (max-width: 720px) { main { padding: 22px; } .answers { grid-template-columns: 1fr; } }
-        @media print { body { background: white; } main { width: 100%; margin: 0; padding: 0; } .respondent, .save-hint, button, .introduction-editor { display: none; } }
+        @media print { body { background: white; } main { width: 100%; margin: 0; padding: 0; } .respondent, .save-hint, button { display: none; } }
     </style>
 </head>
 <body data-download-stem="${escapeHtml(kanoSurveyFileNameStem(input.projectName))}">
@@ -295,7 +249,6 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         <p class="project-name">${escapeHtml(input.projectName)}</p>
         <p class="guide">${escapeHtml(KANO_SURVEY_GUIDE)}</p>
         <p class="introduction">${escapeHtml(buildKanoSurveyIntroduction(introduction))}</p>
-        ${introductionEditor}
     </header>
     <form id="kano-survey-form">
 ${questions}
