@@ -79,8 +79,6 @@ function executeBrowserScript(
     const listeners = new Map<string, () => void>();
     const emailInput = { value: '', focus: vi.fn() };
     const payloadElement = { textContent: payloadMatch[1] };
-    const introductionElement = { textContent: '' };
-    const introductionInput = { value: '', setAttribute: vi.fn(), addEventListener: vi.fn() };
     const saveButton = {
         addEventListener: (event: string, listener: () => void) => listeners.set(event, listener),
     };
@@ -90,12 +88,9 @@ function executeBrowserScript(
             if (id === KANO_OFFLINE_PAYLOAD_ID) return payloadElement;
             if (id === 'kano-respondent-email') return emailInput;
             if (id === 'kano-save') return saveButton;
-            if (id === 'kano-save-form') return { addEventListener: vi.fn() };
-            if (id.startsWith('kano-intro-')) return introductionInput;
             return null;
         },
         querySelector(selector: string) {
-            if (selector === '.introduction') return introductionElement;
             const name = selector.match(/name="([^"]+)"/)?.[1];
             const value = selector.match(/value="([^"]+)"/)?.[1];
             return radios.find((radio) => (
@@ -513,18 +508,22 @@ describe('미리보기와 배포본의 마크업 경계', () => {
     });
 
     it('미리보기는 응답·저장 컨트롤을 숨기고 실행 스크립트를 싣지 않는다', () => {
-        expect(preview).toContain('.respondent, .save-hint, button { display: none; }');
+        // 인쇄 규칙에도 같은 문구가 있어, 화면용 규칙이 빠진 것을 잡으려면 놓인 자리까지 본다.
+        expect(preview).toMatch(/\.closing \{ white-space: pre-wrap; \}\s*\.respondent, \.save-hint, button \{ display: none; \}\s*\.requirement \{/);
         expect(preview).toMatch(/<\/script>\s*<\/body>/);
         expect(preview.match(/<script>/g)).toBeNull();
     });
 
     it('배포본 스타일에는 미리보기 전용 규칙이 끼지 않는다', () => {
-        expect(form).toMatch(/\.introduction-fields input \{[^}]*\}\s*\.requirement \{/);
+        expect(form).toMatch(/\.closing \{ white-space: pre-wrap; \}\s*\.requirement \{/);
     });
 
-    it('배포본 편집기의 입력 칸은 구분 문자 없이 이어 붙인다', () => {
-        const fields = form.match(/<div class="introduction-fields">([\s\S]*?)<\/div>/)?.[1] ?? '';
-        expect(fields).toMatch(/^(<label for="kano-intro-[a-zA-Z]+">[^<]*<input [^>]*><\/label>)+$/);
+    it('배포본도 소개문 편집기 없이 완성된 소개문으로 머리말을 닫는다', () => {
+        // 소개문은 「설문 질문 구성」에서 입력한다. 응답자에게 가는 파일에 편집 상자가 남으면 안 된다.
+        expect(form).toMatch(/<p class="introduction">[^<]*<\/p>\s*<\/header>/);
+        expect(form).not.toContain('kano-intro-');
+        expect(form).not.toContain('kano-save-form');
+        expect(form).not.toContain('introduction-editor');
     });
 });
 
@@ -538,6 +537,6 @@ describe('저장 안내 문구', () => {
 
     it('미리보기와 인쇄에서는 안내를 숨긴다', () => {
         expect(buildHtml({ preview: true })).toContain('.respondent, .save-hint, button { display: none; }');
-        expect(buildHtml()).toContain('@media print { body { background: white; } main { width: 100%; margin: 0; padding: 0; } .respondent, .save-hint, button, .introduction-editor { display: none; } }');
+        expect(buildHtml()).toContain('@media print { body { background: white; } main { width: 100%; margin: 0; padding: 0; } .respondent, .save-hint, button { display: none; } }');
     });
 });

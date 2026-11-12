@@ -4,6 +4,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { buildKanoSurveyDocumentModel, kanoSurveyFileName } from '@/lib/kano-survey-document';
 import { renderKanoSurveyDocx } from '@/lib/kano-survey-docx';
+import { kanoSurveyIntroductionSchema } from '@/lib/kano-survey-introduction';
 
 const log = createLogger('api/kano-survey-document');
 
@@ -19,7 +20,7 @@ export async function GET(
     try {
         const project = await prisma.project.findUnique({
             where: { id: projectId },
-            select: { name: true },
+            select: { name: true, kanoSurveyIntroduction: true },
         });
         if (!project) {
             return NextResponse.json({ error: '프로젝트를 찾을 수 없습니다.' }, { status: 404 });
@@ -32,7 +33,11 @@ export async function GET(
             select: { requirement: true, kanoPositiveQ: true, kanoNegativeQ: true },
         });
 
-        const buffer = await renderKanoSurveyDocx(buildKanoSurveyDocumentModel(requirements));
+        // 저장값이 형식에 맞지 않으면 문서 생성을 막지 않고 빈칸 양식으로 낸다. 엑셀 내보내기와 같은 처리다.
+        const introduction = kanoSurveyIntroductionSchema.safeParse(project.kanoSurveyIntroduction);
+        const buffer = await renderKanoSurveyDocx(
+            buildKanoSurveyDocumentModel(requirements, introduction.success ? introduction.data : undefined),
+        );
         const fileName = encodeURIComponent(kanoSurveyFileName(project.name));
 
         return new NextResponse(new Uint8Array(buffer), {

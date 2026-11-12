@@ -8,12 +8,18 @@ import KanoAnalysisPanel, { type KanoAnalysisData, type KanoAnalysisViewMode } f
 import KanoInviteModal from '@/components/project/KanoInviteModal';
 import HeaderToast from '@/components/HeaderToast';
 import KanoResponseCollection from './KanoResponseCollection';
+import KanoSurveyIntroductionFields from './KanoSurveyIntroductionFields';
 import { useKanoResponseCollection } from './useKanoResponseCollection';
 import { useUnsavedWorksheet } from './useUnsavedWorksheet';
 import { useToast } from '@/components/useToast';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
 import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
 import { readJsonOrThrow } from '@/lib/client-fetch';
+import {
+    EMPTY_KANO_INTRODUCTION,
+    kanoSurveyIntroductionSchema,
+    type KanoSurveyIntroduction,
+} from '@/lib/kano-survey-introduction';
 
 interface Requirement {
     id: string;
@@ -66,6 +72,12 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     // 저장 전 편집이 통째로 원래 문구로 돌아간다(화면에 경고도 없다).
     const editedQuestionIds = useRef<Set<string>>(new Set());
     const [isSavingQuestions, setIsSavingQuestions] = useState(false);
+    // 설문지 소개문. 오프라인 HTML·Word 설문지가 이 저장값으로 소개문을 완성한다.
+    // 다시 불러오기가 저장 전 입력을 덮지 않도록 질문과 같은 방식으로 편집 여부를 기억한다.
+    const [introduction, setIntroduction] = useState<KanoSurveyIntroduction>(EMPTY_KANO_INTRODUCTION);
+    const [savedIntroduction, setSavedIntroduction] = useState<KanoSurveyIntroduction>(EMPTY_KANO_INTRODUCTION);
+    const [canEditIntroduction, setCanEditIntroduction] = useState(false);
+    const introductionEdited = useRef(false);
 
     const { toast, showToast } = useToast(3500);
 
@@ -103,6 +115,16 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                     }
                     return merged;
                 });
+            }
+
+            const introRes = await fetch(`/api/projects/${projectId}/kano/offline-form?format=json`, { cache: 'no-store' });
+            if (introRes.ok) {
+                const introData = await introRes.json();
+                const parsed = kanoSurveyIntroductionSchema.safeParse(introData.introduction);
+                const serverIntroduction = parsed.success ? parsed.data : EMPTY_KANO_INTRODUCTION;
+                setSavedIntroduction(serverIntroduction);
+                setCanEditIntroduction(introData.canEdit === true);
+                if (!introductionEdited.current) setIntroduction(serverIntroduction);
             }
 
             const invRes = await fetch(`/api/projects/${projectId}/kano/invitations`);
@@ -154,7 +176,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     // 다시 불러오기는 화면을 둔 채 값만 바꿔 ready 가 내려가지 않으므로, 저장 뒤 기준은
     // markSaved() 로만 다시 잡힌다. 초대·업로드 뒤 다시 불러와도 손대지 않은 질문은 서버
     // 기본값 그대로라 기준과 같다.
-    const { markSaved } = useUnsavedWorksheet(kanoQuestions, !isLoading);
+    const { markSaved } = useUnsavedWorksheet({ kanoQuestions, introduction }, !isLoading);
 
     const handleResetResponses = async () => {
         const ok = window.confirm('현재 프로젝트의 Kano 응답 데이터와 응답 완료 상태를 모두 리셋할까요? 이 작업은 되돌릴 수 없습니다.');
@@ -229,7 +251,18 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 const errorData = await res.json();
                 throw new Error(errorData.error || errorData.message || '\uc800\uc7a5 \uc2e4\ud328');
             }
-            
+
+            // \uc18c\uac1c\ubb38\uc740 \ubc14\ub00c\uc5c8\uc744 \ub54c\ub9cc \uc4f4\ub2e4. \uc9c8\ubb38\ub9cc \uace0\uce5c \uc800\uc7a5\uc5d0 \uc4f8\ub370\uc5c6\ub294 \uc4f0\uae30\uc640 \uc2e4\ud328 \uacbd\ub85c\ub97c \ub354\ud558\uc9c0 \uc54a\uae30 \uc704\ud574\uc11c\ub2e4.
+            if (JSON.stringify(introduction) !== JSON.stringify(savedIntroduction)) {
+                const introRes = await fetch(`/api/projects/${projectId}/kano/offline-form`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ introduction }),
+                });
+                await readJsonOrThrow(introRes, '\uc124\ubb38\uc9c0 \uc18c\uac1c\ubb38 \uc800\uc7a5\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.');
+                introductionEdited.current = false;
+            }
+
             showToast('Kano \uc124\ubb38 \uc9c8\ubb38\uc774 \uc800\uc7a5\ub418\uc5c8\uc2b5\ub2c8\ub2e4!', 'success');
             await loadData(); // \ucd5c\uc2e0 \ub370\uc774\ud130 \ub2e4\uc2dc \ubd88\ub7ec\uc624\uae30
             markSaved();
@@ -429,6 +462,15 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 </div>
                             </div>
 
+                            <KanoSurveyIntroductionFields
+                                value={introduction}
+                                disabled={!canEditIntroduction || isSavingQuestions}
+                                onChange={(next) => {
+                                    introductionEdited.current = true;
+                                    setIntroduction(next);
+                                }}
+                            />
+
                             <div className="bg-amber-500/[0.06] border border-amber-500/20 rounded-xl p-4 mb-5">
                                 <p className="text-sm text-amber-200 flex items-start gap-2">
                                     <svg className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -437,7 +479,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                     <span>
                                         <strong className="text-amber-300">설문 주제</strong>는 자동 추출되며,
                                         <strong className="text-amber-300"> 긍정·부정 질문</strong>은 직접 수정하신 후 <strong className="text-white">「질문 저장」</strong> 버튼을 눌러주세요.
-                                        저장된 질문이 미리보기, Google Forms, Word 설문지에 반영됩니다. 저장하지 않은 수정은 인쇄물에 나가지 않습니다.
+                                        저장된 질문은 미리보기, Google Forms, Word 설문지에, 소개문은 Word 설문지와 오프라인 HTML에 반영됩니다. 저장하지 않은 수정은 인쇄물에 나가지 않습니다.
                                     </span>
                                 </p>
                             </div>

@@ -60,6 +60,14 @@ describe('buildKanoSurveyDocumentModel', () => {
         expect(model.closing).toBe(KANO_SURVEY_CLOSING);
     });
 
+    it('저장한 소개문 값을 받으면 빈칸 대신 그 값으로 소개문을 완성한다', () => {
+        const model = buildKanoSurveyDocumentModel(REQS, {
+            technology: '센서', productType: '농기계', companyName: '팜테크', representativeName: '홍길동', offering: '자동 관수',
+        });
+        expect(model.introduction).toContain('「센서」 기술을 활용하여 다양한 「농기계」제품을 개발하고 있는 「팜테크」 대표 「홍길동」입니다.');
+        expect(model.introduction).not.toBe(KANO_SURVEY_INTRODUCTION);
+    });
+
     it('고정 문구가 양식 원문과 같다', () => {
         // 문구가 바뀌면 양식과 어긋나는 것이므로 원문을 그대로 단언한다.
         expect(KANO_SURVEY_TITLE).toBe('고객니즈조사 설문지');

@@ -1,4 +1,4 @@
-// 양식 확인에서 소개문 저장·재열기·실패 재시도 및 미저장 보호를 검증한다.
+// 소개문은 「설문 질문 구성」 맨 앞에서 입력·저장하고, 양식 확인은 저장된 값으로 완성된 양식만 보여 주는지 검증한다.
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -16,18 +16,20 @@ const onClose = vi.fn();
 const fetchMock = vi.fn();
 const endpoint = '/api/projects/project/kano/offline-form';
 const requirements = [{ id: 'req', requirement: '안전', category: '품질', order: 0 }];
+const values = { technology: '성형 기술', productType: '분리판', companyName: '창업 기업', representativeName: '홍길동', offering: '제작 서비스' };
 
 const button = (text: string) => [...container.querySelectorAll('button')].find(item => item.textContent?.trim() === text)!;
 const click = async (text: string) => { await act(async () => { button(text).click(); }); };
+const introPatches = () => fetchMock.mock.calls.filter(([url, init]) => url === endpoint && init?.method === 'PATCH');
 async function fill(key: string, value: string) {
-    const input = container.querySelector<HTMLInputElement>(`#offline-intro-${key}`)!;
+    const input = container.querySelector<HTMLInputElement>(`#kano-intro-${key}`)!;
     await act(async () => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
         input.dispatchEvent(new Event('input', { bubbles: true }));
     });
 }
-async function mount() {
-    await act(async () => { root.render(createElement(KanoOfflineFormPreview, { projectId: 'project', onClose })); });
+async function mountManager() {
+    await act(async () => { root.render(createElement(KanoManager, { projectId: 'project' })); });
 }
 
 beforeEach(() => {
@@ -59,60 +61,64 @@ afterEach(async () => {
     vi.unstubAllGlobals();
 });
 
-it('다섯 빈칸을 미리보기와 저장 요청에 반영하고 다시 열면 저장값을 보여 준다', async () => {
-    await mount();
-    const values = { technology: '성형 기술', productType: '분리판', companyName: '창업 기업', representativeName: '홍길동', offering: '제작 서비스' };
+it('설문 질문 구성 맨 앞에서 다섯 빈칸을 입력하면 완성 문장을 보여 주고 질문 저장으로 함께 저장한다', async () => {
+    await mountManager();
+    const card = [...container.querySelectorAll('.card')].find(item => item.textContent?.includes('설문 질문 구성'))!;
+    expect(card.querySelector('fieldset legend')?.textContent).toBe('설문지 소개문');
     for (const [key, value] of Object.entries(values)) await fill(key, value);
-    expect(container.querySelector('iframe')!.srcdoc).toContain('「성형 기술」 기술을 활용하여 다양한 「분리판」제품을');
-    expect(button('오프라인 HTML 받기').disabled).toBe(true);
-    await click('소개문 저장');
-    expect(fetchMock).toHaveBeenCalledWith(endpoint, expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ introduction: values }) }));
-    expect(container.querySelector('a')?.getAttribute('href')).toBe(endpoint);
-    expect(container.textContent).toContain('저장했습니다.');
+    expect(container.querySelector('[data-testid="kano-intro-preview"]')!.textContent).toContain('「성형 기술」 기술을 활용하여 다양한 「분리판」제품을');
+    await click('질문 저장');
+    expect(introPatches()).toEqual([[endpoint, expect.objectContaining({ body: JSON.stringify({ introduction: values }) })]]);
+    expect(saved).toEqual(values);
     await act(async () => root.render(null));
-    await mount();
+    await mountManager();
     for (const [key, value] of Object.entries(values)) {
-        expect(container.querySelector<HTMLInputElement>(`#offline-intro-${key}`)!.value).toBe(value);
+        expect(container.querySelector<HTMLInputElement>(`#kano-intro-${key}`)!.value).toBe(value);
     }
 });
 
-it('저장 실패 시 입력을 유지하고 같은 내용으로 재시도할 수 있다', async () => {
-    await mount();
+it('소개문을 고치지 않은 질문 저장은 소개문을 쓰지 않는다', async () => {
+    await mountManager();
+    await click('질문 저장');
+    expect(introPatches()).toHaveLength(0);
+});
+
+it('소개문 저장이 실패하면 입력을 유지하고 같은 내용으로 다시 저장할 수 있다', async () => {
+    await mountManager();
     await fill('technology', '유지할 기술명');
     saveStatus = 500;
-    await click('소개문 저장');
-    expect(container.querySelector('[role="alert"]')!.textContent).toBe('저장에 실패했습니다.');
-    expect(container.querySelector<HTMLInputElement>('#offline-intro-technology')!.value).toBe('유지할 기술명');
-    expect(container.querySelector('a')).toBeNull();
+    await click('질문 저장');
+    expect(container.querySelector<HTMLInputElement>('#kano-intro-technology')!.value).toBe('유지할 기술명');
+    expect(saved.technology).toBe('');
     saveStatus = 200;
-    await click('소개문 저장');
+    await click('질문 저장');
     expect(saved.technology).toBe('유지할 기술명');
 });
 
-it('미저장 상태에서 닫기를 취소하면 입력을 보존한다', async () => {
-    await mount();
-    await fill('companyName', '보존할 회사');
-    await click('닫기');
-    expect(window.confirm).toHaveBeenCalledOnce();
-    expect(onClose).not.toHaveBeenCalled();
-    vi.mocked(window.confirm).mockReturnValue(true);
+it('읽기 전용 역할은 소개문을 입력할 수 없다', async () => {
+    canEdit = false;
+    await mountManager();
+    expect(container.querySelector<HTMLInputElement>('#kano-intro-technology')!.closest('fieldset')!.disabled).toBe(true);
+});
+
+it('양식 확인은 저장된 소개문으로 완성된 양식을 입력 칸 없이 보여 준다', async () => {
+    saved = { ...values };
+    await act(async () => { root.render(createElement(KanoOfflineFormPreview, { projectId: 'project', onClose })); });
+    const html = container.querySelector('iframe')!.srcdoc;
+    expect(html).toContain('「성형 기술」 기술을 활용하여 다양한 「분리판」제품을');
+    expect(html).not.toContain('kano-intro-');
+    expect(container.querySelectorAll('input')).toHaveLength(0);
+    expect(container.querySelector('a')?.getAttribute('href')).toBe(endpoint);
     await click('닫기');
     expect(onClose).toHaveBeenCalledOnce();
 });
 
-it('읽기 전용 역할은 입력과 저장을 할 수 없다', async () => {
-    canEdit = false;
-    await mount();
-    expect(container.querySelector('fieldset')!.disabled).toBe(true);
-    expect(button('소개문 저장')).toBeUndefined();
-    expect(container.querySelector('a')).not.toBeNull();
-});
-
-it('WS-6 오프라인 탭의 양식 확인에서 편집 가능한 HTML 미리보기를 연다', async () => {
-    await act(async () => root.render(createElement(KanoManager, { projectId: 'project' })));
+it('WS-6 오프라인 탭의 양식 확인에서 HTML 미리보기를 연다', async () => {
+    await mountManager();
     await click('오프라인 응답파일 업로드');
     await click('양식 확인');
-    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('오프라인 양식 확인');
-    expect(container.querySelectorAll('[id^="offline-intro-"]')).toHaveLength(5);
+    const dialog = container.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain('오프라인 양식 확인');
+    expect(dialog.querySelectorAll('input')).toHaveLength(0);
     expect(container.querySelector('iframe')!.srcdoc).toContain('고객니즈조사 설문지');
 });
