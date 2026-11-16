@@ -139,6 +139,22 @@ describe('배정 후보 조회 (?candidates=1)', () => {
         });
     });
 
+    it('매니저에게는 소속 없는 멘티와 자신이 관리하는 프로그램의 멘티만 후보로 준다', async () => {
+        // 남의 프로그램 멘티는 POST 가 막으므로 고를 수 없고, 명단과 이메일만 샌다.
+        authAs('PROGRAM_MANAGER', 'user_1');
+
+        await call('?candidates=1');
+
+        expect(findManyUser.mock.calls[0][0].where).toEqual({
+            role: 'MENTEE',
+            status: 'APPROVED',
+            OR: [
+                { programId: null },
+                { programId: { not: 'prog_1' }, program: { managerId: 'user_1' } },
+            ],
+        });
+    });
+
     it('현재 소속 프로그램명을 함께 준다', async () => {
         findManyUser.mockResolvedValue([
             { id: 'm1', name: '멘티1', programId: 'prog_9', program: { name: '다른 프로그램' } },
@@ -261,6 +277,74 @@ describe('멘티 배정', () => {
         expect(res.status).toBe(200);
         expect(updateUser).toHaveBeenCalledWith({
             where: { id: 'mentee_1' }, data: { programId: 'prog_1' },
+        });
+    });
+
+    describe('다른 매니저 프로그램의 멘티', () => {
+        // 매니저가 남의 멘티를 자기 프로그램으로 옮긴 뒤 자신을 멘토로 배정하면
+        // 그 멘티의 모든 프로젝트 편집권을 얻는다. 이동 자체를 막아야 한다.
+        const otherManagersMentee = {
+            id: 'mentee_1', name: '멘티1', role: 'MENTEE',
+            programId: 'prog_old', program: { name: '이전 프로그램', managerId: 'other_pm' },
+        };
+
+        it('매니저는 확인을 보내도 옮겨올 수 없다', async () => {
+            authAs('PROGRAM_MANAGER', 'user_1');
+            findUniqueUser.mockResolvedValue(otherManagersMentee);
+
+            const res = await callPost({ userId: 'mentee_1', confirmReassign: true });
+
+            expect(res.status).toBe(403);
+            expect(transaction).not.toHaveBeenCalled();
+            expect(updateUser).not.toHaveBeenCalled();
+            expect(updateInvites).not.toHaveBeenCalled();
+        });
+
+        it('확인 없이 요청해도 재확인 안내 대신 403 이고 소속 프로그램명을 알려 주지 않는다', async () => {
+            authAs('PROGRAM_MANAGER', 'user_1');
+            findUniqueUser.mockResolvedValue(otherManagersMentee);
+
+            const res = await callPost({ userId: 'mentee_1' });
+
+            expect(res.status).toBe(403);
+            expect(await res.text()).not.toContain('이전 프로그램');
+        });
+
+        it('자신이 관리하는 두 프로그램 사이에서는 옮길 수 있다', async () => {
+            authAs('PROGRAM_MANAGER', 'user_1');
+            findUniqueUser.mockResolvedValue({
+                ...otherManagersMentee, program: { name: '이전 프로그램', managerId: 'user_1' },
+            });
+
+            const res = await callPost({ userId: 'mentee_1', confirmReassign: true });
+
+            expect(res.status).toBe(200);
+            expect(updateUser).toHaveBeenCalledWith({ where: { id: 'mentee_1' }, data: { programId: 'prog_1' } });
+        });
+
+        it('잠금 사이에 원래 프로그램의 매니저가 바뀌면 옮기지 않는다', async () => {
+            authAs('PROGRAM_MANAGER', 'user_1');
+            findUniqueUser.mockResolvedValue({
+                ...otherManagersMentee, program: { name: '이전 프로그램', managerId: 'user_1' },
+            });
+            findUniqueProgram.mockImplementation(async ({ where }: { where: { id: string } }) => (
+                where.id === 'prog_old'
+                    ? { managerId: 'other_pm' }
+                    : { id: 'prog_1', name: '새 프로그램', managerId: 'user_1' }
+            ));
+
+            const res = await callPost({ userId: 'mentee_1', confirmReassign: true });
+
+            expect(res.status).toBe(403);
+            expect(updateUser).not.toHaveBeenCalled();
+            expect(updateInvites).not.toHaveBeenCalled();
+        });
+
+        it('관리자는 확인을 받으면 옮길 수 있다', async () => {
+            authAs('ADMIN');
+            findUniqueUser.mockResolvedValue(otherManagersMentee);
+
+            expect((await callPost({ userId: 'mentee_1', confirmReassign: true })).status).toBe(200);
         });
     });
 

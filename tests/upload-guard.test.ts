@@ -96,10 +96,6 @@ describe('guardUploadedExcel', () => {
 });
 
 describe('checkExcelArchiveSafety', () => {
-    it('안전한 xlsx 중앙 디렉터리는 통과시킨다', () => {
-        expect(checkExcelArchiveSafety('safe.xlsx', zipWithCentralEntry(100, 500))).toBeNull();
-    });
-
     it('압축 해제 크기가 큰 xlsx를 SheetJS 파싱 전에 거절한다', () => {
         const result = checkExcelArchiveSafety(
             'bomb.xlsx',

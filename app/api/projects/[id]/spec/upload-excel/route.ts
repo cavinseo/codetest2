@@ -3,7 +3,10 @@ import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { parseWritePolicy, type WritePolicy } from '@/lib/write-policy';
-import { checkExcelArchiveSafety, guardUploadedExcel } from '@/lib/upload-guard';
+import { checkExcelArchiveSafety, checkWorkbookSheetRanges, guardUploadedExcel } from '@/lib/upload-guard';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api/spec/upload-excel');
 
 type FlatSpecRow = {
     core: string;
@@ -343,6 +346,10 @@ export async function POST(
             type: 'buffer',
             cellFormula: true,
         });
+        const rangeFailure = checkWorkbookSheetRanges(workbook);
+        if (rangeFailure) {
+            return NextResponse.json({ error: rangeFailure.error }, { status: rangeFailure.status });
+        }
         const candidateSheetNames = getCandidateSheetNames(workbook, requestedSheetName);
         if (requestedSheetName && !workbook.Sheets[requestedSheetName]) {
             return NextResponse.json({
@@ -389,7 +396,7 @@ export async function POST(
             availableSheets: workbook.SheetNames,
         });
     } catch (error) {
-        console.error('AS-IS spec Excel upload failed:', error);
+        log.error('AS-IS spec Excel upload failed', error);
         return NextResponse.json({ error: 'AS-IS 스펙표 업로드에 실패했습니다.' }, { status: 500 });
     }
 }

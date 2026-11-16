@@ -18,6 +18,8 @@ import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/programs/mentees');
 
+const OTHER_PROGRAM_MENTEE_MSG = '다른 매니저의 프로그램에 속한 멘티는 관리자만 옮길 수 있습니다.';
+
 const assignSchema = z.object({
     userId: z.string().min(1),
     confirmReassign: z.boolean().optional(),
@@ -58,9 +60,18 @@ export async function GET(
                 // SQL 의 NOT (col = x) 이 NULL 행에서 NULL 로 평가돼 통째로 빠진다.
                 // 정작 배정이 가장 필요한 "아직 어느 프로그램에도 없는 멘티"가
                 // 전부 사라져 후보 목록이 비어 버린다. 실제 DB 로 확인한 동작이다.
+                //
+                // 매니저에게는 다른 매니저 프로그램의 멘티를 후보로 주지 않는다.
+                // POST 가 그 이동을 막으므로 보여 줘도 고를 수 없고, 남의 프로그램
+                // 멘티 명단과 이메일만 새어 나간다.
                 where: {
                     role: 'MENTEE', status: 'APPROVED',
-                    OR: [{ programId: null }, { programId: { not: programId } }],
+                    OR: [
+                        { programId: null },
+                        authResult.role === 'ADMIN'
+                            ? { programId: { not: programId } }
+                            : { programId: { not: programId }, program: { managerId: authResult.userId } },
+                    ],
                 },
                 select: { id: true, name: true, programId: true, program: { select: { name: true } } },
                 orderBy: { name: 'asc' },
@@ -98,6 +109,7 @@ export async function POST(
     }
 
     try {
+        const actor = { role: authResult.role, userId: authResult.userId };
         const parsed = assignSchema.safeParse(await readJsonBody(request));
         if (!parsed.success) {
             return NextResponse.json({ error: 'userId가 필요합니다.' }, { status: 400 });
@@ -116,7 +128,7 @@ export async function POST(
 
         const target = await prisma.user.findUnique({
             where: { id: parsed.data.userId },
-            select: { id: true, name: true, role: true, programId: true, program: { select: { name: true } } },
+            select: { id: true, name: true, role: true, programId: true, program: { select: { name: true, managerId: true } } },
         });
         if (!target) {
             return NextResponse.json({ error: '회원을 찾을 수 없습니다.' }, { status: 404 });
@@ -125,6 +137,15 @@ export async function POST(
         // 배정될 수 있어 한 프로그램에 묶지 않는다(User.programId 주석 참고).
         if (parseMemberRole(target.role) !== 'MENTEE') {
             return NextResponse.json({ error: '멘티만 프로그램에 배정할 수 있습니다.' }, { status: 400 });
+        }
+
+        // 다른 프로그램에서 멘티를 빼 오려면 그 프로그램도 관리할 수 있어야 한다.
+        // 옮겨 올 쪽 권한만 보면, 매니저가 남의 멘티를 자기 프로그램으로 옮긴 뒤
+        // 자신을 멘토로 배정해 그 멘티의 모든 프로젝트 편집권을 얻는다
+        // (mentor-assignment-route 는 멘티의 현재 프로그램 매니저를 믿는다).
+        // confirmReassign 은 요청자가 스스로 보내는 값이라 관문이 되지 못한다.
+        if (target.program && target.programId !== programId && !canManageThisProgram(actor, target.program)) {
+            return NextResponse.json({ error: OTHER_PROGRAM_MENTEE_MSG }, { status: 403 });
         }
 
         const outcome = programMoveOutcome(target.programId, programId, parsed.data.confirmReassign === true);
@@ -155,6 +176,13 @@ export async function POST(
             }
             if (!canManageThisProgram({ role: authResult.role, userId: authResult.userId }, currentProgram)) {
                 throw new ProjectTransferError('이 프로그램에 멘티를 배정할 권한이 없습니다.', 403);
+            }
+            // 잠금 전에 본 원래 프로그램의 매니저가 그사이 바뀌었을 수 있다.
+            if (current.programId) {
+                const sourceProgram = await tx.program.findUnique({ where: { id: current.programId }, select: { managerId: true } });
+                if (!sourceProgram || !canManageThisProgram(actor, sourceProgram)) {
+                    throw new ProjectTransferError(OTHER_PROGRAM_MENTEE_MSG, 403);
+                }
             }
             await tx.user.update({ where: { id: target.id }, data: { programId } });
             // 반복 로그인에 사용하는 초대와 소속을 함께 옮기며 기존 계정 기한은 보존한다.

@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { checkWorkbookSheetRanges } from './upload-guard';
 
 export interface ParsedExcelData {
     fileName: string;
@@ -35,6 +36,9 @@ export async function parseExcelFile(file: File): Promise<ParsedExcelData> {
             cellFormula: true, // 수식 포함
             cellStyles: true,
         });
+
+        const rangeFailure = checkWorkbookSheetRanges(workbook);
+        if (rangeFailure) throw new Error(rangeFailure.error);
 
         const sheets: ParsedSheet[] = [];
 
