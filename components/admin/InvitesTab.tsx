@@ -42,7 +42,7 @@ export default function InvitesTab() {
     const [programFilter, setProgramFilter] = useState(readStoredProgramFilter);
     const [editingExpiry, setEditingExpiry] = useState<{ id: string; value: string; error: string } | null>(null);
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-    const [operation, setOperation] = useState<'issue' | 'revoke' | 'delete' | 'resend' | 'extend' | 'link' | null>(null);
+    const [operation, setOperation] = useState<'issue' | 'revoke' | 'delete' | 'resend' | 'reissue' | 'extend' | 'link' | null>(null);
     const [canLinkExistingMember, setCanLinkExistingMember] = useState(false);
     const [linkingInvite, setLinkingInvite] = useState<Invite | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -212,6 +212,38 @@ export default function InvitesTab() {
                 : { type: 'error', text: data?.error || '메일 재발송에 실패했습니다.' });
         } catch {
             if (isMounted.current) setMessage({ type: 'error', text: '메일 발송 결과를 확인하지 못했습니다. 연결을 확인하세요.' });
+        } finally {
+            finishOperation();
+        }
+    };
+
+    // 재발급은 유출 대응이다. 옛 코드와 연결된 회원의 세션·비밀번호가 함께 끊기므로
+    // 잃어버린 코드를 다시 보내는 "메일 재발송"과 헷갈리지 않게 확인을 받는다.
+    const reissue = async (invite: Invite) => {
+        if (operationInFlight.current) return;
+        if (!window.confirm(`${invite.programName} · ${invite.email} 초대 코드를 재발급하시겠습니까?\n\n`
+            + '기존 코드는 즉시 사용할 수 없게 되고 새 코드가 메일로 발송됩니다.'
+            + (invite.usedAt || invite.usedById ? '\n이 멘티의 로그인 상태와 비밀번호도 초기화됩니다.' : '')
+            + '\n\n코드를 잃어버렸을 뿐이라면 재발급 대신 "메일 재발송"을 쓰세요.')) return;
+        operationInFlight.current = true;
+        setOperation('reissue');
+        setMessage(null);
+        try {
+            const res = await fetch(`/api/invites/${invite.id}/reissue`, { method: 'POST' });
+            const data = await res.json().catch(() => null);
+            if (!isMounted.current) return;
+            if (!res.ok || !data?.success) {
+                setMessage({ type: 'error', text: data?.error || '초대 코드 재발급에 실패했습니다.' });
+                return;
+            }
+            if (typeof data.code === 'string') {
+                setInvites((prev) => prev.map((item) => item.id === invite.id ? { ...item, code: data.code } : item));
+            }
+            setMessage(data.emailSent
+                ? { type: 'success', text: `${invite.email} 초대 코드를 재발급하고 새 코드를 발송했습니다. 기존 코드는 더 이상 쓸 수 없습니다.` }
+                : { type: 'error', text: data.warning || '코드는 재발급됐지만 메일 발송에 실패했습니다. 메일 재발송을 눌러 주세요.' });
+        } catch {
+            if (isMounted.current) setMessage({ type: 'error', text: '재발급 결과를 확인하지 못했습니다. 목록을 새로고침해 확인하세요.' });
         } finally {
             finishOperation();
         }
@@ -391,6 +423,9 @@ export default function InvitesTab() {
                                         )}
                                         {canResend(invite) && <button type="button" onClick={() => resend(invite)} disabled={isBusy}
                                             className="btn-secondary text-xs mr-2" id={`invites-resend-${invite.id}`}>메일 재발송</button>}
+                                        {canResend(invite) && <button type="button" onClick={() => reissue(invite)} disabled={isBusy}
+                                            className="btn-secondary text-xs mr-2" id={`invites-reissue-${invite.id}`}
+                                            title="코드가 유출됐을 때 새 코드로 바꿉니다. 기존 코드는 즉시 무효가 됩니다.">코드 재발급</button>}
                                         {!invite.usedAt && !isExpired(invite) && (
                                             <button type="button" onClick={() => revoke(invite)} disabled={isBusy}
                                                 className="text-xs px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"
