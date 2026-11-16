@@ -33,7 +33,15 @@ export function refreshWorksheetTables(current: FinalReportModel, generated: Fin
         if (key) replacements.set(key, [...(replacements.get(key) ?? []), block]);
     }
     const replaced = new Set<string>();
+    let worksheet: string | null = null;
     const blocks = normalizeReportLabels(current.blocks).flatMap(block => {
+        if (block.kind === 'heading') worksheet = tableKey(block.text);
+        if (block.kind === 'paragraph' && block.tone === 'caption' && /^단위: (백만원|원|천원)$/.test(block.text)
+            && worksheet && ['sales-current', 'sales-future', 'ws-15', 'ws-16'].includes(worksheet)
+            && replacements.has(worksheet)) {
+            // 기존 초안의 표만 갱신할 때도 새 표의 금액과 단위 설명이 일치해야 한다.
+            return [{ ...block, text: '단위: 천원' }];
+        }
         if (replacements.has('qfd') && ((block.kind === 'heading' && block.text === 'QFD 기술특성 목록 (WS-9)') || (block.kind === 'paragraph' && block.tone === 'caption' && block.text === '강한 관계 9 · 보통 관계 3 · 약한 관계 1 · 공란은 관계값 미저장. 기술 코드는 다음 목록과 대응합니다.'))) return [];
         const key = blockTableKey(block);
         if (key === 'assets-combined' && replacements.has('assets-core') && replacements.has('assets-complementary')) return ['assets-core', 'assets-complementary'].flatMap(assetKey => {

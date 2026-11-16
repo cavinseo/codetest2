@@ -2,6 +2,7 @@ import { getKanoTopic } from './utils/korean-utils';
 import { kanoSurveyAnswerLabels, resolveKanoQuestionPair } from './kano-survey-document';
 
 export interface KanoFormScriptRequirement {
+    id?: string;
     category?: string | null;
     subcategory?: string | null;
     requirement: string;
@@ -16,7 +17,7 @@ function escapeScriptString(value: string): string {
 function questionTitle(requirement: KanoFormScriptRequirement, index: number, type: 'positive' | 'negative'): string {
     const topic = getKanoTopic(requirement.requirement);
     const questionNumber = type === 'positive' ? 1 : 2;
-    return `[${index + 1}-${questionNumber}] ${topic}`;
+    return `[${index + 1}-${questionNumber}] ${topic}${requirement.id ? ` {id:${requirement.id}}` : ''}`;
 }
 
 export function buildKanoGoogleFormScript(

@@ -1,5 +1,6 @@
 import type { ParsedExcelData, ParsedSheet } from './excel-parser';
 import { generateId } from './id';
+import { fromThousandWon } from './money';
 
 export type WorkbookWritePolicy = 'replace' | 'append';
 
@@ -263,28 +264,49 @@ function selectSheets(parsedData: ParsedExcelData, options: WorkbookImportOption
     return { selected, errors };
 }
 
+function sheetMoneyReader(sheet: ParsedSheet): (value: unknown) => number {
+    const unit = sheet.data.flat().map(text).join(' ').match(/단위\s*[:：]\s*(천만원|백만원|억원|만원|천원|원)/)?.[1];
+    // 단위 없는 기존 양식은 저장값과 같은 백만원으로 읽어 재업로드 금액을 보존한다.
+    return value => {
+        const amount = numberValue(value);
+        if (unit === '천원') return fromThousandWon(amount);
+        if (unit === '원') return fromThousandWon(fromThousandWon(amount));
+        if (unit === '만원') return fromThousandWon(amount * 10);
+        if (unit === '억원') return amount * 100;
+        if (unit === '천만원') return amount * 10;
+        return amount;
+    };
+}
+
+function hasLegacyMoneyExportLabel(sheet: ParsedSheet): boolean {
+    // 이전 앱 엑셀은 백만원 숫자에 원 표기를 붙여 실제 단위를 확정할 수 없다.
+    return sheet.name.startsWith('WS-') && sheet.data.some(row => !hasText(row[0]) && row.some(value =>
+        /^(현재\(Y\) 매출|향후 1년 목표 매출|자금소요계획표|자금조달계획표) \(단위: 원\)$/.test(text(value))));
+}
+
 function parseSales(sheet: ParsedSheet) {
     const records: WorkbookImportRecords['salesEstimates'] = [];
-    const header = findHeader(sheet, ['매출처', '매출액']);
-    if (!header) return records;
-    const headerRow = sheet.data[header.rowIndex];
-    const customerCol = findColumn(headerRow, ['매출처', '고객']);
-    const amountCol = findColumn(headerRow, ['매출액', '금액']);
-    const futureAmountCol = findColumn(headerRow, ['미래', 'y+1', '향후']);
-    const competitorCol = findColumn(headerRow, ['경쟁사']);
-
-    for (let rowIndex = header.rowIndex + 1; rowIndex < sheet.data.length; rowIndex++) {
-        const row = sheet.data[rowIndex];
-        if (isRowEmpty(row)) continue;
-        const customer = cell(row, customerCol);
-        const amount = numberValue(row?.[amountCol]);
-        const futureAmount = futureAmountCol >= 0 ? numberValue(row?.[futureAmountCol]) : 0;
-        const competitor = competitorCol >= 0 ? cell(row, competitorCol) : '';
-        if (customer || amount !== 0 || competitor) {
-            records.push({ period: 'Y', customer: customer || null, amount, competitor: competitor || null, order: records.length });
+    const readMoney = sheetMoneyReader(sheet);
+    let period = 'Y';
+    let columns: { customer: number; amount: number; future: number; competitor: number } | null = null;
+    for (const row of sheet.data) {
+        const rowText = row.map(text).join(' ');
+        if (rowText.includes('단위') && /향후|미래/.test(rowText)) { period = 'Y_PLUS_1'; columns = null; continue; }
+        if (rowText.includes('단위') && /현재/.test(rowText)) { period = 'Y'; columns = null; continue; }
+        const customerCol = findColumn(row, ['매출처', '고객']);
+        const amountCol = findColumn(row, ['매출액', '금액']);
+        if (customerCol >= 0 && amountCol >= 0) {
+            columns = { customer: customerCol, amount: amountCol, future: findColumn(row, ['미래', 'y+1', '향후']), competitor: findColumn(row, ['경쟁사']) };
+            continue;
         }
-        if (customer || futureAmount !== 0 || competitor) {
-            records.push({ period: 'Y_PLUS_1', customer: customer || null, amount: futureAmount, futureAmount: 0, competitor: competitor || null, order: records.length });
+        if (!columns || isRowEmpty(row) || row.some(value => text(value) === '합계')) continue;
+        const customer = cell(row, columns.customer);
+        const competitor = cell(row, columns.competitor);
+        const amount = readMoney(row[columns.amount]);
+        if (customer || amount !== 0 || competitor) records.push({ period, customer: customer || null, amount, competitor: competitor || null, order: records.length });
+        if (columns.future >= 0) {
+            const futureAmount = readMoney(row[columns.future]);
+            if (customer || futureAmount !== 0 || competitor) records.push({ period: 'Y_PLUS_1', customer: customer || null, amount: futureAmount, futureAmount: 0, competitor: competitor || null, order: records.length });
         }
     }
     return records;
@@ -542,21 +564,28 @@ function parseFundingPlans(sheet: ParsedSheet) {
     const records: WorkbookImportRecords['fundingPlans'] = [];
     const header = findHeader(sheet, ['구분', '항목']);
     if (!header) return records;
+    const readMoney = sheetMoneyReader(sheet);
+    const [categoryCol, itemCol] = header.columns;
+    let previousCategory = '';
     for (let rowIndex = header.rowIndex + 1; rowIndex < sheet.data.length; rowIndex++) {
         const row = sheet.data[rowIndex];
-        const category = cell(row, 0);
-        const item = cell(row, 1);
+        if (row?.some(value => /합계.*단위/.test(text(value)))) break;
+        const item = cell(row, itemCol);
+        const category = cell(row, categoryCol) || (item ? previousCategory : '');
         if (!category && !item) continue;
+        if (/합계|단위/.test(category + item)) continue;
+        previousCategory = category;
         // 매출액 행의 2·3차년도는 비워 둘 수 있다(아직 모름). 0 으로 읽으면 "매출 0원"이 되므로
-        // 빈 칸은 null 로 남긴다. 다른 행은 빈 칸도 0 이다.
+        // 빈 칸은 null 로 남긴다. 다른 행은 빈 칸도 0 이다. 금액은 시트의 단위 표기대로 환산하고,
+        // 구분 열 위치가 양식마다 달라 항목 열 바로 뒤를 1차년도로 본다.
         const isRevenueRow = category === '매출액' || item === '매출액';
-        const yearAmount = (col: number) => (isRevenueRow && !cell(row, col) ? null : numberValue(row?.[col]));
+        const yearAmount = (col: number) => (isRevenueRow && !cell(row, col) ? null : readMoney(row?.[col]));
         records.push({
             category: category || null,
             item: item || null,
-            year1: numberValue(row?.[2]),
-            year2: yearAmount(3),
-            year3: yearAmount(4),
+            year1: readMoney(row?.[itemCol + 1]),
+            year2: yearAmount(itemCol + 2),
+            year3: yearAmount(itemCol + 3),
             order: records.length,
         });
     }
@@ -567,17 +596,23 @@ function parseFundingSources(sheet: ParsedSheet) {
     const records: WorkbookImportRecords['fundingSources'] = [];
     const header = findHeader(sheet, ['구분']);
     const start = header ? header.rowIndex + 2 : 0;
+    const categoryCol = header?.columns[0] ?? 0;
+    const readMoney = sheetMoneyReader(sheet);
+    const hasDeclaredUnit = sheet.data.flat().some(value => /단위\s*[:：]/.test(text(value)));
+    let previousCategory = '';
     for (let rowIndex = start; rowIndex < sheet.data.length; rowIndex++) {
         const row = sheet.data[rowIndex];
-        const category = cell(row, 0);
-        if (!category || category === '합계') continue;
-        records.push({
-            category,
-            year1: [cell(row, 1), cell(row, 2)].filter(Boolean).join(':') || null,
-            year2: [cell(row, 3), cell(row, 4)].filter(Boolean).join(':') || null,
-            year3: [cell(row, 5), cell(row, 6)].filter(Boolean).join(':') || null,
-            order: records.length,
+        if (isRowEmpty(row)) continue;
+        const category = cell(row, categoryCol) || previousCategory;
+        if (!category || category.includes('합계')) continue;
+        previousCategory = category;
+        const years = [1, 3, 5].map(offset => {
+            const source = cell(row, categoryCol + offset);
+            const amount = cell(row, categoryCol + offset + 1);
+            if (!hasDeclaredUnit) return [source, amount].filter(Boolean).join(':') || null;
+            return source || amount !== '' ? JSON.stringify({ source, amount: amount === '' ? '' : String(readMoney(amount)) }) : null;
         });
+        records.push({ category, year1: years[0], year2: years[1], year3: years[2], order: records.length });
     }
     return records;
 }
@@ -653,6 +688,10 @@ export function parseWorkbookImport(parsedData: ParsedExcelData, options: Workbo
         if (!key) {
             unknownSheets.push(selectedSheet.name);
             warnings.push(`지원하지 않는 워크시트 "${selectedSheet.name}"는 건너뜁니다.`);
+            continue;
+        }
+        if (['sales', 'fundingPlans', 'fundingSources'].includes(key) && hasLegacyMoneyExportLabel(selectedSheet)) {
+            selection.errors.push(`워크시트 "${selectedSheet.name}"는 이전 앱의 금액 단위 표기가 일치하지 않는 양식입니다. 원래 백만원 금액이면 단위 표기를 백만원으로 수정하거나 새 천원 양식을 이용해 주세요.`);
             continue;
         }
         const before = Object.values(records).reduce((sum, rows) => sum + rows.length, 0);

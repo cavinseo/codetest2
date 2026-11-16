@@ -48,6 +48,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
     const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=spec`;
     const [project, setProject] = useState<ProjectData | null>(null);
     const [rows, setRows] = useState<FlatSpecRow[]>([]);
+    const [revision, setRevision] = useState<string | null>(null);
     const [isDetailColumnCollapsed, setIsDetailColumnCollapsed] = useState(false);
     const [isSavingDetailVisibility, setIsSavingDetailVisibility] = useState(false);
     const hasDetailContent = rows.some(row => row.detail.trim() !== '');
@@ -86,6 +87,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         if (!Array.isArray(specData.specFunctions)) throw new Error('스펙 응답 형식 오류');
         const loadedSpecs: SpecFunction[] = specData.specFunctions;
         setRows(buildRowsFromSpecs(loadedSpecs));
+        setRevision(specData.revision ?? null);
         setIsDetailColumnCollapsed(specData.specDetailCollapsed === true);
     }, (error) => console.error('데이터 로딩 실패:', error));
 
@@ -226,8 +228,12 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                 throw new Error(`${data?.error || '엑셀 업로드에 실패했습니다.'}${checkedSheets}`);
             }
 
-            const loadedSpecs: SpecFunction[] = data.specFunctions || [];
+            const refreshed = await fetch(`/api/projects/${projectId}/spec`);
+            if (!refreshed.ok) throw new Error('엑셀 반영 후 스펙을 다시 불러오지 못했습니다.');
+            const saved = await refreshed.json();
+            const loadedSpecs: SpecFunction[] = saved.specFunctions || [];
             setRows(buildRowsFromSpecs(loadedSpecs));
+            setRevision(saved.revision ?? null);
             markSaved();
             setActiveMode('manual');
             showToast(`${data.sheetName || '엑셀'}에서 AS-IS 스펙 ${data.specCount || loadedSpecs.length}개를 반영했습니다.`, 'success');
@@ -317,10 +323,12 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
             const finalSpecs = serializeSpecs();
             const res = await fetch(`/api/projects/${projectId}/spec`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({ specFunctions: finalSpecs }),
             });
             if (res.ok) {
+                const saved = await res.json();
+                setRevision(saved.revision ?? null);
                 markSaved();
                 if (moveNext) {
                     showToast('저장되었습니다. 제품속성서로 이동합니다...', 'success');
@@ -331,7 +339,8 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                     showToast('저장되었습니다.', 'success');
                 }
             } else {
-                showToast('저장에 실패했습니다.', 'error');
+                const errorData = await res.json().catch(() => null);
+                showToast(errorData?.error || '저장에 실패했습니다.', 'error');
             }
         } catch (error) {
             showToast('저장에 실패했습니다.', 'error');
@@ -346,7 +355,7 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
         try {
             const res = await fetch(`/api/projects/${projectId}/spec`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({ specFunctions: [] }),
             });
 
@@ -355,7 +364,9 @@ export default function SpecTable({ projectId, onSaved }: SpecTableProps) {
                 throw new Error(errorData?.error || 'AS-IS spec reset failed.');
             }
 
+            const saved = await res.json();
             setRows([]);
+            setRevision(saved.revision ?? null);
             markSaved();
             setShowResetConfirm(false);
             showToast('AS-IS 스펙표가 초기화되었습니다.', 'success');

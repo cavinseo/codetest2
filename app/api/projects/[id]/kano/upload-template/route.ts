@@ -1,3 +1,4 @@
+import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
@@ -22,6 +23,8 @@ export async function GET(
                 requirements: {
                     orderBy: { order: 'asc' },
                     select: {
+                        id: true,
+                        order: true,
                         category: true,
                         subcategory: true,
                         requirement: true,
@@ -43,8 +46,8 @@ export async function GET(
         const format = request.nextUrl.searchParams.get('format');
         const isGoogleForms = format === 'googleForms';
         const workbook = isGoogleForms
-            ? writeKanoGoogleFormsTemplateBuffer(project.requirements, project.name)
-            : writeKanoUploadTemplateBuffer(project.requirements, project.name);
+            ? writeKanoGoogleFormsTemplateBuffer(groupRequirementsByCategory(project.requirements), project.name)
+            : writeKanoUploadTemplateBuffer(groupRequirementsByCategory(project.requirements), project.name);
         const fileName = encodeURIComponent(isGoogleForms ? 'Kano_GoogleForms_응답_업로드_양식.xlsx' : 'Kano_응답_업로드_양식.xlsx');
 
         return new NextResponse(new Uint8Array(workbook), {

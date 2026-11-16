@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
     buildWorksheetData,
     pickArray,
-    pickCoachName,
     splitImprovementItems,
     toKanoChartPoints,
     type WorksheetPayloads,
@@ -59,41 +58,6 @@ describe('splitImprovementItems', () => {
     });
 });
 
-describe('pickCoachName', () => {
-    it('첫 번째 코치의 이름만 꺼낸다', () => {
-        const payload = { mentors: [{ user: { name: '김코치', email: 'coach@example.com' } }] };
-        expect(pickCoachName(payload)).toBe('김코치');
-    });
-
-    it('이메일을 절대 돌려주지 않는다', () => {
-        const payload = { mentors: [{ user: { name: '', email: 'coach@example.com' } }] };
-        expect(pickCoachName(payload)).toBeNull();
-    });
-
-    it('앞뒤 공백을 없앤다', () => {
-        expect(pickCoachName({ mentors: [{ user: { name: '  김코치  ' } }] })).toBe('김코치');
-    });
-
-    it('이름이 빈 코치는 건너뛰고 다음 코치를 쓴다', () => {
-        const payload = { mentors: [{ user: { name: '   ' } }, { user: { name: '이코치' } }] };
-        expect(pickCoachName(payload)).toBe('이코치');
-    });
-
-    const noCoachCases: Array<[unknown]> = [
-        [null],
-        [{}],
-        [{ mentors: [] }],
-        [{ mentors: [{}] }],
-        [{ mentors: [null] }],
-        [{ mentors: [{ user: null }] }],
-        [{ mentors: [{ user: { name: null } }] }],
-        [{ mentors: [{ user: { name: 42 } }] }],
-    ];
-    it.each(noCoachCases)('배정이 없거나 403 이면 null 이다 (%s)', (payload) => {
-        expect(pickCoachName(payload)).toBeNull();
-    });
-});
-
 describe('toKanoChartPoints', () => {
     const kano = [{ requirementId: 'r1', better: 0.8, worse: -0.3, timkoCategory: 'A', quadrant: 'ATTRACTIVE' }];
 
@@ -131,10 +95,11 @@ describe('buildWorksheetData', () => {
             specFunctions: [{ name: '스펙' }],
             productAttributes: [{ productName: '속성' }],
             customerRequirements: [{ id: 'r1', requirement: '요구' }],
+            technicalBenchmarks: [{ technicalCharId: 't1', company: '비교사' }],
         },
         sales: { rows: [{ period: 'Y', customer: '매출처' }] },
         kanoAnalysis: { requirements: [{ requirementId: 'r1', better: 1, worse: -1 }] },
-        qfdAnalysis: { requirements: [{ requirementId: 'r1', selfScore: 3 }] },
+        qfdAnalysis: { requirements: [{ requirementId: 'r1', selfScore: 3 }], technicals: [{ id: 't1', name: '속도' }] },
         improvements: { items: [{ type: 'need', content: '니즈' }, { type: 'feature', content: '기능' }] },
         techTree: { entries: [{ customerVoice: '고객의소리' }] },
         targetSpec: { rows: [{ specItem: '목표스펙' }] },
@@ -152,6 +117,8 @@ describe('buildWorksheetData', () => {
         expect(data.requirements[0].requirement).toBe('요구');
         expect(data.kanoAggregation[0].better).toBe(1);
         expect(data.competitiveAssessment[0].selfScore).toBe(3);
+        expect(data.technicalBenchmarks).toEqual([{ technicalCharId: 't1', company: '비교사' }]);
+        expect(data.qfdTechnicals).toEqual([{ id: 't1', name: '속도' }]);
         expect(data.improvementNeeds[0].content).toBe('니즈');
         expect(data.improvementFeatures[0].content).toBe('기능');
         expect(data.techTree[0].customerVoice).toBe('고객의소리');

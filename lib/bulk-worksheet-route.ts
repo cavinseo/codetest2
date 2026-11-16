@@ -15,6 +15,7 @@ import { prisma } from './prisma';
 import { requireProjectAccess } from './authorization';
 import { createLogger } from './logger';
 import { toErrorResponse } from './api-error';
+import { assertWorksheetRevision, worksheetRevision, WorksheetRevisionConflict, WorksheetRevisionMissing } from './worksheet-revision';
 
 // Prisma delegate 는 모델마다 생성 타입이 달라, 여러 모델을 받는 구조 타입으로는
 // 그대로 맞출 수 없다. 팩토리 안에서 이 형태로 한 번만 좁히고, 바깥에서는
@@ -41,6 +42,7 @@ export interface BulkWorksheetConfig<TBody, TRow> {
     delegate: (client: typeof prisma) => unknown;
     /** 저장할 필드를 명시적으로 만든다. 클라이언트가 보낸 임의 필드는 여기서 걸러진다 */
     toCreateData: (row: TRow, projectId: string) => Record<string, unknown>;
+    mapReadRows?: (rows: unknown[], projectId: string) => Promise<unknown[]>;
 }
 
 export function createBulkWorksheetRoute<TBody, TRow>(config: BulkWorksheetConfig<TBody, TRow>) {
@@ -56,7 +58,7 @@ export function createBulkWorksheetRoute<TBody, TRow>(config: BulkWorksheetConfi
                 where: { projectId },
                 orderBy: { order: 'asc' },
             });
-            return NextResponse.json({ [config.collectionKey]: rows });
+            return NextResponse.json({ [config.collectionKey]: config.mapReadRows ? await config.mapReadRows(rows, projectId) : rows, revision: worksheetRevision(rows) });
         } catch (error) {
             return toErrorResponse(error, {
                 log,
@@ -78,6 +80,8 @@ export function createBulkWorksheetRoute<TBody, TRow>(config: BulkWorksheetConfi
 
             const saved = await prisma.$transaction(async (tx) => {
                 const model = asDelegate(config.delegate(tx as unknown as typeof prisma));
+                const currentRows = await model.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
+                assertWorksheetRevision(request, currentRows);
                 await model.deleteMany({ where: { projectId } });
                 if (rows.length > 0) {
                     await model.createMany({
@@ -85,10 +89,16 @@ export function createBulkWorksheetRoute<TBody, TRow>(config: BulkWorksheetConfi
                     });
                 }
                 return model.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
-            });
+            }, { isolationLevel: 'Serializable' });
 
-            return NextResponse.json({ [config.collectionKey]: saved });
+            return NextResponse.json({ [config.collectionKey]: saved, revision: worksheetRevision(saved) });
         } catch (error) {
+            if (error instanceof WorksheetRevisionMissing) {
+                return NextResponse.json({ error: error.message }, { status: 428 });
+            }
+            if (error instanceof WorksheetRevisionConflict || (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2034')) {
+                return NextResponse.json({ error: '다른 화면에서 워크시트가 변경되었습니다. 새로고침 후 다시 확인하세요.' }, { status: 409 });
+            }
             if (error instanceof z.ZodError) {
                 return NextResponse.json(
                     { error: `유효하지 않은 ${config.label} 데이터입니다.` },

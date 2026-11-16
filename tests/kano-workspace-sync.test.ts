@@ -53,11 +53,12 @@ beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockImplementation(async (url, init) => {
-        const project = { id: 'project', name: '연계 점검', role: 'OWNER', createdAt: '2026-10-03' };
+        const project = { id: 'project', name: '연계 점검', role: 'EDITOR', createdAt: '2026-10-03' };
         if (String(url).endsWith('/kano/upload-offline') && init?.method === 'POST') {
             responseCount = 2;
             return json({ success: true, message: '응답 저장 완료', results: [] });
         }
+        if (String(url).endsWith('/kano/analysis?view=summary')) return json({ canRead: true, canEdit: true, totalResponses: responseCount, uniqueRespondents: responseCount });
         if (String(url).endsWith('/kano/analysis')) return analysisFailure ? new Response('{}', { status: 500 }) : json(analysis());
         if (url === '/api/projects') return json({ projects: [project] });
         if (String(url).endsWith('/overview')) return json({ project });

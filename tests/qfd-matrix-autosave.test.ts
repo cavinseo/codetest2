@@ -607,6 +607,18 @@ async function enterTechnicalName(value: string) {
 }
 
 describe('WS-9 세부기능 표시와 빈 스펙 입력', () => {
+    it('기술특성 값 입력 중 한글 조합 Enter는 셀을 확정하지 않는다', async () => {
+        await mount();
+        const input = container.querySelector<HTMLInputElement>('[aria-label="처리 속도 경쟁사 값"]')!;
+        await act(async () => {
+            input.focus();
+            input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, keyCode: 229, bubbles: true }));
+        });
+        expect(document.activeElement).toBe(input);
+        expect(server.pending('qfd/technical-benchmarks', 'POST')).toHaveLength(0);
+    });
+
     it('긴 세부기능 이름을 선택창의 한 줄 영역과 별도로 모두 표시한다', async () => {
         const name = 'F2.4 · 잔여수명 예측 및 설비 부품 교체와 예방정비 시점 안내';
         server.setTechnicals([{ ...technicals[0], name, groupIndex: 0, columnOrder: 0 }]);

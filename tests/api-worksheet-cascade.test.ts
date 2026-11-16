@@ -1,6 +1,7 @@
 // 워크시트 대량저장이 하위 데이터를 말없이 지우지 않는지 확인한다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
+import { worksheetRevision } from '../lib/worksheet-revision';
 
 const countKanoResponse = vi.fn();
 const countBenchmark = vi.fn();
@@ -36,7 +37,7 @@ const params = Promise.resolve({ id: 'proj_1' });
 function postRequest(path: string, body: unknown): NextRequest {
     return new NextRequest(`http://localhost/api/projects/proj_1/${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(path === 'attributes' ? { 'If-Match': worksheetRevision([]) } : {}) },
         body: JSON.stringify(body),
     });
 }
@@ -69,6 +70,7 @@ beforeEach(() => {
                 create: vi.fn().mockResolvedValue({}),
                 findMany: vi.fn().mockResolvedValue([]),
             },
+            ...Object.fromEntries(['techTreeEntry', 'improvementItem', 'techRoadmap', 'targetSpec'].map(name => [name, { findMany: vi.fn(async () => []), updateMany: vi.fn() }])),
             productAttribute: {
                 deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
                 createMany: vi.fn().mockResolvedValue({ count: 0 }),

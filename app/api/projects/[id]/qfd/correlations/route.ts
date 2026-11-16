@@ -24,7 +24,7 @@ export async function GET(
     try {
         const params = await props.params;
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: false });
         if (accessResult instanceof NextResponse) return accessResult;
 
         const correlations = await prisma.techCorrelation.findMany({
@@ -45,7 +45,7 @@ export async function POST(
     try {
         const params = await props.params;
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
         const body = await readJsonBody(request);
         const { techId1, techId2, correlation } = correlationSchema.parse(body);
@@ -122,7 +122,7 @@ export async function DELETE(
     try {
         const params = await props.params;
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
 
         const deleteResult = await prisma.techCorrelation.deleteMany({

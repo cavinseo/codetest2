@@ -27,7 +27,7 @@ beforeEach(() => {
     fetchMock.mockImplementation(async (url: string, init?: { method?: string }) => {
         const path = String(url);
         let payload: unknown;
-        if (init?.method === 'POST') payload = { entries: JSON.parse((init as { body: string }).body).entries };
+        if (init?.method === 'POST') payload = { entries: JSON.parse((init as { body: string }).body).entries.map((row: object, index: number) => ({ ...row, id: `saved-${index}` })) };
         else if (path.endsWith('/spec')) payload = { specFunctions: [
             { id: 'core', level: 'CORE', name: '구동', order: 0 },
             { id: 'sub', level: 'SUB', parentId: 'core', name: '속도 제어', technology: 'PID 제어', order: 1 },
@@ -41,7 +41,7 @@ beforeEach(() => {
             { id: 'saved', category: '구동', subCategory: '속도 제어', specItem: 'PID 제어', note: '유지', order: 0 },
             { id: 'new', category: '구동', subCategory: '신규 기능', specItem: '광학 센서', note: '개선', order: 1 },
         ], asIsRows: [], suggestions: [], newSpecs: [{ category: '구동', subCategory: '신규 기능' }] };
-        return new Response(JSON.stringify(payload), { status: 200 });
+        return new Response(JSON.stringify({ ...(payload as object), revision: 'a'.repeat(64) }), { status: 200 });
     });
 });
 afterEach(async () => {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import MoneyInput from '@/components/ui/MoneyInput';
-import { formatMoney } from '@/lib/money';
+import { formatStoredMoney, toThousandWon, fromThousandWon } from '@/lib/money';
 import { parseSourceYear } from '@/lib/funding-ai-agent';
 import WorksheetLoadError from './WorksheetLoadError';
 import FundingPlanChart from './FundingPlanChart';
@@ -240,7 +240,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                         <div className="flex items-end justify-between border-b border-white/[0.06] px-6 py-4">
                             <div>
                                 <h3 className="text-lg font-semibold text-white">자금소요계획</h3>
-                                <p className="mt-1 text-xs text-gray-500">단위: 백만원</p>
+                                <p className="mt-1 text-xs text-gray-500">단위: 천원</p>
                             </div>
                             <div className="text-right text-xs text-gray-500">
                                 <div>1차년도 매출액은 WS-1과 연동되며 2·3차년도는 직접 입력합니다.</div>
@@ -266,7 +266,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                             <td className="px-4 py-3 font-medium text-white">{formatFundingLabel(revenuePlan.item)}</td>
                                             {YEAR_FIELDS.map((field) => (
                                                 <td key={field} className="px-4 py-3 text-right text-amber-100">
-                                                    {field === 'year1' ? formatMoney(revenuePlan[field]) : <MoneyInput aria-label={YEAR_LABELS[field] + ' 매출액'} value={revenuePlan[field]} onValueChange={(value) => updatePlan(revenuePlan.id, field, value)} className="w-full min-w-[120px] bg-transparent text-right outline-none" placeholder="직접 입력" />}
+                                                    {field === 'year1' ? formatStoredMoney(revenuePlan[field]) : <MoneyInput aria-label={YEAR_LABELS[field] + ' 매출액'} value={revenuePlan[field] == null ? null : toThousandWon(revenuePlan[field])} onValueChange={(value) => updatePlan(revenuePlan.id, field, value == null ? null : fromThousandWon(value))} className="w-full min-w-[120px] bg-transparent text-right outline-none" placeholder="직접 입력" />}
                                                 </td>
                                             ))}
                                         </tr>
@@ -286,8 +286,8 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                                 <td key={field} className="p-0">
                                                     <MoneyInput
                                                         aria-label={YEAR_LABELS[field] + ' ' + plan.item}
-                                                        value={plan[field]}
-                                                        onValueChange={(value) => updatePlan(plan.id, field, value ?? 0)}
+                                                        value={plan[field] == null ? null : toThousandWon(plan[field])}
+                                                        onValueChange={(value) => updatePlan(plan.id, field, fromThousandWon(value ?? 0))}
                                                         className={`w-full bg-transparent px-4 py-3 text-right outline-none transition-colors focus:bg-white/[0.04] ${
                                                             isTotalPlan(plan) ? 'font-semibold text-orange-300' : 'text-white'
                                                         }`}
@@ -311,14 +311,14 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                     <div key={field} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                                         <div className="text-xs text-gray-500">{YEAR_LABELS[field]}</div>
                                         <div className="mt-1 text-lg font-semibold text-white">
-                                            {formatMoney(planTotals[field])}
+                                            {formatStoredMoney(planTotals[field])}
                                         </div>
                                     </div>
                                 ))}
                                 <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3">
                                     <div className="text-xs text-cyan-200/70">3개년 총 소요자금</div>
                                     <div className="mt-1 text-lg font-semibold text-cyan-100">
-                                        {formatMoney(totalRequiredCost)}
+                                        {formatStoredMoney(totalRequiredCost)}
                                     </div>
                                 </div>
                             </div>
@@ -333,7 +333,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                 <h3 className="text-lg font-semibold text-white">자금조달계획</h3>
                                 <p className="mt-1 text-xs text-gray-500">구분별 세부항목을 추가하고 연차별 출처와 금액을 입력합니다. 추가·삭제 후 저장해 주세요.</p>
                             </div>
-                            <span className="text-xs text-gray-500">단위: 백만원</span>
+                            <span className="text-xs text-gray-500">단위: 천원</span>
                         </div>
 
                         <div className="overflow-x-auto">
@@ -381,8 +381,8 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                                             />
                                                             <MoneyInput
                                                                 aria-label={`${category} 세부항목 ${index + 1} ${YEAR_LABELS[field]} 금액`}
-                                                                value={year.amount}
-                                                                onValueChange={(value) => updateSourceYear(source.id, field, 'amount', value == null ? '' : String(value))}
+                                                                value={year.amount === '' ? '' : toThousandWon(year.amountNumber)}
+                                                                onValueChange={(value) => updateSourceYear(source.id, field, 'amount', value == null ? '' : String(fromThousandWon(value)))}
                                                                 className="min-w-0 bg-transparent px-3 py-3 text-right text-white outline-none focus:bg-white/[0.04]"
                                                                 placeholder="0"
                                                             />
@@ -399,7 +399,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                                         <td colSpan={2} className="px-4 py-3">자금조달 합계</td>
                                         {YEAR_FIELDS.map((field) => (
                                             <td key={field} className="px-4 py-3 text-right">
-                                                {formatMoney(sourceTotals[field])}
+                                                {formatStoredMoney(sourceTotals[field])}
                                             </td>
                                         ))}
                                     </tr>

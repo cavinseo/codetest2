@@ -38,6 +38,12 @@ export async function POST(
 
     try {
         const projectId = params.id;
+        // 쓰기 여부는 본문의 action 을 봐야 알지만, 본문을 읽기 전에 최소한 이
+        // 프로젝트를 볼 수 있는 사용자인지는 확인한다. 순서가 반대면 로그인하지
+        // 않은 요청도 10MB 본문을 서버가 다 받아 파싱한 뒤에야 401 이 된다.
+        const readAccess = await requireProjectAccess(request, projectId);
+        if (readAccess instanceof NextResponse) return readAccess;
+
         const formData = await request.formData();
         const upload = guardUploadedExcel(formData.get('file'));
         const requestedSheetNames = parseRequestedSheetNames(formData.get('sheetNames'));
@@ -69,6 +75,8 @@ export async function POST(
         }
 
         const selection = selectSheets(parsedData, requestedSheetNames);
+        // 시트 선택은 lib/workbook-import-sheets.ts 로 옮겨졌고, 그쪽은 요청 시트가 없으면
+        // 배열을 그대로 돌려준다. 두 반환 형태를 모두 받아야 전체 시트 미리보기가 깨지지 않는다.
         const selectedSheets = Array.isArray(selection) ? selection : selection.selectedSheets;
         const missingSheets = Array.isArray(selection) ? [] : selection.missingSheets;
 

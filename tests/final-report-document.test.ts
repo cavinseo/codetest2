@@ -36,8 +36,8 @@ const tables = () => build().blocks.filter(block => block.kind === 'dataTable');
 it('기간별 매출과 스펙 계층, WS-11의 서로 다른 열 의미를 보존한다', () => {
     const before = JSON.stringify({ overview, data, free });
     const result = tables();
-    expect(result.find(t => t.title === 'WS-1 현재 매출현황')?.rows).toEqual([['1', '현재 고객', '1,234', '현재 경쟁사'], ['합계', '', '1,234', '']]);
-    expect(result.find(t => t.title === 'WS-1 향후 1년 목표매출액')?.rows).toEqual([['1', '미래 고객', '2,345', '미래 경쟁사'], ['합계', '', '2,345', '']]);
+    expect(result.find(t => t.title === 'WS-1 현재 매출현황')?.rows).toEqual([['1', '현재 고객', '1,234,000', '현재 경쟁사'], ['합계', '', '1,234,000', '']]);
+    expect(result.find(t => t.title === 'WS-1 향후 1년 목표매출액')?.rows).toEqual([['1', '미래 고객', '2,345,000', '미래 경쟁사'], ['합계', '', '2,345,000', '']]);
     expect(result.find(t => t.title === 'WS-2 AS-IS 스펙표')?.rows).toEqual([
         ['1', '핵심', '', '', '핵심 기술'], ['2', '핵심', '세부', '', '세부 기술'], ['3', '핵심', '세부', '상세', '상세 기술'],
     ]);
@@ -54,8 +54,8 @@ it('작성 화면의 표시 열과 자산·자금 표 구분을 따르고 숨겨
     expect(result.find(t => t.title === 'WS-14 핵심자산 도출표')?.rows).toEqual([['1', '특허']]);
     expect(result.find(t => t.title === 'WS-14 보완자산 도출표')?.rows).toEqual([['인력', '채용']]);
     expect(data.targetSpecs[0]).toMatchObject({ unit: '숨긴 단위', targetValue: '숨긴 목표' });
-    expect(result.find(t => t.title?.startsWith('WS-15'))?.rows).toEqual([['자금', '개발비', '1,234.5', '0', '']]);
-    expect(result.find(t => t.title?.startsWith('WS-16'))?.rows).toContainEqual(['정부', '1', '지원', '1,234.5', '출자', '2,000', '', '']);
+    expect(result.find(t => t.title?.startsWith('WS-15'))?.rows).toEqual([['자금', '개발비', '1,234,500', '0', '']]);
+    expect(result.find(t => t.title?.startsWith('WS-16'))?.rows).toContainEqual(['정부', '1', '지원', '1,234,500', '출자', '2,000,000', '', '']);
 });
 
 it('빈 워크시트도 해당 장과 미작성 안내를 남기며 진단을 임의로 채우지 않는다', () => {

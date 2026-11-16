@@ -1,6 +1,8 @@
+import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
+import { getKanoAnalysisAccess } from '@/lib/kano-analysis-access';
 import { createLogger } from '@/lib/logger';
 import { countProjectResponses, countUniqueProjectRespondents } from '@/lib/kano-analysis-stats';
 import {
@@ -23,8 +25,24 @@ export async function GET(
     const params = await props.params;
     try {
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: false });
         if (accessResult instanceof NextResponse) return accessResult;
+
+        const permissions = getKanoAnalysisAccess(accessResult);
+        if (request.nextUrl.searchParams.get('view') === 'summary') {
+            const responses = await prisma.kanoResponse.findMany({
+                where: { projectId, project: { id: projectId }, requirement: { projectId }, invitation: { projectId } },
+                select: { invitationId: true, respondentEmail: true },
+            });
+            return NextResponse.json({
+                ...permissions,
+                totalResponses: countProjectResponses(responses),
+                uniqueRespondents: countUniqueProjectRespondents(responses),
+            });
+        }
+        if (!permissions.canRead) {
+            return NextResponse.json({ error: 'Kano 분석은 담당 멘토와 관리자만 열람할 수 있습니다.' }, { status: 403 });
+        }
 
         const projectResponses = await prisma.kanoResponse.findMany({
             where: {
@@ -34,11 +52,11 @@ export async function GET(
                 invitation: { projectId },
             },
         });
-        const requirements = await prisma.customerRequirement.findMany({
+        const requirements = groupRequirementsByCategory(await prisma.customerRequirement.findMany({
             where: { projectId },
-            select: { id: true, kanoWeight: true, order: true },
+            select: { id: true, kanoWeight: true, order: true, category: true, subcategory: true },
             orderBy: { order: 'asc' },
-        });
+        }));
         const requirementWeights = new Map(requirements.map((req: any) => [req.id, req.kanoWeight]));
         const requirementOrder = new Map(requirements.map((req: any, index: number) => [req.id, req.order ?? index]));
 
@@ -109,6 +127,10 @@ export async function PATCH(
         const projectId = params.id;
         const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
+
+        if (!getKanoAnalysisAccess(accessResult).canEdit) {
+            return NextResponse.json({ error: 'Kano 분석은 담당 멘토만 수정할 수 있습니다.' }, { status: 403 });
+        }
 
         const body = await readJsonBody(request);
         const updates = Array.isArray(body.weights) ? body.weights : [];

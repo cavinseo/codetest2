@@ -37,21 +37,6 @@ export function splitImprovementItems(items: ImprovementRow[]) {
     };
 }
 
-/**
- * 표지의 코치명. /mentors 응답에는 이메일도 들어 있지만 이름만 꺼낸다 —
- * 문서와 로그에 이메일을 남기지 않는다는 규칙 때문이다.
- * 권한이 없는 사용자에게는 이 라우트가 403 이라 payload 가 없을 수 있고, 그때는
- * 오류가 아니라 미배정으로 본다(코치명 하나 때문에 보고서를 못 뽑으면 안 된다).
- */
-export function pickCoachName(payload: unknown): string | null {
-    const mentors = pickArray<{ user?: { name?: string | null } | null }>(payload, 'mentors');
-    for (const mentor of mentors) {
-        const name = mentor?.user?.name;
-        if (typeof name === 'string' && name.trim()) return name.trim();
-    }
-    return null;
-}
-
 type KanoRow = { requirementId: string; better: number; worse: number; timkoCategory?: string | null; quadrant?: string | null };
 type RequirementRow = { id: string; requirement?: string | null };
 

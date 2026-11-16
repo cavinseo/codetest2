@@ -11,7 +11,7 @@ const address = new URL(databaseUrl);
 if (address.hostname !== '127.0.0.1' || address.pathname !== '/restore_safety_qa') throw new Error('일회용 restore_safety_qa 로컬 DB만 허용합니다.');
 const db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
 vi.mock('../../lib/prisma', () => ({ get prisma() { return db; } }));
-vi.mock('../../lib/authorization', () => ({ requireProjectAccess: async () => ({ user: { userId: ownerId }, role: 'OWNER' }) }));
+vi.mock('../../lib/authorization', () => ({ requireProjectAccess: async () => ({ user: { userId: ownerId, role: 'MENTOR' }, role: 'EDITOR' }) }));
 const { GET: exportProject } = await import('../../app/api/projects/[id]/export/route');
 const { POST: importProject } = await import('../../app/api/projects/[id]/import-json/route');
 const { POST: importExcel } = await import('../../app/api/projects/[id]/import/route');

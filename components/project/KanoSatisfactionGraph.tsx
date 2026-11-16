@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import TimkoWorksheetGrid from '@/components/TimkoWorksheetGrid';
+import TimkoCoefficientChart from '@/components/project/TimkoCoefficientChart';
 import { clusterLabel, clusterOverlappingPoints } from '@/lib/timko-point-clusters';
 
 interface AnalysisResult {
@@ -11,6 +12,7 @@ interface AnalysisResult {
     worse: number;
     timkoCategory?: string | null;
     quadrant: string;
+    aggregated?: { A: number; O: number; M: number; I: number };
 }
 
 interface KanoSatisfactionGraphProps {
@@ -201,6 +203,8 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                     </svg>
                 </div>
             </div>
+
+            <TimkoCoefficientChart analysis={analysis} />
 
             {/* 상세 테이블 */}
             <div className="card overflow-hidden">

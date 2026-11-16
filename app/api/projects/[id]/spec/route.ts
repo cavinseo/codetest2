@@ -5,6 +5,7 @@ import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 import { specFunctionsBodySchema } from '@/lib/bulk-save-schemas';
+import { assertWorksheetRevision, worksheetRevision, WorksheetRevisionConflict, WorksheetRevisionMissing } from '@/lib/worksheet-revision';
 
 const log = createLogger('api/spec');
 
@@ -15,7 +16,7 @@ export async function GET(
 ) {
     try {
         const { id: projectId } = await params;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: false });
         if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
@@ -33,7 +34,7 @@ export async function GET(
             orderBy: { order: 'asc' },
         });
 
-        return NextResponse.json({ specFunctions: projectSpecs, specDetailCollapsed: project.specDetailCollapsed });
+        return NextResponse.json({ specFunctions: projectSpecs, specDetailCollapsed: project.specDetailCollapsed, revision: worksheetRevision(projectSpecs) });
     } catch (error: unknown) {
         log.error('스펙 조회 실패', error);
         return NextResponse.json(
@@ -79,7 +80,7 @@ export async function POST(
 ) {
     try {
         const { id: projectId } = await params;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
@@ -104,6 +105,8 @@ export async function POST(
         // 예전에는 빈 목록을 저장 성공으로만 답하고 아무것도 지우지 않아, 행을 다 지우거나
         // 초기화해도 새로고침하면 스펙이 되살아났다.
         const updatedSpecs = await prisma.$transaction(async (tx) => {
+            const currentSpecs = await tx.specFunction.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
+            assertWorksheetRevision(request, currentSpecs);
             await tx.specFunction.deleteMany({ where: { projectId } });
 
             // 임시 ID와 실제 Prisma cuid 매핑 테이블
@@ -165,17 +168,24 @@ export async function POST(
                 where: { projectId },
                 orderBy: { order: 'asc' },
             });
-        });
+        }, { isolationLevel: 'Serializable' });
 
         log.info('스펙 저장 성공', { projectId, count: updatedSpecs.length });
 
         return NextResponse.json({
             specFunctions: updatedSpecs,
+            revision: worksheetRevision(updatedSpecs),
             message: '스펙이 저장되었습니다',
         });
     } catch (error: unknown) {
         const invalidBody = invalidJsonBodyResponse(error);
         if (invalidBody) return invalidBody;
+        if (error instanceof WorksheetRevisionMissing) {
+            return NextResponse.json({ error: error.message }, { status: 428 });
+        }
+        if (error instanceof WorksheetRevisionConflict || (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2034')) {
+            return NextResponse.json({ error: '다른 화면에서 워크시트가 변경되었습니다. 새로고침 후 다시 확인하세요.' }, { status: 409 });
+        }
         return toErrorResponse(error, { log, message: '스펙 저장에 실패했습니다.' });
     }
 }

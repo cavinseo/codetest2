@@ -1,8 +1,11 @@
+import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
+import { synchronizeRequirementLinkedOrder } from '@/lib/requirement-order-store';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { cascadeConfirmResponse } from '@/lib/cascade-confirm-response';
+import { getKanoAnalysisAccess } from '@/lib/kano-analysis-access';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
@@ -19,15 +22,20 @@ const bulkRequirementsSchema = z.object({
     requirements: z.array(
         z.object({
             id: z.string().optional(),
-            category: z.string(),
+            category: z.string().refine(value => value.trim().length > 0, '1차 그룹을 입력하세요.'),
             subcategory: z.string().optional().nullable(),
-            requirement: z.string(),
+            requirement: z.string().refine(value => value.trim().length > 0, '요구사항을 입력하세요.'),
             kanoPositiveQ: z.string().optional().nullable(),
             kanoNegativeQ: z.string().optional().nullable(),
             kanoWeight: z.number().optional().nullable(),
             order: z.number(),
         })
-    ).min(1, '요구사항이 비어 있습니다. 전체 삭제가 필요하면 deleteAll 파라미터를 사용하세요.'),
+    ),
+    deleteAll: z.literal(true).optional(),
+}).superRefine((body, context) => {
+    if (body.requirements.length === 0 && !body.deleteAll) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: '전체 삭제를 요청하려면 deleteAll을 확인하세요.', path: ['deleteAll'] });
+    }
 });
 
 type RequirementInput = z.infer<typeof bulkRequirementsSchema>['requirements'][number];
@@ -50,15 +58,16 @@ function submittedRequirementIds(requirements: RequirementInput[]) {
 
 // Kano 질문·가중치는 보낸 경우에만 바꾼다. 요구사항 표는 이 값을 다루지 않아
 // 보내지 않는데, 빠진 값을 null 로 쓰면 오타 하나 고쳐 저장할 때마다 Kano
-// 화면에서 입력한 질문과 가중치가 전부 지워졌다. 명시적 null 은 그대로 지운다.
+// 화면에서 입력한 질문과 가중치가 전부 지워졌다. Prisma 는 undefined 필드를 건드리지
+// 않으므로(생성 시에는 기본값 null) 빠진 값은 undefined 로 그대로 넘긴다. 명시적 null 은 그대로 지운다.
 function requirementWriteData(requirement: RequirementInput): RequirementWriteData {
     return {
         category: requirement.category,
         subcategory: requirement.subcategory ?? null,
         requirement: requirement.requirement,
-        ...(requirement.kanoPositiveQ !== undefined ? { kanoPositiveQ: requirement.kanoPositiveQ } : {}),
-        ...(requirement.kanoNegativeQ !== undefined ? { kanoNegativeQ: requirement.kanoNegativeQ } : {}),
-        ...(requirement.kanoWeight !== undefined ? { kanoWeight: requirement.kanoWeight } : {}),
+        kanoPositiveQ: requirement.kanoPositiveQ,
+        kanoNegativeQ: requirement.kanoNegativeQ,
+        kanoWeight: requirement.kanoWeight,
         order: requirement.order,
     };
 }
@@ -81,6 +90,7 @@ async function saveRequirements(
 ) {
     const foreignIds = await findForeignRequirementIds(projectId, submittedIds);
     await prisma.$transaction(async (tx) => {
+        const previous = await tx.customerRequirement.findMany({ where: { projectId } });
         await tx.customerRequirement.deleteMany({
             where: submittedIds.length > 0
                 ? { projectId, id: { notIn: submittedIds } }
@@ -116,7 +126,8 @@ async function saveRequirements(
         if (requirementsToCreate.length > 0) {
             await tx.customerRequirement.createMany({ data: requirementsToCreate });
         }
-    });
+        await synchronizeRequirementLinkedOrder(tx, projectId, previous, requirements);
+    }, { timeout: 30000 });
 }
 
 // GET: 요구사항 조회
@@ -127,7 +138,7 @@ export async function GET(
     const params = await props.params;
     try {
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: false });
         if (accessResult instanceof NextResponse) return accessResult;
         const projectReqs = await prisma.customerRequirement.findMany({
             where: { projectId },
@@ -135,7 +146,7 @@ export async function GET(
         });
 
         return NextResponse.json({
-            requirements: projectReqs.map((r) => ({
+            requirements: groupRequirementsByCategory(projectReqs).map((r) => ({
                 id: r.id,
                 category: r.category,
                 subcategory: r.subcategory,
@@ -163,10 +174,16 @@ export async function POST(
     const params = await props.params;
     try {
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
+        const { canEdit: canEditAnalysis } = getKanoAnalysisAccess(accessResult);
         const body = await readJsonBody(request);
-        const { requirements } = bulkRequirementsSchema.parse(body);
+        const requirements = groupRequirementsByCategory(bulkRequirementsSchema.parse(body).requirements.map(row => ({
+            ...row, subcategory: row.subcategory ?? null,
+            // 일반 요구사항 편집으로 멘토의 분석 가중치를 덮어쓰지 않도록 한다. undefined 는
+            // requirementWriteData 가 "보내지 않은 Kano 필드"로 보고 저장값을 그대로 둔다.
+            kanoWeight: canEditAnalysis ? row.kanoWeight : undefined,
+        })));
 
         const submittedIds = submittedRequirementIds(requirements);
 

@@ -21,7 +21,7 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     const { id: projectId } = await params;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: true });
     if (accessResult instanceof NextResponse) return accessResult;
 
     try {

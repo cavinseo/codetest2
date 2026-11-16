@@ -13,17 +13,13 @@ import { buildWorksheetData, toKanoChartPoints, type WorksheetPayloads } from '@
 import { buildFinalReportModel, hasProductOverviewSource, hasWorksheetImageSlot, replaceWorksheetImages, CAPTURED_WORKSHEET_TITLES, type CapturedWorksheetImage, type FinalReportFreeInput, type FinalReportModel, type FinalReportOverviewInput, type FinalReportWorksheetData } from '@/lib/final-report-document';
 import { downloadBlobAsFile } from '@/lib/file-download';
 import { applyBlockEdit, countEditedBlocks, withEditedBlocks, type BlockEdit } from '@/lib/final-report-edit';
-import { REPORT_MAX_BYTES, type ReportDraft } from '@/lib/final-report-payload';
+import { EMPTY_REPORT_FREE_INPUT, REPORT_MAX_BYTES, type ReportDraft } from '@/lib/final-report-payload';
 import { optimizeReportImage } from '@/lib/final-report-image';
 import { captureWorksheetNode, waitForWorksheetReady } from '@/lib/worksheet-capture';
-import { reportOutputDate, withReportOutputDate } from '@/lib/final-report-layout';
+import { reportOutputDate } from '@/lib/final-report-layout';
 import { refreshWorksheetTables } from '@/lib/final-report-table-refresh';
 
 const CAPTURE_TARGETS = Object.entries(CAPTURED_WORKSHEET_TITLES) as Array<[CapturedWorksheetImage['worksheetId'], string]>;
-const EMPTY_FREE_INPUT: FinalReportFreeInput = {
-    productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null,
-    marketDefinition: '', targetCustomer: '', finalSpecExplanation: '', improvedProductName: '', improvedProductDescription: '',
-};
 const FREE_FIELDS: Array<{ key: keyof FinalReportFreeInput; label: string; placeholder: string }> = [
     { key: 'marketDefinition', label: '시장정의', placeholder: '어떤 시장을 대상으로 하는지 서술하세요.' },
     { key: 'targetCustomer', label: '목표고객', placeholder: '핵심 목표고객을 서술하세요.' },
@@ -66,7 +62,7 @@ async function requestReport(url: string, method = 'GET', body?: string): Promis
         });
         const data = await response.json();
         if (!response.ok) {
-            if (response.status === 409) throw new Error('다른 창에서 보고서가 변경되었거나 멘토 배정이 바뀌었습니다. 현재 입력은 유지됩니다. 저장 상태와 배정을 확인한 후 다시 열어 주세요.');
+            if (response.status === 409) throw new Error(data.error || '다른 창에서 보고서가 변경되었습니다. 현재 입력은 유지됩니다. 다시 불러와 확인하세요.');
             throw new Error(data.error || '결과보고서를 처리하지 못했습니다.');
         }
         return data;
@@ -140,10 +136,11 @@ export default function FinalReportPage() {
     const [captureRevision, setCaptureRevision] = useState(0);
     const [loadedCount, setLoadedCount] = useState(0);
     const [failedKeys, setFailedKeys] = useState<string[]>([]);
-    const [freeInput, setFreeInput] = useState<FinalReportFreeInput>(EMPTY_FREE_INPUT);
+    const [freeInput, setFreeInput] = useState<FinalReportFreeInput>(EMPTY_REPORT_FREE_INPUT);
     const [previewBaseline, setPreviewBaseline] = useState<FinalReportModel | null>(null);
     const [draft, setDraft] = useState<FinalReportModel | null>(null);
     const [previewNeedsRefresh, setPreviewNeedsRefresh] = useState(false);
+    const [sourceRevision, setSourceRevision] = useState<string | undefined>();
     const [hasLocalChanges, setHasLocalChanges] = useState(false);
     const [progress, setProgress] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
@@ -201,10 +198,11 @@ export default function FinalReportPage() {
             setActiveView(data.view);
             setPublishedAt(data.publishedAt);
             setPublishedDocument(data.view === 'published' ? data.document ?? null : null);
-            setFreeInput(data.draft?.free ?? EMPTY_FREE_INPUT);
+            setFreeInput(data.draft?.free ?? EMPTY_REPORT_FREE_INPUT);
             setDraft(data.draft?.document ?? null);
             setPreviewBaseline(data.draft?.document ?? null);
-            setPreviewNeedsRefresh(data.draft?.previewNeedsRefresh ?? false);
+            setPreviewNeedsRefresh(Boolean(data.draft?.document && !data.draft.sourceRevision) || (data.draft?.previewNeedsRefresh ?? false));
+            setSourceRevision(data.draft?.sourceRevision);
             if (data.canEdit) void loadWorksheets();
         }).catch(error => {
             if (!cancelled) setInitialError(error instanceof Error ? error.message : '결과보고서를 불러오지 못했습니다.');
@@ -328,6 +326,13 @@ export default function FinalReportPage() {
             if (!latest.canEdit || latest.version !== report.version) {
                 throw new Error('다른 화면에서 분석 또는 보고서가 변경되었습니다. 워크시트를 다시 불러온 뒤 미리보기를 만들어 주세요. 현재 교정 내용은 유지됩니다.');
             }
+            const loadedRevision = (payloads.exportData as { sourceRevision?: string } | null)?.sourceRevision;
+            if (!imagesOnly) {
+                const currentSource = await getWorksheetJson(`/api/projects/${projectId}/export?revisionOnly=1`) as { sourceRevision?: string } | null;
+                if (!loadedRevision || loadedRevision !== currentSource?.sourceRevision) {
+                    throw new Error('워크시트가 변경되었습니다. 최신 자료를 다시 불러온 뒤 미리보기를 만들어 주세요.');
+                }
+            }
             const images: CapturedWorksheetImage[] = [];
             const { usesSampleTemplate, targets } = reportCaptureTargets(imagesOnly, draft, worksheets);
             for (const [index, [id, title]] of targets.entries()) {
@@ -353,6 +358,7 @@ export default function FinalReportPage() {
             setPreviewBaseline(next);
             setDraft(next);
             setPreviewNeedsRefresh(false);
+            setSourceRevision(loadedRevision);
             setHasLocalChanges(true);
             showToast('미리보기를 만들었습니다. 내용을 확인하고 저장하거나 완료해 주세요.');
         } catch (error) { fail(error, '미리보기 생성에 실패했습니다.'); }
@@ -368,6 +374,7 @@ export default function FinalReportPage() {
             const generated = buildFinalReportModel({ projectName: '', description: null, coachName: null, generatedAt: reportOutputDate() }, buildWorksheetData(loaded as unknown as WorksheetPayloads), freeInput, []);
             setDraft(refreshWorksheetTables(draft, generated));
             setPreviewBaseline(previous => previous ? refreshWorksheetTables(previous, generated) : generated);
+            setPreviewNeedsRefresh(true);
             setHasLocalChanges(true);
             showToast('작성용 워크시트의 표를 반영했습니다. 설명 문단은 유지됩니다. 확인 후 초안을 저장해 주세요.');
         } catch (error) { fail(error, '워크시트 표 반영에 실패했습니다.'); }
@@ -380,7 +387,8 @@ export default function FinalReportPage() {
     }
     async function saveDraft() {
         if (!report) throw new Error('보고서 정보를 불러온 후 저장해 주세요.');
-        const savedDraft: ReportDraft = { free: freeInput, document: draft, previewNeedsRefresh, ...(worksheetAnalysis ? { worksheetAnalysis } : {}) };
+        const savedDraft: ReportDraft = { free: freeInput, document: draft, previewNeedsRefresh,
+            ...(sourceRevision ? { sourceRevision } : {}), ...(worksheetAnalysis ? { worksheetAnalysis } : {}) };
         const body = JSON.stringify({ version: report.version, draft: savedDraft });
         if (new TextEncoder().encode(body).byteLength > REPORT_MAX_BYTES) {
             throw new Error('보고서 저장 용량(3.5MB)을 초과했습니다. 제품 사진의 크기나 보고서 내용을 줄인 뒤 미리보기를 다시 만들어 주세요.');
@@ -402,11 +410,12 @@ export default function FinalReportPage() {
         try {
             const latest = await requestReport(reportUrl);
             setReport(latest); setActiveView(latest.view);
-            setFreeInput(latest.draft?.free ?? EMPTY_FREE_INPUT);
+            setFreeInput(latest.draft?.free ?? EMPTY_REPORT_FREE_INPUT);
             setDraft(latest.draft?.document ?? null); setPreviewBaseline(latest.draft?.document ?? null);
             setPublishedDocument(latest.view === 'published' ? latest.document ?? null : publishedDocument);
             setPublishedAt(latest.publishedAt);
             setPreviewNeedsRefresh(Boolean(latest.draft?.document) || (latest.draft?.previewNeedsRefresh ?? false));
+            setSourceRevision(latest.draft?.sourceRevision);
             setHasLocalChanges(Boolean(latest.canEdit));
             if (latest.canEdit) {
                 setCaptureRevision(revision => revision + 1);
@@ -442,12 +451,11 @@ export default function FinalReportPage() {
     async function handleDownload() {
         if (!shownDocument || !begin('Word 문서 만드는 중...')) return;
         try {
-            // docx 패키지를 브라우저 번들에 포함하지 않도록 서버에서 직렬화한다.
-            const res = await fetch(`/api/projects/${projectId}/report/docx`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(withReportOutputDate(shownDocument)),
-            });
+            const endpoint = `/api/projects/${projectId}/report/docx`;
+            const res = editing
+                ? await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(shownDocument) })
+                : await fetch(`${endpoint}?view=${activeView}`);
             if (!res.ok) {
                 const body = await res.json().catch(() => null);
                 throw new Error(body?.error || '문서를 만들지 못했습니다.');

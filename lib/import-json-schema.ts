@@ -11,6 +11,8 @@
 // 값이 있으면 그대로 복원한다.
 import { z } from 'zod';
 import { hasDuplicateTechnicalNames } from './qfd-technical-sync';
+import { productOverviewSchema, validateProductOverview } from './product-overview';
+import { validateBusinessPlanFileStorageValue } from './business-plan-file';
 
 // 한 컬렉션에 한 번에 넣을 수 있는 행수 상한.
 //
@@ -233,18 +235,33 @@ const fitnessMatrixRow = z.object({
 }).strict();
 
 export const importJsonSchema = z.object({
+    sourceRevision: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     // export 는 '1.0-prisma' 를 쓴다. 옛 파일에는 숫자가 들어 있을 수 있다.
     version: z.union([z.string(), z.number()]).optional(),
     exportedAt: z.string().optional(),
     confirmCascade: z.boolean().optional(),
-    project: z.object({
-        // name 은 export 가 내보내지만 복원은 설명만 갱신한다.
+    specDetailCollapsed: z.boolean().optional(),
+    project: productOverviewSchema.extend({
+        // 대상 프로젝트의 이름은 유지하고 백업에 명시된 개요 필드만 복원한다.
         name: z.string().optional(),
         description: z.string().nullable().optional(),
         detailedDescription: z.string().nullable().optional(),
-        additionalMarketData: z.string().max(20_000).nullable().optional(),
-        includeAdditionalMarketDataInReport: z.boolean().optional(),
-    }).strict().optional(),
+        companyName: z.string().trim().max(300).nullable().optional(),
+        businessPlanFile: z.string().nullable().optional().transform((value, ctx) => {
+            if (value === undefined) return undefined;
+            try { return validateBusinessPlanFileStorageValue(value); }
+            catch (error) {
+                ctx.addIssue({ code: z.ZodIssueCode.custom, message: error instanceof Error ? error.message : '사업계획 파일을 확인하세요.' });
+                return z.NEVER;
+            }
+        }),
+    }).strict().transform((project, ctx) => {
+        try { return { ...project, ...validateProductOverview(project) }; }
+        catch (error) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: error instanceof Error ? error.message : '제품 정보를 확인하세요.' });
+            return z.NEVER;
+        }
+    }).optional(),
     customerRequirements: rows(requirementRow).optional(),
     technicalCharacteristics: rows(technicalRow).refine(
         technicals => !hasDuplicateTechnicalNames(technicals.map(tech => tech.name)),

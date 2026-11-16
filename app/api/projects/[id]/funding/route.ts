@@ -5,6 +5,9 @@ import { isProjectWriteRole, requireProjectAccess } from '@/lib/authorization';
 import { buildFundingPlansWithSales } from '@/lib/worksheet-links';
 import { fundingBodySchema } from '@/lib/bulk-save-schemas';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api/funding');
 
 const INITIAL_FUNDING_PLANS = [
     { category: '매출액', item: '매출액', year2: null, year3: null, order: 0 },
@@ -34,7 +37,7 @@ function createInitialFundingPlans(projectId: string) {
 // GET: 자금소요 및 조달 계획
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: false });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
         let plans = await prisma.fundingPlan.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
@@ -51,7 +54,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 
         return NextResponse.json({ plans, sources, canWrite: isProjectWriteRole(accessResult.role) });
     } catch (error) {
-        console.error('Funding GET error:', error);
+        log.error('Funding GET error', error);
         return NextResponse.json({ error: '자금계획 데이터를 불러오지 못했습니다.' }, { status: 500 });
     }
 }
@@ -59,7 +62,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 // POST: 자금 계획 일괄 저장
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: true });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
         const body = fundingBodySchema.parse(await readJsonBody(request));
@@ -117,7 +120,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }
-        console.error('Funding POST error:', error);
+        log.error('Funding POST error', error);
         return NextResponse.json({ error: '자금계획 데이터를 저장하지 못했습니다.' }, { status: 500 });
     }
 }

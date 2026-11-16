@@ -156,6 +156,21 @@ export const specFunctionRowSchema = z.object({
 });
 export const specFunctionsBodySchema = z.object({
     specFunctions: z.array(specFunctionRowSchema),
+}).superRefine(({ specFunctions }, context) => {
+    const levelsById = new Map<string, string>();
+    specFunctions.forEach((spec, index) => {
+        if (!spec.id) return;
+        if (levelsById.has(spec.id)) {
+            context.addIssue({ code: z.ZodIssueCode.custom, path: ['specFunctions', index, 'id'], message: '중복된 스펙 ID입니다.' });
+        }
+        levelsById.set(spec.id, spec.level);
+    });
+    specFunctions.forEach((spec, index) => {
+        const expectedParentLevel = spec.level === 'SUB' ? 'CORE' : spec.level === 'DETAIL' ? 'SUB' : null;
+        if (expectedParentLevel && levelsById.get(spec.parentId ?? '') !== expectedParentLevel) {
+            context.addIssue({ code: z.ZodIssueCode.custom, path: ['specFunctions', index, 'parentId'], message: '상위 스펙을 확인하세요.' });
+        }
+    });
 });
 
 // ── fitness matrix ────────────────────────────────────────────

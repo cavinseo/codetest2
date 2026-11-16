@@ -20,10 +20,10 @@ beforeEach(() => {
         name: '백업 원본', description: '설명', detailedDescription: null,
         specFunctions: [], productAttributes: [], attributeFitnesses: [], requirements: [], technicalCharacteristics: [],
         qfdMatrices: [], kanoResponses: [], techCorrelations: [], benchmarks: [], technicalBenchmarks: [],
-        techTreeEntries: [{ customerVoice: '요구' }],
-        improvementItems: [{ type: 'need', content: '개선' }],
-        targetSpecs: [{ specItem: '응답시간' }],
-        techRoadmaps: [{ techItem: '엔진' }],
+        techTreeEntries: [{ customerVoice: '요구', order: 0 }],
+        improvementItems: [{ type: 'need', content: '개선', order: 0 }],
+        targetSpecs: [{ specItem: '응답시간', order: 0 }],
+        techRoadmaps: [{ techItem: '엔진', order: 0 }],
         devPlans: [{ task: '개발' }],
         salesEstimates: [{ amount: 120 }],
         assetItems: [{ type: 'CORE' }],
@@ -40,10 +40,10 @@ it('누락되던 워크시트와 적합도 매트릭스를 백업에 포함한�
     expect(response.status).toBe(200);
     expect(findUnique.mock.calls[0][0].include.devPlans).toBe(true);
     expect(body.version).toBe('1.1-prisma');
-    expect(body.techTreeEntries).toEqual([{ customerVoice: '요구' }]);
-    expect(body.improvementItems).toEqual([{ type: 'need', content: '개선' }]);
-    expect(body.targetSpecs).toEqual([{ specItem: '응답시간' }]);
-    expect(body.techRoadmaps).toEqual([{ techItem: '엔진' }]);
+    expect(body.techTreeEntries).toEqual([{ customerVoice: '요구', order: 0 }]);
+    expect(body.improvementItems).toEqual([{ type: 'need', content: '개선', order: 0 }]);
+    expect(body.targetSpecs).toEqual([{ specItem: '응답시간', order: 0 }]);
+    expect(body.techRoadmaps).toEqual([{ techItem: '엔진', order: 0 }]);
     expect(body.devPlans).toEqual([{ task: '개발' }]);
     expect(body.salesEstimates).toEqual([{ amount: 120 }]);
     expect(body.assetItems).toEqual([{ type: 'CORE' }]);

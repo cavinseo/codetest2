@@ -35,6 +35,9 @@ export function useProjectOverviewEditor<P extends OverviewEditableProject>(
     const [isOverviewFileReading, setIsOverviewFileReading] = useState(false);
     const [isOverviewFileDirty, setIsOverviewFileDirty] = useState(false);
     const [overviewError, setOverviewError] = useState('');
+    // 개요를 읽은 시점의 개정값이다. 저장할 때 If-Match 로 보내 다른 화면의 변경을 덮어쓰지 않게 한다.
+    // 개요 GET 은 홈 화면이 다른 요청과 함께 보내므로 값은 홈이 setOverviewRevision 으로 넣어 준다.
+    const [overviewRevision, setOverviewRevision] = useState<string | null>(null);
     // 사업계획 양식에서 어떤 항목이 자동으로 채워졌는지 알려주는 안내 문구
     const [overviewAutoFillNotice, setOverviewAutoFillNotice] = useState('');
     const overviewFileSelectionRef = useRef(0);
@@ -173,6 +176,10 @@ export function useProjectOverviewEditor<P extends OverviewEditableProject>(
     const handleOverviewSave = async () => {
         if (!project) return;
         setOverviewError('');
+        if (!overviewRevision) {
+            setOverviewError('개요 개정값을 불러오지 못했습니다. 입력을 복사한 뒤 새로고침해 주세요.');
+            return;
+        }
         if (!overviewForm.name.trim()) {
             setOverviewError('프로젝트명을 입력하세요.');
             return;
@@ -198,13 +205,14 @@ export function useProjectOverviewEditor<P extends OverviewEditableProject>(
             };
             const res = await fetch(`/api/projects/${projectId}/overview`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'If-Match': overviewRevision },
                 body: JSON.stringify(payload),
             });
             const data = await res.json().catch(() => null);
             if (!res.ok) {
                 throw new Error(data?.error || '제품개요 저장에 실패했습니다.');
             }
+            setOverviewRevision(typeof data?.revision === 'string' ? data.revision : null);
 
             setProject({
                 ...project,
@@ -235,7 +243,7 @@ export function useProjectOverviewEditor<P extends OverviewEditableProject>(
     return {
         overviewForm, setOverviewForm, isOverviewEditing, setIsOverviewEditing, isOverviewSaving,
         isProductImageReading, setIsProductImageReading, isOverviewFileReading, overviewError, setOverviewError,
-        overviewAutoFillNotice, projectBusinessPlanFile, formBusinessPlanFile,
+        overviewAutoFillNotice, projectBusinessPlanFile, formBusinessPlanFile, setOverviewRevision,
         handleOverviewCancel, handleOverviewFileSelect, handleTemplateDownload, handleOverviewFileRemove, handleOverviewSave,
     };
 }

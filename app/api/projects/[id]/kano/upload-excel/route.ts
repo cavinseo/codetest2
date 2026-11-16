@@ -1,8 +1,9 @@
+import { readKanoExcelRequirementIds, KanoQuestionOrderError } from '@/lib/kano-requirement-snapshot';
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
-import { checkExcelArchiveSafety, guardUploadedExcel } from '@/lib/upload-guard';
+import { checkExcelArchiveSafety, checkWorkbookSheetRanges, guardUploadedExcel } from '@/lib/upload-guard';
 import type { KanoAnswer } from '@/lib/kano-algorithm';
 import {
     parseGoogleFormsResponseSheet,
@@ -12,7 +13,14 @@ import {
     newAnonymousBatchId,
     type ParsedKanoUploadAnswer,
 } from '@/lib/kano-upload-parser';
-import { KanoUploadConflictError, parseWritePolicy, persistKanoUploadAnswers } from '@/lib/kano-response-store';
+import {
+    KanoUploadConflictError,
+    parseWritePolicy,
+    persistKanoUploadAnswers,
+} from '@/lib/kano-response-store';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api/kano/upload-excel');
 
 // like 를 단어 경계로 감싸야 "dislike" 가 1점(좋다)으로 읽히지 않는다(lib/kano-upload-parser.ts 와 같은 이유).
 const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
@@ -136,6 +144,10 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             return NextResponse.json({ error: archiveFailure.error }, { status: archiveFailure.status });
         }
         const workbook = XLSX.read(bytes, { type: 'buffer' });
+        const rangeFailure = checkWorkbookSheetRanges(workbook);
+        if (rangeFailure) {
+            return NextResponse.json({ error: rangeFailure.error }, { status: rangeFailure.status });
+        }
         const sheetName = pickKanoUploadSheet(workbook, uploadFormat);
         if (!sheetName) {
             return NextResponse.json({ error: '엑셀 파일에서 읽을 수 있는 시트를 찾지 못했습니다.' }, { status: 400 });
@@ -145,10 +157,12 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             return NextResponse.json({ error: '엑셀 파일에서 읽을 수 있는 시트를 찾지 못했습니다.' }, { status: 400 });
         }
 
+        // 설문 배포 뒤 요구사항 순서가 바뀌어도 응답이 원래 문항에 붙도록 양식의 문항 스냅샷을 따른다.
+        const requirementIds = readKanoExcelRequirementIds(workbook, sheet, requirements);
         const answers = separateAnonymousRespondents(
-            parseByUploadFormat(sheet, requirements.length, uploadFormat),
+            parseByUploadFormat(sheet, requirementIds.length, uploadFormat),
             newAnonymousBatchId()
-        );
+        ).map(answer => ({ ...answer, requirementId: requirementIds[answer.requirementIndex] }));
         if (answers.length === 0) {
             return NextResponse.json({ error: 'Kano 응답을 찾지 못했습니다. 전용 업로드 양식 또는 Google Forms 응답 시트의 1~5 점수/응답 텍스트를 확인하세요.' }, { status: 400 });
         }
@@ -171,10 +185,11 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             sheetName,
         });
     } catch (error) {
+        if (error instanceof KanoQuestionOrderError) return NextResponse.json({ error: error.message, code: 'KANO_QUESTION_ORDER_UNKNOWN' }, { status: 400 });
         if (error instanceof KanoUploadConflictError) {
             return NextResponse.json({ error: error.message, code: 'KANO_RESPONSES_EXIST' }, { status: 409 });
         }
-        console.error('Kano Excel upload failed:', error);
+        log.error('Kano Excel upload failed', error);
         return NextResponse.json({ error: 'Kano 엑셀 업로드에 실패했습니다.' }, { status: 500 });
     }
 }

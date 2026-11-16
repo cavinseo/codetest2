@@ -31,7 +31,6 @@ export default function ProjectSettingsPage() {
     const [projectError, setProjectError] = useState('');
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
-    const [inviteRole, setInviteRole] = useState<'EDITOR' | 'COACH'>('EDITOR');
     const [inviteError, setInviteError] = useState('');
     const [isInviting, setIsInviting] = useState(false);
     const [activeTab, setActiveTab] = useState<'members' | 'data'>('members');
@@ -86,7 +85,7 @@ export default function ProjectSettingsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     email: inviteEmail,
-                    role: inviteRole,
+                    role: 'EDITOR',
                 }),
             });
 
@@ -100,7 +99,6 @@ export default function ProjectSettingsPage() {
             await loadMembers();
             setShowInviteModal(false);
             setInviteEmail('');
-            setInviteRole('EDITOR');
         } catch (error: any) {
             setInviteError(error.message);
         } finally {
@@ -130,7 +128,7 @@ export default function ProjectSettingsPage() {
             case 'EDITOR':
                 return '편집 권한';
             case 'COACH':
-                return '코멘트 및 피드백';
+                return '기존 코치 역할(읽기 전용)';
             case 'ADMIN':
                 return '관리 권한';
             default:
@@ -289,27 +287,9 @@ export default function ProjectSettingsPage() {
                                     </button>
                                 </div>
 
-                                {/* 역할 설명 */}
                                 <div className="card bg-blue-500/10 border border-blue-500/30">
-                                    <h3 className="font-semibold text-white mb-3">역할 안내</h3>
-                                    <div className="grid grid-cols-2 gap-3 text-sm">
-                                        <div>
-                                            <span className="font-medium text-purple-300">👑 OWNER</span>
-                                            <p className="text-gray-400">모든 권한 (삭제, 멤버 관리)</p>
-                                        </div>
-                                        <div>
-                                            <span className="font-medium text-blue-300">✏️ EDITOR</span>
-                                            <p className="text-gray-400">데이터 편집 및 수정</p>
-                                        </div>
-                                        <div>
-                                            <span className="font-medium text-green-300">💬 COACH</span>
-                                            <p className="text-gray-400">코멘트 및 피드백만 가능</p>
-                                        </div>
-                                        <div>
-                                            <span className="font-medium text-red-300">⚙️ ADMIN</span>
-                                            <p className="text-gray-400">설정 및 멤버 관리</p>
-                                        </div>
-                                    </div>
+                                    <h3 className="font-semibold text-white mb-3">팀원 권한 안내</h3>
+                                    <p className="text-sm text-gray-400">이 화면에서는 편집자만 초대할 수 있습니다. 담당 멘토의 편집 권한은 멘토 배정 상태에 따라 결정됩니다.</p>
                                 </div>
 
                                 {/* 팀원 목록 */}
@@ -493,19 +473,7 @@ export default function ProjectSettingsPage() {
                                 </p>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">
-                                    역할 *
-                                </label>
-                                <select
-                                    value={inviteRole}
-                                    onChange={(e) => setInviteRole(e.target.value as 'EDITOR' | 'COACH')}
-                                    className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white"
-                                >
-                                    <option value="EDITOR">✏️ Editor - 편집 권한</option>
-                                    <option value="COACH">💬 Coach - 코멘트만</option>
-                                </select>
-                            </div>
+                            <p className="text-sm text-gray-300">팀원은 편집 권한으로 초대됩니다. 멘토 배정은 별도 메뉴에서 관리합니다.</p>
 
                             <div className="flex space-x-3 pt-4">
                                 <button

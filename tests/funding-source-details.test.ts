@@ -65,7 +65,7 @@ describe('WS-16 세부항목', () => {
         expect(values('정부자금')).toContain('기존 지원');
         expect(values('정부자금')).toContain('추가 지원');
         expect(values(categories[3])).toContain('TIPS 일반 R&D');
-        expect(totals()).toEqual(['1,670.5', '500', '20']);
+        expect(totals()).toEqual(['1,670,500', '500,000', '20,000']);
         await save();
         expect(sources.map(({ id: _id, ...row }) => row)).toEqual(before.map(({ id: _id, ...row }) => row));
         expect(JSON.parse(fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')![1].body).plans).toBeUndefined();
@@ -76,15 +76,15 @@ describe('WS-16 세부항목', () => {
         for (const category of categories) await click(button(`${category} 세부항목 추가`));
         expect(group('정부자금').querySelectorAll('tr')).toHaveLength(3);
         await input('정부자금', 3, 1, '출처', '신규 지원');
-        await input('정부자금', 3, 1, '금액', '100.25');
-        await input('정부자금', 3, 2, '금액', '200');
-        await input('정부자금', 3, 3, '금액', '300');
-        expect(totals()).toEqual(['1,770.75', '700', '320']);
+        await input('정부자금', 3, 1, '금액', '100250');
+        await input('정부자금', 3, 2, '금액', '200000');
+        await input('정부자금', 3, 3, '금액', '300000');
+        expect(totals()).toEqual(['1,770,750', '700,000', '320,000']);
         await save();
         expect(sources).toHaveLength(9);
         expect(sources.map(row => row.order)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
         expect(values('정부자금')).toContain('신규 지원');
-        expect(totals()).toEqual(['1,770.75', '700', '320']);
+        expect(totals()).toEqual(['1,770,750', '700,000', '320,000']);
     });
 
     it('삭제 취소 시 내용이 유지되고 확인 후에는 선택한 세부행만 제거한다', async () => {
@@ -96,7 +96,7 @@ describe('WS-16 세부항목', () => {
         expect(group('정부자금').querySelectorAll('tr')).toHaveLength(1);
         expect(values('정부자금')).not.toContain('기존 지원');
         expect(values('정부자금')).toContain('추가 지원');
-        expect(totals()).toEqual(['370.5', '0', '20']);
+        expect(totals()).toEqual(['370,500', '0', '20,000']);
         await save();
         expect(sources).toHaveLength(2);
         expect(values(categories[3])).toContain('TIPS 일반 R&D');
@@ -124,7 +124,7 @@ describe('WS-16 세부항목', () => {
         expect(values('협력자금')).toContain('기존 지원');
         await save();
         expect(sources).toHaveLength(5);
-        expect(totals()).toEqual(['4,270.5', '1,500', '20']);
+        expect(totals()).toEqual(['4,270,500', '1,500,000', '20,000']);
     });
 
     it('읽기 전용 권한에서는 추가·삭제·입력·저장을 비활성화한다', async () => {

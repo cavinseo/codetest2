@@ -73,6 +73,42 @@ async function fill(selector: string, value: string) {
 
 const displayedRequirements = () => [...container.querySelectorAll('tbody tr')].map(row => row.children[1].textContent);
 
+async function editRequirement(text: string) {
+    const row = [...container.querySelectorAll('tbody tr')].find(row => row.children[1].textContent === text)!;
+    expect(row).toBeTruthy();
+    await act(async () => { row.querySelector<HTMLButtonElement>('button[title="수정"]')!.click(); });
+}
+
+it('처음 불러올 때도 2차→1차 그룹으로 묶어 가운데 병합하고 저장 시 모든 ID와 내용을 보존한다', async () => {
+    savedRequirements = [
+        { id: 'r1', category: '정비', subcategory: '무인 공장', requirement: '정비 첫째', order: 0 },
+        { id: 'r2', category: '품질', subcategory: '신뢰', requirement: '품질 첫째', order: 1 },
+        { id: 'r3', category: '운용', subcategory: '무인 공장', requirement: '운용 첫째', order: 2 },
+        { id: 'r4', category: '정비', subcategory: '무인 공장', requirement: '정비 둘째', order: 3 },
+        { id: 'r5', category: '정비', subcategory: '신뢰', requirement: '정비 셋째', order: 4 },
+    ];
+    const original = structuredClone(savedRequirements);
+    await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
+    expect(displayedRequirements()).toEqual(['정비 첫째', '정비 둘째', '운용 첫째', '품질 첫째', '정비 셋째']);
+    expect(posted).toHaveLength(0);
+    const rows = [...container.querySelectorAll('tbody tr')];
+    expect(rows[0].querySelector<HTMLTableCellElement>('td[data-group-level="primary"]')?.rowSpan).toBe(2);
+    expect(rows[0].querySelector<HTMLTableCellElement>('td[data-group-level="secondary"]')?.rowSpan).toBe(3);
+    expect(rows[2].querySelector<HTMLTableCellElement>('td[data-group-level="primary"]')?.rowSpan).toBe(1);
+    expect(rows[2].querySelector('td[data-group-level="secondary"]')).toBeNull();
+    for (const cell of container.querySelectorAll('td[data-group-level]')) {
+        expect(cell.classList.contains('align-middle')).toBe(true);
+        expect(cell.classList.contains('text-center')).toBe(true);
+    }
+    await editRequirement('정비 둘째');
+    expect(container.querySelector<HTMLInputElement>('input[list="cat_autocomplete"]')?.value).toBe('정비');
+    expect(container.querySelector<HTMLInputElement>('input[list="subcat_autocomplete"]')?.value).toBe('무인 공장');
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="취소"]')!.click(); });
+    await act(async () => { buttonByText('저장').click(); });
+    expect(savedRequirements.map(row => row.id)).toEqual(['r1', 'r4', 'r3', 'r2', 'r5']);
+    for (const row of original) expect(savedRequirements.find(saved => saved.id === row.id)).toEqual({ ...row, order: savedRequirements.findIndex(saved => saved.id === row.id) });
+});
+
 it('미분류 항목을 분류한 뒤에도 그룹값은 유지하고 중복 그룹명은 한 번만 표시한다', async () => {
     savedRequirements = [
         { id: 'req_1', category: '미분류', subcategory: '', requirement: '첫째', order: 0 },
@@ -90,8 +126,8 @@ it('미분류 항목을 분류한 뒤에도 그룹값은 유지하고 중복 그
         [...row.querySelectorAll<HTMLTableCellElement>('td[data-group-level]')].map(cell => [cell.dataset.groupLevel, cell.textContent?.trim(), cell.rowSpan]));
     expect(visibleGroups()).toEqual([
         [['primary', '새 1차', 1], ['secondary', '새 2차', 1]],
-        [['primary', '미분류', 3], ['secondary', '—', 1]],
-        [['secondary', '기존 2차', 2]],
+        [['primary', '미분류', 1], ['secondary', '—', 1]],
+        [['primary', '미분류', 2], ['secondary', '기존 2차', 2]],
         [],
     ]);
     expect(savedRequirements.map(row => [row.id, row.category, row.subcategory])).toEqual([
@@ -105,8 +141,8 @@ it('미분류 항목을 분류한 뒤에도 그룹값은 유지하고 중복 그
     await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
     expect(visibleGroups()).toEqual([
         [['primary', '새 1차', 1], ['secondary', '새 2차', 1]],
-        [['primary', '미분류', 3], ['secondary', '—', 1]],
-        [['secondary', '기존 2차', 2]],
+        [['primary', '미분류', 1], ['secondary', '—', 1]],
+        [['primary', '미분류', 2], ['secondary', '기존 2차', 2]],
         [],
     ]);
 });
@@ -147,7 +183,7 @@ it('2번 항목을 기존 그룹으로 옮겨도 편집칸과 다른 그룹을 �
 
 it('편집 중 저장하면 새 그룹으로 묶고 저장한 순서를 다시 불러와도 유지한다', async () => {
     await mountMixedGroups();
-    await act(async () => { container.querySelectorAll<HTMLButtonElement>('button[title="수정"]')[2].click(); });
+    await editRequirement('쉬운 입력');
     await fill('input[list="cat_autocomplete"]', '안정성');
     await fill('input[list="subcat_autocomplete"]', '보호');
     await act(async () => { buttonByText('저장').click(); });
@@ -171,7 +207,7 @@ it.each([true, false])('새 요구사항을 추가하고 저장하면 기존 그
         await act(async () => { container.querySelector('input[placeholder="1차 그룹 *"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
     }
     await act(async () => { buttonByText('저장').click(); });
-    expect(savedRequirements.map(row => row.requirement)).toEqual(['빠른 주문', '빠른 조회', '새로운 빠른 검색', '쉬운 입력', '안전한 보관', '오류 방지']);
+    expect(savedRequirements.map(row => row.requirement)).toEqual(['빠른 주문', '빠른 조회', '새로운 빠른 검색', '안전한 보관', '오류 방지', '쉬운 입력']);
     expect(savedRequirements.map(row => row.order)).toEqual([0, 1, 2, 3, 4, 5]);
     expect(savedRequirements.filter(row => mixedGroups.some(existing => existing.id === row.id))).toHaveLength(5);
     expect(displayedRequirements()).toEqual(savedRequirements.map(row => row.requirement));
@@ -179,7 +215,7 @@ it.each([true, false])('새 요구사항을 추가하고 저장하면 기존 그
 
 it('저장이 실패하면 편집 내용과 기존 순서를 남기고 재시도할 수 있다', async () => {
     await mountMixedGroups();
-    await act(async () => { container.querySelectorAll<HTMLButtonElement>('button[title="수정"]')[2].click(); });
+    await editRequirement('쉬운 입력');
     await fill('input[list="cat_autocomplete"]', '안정성');
     saveStatus = 500;
     await act(async () => { buttonByText('저장').click(); });
@@ -192,10 +228,10 @@ it('저장이 실패하면 편집 내용과 기존 순서를 남기고 재시도
 
 it('행의 편집 확정 버튼으로 그룹을 바꿔도 바로 같은 그룹에 모인다', async () => {
     await mountMixedGroups();
-    await act(async () => { container.querySelectorAll<HTMLButtonElement>('button[title="수정"]')[2].click(); });
+    await editRequirement('쉬운 입력');
     await fill('input[list="cat_autocomplete"]', '안정성');
     await fill('input[list="subcat_autocomplete"]', '보호');
-    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="저장"]')!.click(); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="편집 반영"]')!.click(); });
     expect(displayedRequirements()).toEqual(['빠른 주문', '빠른 조회', '안전한 보관', '쉬운 입력', '오류 방지']);
     await act(async () => { buttonByText('저장').click(); });
     expect(savedRequirements.map(row => row.id)).toEqual(['req_1', 'req_5', 'req_2', 'req_3', 'req_4']);
@@ -255,5 +291,80 @@ describe('고객요구사항 인라인 편집과 저장', () => {
         const sent = (posted[0].requirements as Array<{ id: string; requirement: string }>);
         const edited = sent.find((item) => item.id === 'req_1');
         expect(edited?.requirement, '편집한 문구가 그대로 전송돼야 합니다.').toBe('아주 빠른 주문');
+    });
+
+    it('다른 행으로 편집을 옮겨도 기존 입력을 보존하고 함께 저장한다', async () => {
+        await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
+        await editRequirement('빠른 주문');
+        await fill('tbody tr input', '빠르게 주문');
+        await editRequirement('안전한 보관');
+        await fill('tbody tr input', '안전하게 보관');
+        await act(async () => { buttonByText('저장').click(); });
+        expect(savedRequirements.map(row => row.requirement)).toEqual(['빠르게 주문', '안전하게 보관']);
+    });
+
+    it('기존 행의 한글 조합 중 Enter는 편집을 확정하지 않는다', async () => {
+        await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
+        await editRequirement('빠른 주문');
+        const input = container.querySelector<HTMLInputElement>('tbody tr input')!;
+        await act(async () => {
+            input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, keyCode: 229, bubbles: true }));
+        });
+        expect(container.contains(input)).toBe(true);
+    });
+
+    it('새 행의 한글 조합 중 Enter는 행을 추가하지 않는다', async () => {
+        await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
+        await act(async () => { buttonByText('행 추가').click(); });
+        await fill('input[placeholder="항목 * (Enter로 추가)"]', '새 요구사항');
+        await fill('input[placeholder="1차 그룹 *"]', '품질');
+        const input = container.querySelector<HTMLInputElement>('input[placeholder="1차 그룹 *"]')!;
+        await act(async () => {
+            input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, keyCode: 229, bubbles: true }));
+        });
+        expect(container.contains(input)).toBe(true);
+        expect(savedRequirements).toEqual(requirements);
+    });
+
+    it.each(['tbody tr input', 'input[list="cat_autocomplete"]'])('기존 행의 필수값을 비우면 저장하지 않는다 (%s)', async selector => {
+        await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
+        await editRequirement('빠른 주문');
+        await fill(selector, '   ');
+        await act(async () => { buttonByText('저장').click(); });
+        expect(posted).toHaveLength(0);
+        expect(container.textContent).toContain('1차 그룹과 요구사항을 입력하세요.');
+    });
+
+    it('마지막 항목 삭제도 명시적 전체 삭제로 저장한다', async () => {
+        savedRequirements = [requirements[0]];
+        await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
+        await act(async () => { container.querySelector<HTMLButtonElement>('button[title="삭제"]')!.click(); });
+        expect(buttonByText('저장').disabled).toBe(false);
+        await act(async () => { buttonByText('저장').click(); });
+        expect(posted[0]).toMatchObject({ requirements: [], deleteAll: true });
+        expect(savedRequirements).toEqual([]);
+    });
+
+    it('저장하지 않은 입력이 있을 때 브라우저 이탈 경고를 요청한다', async () => {
+        await act(async () => { root.render(createElement(RequirementsTable, { projectId: 'fixture-project' })); });
+        await editRequirement('빠른 주문');
+        await fill('tbody tr input', '수정 중인 요구사항');
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('상위 워크시트에 미저장 상태를 알리고 저장 성공 후 해제한다', async () => {
+        const dirtyChanges: boolean[] = [];
+        await act(async () => { root.render(createElement(RequirementsTable, {
+            projectId: 'fixture-project', onDirtyChange: dirty => dirtyChanges.push(dirty),
+        })); });
+        await editRequirement('빠른 주문');
+        await fill('tbody tr input', '저장 전 수정');
+        expect(dirtyChanges.at(-1)).toBe(true);
+        await act(async () => { buttonByText('저장').click(); });
+        expect(dirtyChanges.at(-1)).toBe(false);
     });
 });

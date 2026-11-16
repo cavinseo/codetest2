@@ -1,6 +1,7 @@
 // 워크시트 연계 API의 원본 조회와 저장 후 재조회 데이터 보존을 검증한다.
 import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { worksheetRevision } from '../lib/worksheet-revision';
 
 const db = vi.hoisted(() => {
     const state: Record<string, Array<Record<string, unknown>>> = {};
@@ -9,7 +10,7 @@ const db = vi.hoisted(() => {
         deleteMany: vi.fn(async () => { state[name] = []; }),
         createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => { state[name] = data.map((row, index) => ({ id: name + index, ...row })); }),
     });
-    const models = { targetSpec: model('targetSpec'), specFunction: model('specFunction'), techTreeEntry: model('techTreeEntry'), improvementItem: model('improvementItem'), technicalCharacteristic: model('technicalCharacteristic'), fundingPlan: model('fundingPlan'), fundingSource: model('fundingSource'), salesEstimate: model('salesEstimate') };
+    const models = { customerRequirement: model('customerRequirement'), targetSpec: model('targetSpec'), specFunction: model('specFunction'), techTreeEntry: model('techTreeEntry'), improvementItem: model('improvementItem'), technicalCharacteristic: model('technicalCharacteristic'), fundingPlan: model('fundingPlan'), fundingSource: model('fundingSource'), salesEstimate: model('salesEstimate') };
     return { state, models };
 });
 vi.mock('../lib/prisma', () => ({ prisma: { ...db.models, $transaction: async (callback: ((client: typeof db.models) => unknown) | Promise<unknown>[]) => typeof callback === 'function' ? callback(db.models) : Promise.all(callback) } }));
@@ -24,7 +25,7 @@ const target = await import('../app/api/projects/[id]/target-spec/route');
 const funding = await import('../app/api/projects/[id]/funding/route');
 const params = { params: Promise.resolve({ id: 'project' }) };
 const get = () => new NextRequest('http://localhost/api/projects/project/worksheet');
-const post = (body: unknown) => new NextRequest('http://localhost/api/projects/project/worksheet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const post = (body: unknown) => new NextRequest('http://localhost/api/projects/project/worksheet', { method: 'POST', headers: { 'Content-Type': 'application/json', 'If-Match': worksheetRevision(db.state.targetSpec || []) }, body: JSON.stringify(body) });
 beforeEach(() => {
     for (const key of Object.keys(db.state)) delete db.state[key];
     vi.clearAllMocks();

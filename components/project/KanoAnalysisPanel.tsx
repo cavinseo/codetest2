@@ -6,6 +6,7 @@
 import Kano2DChart from '@/components/Kano2DChart';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import KanoRespondentTable from '@/components/project/KanoRespondentTable';
+import TimkoCoefficientChart from '@/components/project/TimkoCoefficientChart';
 
 export interface KanoAnalysisResult {
     requirementId: string;
@@ -37,6 +38,10 @@ export type KanoAnalysisViewMode = 'list' | 'charts' | 'respondents';
 
 export interface KanoAnalysisPanelProps {
     projectId: string;
+    /** 가중치 저장은 담당 멘토만 한다. 서버 판정을 받지 못했으면 읽기 전용으로 둔다. */
+    canEdit?: boolean;
+    /** 응답 삭제 권한. 없으면 리셋·응답자별 삭제 버튼을 숨긴다. */
+    canDeleteResponses?: boolean;
     analysis: KanoAnalysisData | null;
     requirements: Array<{ id: string; requirement: string }>;
     respondentData: any[];
@@ -46,13 +51,18 @@ export interface KanoAnalysisPanelProps {
     onGoToManage: () => void;
     handleResetResponses: () => void;
     isResettingResponses: boolean;
+    /** 삭제가 진행되는 동안 보기 전환을 막아, 지우는 중인 목록에서 다른 조작이 섞이지 않게 한다. */
+    isDeletingCurrentProject?: boolean;
+    /** 응답자별 보기에서 고른 응답자(없으면 전체)의 응답을 지운다. */
+    onDeleteRespondents?: (respondentEmails?: string[]) => Promise<void>;
     /** 집계표에서 가중치를 저장한 뒤 다시 불러온다. */
     loadData: () => Promise<void>;
 }
 
 export default function KanoAnalysisPanel({
-    projectId, analysis, requirements, respondentData, analysisViewMode, setAnalysisViewMode,
-    onGoToManage, handleResetResponses, isResettingResponses, loadData,
+    projectId, canEdit = false, canDeleteResponses = false, analysis, requirements, respondentData,
+    analysisViewMode, setAnalysisViewMode, onGoToManage, handleResetResponses, isResettingResponses,
+    isDeletingCurrentProject = false, onDeleteRespondents, loadData,
 }: KanoAnalysisPanelProps) {
     const getRequirementInfo = (reqId: string) => requirements.find(r => r.id === reqId);
 
@@ -87,7 +97,7 @@ export default function KanoAnalysisPanel({
                         ))}
                     </div>
 
-                    <div className="flex justify-end">
+                    {canDeleteResponses && <div className="flex justify-end">
                         <button
                             onClick={handleResetResponses}
                             disabled={isResettingResponses || analysis.totalResponses === 0}
@@ -102,13 +112,14 @@ export default function KanoAnalysisPanel({
                             )}
                             응답 데이터 리셋
                         </button>
-                    </div>
+                    </div>}
 
                     {/* 보기 토글 */}
                     <div className="flex justify-center">
                         <div className="flex gap-1 p-1 bg-white/[0.04] border border-white/[0.06] rounded-xl flex-wrap">
                             <button
                                 onClick={() => setAnalysisViewMode('charts')}
+                                disabled={isDeletingCurrentProject}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${analysisViewMode === 'charts' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}`}
                             >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -119,6 +130,7 @@ export default function KanoAnalysisPanel({
                             </button>
                             <button
                                 onClick={() => setAnalysisViewMode('respondents')}
+                                disabled={isDeletingCurrentProject}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${analysisViewMode === 'respondents' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}`}
                             >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -154,8 +166,13 @@ export default function KanoAnalysisPanel({
                                     />
                                 </div>
                             </div>
+                            <TimkoCoefficientChart analysis={analysis.requirements.map(req => ({
+                                ...req,
+                                requirementName: getRequirementInfo(req.requirementId)?.requirement
+                            }))} />
+                            {/* 집계표는 projectId 가 없으면 가중치를 저장하지 않는 읽기 전용으로 그린다. */}
                             <KanoAggregationTable
-                                projectId={projectId}
+                                projectId={canEdit ? projectId : undefined}
                                 onWeightsSaved={loadData}
                                 analysis={analysis.requirements.map(req => ({
                                     ...req,
@@ -168,9 +185,13 @@ export default function KanoAnalysisPanel({
                     {/* 집계표 표 뷰 */}
                     {/* 제출자별 보기 */}
                     {analysisViewMode === 'respondents' && (
-                        <KanoRespondentTable 
+                        <KanoRespondentTable
+                            key={projectId}
                             respondents={respondentData}
                             requirements={requirements}
+                            canDelete={canDeleteResponses}
+                            isDeleting={isResettingResponses}
+                            onDelete={onDeleteRespondents}
                         />
                     )}
                 </>

@@ -13,23 +13,23 @@ function normalizeGroupValue(value: string | null | undefined): string {
     return value?.trim() ?? '';
 }
 
-// 처음 등장한 1차·2차 그룹 순서로 항목을 모으고 저장할 행 순서를 다시 매긴다.
+// 2차 그룹이 상위 묶음이므로 그 안에 1차 그룹과 항목을 모으되 첫 등장 순서를 유지한다.
 export function groupRequirementsByCategory<T extends RequirementGroupingRowLike>(rows: T[]): T[] {
-    const primaryGroups = new Map<string, Map<string, T[]>>();
+    const secondaryGroups = new Map<string, Map<string, T[]>>();
     for (const row of sortRequirementsByWorksheetOrder(rows)) {
         const primary = normalizeGroupValue(row.category);
         const secondary = normalizeGroupValue(row.subcategory);
-        let secondaryGroups = primaryGroups.get(primary);
-        if (!secondaryGroups) {
-            secondaryGroups = new Map<string, T[]>();
-            primaryGroups.set(primary, secondaryGroups);
+        let primaryGroups = secondaryGroups.get(secondary);
+        if (!primaryGroups) {
+            primaryGroups = new Map<string, T[]>();
+            secondaryGroups.set(secondary, primaryGroups);
         }
-        const group = secondaryGroups.get(secondary);
+        const group = primaryGroups.get(primary);
         if (group) group.push(row);
-        else secondaryGroups.set(secondary, [row]);
+        else primaryGroups.set(primary, [row]);
     }
-    return [...primaryGroups.values()]
-        .flatMap(secondaryGroups => [...secondaryGroups.values()].flat())
+    return [...secondaryGroups.values()]
+        .flatMap(primaryGroups => [...primaryGroups.values()].flat())
         .map((row, order) => ({ ...row, order }));
 }
 
@@ -45,17 +45,18 @@ export function getRequirementGroupSpans<T extends RequirementGroupingRowLike & 
         const previous = rows[index - 1];
         const primary = normalizeGroupValue(row.category);
         const secondary = normalizeGroupValue(row.subcategory);
-        const primaryStarts = !previous || previous.id === editingId || normalizeGroupValue(previous.category) !== primary;
-        const secondaryStarts = primaryStarts || normalizeGroupValue(previous.subcategory) !== secondary;
+        const secondaryStarts = !previous || previous.id === editingId || normalizeGroupValue(previous.subcategory) !== secondary;
+        const primaryStarts = secondaryStarts || normalizeGroupValue(previous.category) !== primary;
         if (primaryStarts) {
             let end = index + 1;
-            while (end < rows.length && rows[end].id !== editingId && normalizeGroupValue(rows[end].category) === primary) end++;
+            while (end < rows.length && rows[end].id !== editingId
+                && normalizeGroupValue(rows[end].subcategory) === secondary
+                && normalizeGroupValue(rows[end].category) === primary) end++;
             spans[index].primary = end - index;
         }
         if (secondaryStarts) {
             let end = index + 1;
             while (end < rows.length && rows[end].id !== editingId
-                && normalizeGroupValue(rows[end].category) === primary
                 && normalizeGroupValue(rows[end].subcategory) === secondary) end++;
             spans[index].secondary = end - index;
         }

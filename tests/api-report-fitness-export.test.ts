@@ -11,7 +11,7 @@ const { GET } = await import('../app/api/projects/[id]/export/route');
 beforeEach(() => vi.clearAllMocks());
 
 it.each([null, { marketsJson: '[{"id":"market","name":"제조시장","subSegments":[{"id":"customer","name":"고객"}]}]', matrixJson: '{"attribute":{"market":{"customer":"H"}}}' }])('WS-4 저장 여부와 평가 데이터를 원본 그대로 전달한다 (%j)', async fitnessMatrix => {
-    findUnique.mockResolvedValue({ id: 'project', name: '프로젝트', fitnessMatrix });
+    findUnique.mockResolvedValue({ id: 'project', name: '프로젝트', fitnessMatrix, requirements: [], techTreeEntries: [], improvementItems: [], techRoadmaps: [], targetSpecs: [] });
     const response = await GET(new NextRequest('http://localhost/api/projects/project/export'), { params: Promise.resolve({ id: 'project' }) });
     const exported = await response.json();
     expect(response.status).toBe(200);

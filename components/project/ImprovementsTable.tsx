@@ -7,6 +7,7 @@ import { useToast } from '@/components/useToast';
 import WorksheetLoadError from './WorksheetLoadError';
 import { useWorksheetLoad } from './useWorksheetLoad';
 import { useUnsavedWorksheet } from './useUnsavedWorksheet';
+import { orderByRequirementIds } from '@/lib/requirement-order';
 import { buildImprovementSuggestionsFromQfd } from '@/lib/worksheet-links';
 
 interface ImprovementRow {
@@ -107,7 +108,7 @@ export default function ImprovementsTable({ projectId }: Props) {
     const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-    const getQfdSuggestions = (source = qfdData?.requirements || []) => buildImprovementSuggestionsFromQfd(source);
+    const getQfdSuggestions = (source = qfdData?.requirements || []) => orderByRequirementIds(buildImprovementSuggestionsFromQfd(source), source.map((row: any) => ({ id: `qfd_${row.requirementId}` })), row => row.id).map((row, order) => ({ ...row, order }));
 
     const { loadFailed, isReady, retry } = useWorksheetLoad(projectId, async (isActive) => {
         const [data, qfdAnalysis] = await Promise.all([
@@ -370,7 +371,7 @@ export default function ImprovementsTable({ projectId }: Props) {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h2 className="text-xl font-display font-bold text-white">[WS-11] 개선포인트도출</h2>
-                    <p className="mt-1 text-sm text-gray-500">고객니즈 우선순위와 개선 기능, 성능향상 항목을 연결합니다.</p>
+                    <p className="mt-1 text-sm text-gray-500">고객요구사항 도출표 순서로 고객니즈와 개선 기능을 연결합니다. 번호는 표시 순서이며 QFD 우선순위는 분석 결과에서 확인합니다.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <button onClick={handleImportFromQFD} className="btn-secondary flex items-center gap-1.5 border-cyan-500/30 text-sm text-cyan-300 hover:bg-cyan-500/10">
@@ -420,14 +421,21 @@ export default function ImprovementsTable({ projectId }: Props) {
                         행 추가
                     </button>
                 </div>
-                <table className="w-full border-collapse text-sm">
+                <table className="w-full min-w-[700px] table-fixed border-collapse text-sm">
+                    <colgroup>
+                        <col className="w-[50px]" />
+                        <col />
+                        <col className="w-[16%]" />
+                        <col className="w-[16%]" />
+                        <col className="w-[50px]" />
+                    </colgroup>
                     <thead>
                         <tr className="bg-white/[0.04]">
-                            <th className="w-[50px] border border-white/[0.06] p-3 text-center text-gray-400">순위</th>
+                            <th className="border border-white/[0.06] p-3 text-center text-gray-400">번호</th>
                             <th className="border border-white/[0.06] p-3 text-center font-semibold text-white">고객니즈</th>
-                            <th className="min-w-[150px] border border-white/[0.06] p-3 text-center font-semibold text-cyan-300">경쟁사대비 수준향상율</th>
-                            <th className="min-w-[120px] border border-white/[0.06] p-3 text-center font-semibold text-emerald-300">개발향상비중</th>
-                            <th className="w-[40px] border border-white/[0.06] p-3" />
+                            <th className="border border-white/[0.06] p-3 text-center font-semibold text-cyan-300">경쟁사대비 수준향상율</th>
+                            <th className="border border-white/[0.06] p-3 text-center font-semibold text-emerald-300">개발향상비중</th>
+                            <th className="border border-white/[0.06] p-3" />
                         </tr>
                     </thead>
                     <tbody>
@@ -476,7 +484,7 @@ export default function ImprovementsTable({ projectId }: Props) {
                 <table className="w-full border-collapse text-sm">
                     <thead>
                         <tr className="bg-white/[0.04]">
-                            <th className="w-[50px] border border-white/[0.06] p-3 text-center text-gray-400">순위</th>
+                            <th className="w-[50px] border border-white/[0.06] p-3 text-center text-gray-400">번호</th>
                             <th className="min-w-[360px] border border-white/[0.06] p-3 text-center font-semibold text-white">개선포인트 우선순위(고객니즈)</th>
                             <th className="min-w-[220px] border border-white/[0.06] p-3 text-center font-semibold text-cyan-300">추가 기능</th>
                             <th className="min-w-[220px] border border-white/[0.06] p-3 text-center font-semibold text-emerald-300">성능향상</th>

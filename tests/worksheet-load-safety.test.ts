@@ -118,7 +118,7 @@ describe.each(worksheets)('$endpoint 조회 실패 보호', ({ Component, endpoi
     it.each(['http', 'network', 'json', 'missing-rows'])('%s 오류 뒤 저장을 차단하고 재시도로 기존 행을 복구한다', async failure => {
         let recovered = false;
         fetchMock.mockImplementation(async (url: string) => {
-            if (!url.endsWith(endpoint)) return { ok: true, json: async () => ({ items: [] }) };
+            if (!url.endsWith(endpoint)) return { ok: true, json: async () => ({ items: [], requirements: [] }) };
             if (recovered) return { ok: true, json: async () => ({ rows: [row], suggestions: [], asIsRows: [] }) };
             if (failure === 'network') throw new Error('offline');
             return { ok: failure !== 'http', json: async () => {
@@ -140,14 +140,14 @@ describe.each(worksheets)('$endpoint 조회 실패 보호', ({ Component, endpoi
     });
 
     it('정상 조회한 빈 워크시트는 편집과 저장을 허용한다', async () => {
-        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ rows: [], items: [], suggestions: [], asIsRows: [] }) });
+        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ rows: [], items: [], requirements: [], suggestions: [], asIsRows: [] }) });
         await act(async () => root.render(createElement(Component, { projectId: 'project-a' })));
         expect(button('저장')?.disabled).toBe(false);
         expect(container.querySelector('[role="alert"]')).toBeNull();
     });
 
     it('프로젝트 전환 후 새 조회가 끝날 때까지 이전 프로젝트를 저장할 수 없다', async () => {
-        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ rows: [row], items: [], suggestions: [], asIsRows: [] }) });
+        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ rows: [row], items: [], requirements: [], suggestions: [], asIsRows: [] }) });
         await act(async () => root.render(createElement(Component, { projectId: 'project-a' })));
         fetchMock.mockImplementation(() => new Promise(() => {}));
         await act(async () => root.render(createElement(Component, { projectId: 'project-b' })));

@@ -85,6 +85,7 @@ export const reportDraftSchema = z.object({
     free: freeSchema,
     document: reportDocumentSchema.nullable(),
     previewNeedsRefresh: z.boolean().default(false),
+    sourceRevision: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     worksheetAnalysis: worksheetAnalysisSchema.optional(),
 }).strict();
 export const saveReportSchema = z.object({ version: z.number().int().nonnegative(), draft: reportDraftSchema }).strict();

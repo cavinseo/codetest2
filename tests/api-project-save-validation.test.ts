@@ -1,6 +1,7 @@
 // 프로젝트 스펙과 적합도 저장 API의 입력 검증을 확인한다.
 import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { worksheetRevision } from '../lib/worksheet-revision';
 
 const mocks = vi.hoisted(() => ({
     access: vi.fn(),
@@ -29,7 +30,7 @@ const params = { params: Promise.resolve({ id: 'project-1' }) };
 function requestFor(path: string, body: unknown) {
     return new NextRequest(`http://localhost${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(path.endsWith('/spec') ? { 'If-Match': worksheetRevision([{ id: 'saved-spec', name: '핵심 기능' }]) } : {}) },
         body: JSON.stringify(body),
     });
 }
@@ -62,6 +63,15 @@ it.each([
     ['배열이 아닌 스펙 목록', { specFunctions: {} }],
     ['허용되지 않은 스펙 단계', { specFunctions: [{ level: 'UNKNOWN', name: '기능', order: 0 }] }],
     ['이름이 비어 있는 스펙', { specFunctions: [{ level: 'CORE', name: '   ', order: 0 }] }],
+    ['존재하지 않는 상위 스펙', { specFunctions: [{ id: 'sub', level: 'SUB', parentId: 'missing', name: '세부 기능', order: 0 }] }],
+    ['잘못된 상위 단계', { specFunctions: [
+        { id: 'core', level: 'CORE', name: '핵심', order: 0 },
+        { id: 'detail', level: 'DETAIL', parentId: 'core', name: '세세부', order: 1 },
+    ] }],
+    ['중복 스펙 ID', { specFunctions: [
+        { id: 'same', level: 'CORE', name: '핵심', order: 0 },
+        { id: 'same', level: 'CORE', name: '핵심 둘', order: 1 },
+    ] }],
 ])('유효하지 않은 %s은 스펙 데이터를 바꾸지 않고 400을 반환한다', async (_name, body) => {
     const response = await saveSpecs(requestFor('/api/projects/project-1/spec', body), params);
 
@@ -92,6 +102,43 @@ it('유효한 스펙 저장은 기존 단계별 저장 동작을 유지한다', 
             order: 0,
         },
     });
+});
+
+it('빈 스펙 목록으로 초기화하면 저장된 스펙도 삭제한다', async () => {
+    mocks.findSpecs.mockResolvedValue([]);
+
+    const request = requestFor('/api/projects/project-1/spec', {
+        specFunctions: [],
+    });
+    request.headers.set('If-Match', worksheetRevision([]));
+    const response = await saveSpecs(request, params);
+
+    expect(response.status).toBe(200);
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.deleteSpecs).toHaveBeenCalledWith({ where: { projectId: 'project-1' } });
+    expect(mocks.createSpec).not.toHaveBeenCalled();
+    expect((await response.json()).specFunctions).toEqual([]);
+});
+
+it('오래된 스펙 revision으로 저장하면 기존 행을 지우지 않는다', async () => {
+    const request = requestFor('/api/projects/project-1/spec', { specFunctions: [] });
+    request.headers.set('If-Match', 'outdated');
+
+    const response = await saveSpecs(request, params);
+
+    expect(response.status).toBe(409);
+    expect(mocks.deleteSpecs).not.toHaveBeenCalled();
+    expect(mocks.createSpec).not.toHaveBeenCalled();
+});
+
+it('스펙 revision 없이 전체 교체를 요청하면 저장을 거부한다', async () => {
+    const request = requestFor('/api/projects/project-1/spec', { specFunctions: [] });
+    request.headers.delete('If-Match');
+
+    const response = await saveSpecs(request, params);
+
+    expect(response.status).toBe(428);
+    expect(mocks.deleteSpecs).not.toHaveBeenCalled();
 });
 
 it.each([

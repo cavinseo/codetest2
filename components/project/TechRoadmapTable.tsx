@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { orderByRequirementText } from '@/lib/requirement-order';
 import { getImprovementCustomerNeeds, mergeRoadmapWithCustomerNeeds, type RoadmapLinkRow } from '@/lib/worksheet-links';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
@@ -16,18 +17,24 @@ interface Props {
 
 export default function TechRoadmapTable({ projectId }: Props) {
     const [rows, setRows] = useState<FutureCustomerRow[]>([]);
+    const [revision, setRevision] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const { toast, showToast } = useToast();
 
     const { loadFailed, isReady, retry } = useWorksheetLoad(projectId, async (isActive) => {
-        const [data, improvementData] = await Promise.all([
+        const [data, improvementData, requirementData] = await Promise.all([
             fetch(`/api/projects/${projectId}/tech-roadmap`).then(response => { if (!response.ok) throw new Error('로드맵 조회 실패'); return response.json(); }),
             fetch(`/api/projects/${projectId}/improvements`).then((response) => response.ok ? response.json() : null).catch(() => null),
+            fetch(`/api/projects/${projectId}/requirements`).then(response => { if (!response.ok) throw new Error('요구사항 조회 실패'); return response.json(); }),
         ]);
         if (!isActive()) return;
         if (!Array.isArray(data?.rows)) throw new Error('로드맵 응답 형식 오류');
+        if (!Array.isArray(requirementData?.requirements)) throw new Error('요구사항 응답 형식 오류');
+        setRevision(data.revision ?? null);
         const saved = data.rows.map((row: RoadmapLinkRow) => ({ ...row, category: row.category ?? '', techItem: row.techItem ?? '', currentLevel: row.currentLevel ?? '', targetLevel: row.targetLevel ?? row.owner ?? '' }));
-        setRows(improvementData ? mergeRoadmapWithCustomerNeeds(saved, getImprovementCustomerNeeds(improvementData.items || [])) : saved);
+        const merged = improvementData ? mergeRoadmapWithCustomerNeeds(saved, getImprovementCustomerNeeds(improvementData.items || [])) : saved;
+        // 고객요구사항 도출표의 순서를 따라야 후속 워크시트와 보고서의 행 순서가 같아진다.
+        setRows(orderByRequirementText(merged, requirementData.requirements, row => row.category));
     });
 
     const { markSaved } = useUnsavedWorksheet(rows, isReady);
@@ -57,7 +64,7 @@ export default function TechRoadmapTable({ projectId }: Props) {
         try {
             const res = await fetch(`/api/projects/${projectId}/tech-roadmap`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({
                     rows: rows.map((row, idx) => ({
                         category: row.category,
@@ -75,11 +82,13 @@ export default function TechRoadmapTable({ projectId }: Props) {
             });
 
             if (!res.ok) {
-                showToast('저장에 실패했습니다.', 'error');
+                const error = await res.json().catch(() => null);
+                showToast(error?.error || '저장에 실패했습니다.', 'error');
                 return;
             }
 
             const data = await res.json();
+            setRevision(data.revision ?? null);
             setRows(data.rows.map((r: any) => ({
                 ...r,
                 id: r.id,

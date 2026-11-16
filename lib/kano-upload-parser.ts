@@ -5,6 +5,7 @@ import type { KanoAnswer } from '@/lib/kano-algorithm';
 export type ParsedKanoUploadAnswer = {
     respondentEmail: string;
     requirementIndex: number;
+    requirementId?: string;
     positiveAnswer: KanoAnswer;
     negativeAnswer: KanoAnswer;
 };
@@ -87,11 +88,11 @@ function firstAnswer(row: Record<string, unknown>, keys: string[]): KanoAnswer |
 }
 
 function isPositiveHeader(key: string): boolean {
-    return /\[?긍정\]?|positive|functional/i.test(key);
+    return /\[?긍정\]?|positive|functional|\[\d+-1\]/i.test(key);
 }
 
 function isNegativeHeader(key: string): boolean {
-    return /\[?부정\]?|negative|dysfunctional/i.test(key);
+    return /\[?부정\]?|negative|dysfunctional|\[\d+-2\]/i.test(key);
 }
 
 export function parseGoogleFormsResponseRows(

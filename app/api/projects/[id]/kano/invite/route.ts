@@ -72,8 +72,7 @@ export async function POST(
         });
 
         // 질문지 링크 생성
-        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-        const surveyLink = `${baseUrl}/survey/${token}`;
+        const surveyLink = new URL(`/survey/${token}`, request.nextUrl.origin).href;
 
         // 이메일 발송
         const emailSent = await sendSurveyInvitation(email, surveyLink, project.name);

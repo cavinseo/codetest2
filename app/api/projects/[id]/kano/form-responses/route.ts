@@ -120,7 +120,7 @@ export async function POST(
 ) {
     const params = await props.params;
     const projectId = params.id;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: true });
     if (accessResult instanceof NextResponse) return accessResult;
 
     if (!GOOGLE_FORMS_INTEGRATION_ENABLED) {

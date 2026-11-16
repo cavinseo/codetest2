@@ -4,17 +4,20 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 import { isValidFitnessMatrixJson } from '@/lib/fitness-matrix-data';
 import { fitnessMatrixBodySchema } from '@/lib/bulk-save-schemas';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api/fitness-matrix');
 
 // GET: 적합도 매트릭스 로드
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: false });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
         const record = await prisma.fitnessMatrix.findUnique({ where: { projectId } });
         return NextResponse.json({ fitnessMatrix: record });
     } catch (error) {
-        console.error('fitness-matrix GET error:', error);
+        log.error('fitness-matrix GET error', error);
         return NextResponse.json({ error: 'Failed to load fitness matrix' }, { status: 500 });
     }
 }
@@ -22,7 +25,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 // POST: 적합도 매트릭스 저장(upsert)
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: true });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
         // 형식(문자열·JSON)은 스키마로, 내용(시장·행렬 구조)은 isValidFitnessMatrixJson 으로 거른다.
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     } catch (error) {
         const invalidBody = invalidJsonBodyResponse(error);
         if (invalidBody) return invalidBody;
-        console.error('fitness-matrix POST error:', error);
+        log.error('fitness-matrix POST error', error);
         return NextResponse.json({ error: 'Failed to save fitness matrix' }, { status: 500 });
     }
 }

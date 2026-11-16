@@ -44,7 +44,7 @@ beforeEach(() => {
         if (url === '/api/projects') return json({ projects: [project] });
         if (url.endsWith('/overview')) {
             if (options?.method === 'PATCH') project = { ...project, ...JSON.parse(String(options.body)) };
-            return json({ project });
+            return json({ project, revision: 'a'.repeat(64) });
         }
         return json({ requirements: [], specFunctions: [], analysis: [], totalResponses: 0 });
     });
@@ -392,4 +392,17 @@ it('개발계획서를 제거하고 자산·자금 워크시트를 WS-14~16으�
     expect(container.textContent).not.toContain('[WS-17]');
     expect(WORKSHEET_LINKS.some(item => item.href === 'dev-plan')).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/dev-plan'))).toBe(false);
+});
+
+it('읽은 개정값을 전송하고 충돌 응답 후 사용자의 입력을 유지한다', async () => {
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    await click('수정');
+    const name = [...container.querySelectorAll('input')].find(element => element.value === '기존 프로젝트')!;
+    await input(name, '내가 작성한 이름');
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: '다른 화면에서 개요가 변경되었습니다.' }), { status: 409 }));
+    await click('저장');
+    const write = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(write?.[1].headers['If-Match']).toBe('a'.repeat(64));
+    expect(name.value).toBe('내가 작성한 이름');
+    expect(container.textContent).toContain('다른 화면에서 개요가 변경되었습니다.');
 });

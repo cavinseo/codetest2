@@ -4,11 +4,14 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { assetsBodySchema } from '@/lib/bulk-save-schemas';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api/assets');
 
 // GET: 핵심자산 및 보완자산 목록
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: false });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
         const assets = await prisma.assetItem.findMany({
@@ -17,7 +20,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
         });
         return NextResponse.json({ assets });
     } catch (error) {
-        console.error('Assets GET error:', error);
+        log.error('Assets GET error', error);
         return NextResponse.json({ error: 'Failed to load assets' }, { status: 500 });
     }
 }
@@ -25,7 +28,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 // POST: 자산 목록 일괄 저장
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
     const { id: projectId } = await props.params;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: true });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
         const { assets } = assetsBodySchema.parse(await readJsonBody(request));
@@ -56,7 +59,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }
-        console.error('Assets POST error:', error);
+        log.error('Assets POST error', error);
         return NextResponse.json({ error: 'Failed to save assets' }, { status: 500 });
     }
 }

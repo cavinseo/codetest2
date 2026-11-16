@@ -1,9 +1,17 @@
 'use client';
+// 공개 Kano 설문의 전체 HTML 문항을 표시하고 토큰으로 응답을 제출한다.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import ThemeToggle from '@/components/ThemeToggle';
+import { KANO_ANSWER_SCORE, type KanoAnswer } from '@/lib/constants';
+import {
+    KANO_SURVEY_CLOSING,
+    KANO_SURVEY_GUIDE,
+    KANO_SURVEY_TITLE,
+    kanoSurveyAnswerLabels,
+    resolveKanoQuestionPair,
+} from '@/lib/kano-survey-document';
 
 interface Requirement {
     id: string;
@@ -17,10 +25,16 @@ interface Requirement {
 
 interface SurveyData {
     projectName: string;
+    introduction: string;
     requirements: Requirement[];
 }
 
-type KanoAnswer = 'LIKE' | 'EXPECT' | 'NEUTRAL' | 'TOLERATE' | 'DISLIKE';
+type AnswerType = 'functional' | 'dysfunctional';
+const answerLabels = kanoSurveyAnswerLabels();
+const answerOptions = Object.entries(KANO_ANSWER_SCORE).map(([value, score]) => ({
+    value: value as KanoAnswer,
+    label: answerLabels[score - 1],
+}));
 
 interface SurveyLoadError {
     title: string;
@@ -52,10 +66,10 @@ export default function SurveyPage() {
 
     const [surveyData, setSurveyData] = useState<SurveyData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [currentIndex, setCurrentIndex] = useState(0);
-    const [answers, setAnswers] = useState<Record<string, { functional: KanoAnswer; dysfunctional: KanoAnswer }>>({});
+    const [answers, setAnswers] = useState<Record<string, Partial<Record<AnswerType, KanoAnswer>>>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [loadError, setLoadError] = useState<SurveyLoadError | null>(null);
+    const submissionPending = useRef(false);
 
     const loadSurvey = useCallback(async () => {
         setIsLoading(true);
@@ -80,55 +94,30 @@ export default function SurveyPage() {
         loadSurvey();
     }, [loadSurvey]);
 
-    const handleAnswer = (type: 'functional' | 'dysfunctional', value: KanoAnswer) => {
-        const reqId = surveyData?.requirements[currentIndex].id;
-        if (!reqId) return;
-
-        setAnswers({
-            ...answers,
-            [reqId]: {
-                ...answers[reqId],
+    const handleAnswer = (requirementId: string, type: AnswerType, value: KanoAnswer) => {
+        setAnswers(previous => ({
+            ...previous,
+            [requirementId]: {
+                ...previous[requirementId],
                 [type]: value,
             },
-        });
+        }));
     };
 
-    const handleNext = () => {
-        if (!surveyData) return;
+    const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!surveyData || submissionPending.current) return;
 
-        const reqId = surveyData.requirements[currentIndex].id;
-        const answer = answers[reqId];
-
-        if (!answer?.functional || !answer?.dysfunctional) {
-            alert('모든 질문에 답변해주세요.');
-            return;
-        }
-
-        if (currentIndex < surveyData.requirements.length - 1) {
-            setCurrentIndex(currentIndex + 1);
-        }
-    };
-
-    const handlePrevious = () => {
-        if (currentIndex > 0) {
-            setCurrentIndex(currentIndex - 1);
-        }
-    };
-
-    const handleSubmit = async () => {
-        if (!surveyData) return;
-
-        // 모든 답변 확인
-        const allAnswered = surveyData.requirements.every((req) => {
-            const answer = answers[req.id];
+        const allAnswered = surveyData.requirements.every((requirement) => {
+            const answer = answers[requirement.id];
             return answer?.functional && answer?.dysfunctional;
         });
-
         if (!allAnswered) {
             alert('모든 질문에 답변해주세요.');
             return;
         }
 
+        submissionPending.current = true;
         setIsSubmitting(true);
         try {
             const response = await fetch(`/api/survey/${token}/submit`, {
@@ -136,7 +125,6 @@ export default function SurveyPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ answers }),
             });
-
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || errorData.message || '응답 제출 실패');
@@ -144,209 +132,105 @@ export default function SurveyPage() {
 
             alert('설문 응답이 완료되었습니다. 감사합니다!');
             router.push('/');
-        } catch (error: any) {
-            alert(error.message);
+        } catch (error: unknown) {
+            alert(error instanceof Error ? error.message : '응답 제출 실패');
         } finally {
+            submissionPending.current = false;
             setIsSubmitting(false);
         }
     };
 
-    const answerOptions: { value: KanoAnswer; label: string; emoji: string }[] = [
-        { value: 'LIKE', label: '마음에 든다', emoji: '😍' },
-        { value: 'EXPECT', label: '당연하다', emoji: '😊' },
-        { value: 'NEUTRAL', label: '아무런느낌이 없다', emoji: '😐' },
-        { value: 'TOLERATE', label: '하는수 없다', emoji: '😕' },
-        { value: 'DISLIKE', label: '마음에 안든다', emoji: '😠' },
-    ];
-
-    if (isLoading) {
-        return (
-            <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-                <div className="text-white text-xl">설문 로딩 중...</div>
-            </div>
-        );
-    }
-
-    if (loadError || !surveyData) {
-        const shown = loadError ?? surveyLoadError(404, undefined);
-        return (
-            <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-                <div className="card max-w-md text-center" role="alert">
-                    <div className="text-6xl mb-4">⚠️</div>
-                    <h2 className="text-2xl font-bold text-white mb-4">{shown.title}</h2>
-                    <p className="text-gray-400 mb-6">{shown.message}</p>
-                    <div className="flex justify-center gap-3">
-                        {shown.retryable && (
-                            <button type="button" className="btn-secondary" onClick={() => void loadSurvey()}>
-                                다시 시도
-                            </button>
-                        )}
-                        <Link href="/" className="btn-primary inline-block">
-                            홈으로 이동
-                        </Link>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    const currentReq = surveyData.requirements[currentIndex];
-    const currentAnswer = answers[currentReq.id];
-    const progress = ((currentIndex + 1) / surveyData.requirements.length) * 100;
-    const isLastQuestion = currentIndex === surveyData.requirements.length - 1;
-
     return (
-        <div className="min-h-screen bg-gray-900">
-            {/* 헤더 */}
-            <header className="bg-gray-800 border-b border-gray-700">
-                <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                    <div className="text-center">
-                        <h1 className="text-3xl font-bold text-white mb-2">Kano 설문 조사</h1>
-                        <p className="text-gray-400">{surveyData.projectName}</p>
-                    </div>
-                    {/* 제목은 가운데 정렬을 지켜야 하므로 버튼만 절대 위치로 오른쪽에 붙인다. */}
-                    <ThemeToggle className="absolute right-4 top-1/2 -translate-y-1/2 sm:right-6 lg:right-8" />
-                </div>
-            </header>
-
-            {/* 진행률 */}
-            <div className="bg-gray-800/50">
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-gray-400">
-                            질문 {currentIndex + 1} / {surveyData.requirements.length}
-                        </span>
-                        <span className="text-sm text-blue-400 font-semibold">{Math.round(progress)}%</span>
-                    </div>
-                    <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div
-                            className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${progress}%` }}
-                        />
-                    </div>
-                </div>
-            </div>
-
-            {/* 메인 콘텐츠 */}
-            <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <div className="space-y-8">
-                    {/* 요구사항 설명 */}
-                    <div className="card">
-                        <div className="flex items-start space-x-4">
-                            <div className="text-3xl">💡</div>
-                            <div className="flex-1">
-                                {currentReq.category && (
-                                    <span className="text-sm text-blue-400 font-semibold">
-                                        {currentReq.category}
-                                        {currentReq.subcategory && ` > ${currentReq.subcategory}`}
-                                    </span>
-                                )}
-                                <h2 className="text-2xl font-bold text-white mt-2">{currentReq.requirement}</h2>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* 긍정 질문 */}
-                    <div className="card">
-                        <div className="mb-4">
-                            <div className="flex items-center space-x-2 mb-2">
-                                <span className="text-2xl">👍</span>
-                                <h3 className="text-lg font-bold text-white">긍정 질문</h3>
-                            </div>
-                            <p className="text-gray-300 text-lg">
-                                {currentReq.kanoPositiveQ ? (
-                                    <span>{currentReq.kanoPositiveQ}</span>
-                                ) : (
-                                    <span>
-                                        만약 <strong className="text-blue-400">{currentReq.requirement}</strong> 기능이{' '}
-                                        <strong className="text-green-400">있다면</strong> 어떻게 느끼시겠습니까?
-                                    </span>
-                                )}
-                            </p>
-                        </div>
-                        <div className="grid grid-cols-1 gap-3">
-                            {answerOptions.map((option) => (
-                                <button
-                                    key={option.value}
-                                    onClick={() => handleAnswer('functional', option.value)}
-                                    className={`
-                    p-4 rounded-lg border-2 transition-all text-left
-                    ${currentAnswer?.functional === option.value
-                                            ? 'border-blue-500 bg-blue-500/20'
-                                            : 'border-gray-600 hover:border-gray-500 bg-gray-700/50'
-                                        }
-                  `}
-                                >
-                                    <span className="text-2xl mr-3">{option.emoji}</span>
-                                    <span className="text-white font-medium">{option.label}</span>
+        <div className="kano-online-survey">
+            <style>{`
+                .kano-online-survey { min-height: 100vh; padding: 32px 0; background: #f3f4f6; color: #111827; font-family: Arial, "Malgun Gothic", sans-serif; line-height: 1.55; color-scheme: light; }
+                .kano-online-survey .survey-paper { width: min(920px, calc(100% - 32px)); margin: 0 auto; padding: 40px; background: #fff; border-radius: 16px; }
+                .kano-online-survey h1, .kano-online-survey .survey-status h2 { margin: 0 0 8px; font-size: 30px; font-family: inherit; font-weight: 700; }
+                .kano-online-survey .project-name { margin: 0 0 24px; color: #4b5563; }
+                .kano-online-survey .guide, .kano-online-survey .introduction, .kano-online-survey .closing { margin: 16px 0; white-space: pre-wrap; }
+                .kano-online-survey .requirement { margin: 28px 0; padding-top: 8px; border-top: 1px solid #d1d5db; }
+                .kano-online-survey fieldset { margin: 18px 0; padding: 16px; border: 1px solid #d1d5db; border-radius: 10px; }
+                .kano-online-survey legend { padding: 0 8px; font-weight: 500; }
+                .kano-online-survey legend strong { margin-right: 8px; color: #1d4ed8; }
+                .kano-online-survey .answers { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+                .kano-online-survey .answer { display: flex; gap: 6px; align-items: flex-start; padding: 8px; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; }
+                .kano-online-survey input[type="radio"] { margin-top: 5px; accent-color: #2563eb; }
+                .kano-online-survey .survey-button { display: inline-block; padding: 12px 20px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+                .kano-online-survey .survey-button:disabled { opacity: 0.6; cursor: wait; }
+                .kano-online-survey .survey-status { text-align: center; }
+                .kano-online-survey .survey-status p { margin: 16px 0 24px; }
+                @media (max-width: 720px) { .kano-online-survey .survey-paper { padding: 22px; } .kano-online-survey .answers { grid-template-columns: 1fr; } }
+            `}</style>
+            {isLoading ? (
+                <main className="survey-paper survey-status" role="status">설문 로딩 중...</main>
+            ) : loadError || !surveyData ? (
+                (() => {
+                    // 만료·이미 응답·없음을 구분해 보여 줘야 응답자가 링크를 다시 요청하거나 중복 응답을 시도하지 않는다.
+                    const shown = loadError ?? surveyLoadError(404, undefined);
+                    return (
+                        <main className="survey-paper survey-status" role="alert">
+                            <h2>{shown.title}</h2>
+                            <p>{shown.message}</p>
+                            {shown.retryable && (
+                                <button type="button" className="survey-button" onClick={() => void loadSurvey()} style={{ marginRight: 8 }}>
+                                    다시 시도
                                 </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* 부정 질문 */}
-                    <div className="card">
-                        <div className="mb-4">
-                            <div className="flex items-center space-x-2 mb-2">
-                                <span className="text-2xl">👎</span>
-                                <h3 className="text-lg font-bold text-white">부정 질문</h3>
-                            </div>
-                            <p className="text-gray-300 text-lg">
-                                {currentReq.kanoNegativeQ ? (
-                                    <span>{currentReq.kanoNegativeQ}</span>
-                                ) : (
-                                    <span>
-                                        만약 <strong className="text-blue-400">{currentReq.requirement}</strong> 기능이{' '}
-                                        <strong className="text-red-400">없다면</strong> 어떻게 느끼시겠습니까?
-                                    </span>
-                                )}
-                            </p>
-                        </div>
-                        <div className="grid grid-cols-1 gap-3">
-                            {answerOptions.map((option) => (
-                                <button
-                                    key={option.value}
-                                    onClick={() => handleAnswer('dysfunctional', option.value)}
-                                    className={`
-                    p-4 rounded-lg border-2 transition-all text-left
-                    ${currentAnswer?.dysfunctional === option.value
-                                            ? 'border-blue-500 bg-blue-500/20'
-                                            : 'border-gray-600 hover:border-gray-500 bg-gray-700/50'
-                                        }
-                  `}
-                                >
-                                    <span className="text-2xl mr-3">{option.emoji}</span>
-                                    <span className="text-white font-medium">{option.label}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* 네비게이션 */}
-                    <div className="flex justify-between">
-                        <button
-                            onClick={handlePrevious}
-                            disabled={currentIndex === 0}
-                            className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            ← 이전
+                            )}
+                            <Link href="/" className="survey-button">홈으로 이동</Link>
+                        </main>
+                    );
+                })()
+            ) : (
+                <main className="survey-paper">
+                    <header>
+                        <h1>{KANO_SURVEY_TITLE}</h1>
+                        <p className="project-name">{surveyData.projectName}</p>
+                        <p className="guide">{KANO_SURVEY_GUIDE}</p>
+                        <p className="introduction">{surveyData.introduction}</p>
+                    </header>
+                    <form onSubmit={handleSubmit} aria-busy={isSubmitting}>
+                        {surveyData.requirements.map((requirement, index) => {
+                            const pair = resolveKanoQuestionPair(requirement);
+                            const questions = [
+                                { type: 'functional', suffix: 1, text: pair.positive },
+                                { type: 'dysfunctional', suffix: 2, text: pair.negative },
+                            ] as const;
+                            return (
+                                <section key={requirement.id} className="requirement">
+                                    {questions.map(question => (
+                                        <fieldset key={question.type} disabled={isSubmitting}>
+                                            <legend><strong>{index + 1}-{question.suffix}</strong>{' '}{question.text}</legend>
+                                            <div className="answers">
+                                                {answerOptions.map(option => {
+                                                    const id = `${requirement.id}-${question.type}-${option.value}`;
+                                                    return (
+                                                        <label key={option.value} className="answer" htmlFor={id}>
+                                                            <input
+                                                                id={id}
+                                                                type="radio"
+                                                                name={`${requirement.id}-${question.type}`}
+                                                                value={option.value}
+                                                                required
+                                                                checked={answers[requirement.id]?.[question.type] === option.value}
+                                                                onChange={() => handleAnswer(requirement.id, question.type, option.value)}
+                                                            />
+                                                            <span>{option.label}</span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        </fieldset>
+                                    ))}
+                                </section>
+                            );
+                        })}
+                        <button type="submit" className="survey-button" disabled={isSubmitting}>
+                            {isSubmitting ? '제출 중...' : '제출하기'}
                         </button>
-                        {!isLastQuestion ? (
-                            <button onClick={handleNext} className="btn-primary">
-                                다음 →
-                            </button>
-                        ) : (
-                            <button
-                                onClick={handleSubmit}
-                                disabled={isSubmitting}
-                                className="btn-primary disabled:opacity-50"
-                            >
-                                {isSubmitting ? '제출 중...' : '제출하기 ✓'}
-                            </button>
-                        )}
-                    </div>
-                </div>
-            </main>
+                    </form>
+                    <p className="closing">{KANO_SURVEY_CLOSING}</p>
+                </main>
+            )}
         </div>
     );
 }

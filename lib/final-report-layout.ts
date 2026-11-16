@@ -1,7 +1,7 @@
 // 미리보기와 Word가 함께 사용하는 A4 페이지 배치와 긴 표 분할을 계산한다.
 import type { FinalReportBlock, FinalReportModel } from './final-report-document';
 import { getFitnessReportExcludedIndexes } from './final-report-fitness';
-import { getGroupedCellSpans } from './final-report-table-merge';
+import { getReportTableCellSpans } from './final-report-table-merge';
 import { reportHeaderRows, reportColumnSpans, type ReportHeaderCell } from './final-report-table-structure';
 import { parseReportMarkdown, reportRunsText, type ReportMarkdownBlock, type ReportTextRun } from './final-report-markdown';
 
@@ -240,7 +240,7 @@ function prepareTableLayout(block: TableBlock, width: number, rich?: Extract<Rep
 }
 
 function layoutMergedTableRows(rows: TableLayoutItem['rows'], block: TableBlock, mergeCells: boolean[][], lineHeight: number) {
-    const mergeSpans = getGroupedCellSpans(rows.map(row => block.kind === 'dataTable' ? block.rows[row.index] ?? row.lines.map(() => '') : row.lines.map(() => '')), block.kind === 'dataTable' ? block.mergeColumns ?? [] : []);
+    const mergeSpans = getReportTableCellSpans(rows.map(row => block.kind === 'dataTable' ? block.rows[row.index] ?? row.lines.map(() => '') : row.lines.map(() => '')), block);
     const fittedRows = rows.map((row, index) => {
         const merged = mergeCells[row.index] ?? [];
         mergeSpans[index] = mergeSpans[index].map((span, column) => merged[column] ? span : 1);
@@ -269,7 +269,7 @@ function appendTableLayout(cursor: PageCursor, block: TableBlock, blockIndex: nu
     }
     const sourceRows = block.kind === 'dataTable' ? block.rows : block.rows.map(row => [row.label, row.value]);
     const wrappedRows = new Map(rows.map(row => [row.index, row]));
-    const globalSpans = getGroupedCellSpans(sourceRows, block.kind === 'dataTable' ? block.mergeColumns ?? [] : []);
+    const globalSpans = getReportTableCellSpans(sourceRows, block);
     const mergeCells = sourceRows.map((row, index) => row.map((_, column) => globalSpans[index][column] !== 1 &&
         wrappedRows.get(index)!.lines[column].length * lineHeight + TABLE_CELL_INSET <= cursor.bounds.bottom - cursor.bounds.top - headerHeight - 1));
     let pendingTable: TableLayoutItem | null = null;

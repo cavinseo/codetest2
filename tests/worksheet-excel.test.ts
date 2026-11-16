@@ -23,7 +23,7 @@ it('WS-1~16 워크시트 양식을 만들고 저장된 추가 항목과 원본 �
     const project = worksheetExcelProject();
     const before = JSON.stringify(project);
     const workbook = await load(undefined, project);
-    expect(workbook.worksheets.map(sheet => sheet.name)).toEqual([...WORKSHEET_EXCEL_SHEETS.slice(0, 6).map(sheet => sheet.name), 'Kano 응답원본', ...WORKSHEET_EXCEL_SHEETS.slice(6).map(sheet => sheet.name)]);
+    expect(workbook.worksheets.map(sheet => sheet.name)).toEqual([...WORKSHEET_EXCEL_SHEETS.slice(0, 6).map(sheet => sheet.name), 'Kano문항연결', 'Kano 응답원본', ...WORKSHEET_EXCEL_SHEETS.slice(6).map(sheet => sheet.name)]);
     for (const definition of WORKSHEET_EXCEL_SHEETS) {
         const sheet = workbook.getWorksheet(definition.name)!;
         expect(sheet.pageSetup.printArea).toMatch(new RegExp(`${sheet.rowCount}$`));
@@ -63,13 +63,13 @@ it('큰 스펙표의 마지막 행까지 출력하고 상위 분류만 병합한
 it('WS-12의 중복 분류를 통합하고 신규 기술만 색으로 구분하며 스펙값을 보존한다', async () => {
     const sheet = (await load('target-spec')).worksheets[0];
     expect(sheet.getCell('B9').master.address).toBe('B7');
-    expect(sheet.getCell('C8').master.address).toBe('C7');
-    expect(sheet.getCell('D7').value).toBe('공압 이송');
-    expect(sheet.getCell('D8').value).toBe('센서');
-    expect(sheet.getCell('D7').fill).not.toHaveProperty('fgColor.argb', 'FFDCFCE7');
-    expect(sheet.getCell('D9').fill).toHaveProperty('fgColor.argb', 'FFDCFCE7');
-    expect(sheet.getCell('G7').value).toBe('0.1');
-    expect(sheet.getCell('I7').value).toBe('0.05');
+    expect(sheet.getCell('C9').master.address).toBe('C8');
+    expect(sheet.getCell('D8').value).toBe('공압 이송');
+    expect(sheet.getCell('D9').value).toBe('센서');
+    expect(sheet.getCell('D8').fill).not.toHaveProperty('fgColor.argb', 'FFDCFCE7');
+    expect(sheet.getCell('D7').fill).toHaveProperty('fgColor.argb', 'FFDCFCE7');
+    expect(sheet.getCell('G8').value).toBe('0.1');
+    expect(sheet.getCell('I8').value).toBe('0.05');
     expect(sheet.pageSetup.printArea).toBe('B2:I9');
 });
 
@@ -127,19 +127,19 @@ it('매출의 0과 빈칸을 구분하고 자동 연동 매출 및 자금 합계
     expect(sales.getCell('D7').value).toBe(0);
     expect(sales.getCell('D7').type).toBe(ExcelJS.ValueType.Number);
     const funding = (await load('funding-plan')).worksheets[0];
-    expect(funding.getCell('D7').value).toBe(1000);
+    expect(funding.getCell('D7').value).toBe(1000000);
     expect(funding.getCell('E7').value).toBeNull();
     expect(funding.getCell('F7').value).toBe(0);
     const total = rowWith(funding, '소요자금 합계', 3);
-    expect(result(funding.getCell(total, 4))).toBe(100);
-    expect(result(funding.getCell(total, 5))).toBe(200);
+    expect(result(funding.getCell(total, 4))).toBe(100000);
+    expect(result(funding.getCell(total, 5))).toBe(200000);
     expect(funding.getCell(total, 4).formula).toBe('SUM(D8)');
     expect(funding.rowCount).toBe(9);
     const sources = (await load('funding-source')).worksheets[0];
-    expect(sources.getCell('D8').value).toBe(1200);
+    expect(sources.getCell('D8').value).toBe(1200000);
     expect(sources.getCell('F8').value).toBe(0);
     expect(sources.getCell('H8').value).toBeNull();
-    expect(result(sources.getCell('D9'))).toBe(1200);
+    expect(result(sources.getCell('D9'))).toBe(1200000);
 });
 
 it('개별 워크시트는 해당 양식만 출력하고 빈 프로젝트도 모든 양식을 만든다', async () => {
@@ -159,20 +159,21 @@ it('WS-16 같은 구분의 여러 세부행과 3개년 출처·금액을 모두 
     project.fundingSources.push({ ...project.fundingSources[0], id: 'source-2', order: 1, year1: JSON.stringify({ source: '추가 지원사업', amount: '300.5' }), year2: '후속 지원:200', year3: '500' });
     const sheet = (await load('funding-source', project)).worksheets[0];
     expect(sheet.getCell('C9').value).toBe('추가 지원사업');
-    expect(sheet.getCell('D9').value).toBe(300.5);
-    expect(sheet.getCell('F9').value).toBe(200);
-    expect(sheet.getCell('H9').value).toBe(500);
-    expect(result(sheet.getCell('D10'))).toBe(1500.5);
-    expect(result(sheet.getCell('F10'))).toBe(200);
-    expect(result(sheet.getCell('H10'))).toBe(500);
+    expect(sheet.getCell('D9').value).toBe(300500);
+    expect(sheet.getCell('F9').value).toBe(200000);
+    expect(sheet.getCell('H9').value).toBe(500000);
+    expect(result(sheet.getCell('D10'))).toBe(1500500);
+    expect(result(sheet.getCell('F10'))).toBe(200000);
+    expect(result(sheet.getCell('H10'))).toBe(500000);
 });
 
-it('매출·자금 시트의 금액 단위는 화면·최종 보고서와 같은 백만원으로 표기한다', async () => {
-    // 화면은 백만원 단위로 입력받으므로 엑셀이 '원'으로 적으면 금액이 100만 배 다르게 읽힌다.
+it('매출·자금 시트의 금액 단위는 화면·최종 보고서와 같은 천원으로 표기한다', async () => {
+    // 화면·보고서는 저장값(백만원)을 천원으로 환산해 보여 준다. 엑셀도 같은 단위로 적어야
+    // 내려받은 파일의 금액이 화면과 같게 읽힌다(값 환산은 worksheet-excel-writers 의 toThousandWon).
     for (const id of ['sales', 'funding-plan', 'funding-source'] as const) {
         const texts: string[] = [];
         (await load(id)).worksheets[0].eachRow(row => row.eachCell(cell => { if (typeof cell.value === 'string') texts.push(cell.value); }));
         expect(texts.filter(text => text.includes('단위:')), id).not.toHaveLength(0);
-        expect(texts.filter(text => text.includes('단위:')).every(text => text.includes('(단위: 백만원)')), id).toBe(true);
+        expect(texts.filter(text => text.includes('단위:')).every(text => text.includes('(단위: 천원)')), id).toBe(true);
     }
 });

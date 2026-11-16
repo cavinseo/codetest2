@@ -1,3 +1,4 @@
+import { orderImprovementItems } from '@/lib/requirement-order';
 // 개선포인트 데이터를 조회하고 현재 화면 상태로 교체 저장하는 API입니다.
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -5,6 +6,9 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { improvementsBodySchema, type ImprovementRow } from '@/lib/bulk-save-schemas';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api/improvements');
 
 const cleanItem = (item: ImprovementRow, index: number) => ({
     type: item.type,
@@ -31,9 +35,9 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
             }).then((response) => (response.ok ? response.json() : null)),
         ]);
 
-        return NextResponse.json({ items, qfdAnalysis });
+        return NextResponse.json({ items: orderImprovementItems(items, qfdAnalysis?.requirements ?? []), qfdAnalysis });
     } catch (error) {
-        console.error('improvements GET error:', error);
+        log.error('improvements GET error', error);
         return NextResponse.json({ error: '개선포인트 데이터를 불러오지 못했습니다.' }, { status: 500 });
     }
 }
@@ -70,7 +74,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }
-        console.error('improvements POST error:', error);
+        log.error('improvements POST error', error);
         return NextResponse.json({ error: '개선포인트 데이터를 저장하지 못했습니다.' }, { status: 500 });
     }
 }

@@ -114,6 +114,7 @@ describe('Google Forms 라우트 비활성화', () => {
         expect(response.headers.get('Content-Disposition')).toContain('attachment');
         await expect(response.text()).resolves.toBe('function createForm() {}');
         expect(buildKanoGoogleFormScript).toHaveBeenCalledWith([{
+            order: 0,
             category: '기능',
             subcategory: null,
             requirement: '빠른 처리',

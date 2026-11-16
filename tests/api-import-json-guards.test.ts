@@ -11,7 +11,6 @@ import { MAX_IMPORT_ROWS } from '../lib/import-json-schema';
 const counts = { kano: 0, benchmark: 0, qfd: 0, fitness: 0, correlation: 0, technicalBenchmark: 0 };
 const lockProject = vi.fn();
 
-const lockProject = vi.fn();
 
 const tx = new Proxy({} as Record<string, Record<string, ReturnType<typeof vi.fn>>>, {
     get(target, model: string) {

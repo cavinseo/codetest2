@@ -9,6 +9,7 @@ import { checkExcelArchiveSafety, guardUploadedExcel } from '@/lib/upload-guard'
 import {
     parseInviteEmailText,
     parseKanoInviteWorkbook,
+    InviteWorkbookTooLargeError,
     type ParsedInviteList,
 } from '@/lib/kano-invite-template';
 
@@ -55,7 +56,11 @@ async function readInviteList(request: NextRequest): Promise<ParsedInviteList> {
         const buffer = Buffer.from(bytes);
         try {
             return parseKanoInviteWorkbook(buffer);
-        } catch {
+        } catch (error) {
+            // 시트 범위가 너무 큰 명단은 형식 오류가 아니라 크기 초과로 알려야 사용자가 나눠 올릴 수 있다.
+            if (error instanceof InviteWorkbookTooLargeError) throw new InviteListError(error.message, 413);
+            // SheetJS 파싱 오류 문구는 내부 구조를 드러내므로 로그에만 남기고 고정 문구로 바꾼다.
+            log.error('초대 명단 파일 파싱 실패', error);
             throw new InviteListError('명단 파일을 읽을 수 없습니다. 내려받은 양식의 엑셀 파일인지 확인하세요.');
         }
     }
@@ -116,7 +121,6 @@ export async function POST(
         });
         const alreadyInvited = new Set(existing.map((row) => row.email));
 
-        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
         const results: InviteResult[] = parsed.skipped.map((item) => ({
             email: item.value,
             status: 'skipped' as const,
@@ -147,7 +151,7 @@ export async function POST(
                     },
                 });
 
-                const surveyLink = `${baseUrl}/survey/${token}`;
+                const surveyLink = new URL(`/survey/${token}`, request.nextUrl.origin).href;
                 const emailSent = await sendSurveyInvitation(row.email, surveyLink, project.name);
                 if (emailSent) emailSentCount++;
 

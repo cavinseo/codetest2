@@ -65,6 +65,7 @@ beforeEach(() => {
             token: 'secret-token',
             expiresAt: new Date('2026-12-31'),
             respondedAt: null,
+            _count: { responses: 0 },
         },
     ]);
 });

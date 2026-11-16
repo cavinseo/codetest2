@@ -3,11 +3,14 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
+import { embedKanoRequirementSnapshot, KanoQuestionOrderError } from '../lib/kano-requirement-snapshot';
 
 const findManyRequirement = vi.fn();
+const transaction = vi.fn();
 vi.mock('../lib/prisma', () => ({
     prisma: {
         customerRequirement: { findMany: findManyRequirement },
+        $transaction: transaction,
     },
 }));
 
@@ -37,20 +40,20 @@ const { KanoUploadConflictError } = await import('../lib/kano-response-store');
 
 const PROJECT_ID = 'proj_1';
 const USER = { userId: 'user_1', email: 'owner@example.test', name: null };
-const REQUIREMENTS = [{ id: 'requirement_1' }, { id: 'requirement_2' }];
+const REQUIREMENTS = [
+    { id: 'requirement_1', requirement: '안전', kanoPositiveQ: '안전하다면 어떻게 생각하십니까?', kanoNegativeQ: '안전하지 않다면 어떻게 생각하십니까?' },
+    { id: 'requirement_2', requirement: '빠른 속도', kanoPositiveQ: null, kanoNegativeQ: null },
+];
 const params = { params: Promise.resolve({ id: PROJECT_ID }) };
 const fixturesDirectory = resolve(process.cwd(), 'tests', 'fixtures', 'kano-offline');
 
-function fixtureFile(fileName: string): File {
-    return new File(
-        [readFileSync(resolve(fixturesDirectory, fileName), 'utf8')],
-        fileName,
-        { type: 'text/html' }
-    );
+function fixtureFile(fileName: string, snapshot: { id: string }[] | null = REQUIREMENTS): File {
+    return htmlFile(fileName, readFileSync(resolve(fixturesDirectory, fileName), 'utf8'), snapshot);
 }
 
-function htmlFile(fileName: string, html: string): File {
-    return new File([html], fileName, { type: 'text/html' });
+function htmlFile(fileName: string, html: string, snapshot: { id: string }[] | null = REQUIREMENTS): File {
+    const content = snapshot ? embedKanoRequirementSnapshot(html.includes('</body>') ? html : `${html}</body>`, snapshot) : html;
+    return new File([content], fileName, { type: 'text/html' });
 }
 
 function uploadRequest(files: File[], writePolicy: 'append' | 'replace' = 'append', replaceExistingRespondents = false): NextRequest {
@@ -75,6 +78,70 @@ afterEach(() => {
 });
 
 describe('POST /api/projects/[id]/kano/upload-offline', () => {
+    it('다운로드 당시 순서의 답은 현재 순서 변경·새 항목 추가 후에도 원래 ID에 연결한다', async () => {
+        const current = [REQUIREMENTS[1], REQUIREMENTS[0], { id: 'requirement_3', requirement: '추가한 고객 요구사항' }];
+        findManyRequirement.mockResolvedValue(current);
+        persistKanoUploadAnswers.mockResolvedValue({ respondentCount: 1, importedCount: 2 });
+        const response = await POST(uploadRequest([fixtureFile('saved-complete.html')]), params);
+        expect(response.status).toBe(200);
+        expect(persistKanoUploadAnswers).toHaveBeenCalledWith(expect.objectContaining({ requirements: current, answers: [
+            { respondentEmail: 'tester@example.com', requirementIndex: 0, requirementId: 'requirement_1', positiveAnswer: 1, negativeAnswer: 5 },
+            { respondentEmail: 'tester@example.com', requirementIndex: 1, requirementId: 'requirement_2', positiveAnswer: 2, negativeAnswer: 3 },
+        ] }));
+    });
+
+    it('ID 스냅샷이 없는 이전 HTML도 원래 질문쌍으로 현재 요구사항 ID를 찾는다', async () => {
+        findManyRequirement.mockResolvedValue([REQUIREMENTS[1], REQUIREMENTS[0], { id: 'requirement_3', requirement: '추가한 고객 요구사항' }]);
+        const response = await POST(uploadRequest([fixtureFile('saved-complete.html', null)]), params);
+        expect(response.status).toBe(200);
+        expect(persistKanoUploadAnswers).toHaveBeenCalledWith(expect.objectContaining({ answers: [
+            { respondentEmail: 'tester@example.com', requirementIndex: 0, requirementId: 'requirement_1', positiveAnswer: 1, negativeAnswer: 5 },
+            { respondentEmail: 'tester@example.com', requirementIndex: 1, requirementId: 'requirement_2', positiveAnswer: 2, negativeAnswer: 3 },
+        ] }));
+    });
+
+    it('ID와 질문쌍이 없는 순번 응답 파일은 기존 데이터 교체 전에 거부한다', async () => {
+        const payload = '<script id="kano-offline-response" type="application/json">'
+            + JSON.stringify({ kind: 'kano-offline-response', version: 1, projectId: PROJECT_ID, respondentEmail: 'tester@example.com', answers: [{ index: 0, positive: 1, negative: 5 }] })
+            + '</script>';
+        const response = await POST(uploadRequest([htmlFile('numbered.html', payload, null)], 'replace'), params);
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: '저장할 수 있는 응답지가 없습니다.', results: [
+            { fileName: 'numbered.html', status: 'failed', reason: new KanoQuestionOrderError().message },
+        ] });
+        expect(persistKanoUploadAnswers).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('삭제된 원래 문항 ID가 포함된 파일은 기존 데이터를 쓰기 전에 거부한다', async () => {
+        findManyRequirement.mockResolvedValue([REQUIREMENTS[1]]);
+        const response = await POST(uploadRequest([fixtureFile('saved-complete.html')], 'replace'), params);
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: '저장할 수 있는 응답지가 없습니다.', results: [
+            { fileName: 'saved-complete.html', status: 'failed', reason: new KanoQuestionOrderError().message },
+        ] });
+        expect(persistKanoUploadAnswers).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('삭제된 문항 파일만 실패시키고 유효한 부분 응답을 원래 ID로 한 번 저장한다', async () => {
+        findManyRequirement.mockResolvedValue([REQUIREMENTS[1]]);
+        persistKanoUploadAnswers.mockResolvedValue({ respondentCount: 1, importedCount: 1 });
+        const response = await POST(uploadRequest([
+            fixtureFile('saved-complete.html'),
+            fixtureFile('saved-partial-no-email.html', [REQUIREMENTS[1]]),
+        ]), params);
+        expect(response.status).toBe(200);
+        expect((await response.json()).results).toEqual([
+            { fileName: 'saved-complete.html', status: 'failed', reason: new KanoQuestionOrderError().message },
+            { fileName: 'saved-partial-no-email.html', status: 'ok', answerCount: 1, warning: '이메일이 없어 익명 응답자로 저장했습니다.' },
+        ]);
+        expect(persistKanoUploadAnswers).toHaveBeenCalledTimes(1);
+        expect(persistKanoUploadAnswers).toHaveBeenCalledWith(expect.objectContaining({ answers: [
+            { respondentEmail: expect.stringMatching(/^offline-html-2-[0-9a-f]{12}@import\.local$/), requirementIndex: 0, requirementId: 'requirement_2', positiveAnswer: 4, negativeAnswer: 2 },
+        ] }));
+    });
+
     it('완전 응답과 익명 부분 응답을 한 번에 모아 저장한다', async () => {
         const response = await POST(uploadRequest([
             fixtureFile('saved-complete.html'),
@@ -91,7 +158,7 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
         expect(findManyRequirement).toHaveBeenCalledWith({
             where: { projectId: PROJECT_ID },
             orderBy: { order: 'asc' },
-            select: { id: true },
+            select: { id: true, requirement: true, kanoPositiveQ: true, kanoNegativeQ: true },
         });
         expect(persistKanoUploadAnswers).toHaveBeenCalledTimes(1);
         expect(persistKanoUploadAnswers).toHaveBeenCalledWith({
@@ -104,12 +171,14 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
                 {
                     respondentEmail: 'tester@example.com',
                     requirementIndex: 0,
+                    requirementId: 'requirement_1',
                     positiveAnswer: 1,
                     negativeAnswer: 5,
                 },
                 {
                     respondentEmail: 'tester@example.com',
                     requirementIndex: 1,
+                    requirementId: 'requirement_2',
                     positiveAnswer: 2,
                     negativeAnswer: 3,
                 },
@@ -117,6 +186,7 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
                     // 업로드마다 다른 표식이 붙어 다음 업로드의 2번 파일과 섞이지 않는다(B4).
                     respondentEmail: expect.stringMatching(/^offline-html-2-[0-9a-f]{12}@import\.local$/),
                     requirementIndex: 0,
+                    requirementId: 'requirement_1',
                     positiveAnswer: 4,
                     negativeAnswer: 2,
                 },
@@ -208,12 +278,14 @@ describe('POST /api/projects/[id]/kano/upload-offline', () => {
                 {
                     respondentEmail: 'tester@example.com',
                     requirementIndex: 0,
+                    requirementId: 'requirement_1',
                     positiveAnswer: 1,
                     negativeAnswer: 5,
                 },
                 {
                     respondentEmail: 'tester@example.com',
                     requirementIndex: 1,
+                    requirementId: 'requirement_2',
                     positiveAnswer: 2,
                     negativeAnswer: 3,
                 },

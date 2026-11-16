@@ -1,4 +1,5 @@
 // 업로드된 Kano 응답을 초대·응답 테이블에 쓰는 트랜잭션이다.
+import { KanoQuestionOrderError } from './kano-requirement-snapshot';
 import { prisma } from '@/lib/prisma';
 import { generateId } from '@/lib/id';
 import { classifyKanoResponse } from '@/lib/kano-algorithm';
@@ -95,19 +96,18 @@ async function getStoredInvitationIds(
 
 function buildKanoResponseRows(
     answers: ParsedKanoUploadAnswer[],
-    requirements: PersistKanoUploadInput['requirements'],
+    requirementIds: string[],
     projectId: string,
     invitationIdsByEmail: Map<string, string>
 ) {
-    return answers.map((answer) => {
+    return answers.map((answer, index) => {
         const invitationId = invitationIdsByEmail.get(answer.respondentEmail);
-        const requirement = requirements[answer.requirementIndex];
-        if (!invitationId || !requirement) throw new Error('Invalid parsed Kano response.');
+        if (!invitationId) throw new Error('Invalid parsed Kano response.');
         return {
             id: generateId('response'),
             invitationId,
             projectId,
-            requirementId: requirement.id,
+            requirementId: requirementIds[index],
             respondentEmail: answer.respondentEmail,
             positiveAnswer: answer.positiveAnswer,
             negativeAnswer: answer.negativeAnswer,
@@ -121,6 +121,9 @@ export async function persistKanoUploadAnswers(
     input: PersistKanoUploadInput
 ): Promise<PersistKanoUploadResult> {
     const { projectId, invitedBy, writePolicy, requirements, answers, replaceExistingRespondents = false } = input;
+    const knownIds = new Set(requirements.map(row => row.id));
+    const requirementIds = answers.map(answer => answer.requirementId ?? requirements[answer.requirementIndex]?.id);
+    if (requirementIds.some(id => !id || !knownIds.has(id))) throw new KanoQuestionOrderError();
     const respondentEmails = uniqueRespondentEmails(answers);
     const respondedAt = new Date();
 
@@ -130,7 +133,7 @@ export async function persistKanoUploadAnswers(
             tx, projectId, invitedBy, respondentEmails, respondedAt
         );
         await tx.kanoResponse.createMany({
-            data: buildKanoResponseRows(answers, requirements, projectId, invitationIdsByEmail),
+            data: buildKanoResponseRows(answers, requirementIds, projectId, invitationIdsByEmail),
         });
     });
 

@@ -355,6 +355,7 @@ function SpecSheetTable({
 export default function ProductAttributesTable({ projectId, onSaved }: ProductAttributesTableProps) {
     const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=attributes`;
     const [rows, setRows] = useState<ProductAttributeRow[]>([]);
+    const [revision, setRevision] = useState<string | null>(null);
     const [specFunctions, setSpecFunctions] = useState<SpecFunction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadFailed, setLoadFailed] = useState(false);
@@ -398,6 +399,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             if (attrRes.ok) {
                 const data = await attrRes.json();
                 if (!Array.isArray(data.attributes)) throw new Error('제품 속성 응답 형식 오류');
+                setRevision(data.revision ?? null);
                 loadedAttrs = data.attributes;
                 // 고객명별로 저장된 기존 행도 세분시장 단위로 합쳐 보여 준다. DB 는 사용자가 저장할 때만 바뀐다.
                 setRows(collapseCustomerRowsToSegments<any>(loadedAttrs).map((a: any) => ({
@@ -528,7 +530,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         try {
             const res = await fetch(`/api/projects/${projectId}/attributes`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({
                     attributes: savedAttributes,
                     ...(options.confirmedCascadeImpact ? { confirmedCascadeImpact: options.confirmedCascadeImpact } : {}),
@@ -548,11 +550,12 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             }
 
             if (res.ok) {
+                setRevision(data?.revision ?? null);
                 markSaved();
                 showToast('저장되었습니다.', 'success');
                 onSaved?.();
             } else {
-                showToast('저장에 실패했습니다.', 'error');
+                showToast(data?.error || '저장에 실패했습니다.', 'error');
             }
         } catch (error) {
             console.error('저장 실패:', error);
@@ -628,7 +631,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             // 그사이 적합도가 바뀌었으면 다시 확인받게 한다.
             const res = await fetch(`/api/projects/${projectId}/attributes`, {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify(confirmedCascadeImpact ? { confirmedCascadeImpact } : {}),
             });
             const data = await res.json().catch(() => null);
@@ -645,6 +648,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                 return;
             }
             setRows([]);
+            setRevision(data?.revision ?? null);
             setAdditionalTechCapability('');
             markSaved();
             setShowResetConfirm(false);

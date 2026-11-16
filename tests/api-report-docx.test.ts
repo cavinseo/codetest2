@@ -10,13 +10,19 @@ vi.mock('../lib/final-report-docx', () => ({
 }));
 
 const requireProjectAccess = vi.fn();
+const findProject = vi.fn();
+const findReport = vi.fn();
 vi.mock('../lib/authorization', () => ({
     requireProjectAccess: (...args: unknown[]) => requireProjectAccess(...(args as [])),
 }));
+vi.mock('../lib/prisma', () => ({ prisma: {
+    project: { findUnique: (...args: unknown[]) => findProject(...(args as [])) },
+    finalReport: { findUnique: (...args: unknown[]) => findReport(...(args as [])) },
+} }));
 
-const { POST } = await import('../app/api/projects/[id]/report/docx/route');
+const { GET, POST } = await import('../app/api/projects/[id]/report/docx/route');
 
-const USER = { userId: 'user_1', email: 'owner@x.com', name: '소유자' };
+const USER = { userId: 'user_1', role: 'MENTOR', name: '담당 멘토' };
 const MODEL = { title: '결과보고서', fileName: '결과보고서_스마트팜.docx', blocks: [{ kind: 'paragraph', text: '본문' }] };
 
 function call(body: unknown = MODEL, projectId = 'proj_1') {
@@ -28,8 +34,16 @@ function call(body: unknown = MODEL, projectId = 'proj_1') {
     return POST(request, { params: Promise.resolve({ id: projectId }) });
 }
 
+function get(view?: string) {
+    return GET(new NextRequest(`http://localhost/api/projects/proj_1/report/docx${view ? `?view=${view}` : ''}`),
+        { params: Promise.resolve({ id: 'proj_1' }) });
+}
+
 beforeEach(() => {
-    requireProjectAccess.mockResolvedValue({ user: USER, role: 'OWNER' });
+    requireProjectAccess.mockResolvedValue({ user: USER, role: 'COACH' });
+    findProject.mockResolvedValue({ companyName: '회사', owner: { profile: { companyName: '회사' },
+        mentorAssignment: { mentorId: USER.userId, mentor: { name: USER.name } } } });
+    findReport.mockResolvedValue({ published: MODEL, draft: null });
     renderFinalReportDocx.mockResolvedValue(new Blob(['PK\x03\x04dummy'], {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     }));
@@ -128,5 +142,65 @@ describe('POST /api/projects/[id]/report/docx', () => {
         expect(res.status).toBe(500);
         expect(body.error).toBe('문서 생성에 실패했습니다.');
         expect(JSON.stringify(body)).not.toContain('line 15115');
+    });
+});
+
+describe('GET /api/projects/[id]/report/docx', () => {
+    it('완료본을 저장소에서 읽어 내려받으며 요청 본문을 사용하지 않는다', async () => {
+        const res = await get();
+        expect(res.status).toBe(200);
+        expect(findReport).toHaveBeenCalledWith({ where: { projectId: 'proj_1' } });
+        expect(renderFinalReportDocx).toHaveBeenCalledWith(MODEL);
+    });
+
+    it('저장된 초안과 완료본을 구분한다', async () => {
+        const draft = { ...MODEL, blocks: [{ kind: 'paragraph', text: '초안' }] };
+        findReport.mockResolvedValue({ published: MODEL, draft: { free: {
+            productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null,
+            marketDefinition: '', targetCustomer: '', finalSpecExplanation: '', improvedProductName: '', improvedProductDescription: '',
+        }, document: draft, previewNeedsRefresh: false } });
+        const res = await get('draft');
+        expect(res.status).toBe(200);
+        expect(renderFinalReportDocx).toHaveBeenCalledWith(draft);
+    });
+
+    it('완료본이 없으면 404를 반환한다', async () => {
+        findReport.mockResolvedValue(null);
+        expect((await get('published')).status).toBe(404);
+        expect(renderFinalReportDocx).not.toHaveBeenCalled();
+    });
+
+    it('저장된 초안 문서가 없으면 404를 반환한다', async () => {
+        findReport.mockResolvedValue({ published: MODEL, draft: null });
+        expect((await get('draft')).status).toBe(404);
+        expect(renderFinalReportDocx).not.toHaveBeenCalled();
+    });
+
+    it('서버가 표지 작성일을 다운로드 당일로 갱신한다', async () => {
+        const cover = { kind: 'cover', title: '결과보고서', projectName: '프로젝트', companyName: '회사',
+            coachName: '담당 멘토', outputDate: '2020.01.01' };
+        findReport.mockResolvedValue({ published: { ...MODEL, blocks: [cover] } });
+        expect((await get()).status).toBe(200);
+        expect(renderFinalReportDocx).toHaveBeenCalledWith({ ...MODEL, blocks: [{
+            ...cover, outputDate: expect.stringMatching(/^\d{4}\.\d{2}\.\d{2}$/),
+        }] });
+    });
+
+    it('초안 권한이 없으면 403이고 임의 문서 POST도 차단한다', async () => {
+        requireProjectAccess.mockResolvedValue({ user: { userId: 'owner', role: 'MENTEE' }, role: 'OWNER' });
+        expect((await get('draft')).status).toBe(403);
+        expect((await call()).status).toBe(403);
+        expect(findReport).not.toHaveBeenCalled();
+        expect(renderFinalReportDocx).not.toHaveBeenCalled();
+    });
+
+    it('관리자는 저장된 초안을 다운로드할 수 있지만 임의 본문 POST는 거부한다', async () => {
+        requireProjectAccess.mockResolvedValue({ user: { userId: 'admin', role: 'ADMIN' }, role: 'OWNER' });
+        findReport.mockResolvedValue({ draft: { free: {
+            productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null,
+            marketDefinition: '', targetCustomer: '', finalSpecExplanation: '', improvedProductName: '', improvedProductDescription: '',
+        }, document: MODEL, previewNeedsRefresh: false } });
+        expect((await get('draft')).status).toBe(200);
+        expect((await call()).status).toBe(403);
     });
 });

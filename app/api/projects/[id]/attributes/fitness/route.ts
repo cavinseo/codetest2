@@ -16,7 +16,7 @@ export async function GET(
 ) {
     try {
         const { id: projectId } = await params;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: false });
         if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
@@ -50,7 +50,7 @@ export async function POST(
 ) {
     try {
         const { id: projectId } = await params;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },

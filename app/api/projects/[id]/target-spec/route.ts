@@ -1,3 +1,5 @@
+import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
+import { orderByRequirementText, orderTargetSpecs } from '@/lib/requirement-order';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
@@ -6,6 +8,7 @@ import { toErrorResponse } from '@/lib/api-error';
 import { buildTargetSpecSuggestions, buildTargetSpecsFromAsIs, buildTargetSpecAdditionsFromTechTree } from '@/lib/worksheet-links';
 import { targetSpecBodySchema } from '@/lib/bulk-save-schemas';
 import { createBulkWorksheetRoute } from '@/lib/bulk-worksheet-route';
+import { worksheetRevision } from '@/lib/worksheet-revision';
 
 const log = createLogger('api/target-spec');
 
@@ -15,21 +18,24 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     const accessResult = await requireProjectAccess(request, projectId, { write: false });
     if (accessResult instanceof NextResponse) return accessResult;
     try {
-        const [rows, improvements, techChars, specFunctions, techTreeEntries] = await Promise.all([
+        const [rows, improvements, techChars, specFunctions, storedTreeEntries, storedRequirements] = await Promise.all([
             prisma.targetSpec.findMany({ where: { projectId }, orderBy: { order: 'asc' } }),
             prisma.improvementItem.findMany({ where: { projectId, type: 'feature' } }),
             prisma.technicalCharacteristic.findMany({ where: { projectId } }),
             prisma.specFunction.findMany({ where: { projectId }, orderBy: { order: 'asc' } }),
             prisma.techTreeEntry.findMany({ where: { projectId }, orderBy: { order: 'asc' } }),
+            prisma.customerRequirement.findMany({ where: { projectId }, orderBy: { order: 'asc' } }),
         ]);
+        const requirements = groupRequirementsByCategory(storedRequirements);
+        const techTreeEntries = orderByRequirementText(storedTreeEntries, requirements, row => row.customerVoice);
         const suggestions = buildTargetSpecSuggestions({
             improvements,
             technicalCharacteristics: techChars,
         });
-        const asIsRows = buildTargetSpecsFromAsIs(specFunctions);
+        const asIsRows = orderTargetSpecs(buildTargetSpecsFromAsIs(specFunctions), techTreeEntries);
         const newSpecs = buildTargetSpecAdditionsFromTechTree(techTreeEntries, specFunctions, asIsRows)
             .map(({ category, subCategory }) => ({ category, subCategory }));
-        return NextResponse.json({ rows, asIsRows, newSpecs, suggestions, improvements, technicalCharacteristics: techChars });
+        return NextResponse.json({ rows: orderTargetSpecs(rows, techTreeEntries), revision: worksheetRevision(rows), asIsRows, newSpecs, suggestions, improvements, technicalCharacteristics: techChars });
     } catch (error) {
         return toErrorResponse(error, {
             log,

@@ -7,6 +7,7 @@ import { prisma } from './prisma';
 import { generateId } from './id';
 import { importDeletionPlan } from './import-json-plan';
 import type { ImportJsonPayload } from './import-json-schema';
+import { validateProductOverview } from './product-overview';
 import { restoreResponseInvitations, validateImportReferences } from './import-json-relations';
 
 type IdPrefix = Parameters<typeof generateId>[0];
@@ -369,10 +370,16 @@ export async function restoreImportedProject(projectId: string, importData: Impo
         }
 
         // 프로젝트 기본 정보 업데이트
-        if (importData.project || importData.technicalCharacteristics) {
+        // 제품 개요(회사·제품명, 이미지, 사업계획서)와 WS-2 접힘 상태도 백업에 들어 있으므로 함께
+        // 되돌린다. 이미지 크기 짝 검사는 개요 저장 API 와 같은 규칙을 거쳐야 깨진 이미지가 남지 않는다.
+        if (importData.project || importData.technicalCharacteristics || importData.specDetailCollapsed !== undefined) {
             await tx.project.update({
                 where: { id: projectId },
                 data: {
+                    ...validateProductOverview(importData.project ?? {}),
+                    companyName: importData.project?.companyName,
+                    businessPlanFile: importData.project?.businessPlanFile,
+                    specDetailCollapsed: importData.specDetailCollapsed,
                     description: importData.project?.description,
                     detailedDescription: importData.project?.detailedDescription,
                     additionalMarketData: importData.project?.additionalMarketData,
