@@ -46,7 +46,9 @@ async function clearPreviousUploadResponses(
 ) {
     if (writePolicy === 'replace') {
         await tx.kanoResponse.deleteMany({ where: { projectId } });
-        await tx.kanoSurveyInvitation.deleteMany({ where: { projectId } });
+        // 응답이 끝난 초대(업로드로 만든 것 포함)만 지운다. 아직 응답하지 않은 이메일
+        // 초대까지 지우면 이미 보낸 설문 링크가 경고 없이 모두 끊긴다(감리 B2).
+        await tx.kanoSurveyInvitation.deleteMany({ where: { projectId, respondedAt: { not: null } } });
         return;
     }
 

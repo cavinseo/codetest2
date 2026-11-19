@@ -211,19 +211,69 @@ describe('POST /api/projects/[id]/kano/upload-excel', () => {
         expect(transaction).not.toHaveBeenCalled();
     });
 
-    it('replace 정책은 프로젝트의 응답과 초대를 차례로 모두 삭제한다', async () => {
+    it('replace 정책은 응답 전부와 응답이 끝난 초대만 차례로 삭제한다', async () => {
         const response = await POST(uploadRequest('replace'), params);
 
         expect(response.status).toBe(200);
         expect(tx.kanoResponse.deleteMany).toHaveBeenCalledWith({
             where: { projectId: PROJECT_ID },
         });
+        // 아직 응답하지 않은 이메일 초대는 남겨 이미 보낸 설문 링크가 끊기지 않게 한다(감리 B2).
         expect(tx.kanoSurveyInvitation.deleteMany).toHaveBeenCalledWith({
-            where: { projectId: PROJECT_ID },
+            where: { projectId: PROJECT_ID, respondedAt: { not: null } },
         });
         expect(tx.kanoResponse.deleteMany.mock.invocationCallOrder[0]).toBeLessThan(
             tx.kanoSurveyInvitation.deleteMany.mock.invocationCallOrder[0]
         );
+    });
+
+    // 이메일 칸이 빈 응답자는 행 번호로 합성 ID 를 받는다. 그 ID 가 파일마다 겹치면
+    // 다른 파일의 같은 행 번호 응답자가 같은 사람으로 취급된다(감리 B2).
+    describe('이메일 없는 응답자의 합성 ID', () => {
+        function requestFromFile(file: File, writePolicy: 'append' | 'replace' = 'append'): NextRequest {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('format', 'template');
+            formData.append('writePolicy', writePolicy);
+            return new NextRequest(`http://localhost/api/projects/${PROJECT_ID}/kano/upload-excel`, {
+                method: 'POST',
+                body: formData,
+            });
+        }
+
+        function savedRespondentEmails(): string[] {
+            return tx.kanoResponse.createMany.mock.calls.flatMap(([args]) =>
+                (args.data as { respondentEmail: string }[]).map((row) => row.respondentEmail)
+            );
+        }
+
+        it('업로드 표식을 붙여 저장한다', async () => {
+            const response = await POST(requestFromFile(kanoTemplateFile([['', 1, 5, 2, 4]])), params);
+
+            expect(response.status).toBe(200);
+            const [email] = new Set(savedRespondentEmails());
+            expect(email).toMatch(/^excel-row-\d+-[0-9a-f]{12}@import\.local$/);
+        });
+
+        it('서로 다른 파일의 같은 행 번호 응답자는 다른 응답자로 저장한다', async () => {
+            await POST(requestFromFile(kanoTemplateFile([['', 1, 5, 2, 4]])), params);
+            const first = savedRespondentEmails();
+            tx.kanoResponse.createMany.mockClear();
+
+            await POST(requestFromFile(kanoTemplateFile([['', 3, 3, 3, 3]])), params);
+            const second = savedRespondentEmails();
+
+            expect(first[0]).not.toBe(second[0]);
+            // 앞 파일 응답자와 겹치는지 묻는 조회도 새 ID 로 한다.
+            expect(tx.kanoResponse.findMany.mock.calls[1][0].where.respondentEmail.in).toEqual([second[0]]);
+        });
+
+        it('실제 이메일은 바꾸지 않는다', async () => {
+            const response = await POST(uploadRequest('append', [['real@example.test', 1, 5, 2, 4]]), params);
+
+            expect(response.status).toBe(200);
+            expect(new Set(savedRespondentEmails())).toEqual(new Set(['real@example.test']));
+        });
     });
 
     it('append 정책은 기존 응답이 없을 때 초대를 보존하고 삭제 없이 저장한다', async () => {
