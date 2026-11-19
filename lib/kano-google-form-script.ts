@@ -1,5 +1,6 @@
 import { getKanoTopic } from './utils/korean-utils';
 import { kanoSurveyAnswerLabels, resolveKanoQuestionPair } from './kano-survey-document';
+import { buildKanoSurveyIntroduction, EMPTY_KANO_INTRODUCTION, type KanoSurveyIntroduction } from './kano-survey-introduction';
 
 export interface KanoFormScriptRequirement {
     category?: string | null;
@@ -21,7 +22,11 @@ function questionTitle(requirement: KanoFormScriptRequirement, index: number, ty
 
 export function buildKanoGoogleFormScript(
     requirements: KanoFormScriptRequirement[],
-    projectName = 'Kano 설문'
+    projectName = 'Kano 설문',
+    // 오프라인 HTML 설문지와 같은 소개문을 설문지 맨 위에 둔다. 응답자가 어느
+    // 경로로 받든 누가 무엇을 왜 묻는지 같은 문구로 읽어야 한다. 저장된 값이
+    // 없으면 오프라인 양식처럼 빈칸이 남아, 만든 사람이 폼에서 채워 넣는다.
+    introduction: KanoSurveyIntroduction = EMPTY_KANO_INTRODUCTION
 ): string {
     const payload = requirements.map((requirement, index) => {
         const pair = resolveKanoQuestionPair(requirement);
@@ -44,6 +49,7 @@ export function buildKanoGoogleFormScript(
 function createKanoForm() {
   const form = FormApp.create(${escapeScriptString(`Kano 설문 조사 - ${projectName}`)});
   form.setDescription(
+    ${escapeScriptString(`${buildKanoSurveyIntroduction(introduction)}\n\n`)} +
     '이 설문은 제품/서비스의 각 기능에 대한 고객 만족도를 측정하기 위한 Kano 모델 기반 설문입니다.\\n\\n' +
     '각 기능에 대해 긍정 질문과 부정 질문 두 가지에 답변해 주세요.\\n\\n' +
     '응답 완료 후 Google Forms 응답 시트를 xlsx로 다운로드하여 시스템에 업로드할 수 있습니다.'
