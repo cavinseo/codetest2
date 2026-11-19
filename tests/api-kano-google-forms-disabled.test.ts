@@ -120,7 +120,7 @@ describe('Google Forms 라우트 비활성화', () => {
             requirement: '빠른 처리',
             kanoPositiveQ: '빠르면 어떻습니까?',
             kanoNegativeQ: '느리면 어떻습니까?',
-        }], '프로젝트');
+        }], '프로젝트', { technology: '', productType: '', companyName: '', representativeName: '', offering: '' });
         expect(isGoogleConfigured).not.toHaveBeenCalled();
         expect(getGoogleToken).not.toHaveBeenCalled();
     });
