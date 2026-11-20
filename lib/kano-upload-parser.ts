@@ -16,9 +16,12 @@ export type ParsedKanoUploadAnswer = {
 //     like 는 낱말 경계(\b)로도 묶어 dislike 안의 like 에 걸리지 않게 이중으로 막는다.
 //   - 문구는 자체 양식(한국어)과 예전 Google Forms 양식의 이중언어 선택지
 //     (lib/google-forms.ts 의 ANSWER_MAP)를 모두 읽는다.
+//   - 멘티가 Google Forms 에서 직접 만든 설문은 "어쩔 수 없다"·"마음에 들지 않는다"
+//     처럼 같은 뜻의 다른 문구를 쓴다. 이 둘을 못 읽어 부정 질문의 4·5점이 통째로
+//     버려지고 불만족 계수가 전부 0 이 된 실제 사례가 있었다.
 const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
-    [/\bdislike\b|불만|마음에\s*안\s*든다|안\s*든다|싫/i, 5],
-    [/tolerate|견딜|하는\s*수\s*없|할\s*수\s*없|참을/i, 4],
+    [/\bdislike\b|불만|마음에\s*안\s*든다|안\s*든다|들지\s*않|싫/i, 5],
+    [/tolerate|견딜|하는\s*수\s*없|할\s*수\s*없|어쩔\s*수\s*없|참을/i, 4],
     [/neutral|중립|상관\s*없|아무런\s*느낌|아무렇지\s*않/i, 3],
     [/expect|당연/i, 2],
     [/\blike\b|만족|마음에\s*든다/i, 1],
@@ -99,6 +102,37 @@ function isPositiveHeader(key: string): boolean {
 
 function isNegativeHeader(key: string): boolean {
     return /\[?부정\]?|negative|dysfunctional/i.test(key);
+}
+
+// 앱의 설문 생성 스크립트와 직접 만든 Google Forms 는 문항 제목을 "[1-1] …"·"[1-2] …" 로 단다.
+// 해석기는 이런 열을 긍정·부정 표시 없이 순서로 읽으므로, 응답 열 판정에서는 따로 알아본다.
+const NUMBERED_QUESTION_HEADER = /\[\d+-[12]\]/;
+
+function isAnswerColumnHeader(header: string): boolean {
+    return !isMetaHeader(header)
+        && (isPositiveHeader(header) || isNegativeHeader(header) || NUMBERED_QUESTION_HEADER.test(header));
+}
+
+// 응답 칸인데 점수로 읽히지 않는 문구를 모은다. 해석기는 긍정·부정 중 한 칸이라도
+// 못 읽으면 그 문항을 저장하지 않으므로, 이걸 알리지 않으면 응답 일부가 조용히
+// 빠진 채 분석이 나온다. 빈칸은 응답하지 않은 것이라 세지 않는다.
+// 머리글이 몇째 줄에 있든(전용 양식은 3행) 응답 열 머리글이 처음 나오는 줄을 머리글로 본다.
+// 표 형태(한 행 = 한 응답자) 양식에만 쓴다. 워크시트 행렬 양식은 왼쪽 열에
+// "긍정" 같은 질문 이름이 내려가며 있어 머리글로 잘못 잡힌다.
+export function findUnreadableKanoAnswerTexts(rows: unknown[][]): string[] {
+    const headerRowIndex = rows.findIndex(row => row.some(cell => isAnswerColumnHeader(String(cell ?? ''))));
+    if (headerRowIndex < 0) return [];
+    const answerColumns = rows[headerRowIndex]
+        .map((cell, col) => (isAnswerColumnHeader(String(cell ?? '')) ? col : -1))
+        .filter(col => col >= 0);
+    const unreadable = new Set<string>();
+    for (const row of rows.slice(headerRowIndex + 1)) {
+        for (const col of answerColumns) {
+            const text = String(row[col] ?? '').trim();
+            if (text && normalizeKanoUploadAnswer(row[col]) === null) unreadable.add(text);
+        }
+    }
+    return [...unreadable];
 }
 
 export function parseGoogleFormsResponseRows(
