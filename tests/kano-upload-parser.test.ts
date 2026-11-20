@@ -8,6 +8,41 @@ import {
     parseWorksheetMatrixRows,
     separateAnonymousRespondents,
 } from '../lib/kano-upload-parser';
+
+// 응답 문구는 위에서부터 맞춰 보므로 순서가 틀리면 정반대 점수가 나온다.
+// "I dislike it" 에는 "like" 가 들어 있어, 1점을 먼저 보면 싫다가 좋다로 읽혔다(감리 B6).
+describe('normalizeKanoUploadAnswer', () => {
+    it.each([
+        // 자체 설문지 선택지
+        ['마음에 든다', 1], ['당연하다', 2], ['아무런느낌이 없다', 3], ['하는수 없다', 4], ['마음에 안든다', 5],
+        // 예전 Google Forms 의 이중언어 선택지(lib/google-forms.ts ANSWER_MAP)
+        ['😍 매우 만족 (I like it)', 1],
+        ['😊 당연함 (I expect it)', 2],
+        ['😐 상관없음 (I am neutral)', 3],
+        ['😕 견딜만함 (I can tolerate it)', 4],
+        ['😠 매우 불만 (I dislike it)', 5],
+        // 영문만 쓴 응답
+        ['I like it', 1], ['I dislike it', 5], ['Dislike', 5], ['LIKE', 1],
+        // 띄어쓰기·변형 문구
+        ['마음에 안 든다', 5], ['싫다', 5], ['참을 수 있다', 4], ['어쩔 수 없이 할 수 없다', 4], ['아무렇지 않다', 3], ['중립', 3],
+    ] as const)('%s → %i', (text, expected) => {
+        expect(normalizeKanoUploadAnswer(text)).toBe(expected);
+    });
+
+    it.each([
+        [1, 1], [5, 5], ['3', 3], [' 4 ', 4],
+    ] as const)('숫자 %j 는 그 점수로 읽는다', (value, expected) => {
+        expect(normalizeKanoUploadAnswer(value)).toBe(expected);
+    });
+
+    it.each([0, 6, '6', '', '   ', null, undefined, '모르겠다'])('읽을 수 없는 값 %j 은 null', (value) => {
+        expect(normalizeKanoUploadAnswer(value)).toBeNull();
+    });
+
+    it('likely 처럼 like 로 시작하는 다른 낱말은 1점으로 읽지 않는다', () => {
+        expect(normalizeKanoUploadAnswer('likely')).toBeNull();
+    });
+});
 import { writeKanoUploadTemplateBuffer } from '../lib/kano-upload-template';
 
 describe('Kano Google Forms upload parser', () => {

@@ -10,14 +10,19 @@ export type ParsedKanoUploadAnswer = {
     negativeAnswer: KanoAnswer;
 };
 
-// 영문 like 는 단어 경계로 감싼다. 그냥 두면 "I dislike it" 의 dislike 안에서 먼저 걸려
-// 5점(싫다)이 1점(좋다)으로 읽히고, 영문 응답 파일의 Kano 분류가 뒤집힌다.
+// 위에서부터 차례로 맞춰 보고 처음 맞은 점수를 쓴다. 그래서 순서가 곧 우선순위다.
+// (숫자만 적힌 칸은 이 표 전에 normalizeKanoUploadAnswer 가 먼저 읽는다.)
+//   - 5점(싫다)을 1점(좋다)보다 먼저 본다. "I dislike it" 에는 "like" 가,
+//     "마음에 안 든다" 에는 "든다" 가 들어 있어, 1점을 먼저 보면 정반대로 읽힌다(감리 B6).
+//     like 는 낱말 경계(\b)로도 묶어 dislike 안의 like 에 걸리지 않게 이중으로 막는다.
+//   - 문구는 자체 양식(한국어)과 예전 Google Forms 양식의 이중언어 선택지
+//     (lib/google-forms.ts 의 ANSWER_MAP)를 모두 읽는다.
 const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
-    [/^\s*1\s*$|마음에\s*든다|\blike\b/i, 1],
-    [/^\s*2\s*$|당연|expect/i, 2],
-    [/^\s*3\s*$|아무런\s*느낌|아무렇지\s*않다|중립|neutral/i, 3],
-    [/^\s*4\s*$|하는수\s*없|참을\s*수\s*있다|tolerate/i, 4],
-    [/^\s*5\s*$|마음에\s*안\s*든다|마음에\s*안든다|dislike/i, 5],
+    [/\bdislike\b|불만|마음에\s*안\s*든다|안\s*든다|싫/i, 5],
+    [/tolerate|견딜|하는\s*수\s*없|할\s*수\s*없|참을/i, 4],
+    [/neutral|중립|상관\s*없|아무런\s*느낌|아무렇지\s*않/i, 3],
+    [/expect|당연/i, 2],
+    [/\blike\b|만족|마음에\s*든다/i, 1],
 ];
 
 const META_HEADER_PATTERNS = [
@@ -60,6 +65,8 @@ export function normalizeKanoUploadAnswer(value: unknown): KanoAnswer | null {
     if (typeof value === 'number') return Number.isInteger(value) && value >= 1 && value <= 5 ? value as KanoAnswer : null;
     const text = String(value ?? '').trim();
     if (!text) return null;
+    // 숫자만 적힌 칸은 문구 패턴보다 확실하므로 먼저 읽는다.
+    if (/^[1-5]$/.test(text)) return Number(text) as KanoAnswer;
     return ANSWER_TEXT.find(([pattern]) => pattern.test(text))?.[1] ?? null;
 }
 
