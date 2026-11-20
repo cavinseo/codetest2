@@ -255,6 +255,7 @@ export const importJsonSchema = z.object({
             if (value === undefined) return undefined;
             try { return validateBusinessPlanFileStorageValue(value); }
             catch (error) {
+                // Stryker disable next-line StringLiteral: 검증 함수는 Error 만 던져 이 대체 문구에 닿지 않는다(등가 뮤턴트)
                 ctx.addIssue({ code: z.ZodIssueCode.custom, message: error instanceof Error ? error.message : '사업계획 파일을 확인하세요.' });
                 return z.NEVER;
             }
@@ -262,6 +263,7 @@ export const importJsonSchema = z.object({
     }).strict().transform((project, ctx) => {
         try { return { ...project, ...validateProductOverview(project) }; }
         catch (error) {
+            // Stryker disable next-line StringLiteral: validateProductOverview 는 Error 만 던져 이 대체 문구에 닿지 않는다(등가 뮤턴트)
             ctx.addIssue({ code: z.ZodIssueCode.custom, message: error instanceof Error ? error.message : '제품 정보를 확인하세요.' });
             return z.NEVER;
         }
