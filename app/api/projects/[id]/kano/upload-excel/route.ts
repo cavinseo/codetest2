@@ -4,7 +4,10 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { guardUploadedExcel } from '@/lib/upload-guard';
 import type { KanoAnswer } from '@/lib/kano-algorithm';
+// 응답 문구 해석은 lib 한 곳에만 둔다. 예전에는 이 파일에 내용이 다른 사본이 있어,
+// 같은 엑셀이 어느 경로로 읽히느냐에 따라 점수가 달라졌다(감리 B6·D6).
 import {
+    normalizeKanoUploadAnswer,
     parseGoogleFormsResponseSheet,
     parseKanoTemplateResponseSheet,
     parseWorksheetMatrixSheet,
@@ -13,23 +16,6 @@ import {
     type ParsedKanoUploadAnswer,
 } from '@/lib/kano-upload-parser';
 import { KanoUploadConflictError, parseWritePolicy, persistKanoUploadAnswers } from '@/lib/kano-response-store';
-
-// like 를 단어 경계로 감싸야 "dislike" 가 1점(좋다)으로 읽히지 않는다(lib/kano-upload-parser.ts 와 같은 이유).
-const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
-    [/^\s*1\s*$|마음에\s*든다|\blike\b/i, 1],
-    [/^\s*2\s*$|당연|expect/i, 2],
-    [/^\s*3\s*$|아무런\s*느낌|중립|neutral/i, 3],
-    [/^\s*4\s*$|할\s*수\s*없|하는수\s*없|참을|tolerate/i, 4],
-    [/^\s*5\s*$|마음에\s*안\s*든다|마음에\s*안든다|안\s*든다|싫|dislike/i, 5],
-];
-
-function normalizeAnswer(value: unknown): KanoAnswer | null {
-    // 소수(2.5 등)는 정수 열 저장에서 업로드 전체를 실패시키므로 받지 않는다.
-    if (typeof value === 'number') return Number.isInteger(value) && value >= 1 && value <= 5 ? value as KanoAnswer : null;
-    const text = String(value ?? '').trim();
-    if (!text) return null;
-    return ANSWER_TEXT.find(([pattern]) => pattern.test(text))?.[1] ?? null;
-}
 
 function selectedAnswerFromRow(row: unknown[], startCol: number): KanoAnswer | null {
     for (let offset = 0; offset < 5; offset++) {
@@ -69,8 +55,8 @@ function parseTabularResponses(sheet: XLSX.WorkSheet, requirementCount: number):
 
             const loosePositive = entries.find(([key]) => key.includes(`${reqIndex + 1}`) && /positive|긍정/i.test(key))?.[1];
             const looseNegative = entries.find(([key]) => key.includes(`${reqIndex + 1}`) && /negative|부정/i.test(key))?.[1];
-            const positiveAnswer = [...positiveCandidates, loosePositive].map(normalizeAnswer).find(Boolean);
-            const negativeAnswer = [...negativeCandidates, looseNegative].map(normalizeAnswer).find(Boolean);
+            const positiveAnswer = [...positiveCandidates, loosePositive].map(normalizeKanoUploadAnswer).find(Boolean);
+            const negativeAnswer = [...negativeCandidates, looseNegative].map(normalizeKanoUploadAnswer).find(Boolean);
 
             if (positiveAnswer && negativeAnswer) {
                 parsed.push({
