@@ -24,6 +24,7 @@ const {
     getAiSettings,
     getGoogleSettings,
     getGoogleToken,
+    getStoredGoogleToken,
     getSmtpSettings,
     setGoogleToken,
     updateAiSettings,
@@ -168,6 +169,18 @@ describe('Google 토큰', () => {
 
         await setGoogleToken({ accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() - 1 });
         expect(await getGoogleToken()).toBeNull();
+    });
+
+    // 액세스 토큰은 1시간이면 만료되지만 refresh token 으로 새로 받을 수 있다.
+    // 갱신하는 쪽이 읽을 수 있도록 만료된 토큰도 그대로 돌려준다(감리 B7).
+    it('저장된 토큰은 만료돼도 갱신용으로 읽을 수 있다', async () => {
+        await setGoogleToken({ accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() - 1 });
+
+        expect(await getStoredGoogleToken()).toMatchObject({ accessToken: 'a', refreshToken: 'r' });
+    });
+
+    it('저장된 토큰이 없으면 갱신용으로도 null 이다', async () => {
+        expect(await getStoredGoogleToken()).toBeNull();
     });
 
     it('refresh token 을 평문으로 저장하지 않는다', async () => {

@@ -26,7 +26,11 @@ const isGoogleConfigured = vi.fn();
 const getGoogleToken = vi.fn();
 vi.mock('../lib/service-settings', () => ({
     isGoogleConfigured: (...args: unknown[]) => isGoogleConfigured(...(args as [])),
-    getGoogleToken: (...args: unknown[]) => getGoogleToken(...(args as [])),
+}));
+// 라우트는 만료 토큰을 갱신해 주는 getUsableGoogleToken 으로 토큰을 받는다(감리 B7).
+// 기능이 꺼져 있으면 토큰을 읽지도(갱신하지도) 않아야 한다.
+vi.mock('../lib/google-auth', () => ({
+    getUsableGoogleToken: (...args: unknown[]) => getGoogleToken(...(args as [])),
 }));
 
 const createKanoForm = vi.fn();

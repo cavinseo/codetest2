@@ -32,7 +32,11 @@ vi.mock('../lib/authorization', () => ({
 
 vi.mock('../lib/service-settings', () => ({
     isGoogleConfigured: () => Promise.resolve(true),
-    getGoogleToken: () => Promise.resolve({ accessToken: 'token_x' }),
+}));
+
+// 라우트는 만료 토큰을 갱신해 주는 getUsableGoogleToken 으로 토큰을 받는다(감리 B7).
+vi.mock('../lib/google-auth', () => ({
+    getUsableGoogleToken: () => Promise.resolve({ accessToken: 'token_x' }),
 }));
 
 const getFormResponses = vi.fn();

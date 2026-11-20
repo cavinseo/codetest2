@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isGoogleConfigured, getGoogleToken } from '@/lib/service-settings';
+import { isGoogleConfigured } from '@/lib/service-settings';
+// 만료된 액세스 토큰은 저장된 refresh token 으로 갱신해 쓴다(감리 B7).
+import { getUsableGoogleToken } from '@/lib/google-auth';
 import { createKanoForm } from '@/lib/google-forms';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
@@ -32,7 +34,7 @@ export async function POST(
             );
         }
 
-        const token = await getGoogleToken();
+        const token = await getUsableGoogleToken();
         if (!token) {
             return NextResponse.json(
                 { error: 'Google 인증이 필요합니다. 먼저 Google 계정을 연결하세요.', needsAuth: true },

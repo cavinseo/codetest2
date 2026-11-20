@@ -201,8 +201,18 @@ export async function setGoogleToken(token: GoogleToken): Promise<void> {
 }
 
 export async function getGoogleToken(): Promise<GoogleToken | null> {
+    const token = await getStoredGoogleToken();
+    if (!token || token.expiresAt < Date.now()) return null;
+    return token;
+}
+
+/**
+ * 만료 여부와 관계없이 저장된 토큰을 돌려준다. 액세스 토큰은 1시간이면 만료되지만
+ * refresh token 으로 새로 받을 수 있으므로, 갱신하는 쪽(lib/google-auth.ts 의
+ * getUsableGoogleToken)은 만료된 토큰도 읽어야 한다(감리 B7).
+ */
+export async function getStoredGoogleToken(): Promise<GoogleToken | null> {
     const token = await readSetting<GoogleToken>(KEYS.googleToken);
-    if (!token) return null;
-    if (typeof token.expiresAt !== 'number' || token.expiresAt < Date.now()) return null;
+    if (!token || typeof token.expiresAt !== 'number' || typeof token.accessToken !== 'string') return null;
     return token;
 }

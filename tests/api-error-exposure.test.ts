@@ -22,7 +22,10 @@ vi.mock('../lib/authorization', () => ({
 
 vi.mock('../lib/service-settings', () => ({
     isGoogleConfigured: () => Promise.resolve(true),
-    getGoogleToken: () => Promise.resolve({ accessToken: 'token_x' }),
+}));
+
+vi.mock('../lib/google-auth', () => ({
+    getUsableGoogleToken: () => Promise.resolve({ accessToken: 'token_x' }),
 }));
 
 vi.mock('../lib/google-forms', () => ({
