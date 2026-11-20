@@ -8,6 +8,10 @@ export async function setMemberAccessExpiry(userId: string, email: string, acces
         await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
         const member = await tx.user.findUnique({ where: { id: userId } });
         if (!member) return { error: '사용자를 찾을 수 없습니다.', status: 404 };
+        // 관리자는 무기한 계정이다. 날짜를 씌우면 과거 날짜 한 번으로 본인과 다른 관리자가
+        // 모두 로그인에서 막혀 관리 화면에 다시 들어올 길이 없어진다(감리 B10). 승인 취소를
+        // 관리자에게 막는 것과 같은 이유로, 잠금 아래에서 다시 읽은 값으로 막는다.
+        if (member.isAdmin) return { error: '관리자 계정은 이용만료일을 지정할 수 없습니다.', status: 400 };
 
         if (member.role === 'MENTEE') {
             const invite = await tx.inviteCode.findFirst({
