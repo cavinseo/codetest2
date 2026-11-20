@@ -188,7 +188,8 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         }
         loadData();
         return () => { active = false; };
-    }, [projectId]);
+        // setOverviewRevision 은 훅의 useState 세터라 바뀌지 않는다. 프로젝트가 바뀔 때만 다시 불러온다.
+    }, [projectId, setOverviewRevision]);
 
     useEffect(() => {
         if (activeTab !== 'kano-aggregation' || !canReadKanoAnalysis) return;
