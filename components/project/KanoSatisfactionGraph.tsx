@@ -20,7 +20,11 @@ interface KanoSatisfactionGraphProps {
 }
 
 const KOREAN_CHART_FONT = '"Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", "Segoe UI", sans-serif';
-const POINT_RADIUS = 6;
+// 점과 번호는 화면 캡처·보고서에서도 읽혀야 한다. 6px 점에 8px 번호는 너무 작아 두 배로 키웠다.
+const POINT_RADIUS = 12;
+const POINT_LABEL_FONT_SIZE = 16;
+// 누르기 쉽도록 보이는 점보다 넓게 잡는 투명 영역.
+const POINT_HIT_RADIUS = POINT_RADIUS + 6;
 const quadrantLabels: Record<string, string> = {
     ATTRACTIVE: '매력적 품질',
     ONE_DIMENSIONAL: '일원적 품질',
@@ -162,7 +166,7 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                                 <circle
                                     cx={p.x}
                                     cy={p.y}
-                                    r="12"
+                                    r={POINT_HIT_RADIUS}
                                     fill="transparent"
                                 />
                                 <circle
@@ -184,10 +188,11 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                             <text
                                 key={cluster.members.join('-')}
                                 x={cluster.x}
-                                y={cluster.y + 3}
+                                // 글자 높이의 약 1/3 만큼 내려야 번호가 원 한가운데에 놓인다.
+                                y={cluster.y + POINT_LABEL_FONT_SIZE * 0.35}
                                 textAnchor="middle"
                                 fill="#fff"
-                                fontSize="8"
+                                fontSize={POINT_LABEL_FONT_SIZE}
                                 fontWeight="bold"
                                 stroke={cluster.members.length > 1 ? '#1e293b' : undefined}
                                 strokeWidth={cluster.members.length > 1 ? 3 : undefined}
