@@ -44,6 +44,29 @@ export function hasCascadeImpact(impact: CascadeImpact): boolean {
 }
 
 /**
+ * 사용자가 확인한 건수가 지금 지워질 건수와 정확히 같은지 본다.
+ *
+ * 예전에는 confirmCascade: true 하나로 통과시켜, 확인창에 "응답 3건"을 보여 준 뒤
+ * 그 사이 응답 40건이 더 들어와도 43건을 지웠다(감리 B4). 확인을 화면이 보여 준
+ * 건수에 묶어 두면, 건수가 바뀌었을 때 다시 묻게 된다. "이하"가 아니라 "같음"인
+ * 이유는 아무 큰 수나 보내 확인을 건너뛰는 일을 막기 위해서다.
+ */
+export function isCascadeImpactConfirmed(impact: CascadeImpact, confirmed: unknown): boolean {
+    if (!hasCascadeImpact(impact)) return true;
+    if (typeof confirmed !== 'object' || confirmed === null) return false;
+    const confirmedCounts = confirmed as Record<string, unknown>;
+    return (Object.keys(impact) as (keyof CascadeImpact)[])
+        .every((key) => confirmedCounts[key] === impact[key]);
+}
+
+/** 트랜잭션 안에서 다시 센 건수가 확인한 건수와 달라 삭제를 멈췄음을 알린다. */
+export class CascadeImpactChangedError extends Error {
+    constructor(readonly impact: CascadeImpact) {
+        super(describeCascadeImpact(impact));
+    }
+}
+
+/**
  * 덮어쓰는 요구사항·제품 속성·기술특성에 연결된 데이터의 삭제 건수를 센다.
  */
 export async function countCascadeImpact(

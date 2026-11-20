@@ -9,10 +9,18 @@ import { assertWorksheetRevision, worksheetRevision, WorksheetRevisionConflict, 
 import {
     countAttributeCascadeImpact,
     describeAttributeCascadeImpact,
+    type AttributeCascadeImpact,
 } from '@/lib/import-cascade-guard';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/attributes');
+
+/** 트랜잭션 안에서 다시 센 적합도 건수가 확인한 건수와 달라 삭제를 멈췄음을 알린다. */
+class AttributeCascadeChangedError extends Error {
+    constructor(readonly impact: AttributeCascadeImpact) {
+        super(describeAttributeCascadeImpact(impact));
+    }
+}
 
 // GET: 프로젝트의 제품 속성 조회
 export async function GET(
@@ -88,6 +96,12 @@ export async function POST(
         const updatedAttrs = await prisma.$transaction(async (tx) => {
             const currentAttrs = await tx.productAttribute.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
             assertWorksheetRevision(request, currentAttrs);
+            // 위 확인은 트랜잭션 밖에서 셌다. 그 사이 적합도가 더 저장됐을 수 있으니
+            // 지우기 직전에 다시 세어 확인한 건수와 다르면 멈춘다(감리 B4).
+            const currentImpact = await countAttributeCascadeImpact(tx, projectId);
+            if (currentImpact.fitnesses > 0 && confirmedImpact?.fitnesses !== currentImpact.fitnesses) {
+                throw new AttributeCascadeChangedError(currentImpact);
+            }
             await tx.productAttribute.deleteMany({
                 where: { projectId },
             });
@@ -117,6 +131,9 @@ export async function POST(
     } catch (error: unknown) {
         const invalidBody = invalidJsonBodyResponse(error);
         if (invalidBody) return invalidBody;
+        if (error instanceof AttributeCascadeChangedError) {
+            return cascadeConfirmResponse(describeAttributeCascadeImpact(error.impact), error.impact);
+        }
         if (error instanceof WorksheetRevisionMissing) {
             return NextResponse.json({ error: error.message }, { status: 428 });
         }

@@ -3,6 +3,7 @@
 // 가져오기 라우트(app/api/projects/[id]/import-json)의 POST 하나가 검증·확인과 이 복원
 // 트랜잭션을 함께 담아 약 270줄이었다(2026-10-25 코드 리뷰 L9). 라우트는 입력 검증·삭제 영향
 // 확인만 하고, 지우고 다시 채우는 일은 여기서 한다.
+import type { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
 import { generateId } from './id';
 import { importDeletionPlan } from './import-json-plan';
@@ -41,7 +42,13 @@ const IMPORT_JSON_MAX_WAIT_MS = 15_000;
  * 백업에 든 컬렉션만 지우고 새 id 로 다시 채운다. 백업 안의 참조(요구사항·기술특성·속성 id)는
  * 새 id 로 다시 잇는다. 돌려주는 값은 컬렉션별 복원 행 수다.
  */
-export async function restoreImportedProject(projectId: string, importData: ImportJsonPayload) {
+export async function restoreImportedProject(
+    projectId: string,
+    importData: ImportJsonPayload,
+    // 기존 데이터를 지우기 직전에 같은 트랜잭션 안에서 부른다. 라우트가 캐스케이드
+    // 건수를 다시 세어 사용자가 확인한 건수와 다르면 던져 멈추게 하는 자리다(감리 B4).
+    beforeDelete?: (tx: Prisma.TransactionClient) => Promise<void>
+) {
     const requirements = importData.customerRequirements ?? [];
     const technicals = importData.technicalCharacteristics ?? [];
     const specs = importData.specFunctions ?? [];
@@ -77,6 +84,7 @@ export async function restoreImportedProject(projectId: string, importData: Impo
             await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
         }
         await validateImportReferences(tx, projectId, importData);
+        await beforeDelete?.(tx);
         const delegates = tx as unknown as Record<
             string,
             { deleteMany: (args: { where: { projectId: string } }) => Promise<unknown> }

@@ -8,6 +8,7 @@ import { prisma } from './prisma';
 import { hasDuplicateTechnicalNames } from './qfd-technical-sync';
 import type { WorkbookImportRecords, WorkbookWritePolicy } from './workbook-importer';
 import { selectedSheetsInclude } from './workbook-import-sheets';
+import { CascadeImpactChangedError, countCascadeImpact, isCascadeImpactConfirmed } from './import-cascade-guard';
 
 /** 기존 기술특성과 파일의 기술특성 이름이 겹친다. 라우트가 409 로 알린다. */
 export class DuplicateTechnicalNameError extends Error {}
@@ -17,6 +18,19 @@ const IMPORT_TIMEOUT_MS = 60_000;
 const IMPORT_MAX_WAIT_MS = 15_000;
 
 type Tx = Prisma.TransactionClient;
+
+/**
+ * replace 로 덮어쓸 표 가운데 캐스케이드로 부수 데이터를 지우는 표를 고른다.
+ * 라우트가 확인창에 보여 줄 건수와 트랜잭션 안에서 다시 셀 건수가 같은 기준이어야
+ * 확인한 건수와 비교가 의미를 가진다.
+ */
+export function cascadeReplaceOptions(records: WorkbookImportRecords, writePolicy: WorkbookWritePolicy) {
+    return {
+        replacesCustomerRequirements: writePolicy === 'replace' && records.customerRequirements.length > 0,
+        replacesProductAttributes: writePolicy === 'replace' && records.productAttributes.length > 0,
+        replacesTechnicalCharacteristics: writePolicy === 'replace' && records.technicalCharacteristics.length > 0,
+    };
+}
 
 async function assertNoDuplicateTechnicalNames(tx: Tx, projectId: string, records: WorkbookImportRecords, writePolicy: WorkbookWritePolicy) {
     await tx.$queryRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`;
@@ -108,7 +122,8 @@ export async function applyImportedRecords(
     projectId: string,
     records: WorkbookImportRecords,
     writePolicy: WorkbookWritePolicy,
-    metadata: { userId: string; fileName: string; fileSize: number; selectedSheets: string[] }
+    metadata: { userId: string; fileName: string; fileSize: number; selectedSheets: string[] },
+    confirmedImpact: unknown
 ) {
     const counts = Object.fromEntries(
         Object.entries(records).map(([key, value]) => [key, value.length])
@@ -123,6 +138,10 @@ export async function applyImportedRecords(
             await assertNoDuplicateTechnicalNames(tx, projectId, records, writePolicy);
         }
         if (writePolicy === 'replace') {
+            // 확인창을 띄운 뒤 응답이 더 들어왔을 수 있다. 지우기 직전에 다시 세어
+            // 사용자가 확인한 건수와 다르면 멈춘다(감리 B4).
+            const impact = await countCascadeImpact(tx, projectId, cascadeReplaceOptions(records, writePolicy));
+            if (!isCascadeImpactConfirmed(impact, confirmedImpact)) throw new CascadeImpactChangedError(impact);
             await deleteReplacedRecords(tx, projectId, records, metadata.selectedSheets);
         }
         await insertImportedRecords(tx, projectId, records);

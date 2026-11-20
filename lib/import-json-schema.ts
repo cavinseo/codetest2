@@ -239,7 +239,11 @@ export const importJsonSchema = z.object({
     // export 는 '1.0-prisma' 를 쓴다. 옛 파일에는 숫자가 들어 있을 수 있다.
     version: z.union([z.string(), z.number()]).optional(),
     exportedAt: z.string().optional(),
+    // 예전 확인 방식. 이제 무시한다 — 남겨 두는 것은 이 키가 든 요청이 strict 검사로
+    // 400 이 되지 않게 하려는 것이다. 확인은 아래 건수로만 한다(감리 B4).
     confirmCascade: z.boolean().optional(),
+    // 확인창에 보여 준 캐스케이드 건수. 형태 검사는 isCascadeImpactConfirmed 가 한다.
+    confirmedCascadeImpact: z.unknown().optional(),
     specDetailCollapsed: z.boolean().optional(),
     project: productOverviewSchema.extend({
         // 대상 프로젝트의 이름은 유지하고 백업에 명시된 개요 필드만 복원한다.

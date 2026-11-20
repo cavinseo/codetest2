@@ -105,8 +105,25 @@ export default function ImprovementsTable({ projectId }: Props) {
     const [features, setFeatures] = useState<ImprovementFeature[]>([]);
     const [qfdData, setQfdData] = useState<any>(null);
     const [isSaving, setIsSaving] = useState(false);
+    // 서버가 읽은 행의 개정값. 저장·초기화 때 돌려보내 그 사이 다른 사람의 저장을 덮어쓰지 않게 한다.
+    const [revision, setRevision] = useState<string | null>(null);
     const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+    const saveImprovements = (body: unknown) => fetch(`/api/projects/${projectId}/improvements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
+        body: JSON.stringify(body),
+    });
+
+    // 409(다른 화면에서 변경)·428 이면 서버 문구로 새로고침을 안내하고, 그 밖의 실패는 기존 문구를 쓴다.
+    // 어느 쪽이든 실패이므로 오류 알림으로 띄운다 — 초록 성공 알림으로 보이면 저장된 줄 안다.
+    const showSaveFailure = async (response: Response, fallback: string) => {
+        const data = response.status === 409 || response.status === 428
+            ? await response.json().catch(() => null)
+            : null;
+        showToast(data?.error || fallback, 'error');
+    };
 
     const getQfdSuggestions = (source = qfdData?.requirements || []) => orderByRequirementIds(buildImprovementSuggestionsFromQfd(source), source.map((row: any) => ({ id: `qfd_${row.requirementId}` })), row => row.id).map((row, order) => ({ ...row, order }));
 
@@ -124,6 +141,7 @@ export default function ImprovementsTable({ projectId }: Props) {
         setRows(savedRows);
         setFeatures(syncFeaturesWithNeeds(savedRows, blankFeatures));
         setQfdData(qfdAnalysis || data?.qfdAnalysis || null);
+        setRevision(data?.revision ?? null);
     }, (error) => {
         console.error(error);
         showToast('개선포인트 데이터를 불러오지 못했습니다.', 'error');
@@ -267,20 +285,17 @@ export default function ImprovementsTable({ projectId }: Props) {
         if (!isReady) return;
         setIsSaving(true);
         try {
-            const response = await fetch(`/api/projects/${projectId}/improvements`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(buildPayload()),
-            });
+            const response = await saveImprovements(buildPayload());
 
             if (!response.ok) {
-                showToast('저장에 실패했습니다.', 'error');
+                await showSaveFailure(response, '저장에 실패했습니다.');
                 return;
             }
 
             const data = await response.json();
             applySavedItems(data.items || []);
             markSaved();
+            setRevision(data.revision ?? null);
             showToast('저장되었습니다.');
         } catch (error) {
             console.error(error);
@@ -294,17 +309,15 @@ export default function ImprovementsTable({ projectId }: Props) {
         if (!isReady) return;
         setIsSaving(true);
         try {
-            const response = await fetch(`/api/projects/${projectId}/improvements`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: [] }),
-            });
+            const response = await saveImprovements({ items: [] });
 
             if (!response.ok) {
-                showToast('초기화에 실패했습니다.', 'error');
+                await showSaveFailure(response, '초기화에 실패했습니다.');
                 return;
             }
 
+            const data = await response.json().catch(() => null);
+            setRevision(data?.revision ?? null);
             setRows([]);
             setFeatures(createBlankFeatures());
             markSaved();

@@ -8,6 +8,7 @@ import WorksheetLoadError from './WorksheetLoadError';
 import { UNSAVED_BEFORE_EXCEL_MESSAGE, useUnsavedWorksheet } from './useUnsavedWorksheet';
 import AttributeMentorWizard from './AttributeMentorWizard';
 import type { MentorAppliedRow } from '@/lib/attribute-mentor-utils';
+import { shouldAskCascadeAgain } from '@/lib/cascade-confirm-client';
 import {
     buildSpecPickerRows,
     combineTechnologies,
@@ -541,6 +542,11 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             // 속성을 모두 지우면 적합도 시트가 캐스케이드로 함께 사라진다.
             // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
             if (res.status === 409 && data?.needsCascadeConfirm) {
+                // 확인해 보낸 건수와 같은 건수로 또 막혔다면 다시 물어도 풀리지 않으므로 멈춘다.
+                if (!shouldAskCascadeAgain(data, options.confirmedCascadeImpact)) {
+                    showToast(data.error || '저장하지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+                    return;
+                }
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
                     await handleSave({ confirmedCascadeImpact: data.cascadeImpact });
                     return;
@@ -580,7 +586,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         setPendingExcelFile(file);
     };
 
-    const uploadExcelFile = async (file: File, writePolicy: 'append' | 'replace', options: { confirmCascade?: boolean } = {}) => {
+    // confirmedCascadeImpact: 확인창에 보여 준 서버의 건수. 서버는 그 사이 건수가
+    // 바뀌었으면 새 건수로 다시 묻는다(감리 B4).
+    const uploadExcelFile = async (file: File, writePolicy: 'append' | 'replace', options: { confirmedCascadeImpact?: unknown } = {}) => {
         setIsUploadingExcel(true);
         try {
             const formData = new FormData();
@@ -588,7 +596,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             formData.append('action', 'apply');
             formData.append('writePolicy', writePolicy);
             formData.append('sheetNames', '제품속성표');
-            if (options.confirmCascade) formData.append('confirmCascade', 'true');
+            if (options.confirmedCascadeImpact) {
+                formData.append('confirmedCascadeImpact', JSON.stringify(options.confirmedCascadeImpact));
+            }
 
             const res = await fetch(`/api/projects/${projectId}/import`, {
                 method: 'POST',
@@ -596,9 +606,13 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             });
             const data = await res.json().catch(() => null);
 
-            if (res.status === 409 && data?.needsCascadeConfirm && !options.confirmCascade) {
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (!shouldAskCascadeAgain(data, options.confirmedCascadeImpact)) {
+                    showToast(data.error || '업로드하지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+                    return;
+                }
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await uploadExcelFile(file, writePolicy, { confirmCascade: true });
+                    await uploadExcelFile(file, writePolicy, { confirmedCascadeImpact: data.cascadeImpact });
                 }
                 return;
             }
@@ -636,6 +650,11 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             });
             const data = await res.json().catch(() => null);
             if (res.status === 409 && data?.needsCascadeConfirm) {
+                // 확인해 보낸 건수와 같은 건수로 또 막혔다면 다시 물어도 풀리지 않으므로 멈춘다.
+                if (!shouldAskCascadeAgain(data, confirmedCascadeImpact)) {
+                    showToast(data.error || '초기화하지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+                    return;
+                }
                 if (window.confirm(`${data.error}\n\n계속하면 적합도 평가도 함께 삭제됩니다. 진행하시겠습니까?`)) {
                     await handleReset(data.cascadeImpact);
                 }

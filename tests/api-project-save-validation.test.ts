@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     createSpec: vi.fn(),
     findSpecs: vi.fn(),
     saveFitnessMatrix: vi.fn(),
+    findFitnessMatrix: vi.fn(),
 }));
 
 vi.mock('../lib/authorization', () => ({ requireProjectAccess: mocks.access }));
@@ -30,7 +31,11 @@ const params = { params: Promise.resolve({ id: 'project-1' }) };
 function requestFor(path: string, body: unknown) {
     return new NextRequest(`http://localhost${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(path.endsWith('/spec') ? { 'If-Match': worksheetRevision([{ id: 'saved-spec', name: '핵심 기능' }]) } : {}) },
+        // 스펙은 저장된 행 하나를, 적합도 매트릭스는 아직 저장 전(빈 상태)을 읽은 화면으로 본다.
+        headers: {
+            'Content-Type': 'application/json',
+            'If-Match': path.endsWith('/spec') ? worksheetRevision([{ id: 'saved-spec', name: '핵심 기능' }]) : worksheetRevision([]),
+        },
         body: JSON.stringify(body),
     });
 }
@@ -55,7 +60,12 @@ beforeEach(() => {
             create: mocks.createSpec,
             findMany: mocks.findSpecs,
         },
+        fitnessMatrix: {
+            findUnique: mocks.findFitnessMatrix,
+            upsert: mocks.saveFitnessMatrix,
+        },
     }));
+    mocks.findFitnessMatrix.mockResolvedValue(null);
     mocks.saveFitnessMatrix.mockResolvedValue({ id: 'fitness-1', projectId: 'project-1' });
 });
 
@@ -184,4 +194,30 @@ it('유효한 적합도 저장은 기존 upsert 동작을 유지한다', async (
             consultantNote: '멘토 의견',
         },
     });
+    await expect(response.json()).resolves.toMatchObject({
+        revision: worksheetRevision([{ id: 'fitness-1', projectId: 'project-1' }]),
+    });
+});
+
+// 매트릭스 전체를 덮어쓰므로, 화면이 읽은 뒤 다른 사람이 저장했으면 막아야 한다(감리 B3).
+it('적합도 매트릭스를 읽은 뒤 다른 사람이 저장했으면 409 이고 덮어쓰지 않는다', async () => {
+    mocks.findFitnessMatrix.mockResolvedValue({ id: 'fitness-1', projectId: 'project-1', matrixJson: '{"a":1}' });
+
+    const response = await saveFitnessMatrix(requestFor('/api/projects/project-1/fitness-matrix', {
+        marketsJson: '[]',
+        matrixJson: '{}',
+    }), params);
+
+    expect(response.status).toBe(409);
+    expect(mocks.saveFitnessMatrix).not.toHaveBeenCalled();
+});
+
+it('적합도 매트릭스를 개정값 없이 저장하면 428 이고 덮어쓰지 않는다', async () => {
+    const request = requestFor('/api/projects/project-1/fitness-matrix', { marketsJson: '[]', matrixJson: '{}' });
+    request.headers.delete('If-Match');
+
+    const response = await saveFitnessMatrix(request, params);
+
+    expect(response.status).toBe(428);
+    expect(mocks.saveFitnessMatrix).not.toHaveBeenCalled();
 });

@@ -102,6 +102,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [savedIntroduction, setSavedIntroduction] = useState<KanoSurveyIntroduction>(EMPTY_KANO_INTRODUCTION);
     const [canEditIntroduction, setCanEditIntroduction] = useState(false);
     const introductionEdited = useRef(false);
+    // 질문 저장은 요구사항 전체를 다시 보내므로, 읽은 시점의 개정값을 함께 보내
+    // 그 사이 다른 화면에서 추가·수정된 요구사항을 덮어쓰지 않게 한다.
+    const [requirementsRevision, setRequirementsRevision] = useState<string | null>(null);
 
     const { toast, showToast } = useToast(3500);
 
@@ -144,6 +147,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 if (!isCurrent()) return;
                 const reqs = reqData.requirements || [];
                 setRequirements(reqs);
+                setRequirementsRevision(reqData.revision ?? null);
                 // Kano 질문 초기값 — 기본 문구의 정본은 lib/kano-survey-document 다. 화면이
                 // 인쇄물(Word 설문지)과 어긋나면 안 되므로 같은 규칙으로 채운다.
                 const qMap: Record<string, { positive: string; negative: string }> = {};
@@ -348,12 +352,15 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             }));
             const res = await fetch(`/api/projects/${projectId}/requirements`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(requirementsRevision ? { 'If-Match': requirementsRevision } : {}),
+                },
                 body: JSON.stringify({ requirements: updatedRequirements }),
             });
-            
+
             if (!res.ok) {
-                const errorData = await res.json();
+                const errorData = await res.json().catch(() => ({}));
                 throw new Error(errorData.error || errorData.message || '\uc800\uc7a5 \uc2e4\ud328');
             }
 

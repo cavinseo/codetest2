@@ -9,14 +9,22 @@ import { getKanoAnalysisAccess } from '@/lib/kano-analysis-access';
 import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
+import type { Prisma } from '@prisma/client';
 import {
+    CascadeImpactChangedError,
     countCascadeImpact,
     describeCascadeImpact,
-    hasCascadeImpact,
+    EMPTY_CASCADE_IMPACT,
+    isCascadeImpactConfirmed,
+    type CascadeImpact,
 } from '@/lib/import-cascade-guard';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { assertWorksheetRevision, worksheetRevision, worksheetRevisionErrorResponse } from '@/lib/worksheet-revision';
 
 const log = createLogger('api/requirements');
+
+// 개정값은 화면용 그룹 정렬 전, DB 에서 이 순서로 읽은 원본 행으로 만든다.
+const REQUIREMENT_ORDER = [{ order: 'asc' as const }, { id: 'asc' as const }];
 
 const bulkRequirementsSchema = z.object({
     requirements: z.array(
@@ -83,14 +91,43 @@ async function findForeignRequirementIds(projectId: string, submittedIds: string
     return new Set(rows.map((row) => row.id));
 }
 
+/**
+ * 이번 저장으로 지워질 기존 요구사항이 있을 때, 그 캐스케이드로 함께 지워질 건수를 센다.
+ * 지워질 기존 행이 없으면(id 를 유지한 정상 편집) 하위 데이터도 남으므로 빈 영향을 돌려준다.
+ */
+async function requirementCascadeImpact(
+    db: Prisma.TransactionClient,
+    projectId: string,
+    submittedIds: string[]
+): Promise<CascadeImpact> {
+    // 제출 id 가 있어도 기존 행과 안 겹치면(예: AI 자동생성 전체 교체의 새 gen_ id)
+    // notIn 이 기존 행을 전부 지운다. notIn: [] 은 아무것도 안 지우는 게 아니라
+    // 전체를 지우므로, 빈 제출은 필터 없이 전체를 센다.
+    const deletedExistingCount = submittedIds.length === 0
+        ? await db.customerRequirement.count({ where: { projectId } })
+        : await db.customerRequirement.count({ where: { projectId, id: { notIn: submittedIds } } });
+    if (deletedExistingCount === 0) return EMPTY_CASCADE_IMPACT;
+    return countCascadeImpact(db, projectId, { replacesCustomerRequirements: true });
+}
+
 async function saveRequirements(
+    request: NextRequest,
     projectId: string,
     requirements: RequirementInput[],
-    submittedIds: string[]
-) {
+    submittedIds: string[],
+    confirmedImpact: unknown
+): Promise<string> {
     const foreignIds = await findForeignRequirementIds(projectId, submittedIds);
-    await prisma.$transaction(async (tx) => {
-        const previous = await tx.customerRequirement.findMany({ where: { projectId } });
+    return prisma.$transaction(async (tx) => {
+        const previous = await tx.customerRequirement.findMany({ where: { projectId }, orderBy: REQUIREMENT_ORDER });
+        // 화면이 읽은 뒤 다른 사람이 저장했으면 notIn 삭제가 그 사람이 추가한 행을
+        // 지우므로 409 로 막는다(감리 B3). 아래 캐스케이드 확인 전 검사는 안내용이고
+        // 이 트랜잭션 안의 검사가 정본이다.
+        assertWorksheetRevision(request, previous);
+        // 확인창을 띄운 뒤 응답이 더 들어왔을 수 있다. 지우기 직전에 다시 세어
+        // 사용자가 확인한 건수와 다르면 멈춘다(감리 B4).
+        const impact = await requirementCascadeImpact(tx, projectId, submittedIds);
+        if (!isCascadeImpactConfirmed(impact, confirmedImpact)) throw new CascadeImpactChangedError(impact);
         await tx.customerRequirement.deleteMany({
             where: submittedIds.length > 0
                 ? { projectId, id: { notIn: submittedIds } }
@@ -127,7 +164,9 @@ async function saveRequirements(
             await tx.customerRequirement.createMany({ data: requirementsToCreate });
         }
         await synchronizeRequirementLinkedOrder(tx, projectId, previous, requirements);
-    }, { timeout: 30000 });
+        const saved = await tx.customerRequirement.findMany({ where: { projectId }, orderBy: REQUIREMENT_ORDER });
+        return worksheetRevision(saved);
+    }, { timeout: 30000, isolationLevel: 'Serializable' });
 }
 
 // GET: 요구사항 조회
@@ -142,10 +181,11 @@ export async function GET(
         if (accessResult instanceof NextResponse) return accessResult;
         const projectReqs = await prisma.customerRequirement.findMany({
             where: { projectId },
-            orderBy: { order: 'asc' },
+            orderBy: REQUIREMENT_ORDER,
         });
 
         return NextResponse.json({
+            revision: worksheetRevision(projectReqs),
             requirements: groupRequirementsByCategory(projectReqs).map((r) => ({
                 id: r.id,
                 category: r.category,
@@ -186,40 +226,39 @@ export async function POST(
         })));
 
         const submittedIds = submittedRequirementIds(requirements);
+        const confirmedImpact: unknown = body?.confirmedCascadeImpact;
 
-        // deleteMany 로 지워질 "기존" 고객요구사항 수를 센다. 제출 id 가 있어도
-        // 기존 행과 안 겹치면(예: AI 자동생성 전체 교체의 새 gen_ id) notIn 이
-        // 기존 행을 전부 지우고, 그 캐스케이드로 설문 응답이 사라진다.
-        // notIn: [] 은 아무것도 안 지우는 게 아니라 전체를 지우므로, 빈 제출은
-        // 필터 없이 전체를 센다.
-        const deletedExistingCount = submittedIds.length === 0
-            ? await prisma.customerRequirement.count({ where: { projectId } })
-            : await prisma.customerRequirement.count({
-                where: { projectId, id: { notIn: submittedIds } },
-            });
+        // 이미 다른 화면에서 바뀌었다면 캐스케이드 삭제 확인을 묻기 전에 알려 준다.
+        // 확인을 받고 나서야 충돌로 실패하면 사용자는 같은 질문에 두 번 답하게 된다.
+        assertWorksheetRevision(request, await prisma.customerRequirement.findMany({
+            where: { projectId },
+            orderBy: REQUIREMENT_ORDER,
+        }));
 
-        // 기존 행이 실제로 지워질 때만(그 캐스케이드로 하위 데이터가 사라질 때만)
-        // 확인을 요구한다. id 를 유지한 정상 편집은 지워질 기존 행이 없어 통과한다.
-        if (deletedExistingCount > 0) {
-            const impact = await countCascadeImpact(prisma, projectId, {
-                replacesCustomerRequirements: true,
-            });
-            if (hasCascadeImpact(impact) && body?.confirmCascade !== true) {
-                return cascadeConfirmResponse(describeCascadeImpact(impact), impact);
-            }
+        // 확인창에 보여 줄 건수다. 실제 삭제 직전에 트랜잭션 안에서 다시 센다.
+        const impact = await requirementCascadeImpact(prisma, projectId, submittedIds);
+        if (!isCascadeImpactConfirmed(impact, confirmedImpact)) {
+            return cascadeConfirmResponse(describeCascadeImpact(impact), impact);
         }
 
-        await saveRequirements(projectId, requirements, submittedIds);
+        const revision = await saveRequirements(request, projectId, requirements, submittedIds, confirmedImpact);
 
         log.info('Requirements saved', { projectId, count: requirements.length });
 
         return NextResponse.json({
             success: true,
             count: requirements.length,
+            revision,
         });
     } catch (error: unknown) {
         const invalidBody = invalidJsonBodyResponse(error);
         if (invalidBody) return invalidBody;
+        // 확인한 뒤 그 사이 지워질 건수가 바뀌었다. 새 건수로 다시 묻는다.
+        if (error instanceof CascadeImpactChangedError) {
+            return cascadeConfirmResponse(describeCascadeImpact(error.impact), error.impact);
+        }
+        const revisionResponse = worksheetRevisionErrorResponse(error);
+        if (revisionResponse) return revisionResponse;
         if (error instanceof z.ZodError) {
             log.warn('요구사항 검증 오류 (Zod)', { firstIssue: error.errors[0]?.message });
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });

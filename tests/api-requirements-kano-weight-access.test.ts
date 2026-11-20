@@ -59,6 +59,7 @@ vi.mock('../lib/prisma', () => ({ prisma: { ...db.models, $transaction: db.trans
 vi.mock('../lib/authorization', () => ({ requireProjectAccess: db.access }));
 vi.mock('../lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
 import { POST } from '../app/api/projects/[id]/requirements/route';
+import { worksheetRevision } from '../lib/worksheet-revision';
 
 const projectId = 'project-weight';
 const params = { params: Promise.resolve({ id: projectId }) };
@@ -83,9 +84,16 @@ function row(id = 'existing', kanoWeight?: number | null) {
         ...(kanoWeight === undefined ? {} : { kanoWeight }) };
 }
 
+// 화면이 GET 으로 받은 개정값을 흉내 낸다. mock findMany 는 정렬 없이 저장 순서로 돌려준다.
+function currentRevision() {
+    return worksheetRevision(db.state.requirements.filter(item => item.projectId === projectId).map(item => ({ ...item })));
+}
+
 function request(requirements: ReturnType<typeof row>[]) {
     return new NextRequest(`http://localhost/api/projects/${projectId}/requirements`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requirements }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'If-Match': currentRevision() },
+        body: JSON.stringify({ requirements }),
     });
 }
 
@@ -113,7 +121,7 @@ describe('기존 요구사항 내용 편집과 Kano 가중치 보호', () => {
         const submitted = row('existing', weight);
         const response = await POST(request([submitted]), params);
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ success: true, count: 1 });
+        expect(await response.json()).toEqual({ success: true, count: 1, revision: expect.any(String) });
         expect(db.access).toHaveBeenCalledWith(expect.any(NextRequest), projectId, { write: true });
         expect(db.models.customerRequirement.updateMany).toHaveBeenCalledExactlyOnceWith({
             where: { id: 'existing', projectId },
@@ -139,7 +147,7 @@ describe('새 요구사항 생성과 Kano 가중치 보호', () => {
         const otherSubmitted = row('new-other', otherWeight);
         const response = await POST(request([row(), submitted, otherSubmitted]), params);
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ success: true, count: 3 });
+        expect(await response.json()).toEqual({ success: true, count: 3, revision: expect.any(String) });
         const expectedNewRows = [submitted, otherSubmitted].map((item, index) => ({
             id: item.id, projectId, category: item.category, subcategory: item.subcategory, requirement: item.requirement,
             kanoPositiveQ: undefined, kanoNegativeQ: undefined, kanoWeight: canEditWeight ? item.kanoWeight : undefined, order: index + 1,

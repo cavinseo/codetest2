@@ -36,7 +36,8 @@ const params = Promise.resolve({ id: 'proj_1' });
 function postRequest(path: string, body: unknown): NextRequest {
     return new NextRequest(`http://localhost/api/projects/proj_1/${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // 전체 교체 저장은 화면이 읽은 개정값을 If-Match 로 보내야 한다(감리 B3).
+        headers: { 'Content-Type': 'application/json', 'If-Match': worksheetRevision([]) },
         body: JSON.stringify(body),
     });
 }
@@ -57,6 +58,8 @@ beforeEach(() => {
     findSpecs.mockResolvedValue([]);
     transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
         customerRequirement: {
+            // 지우기 직전 캐스케이드 재확인(감리 B4)이 센다. 지워질 기존 행은 없다.
+            count: vi.fn().mockResolvedValue(0),
             deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
             // 트랜잭션 안에서는 (1) 순서 동기화용 이전 목록과 (2) 제출 id 중 이 프로젝트에
             // 이미 있는 행을 읽는다. req_1 만 저장돼 있다고 본다.

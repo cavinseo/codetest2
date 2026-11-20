@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import ThemeToggle from '@/components/ThemeToggle';
 import { downloadBlobAsFile } from '@/lib/file-download';
+import { shouldAskCascadeAgain } from '@/lib/cascade-confirm-client';
 
 interface Member {
     id: string;
@@ -157,7 +158,9 @@ export default function ProjectSettingsPage() {
         }
     };
 
-    const handleImport = async (options: { confirmCascade?: boolean } = {}) => {
+    // confirmedCascadeImpact: 확인창에 보여 준 서버의 건수. 서버는 그 사이 건수가
+    // 바뀌었으면 새 건수로 다시 묻는다(감리 B4).
+    const handleImport = async (options: { confirmedCascadeImpact?: unknown } = {}) => {
         if (!importFile) {
             alert('파일을 선택해주세요.');
             return;
@@ -167,8 +170,8 @@ export default function ProjectSettingsPage() {
         try {
             const text = await importFile.text();
             const data = JSON.parse(text);
-            if (options.confirmCascade) {
-                data.confirmCascade = true;
+            if (options.confirmedCascadeImpact) {
+                data.confirmedCascadeImpact = options.confirmedCascadeImpact;
             }
 
             const response = await fetch(`/api/projects/${projectId}/import-json`, {
@@ -181,8 +184,12 @@ export default function ProjectSettingsPage() {
             // 고객요구사항을 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다.
             // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
             if (response.status === 409 && result.needsCascadeConfirm) {
+                if (!shouldAskCascadeAgain(result, options.confirmedCascadeImpact)) {
+                    alert(result.error || '가져오지 못했습니다. 새로고침 후 다시 시도하세요.');
+                    return;
+                }
                 if (window.confirm(`${result.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await handleImport({ confirmCascade: true });
+                    await handleImport({ confirmedCascadeImpact: result.cascadeImpact });
                 } else {
                     alert('가져오기를 취소했습니다. 기존 데이터는 그대로 유지됩니다.');
                 }

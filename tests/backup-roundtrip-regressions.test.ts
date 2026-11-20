@@ -18,7 +18,8 @@ beforeEach(() => {
     for (const key of ['specFunctions','productAttributes','attributeFitnesses','requirements','technicalCharacteristics','qfdMatrices','kanoResponses','techCorrelations','benchmarks','technicalBenchmarks','techTreeEntries','improvementItems','targetSpecs','techRoadmaps','devPlans','salesEstimates','assetItems','fundingPlans','fundingSources']) db.source[key] = [];
     db.target = { id: 'target', name: '대상 이름 유지', companyName: '기존 회사', productName: '기존 제품', businessPlanFile: '기존 첨부', specDetailCollapsed: true };
     db.update.mockImplementation(async ({ data }) => { Object.assign(db.target, Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined))); return db.target; });
-    const tx = new Proxy({ project: { update: db.update }, $queryRaw: vi.fn() }, { get: (obj, key) => key in obj ? obj[key as keyof typeof obj] : { deleteMany: db.deleted, createMany: vi.fn(), findMany: async () => [] } });
+    // count 는 지우기 직전 캐스케이드 재확인이 트랜잭션 안에서 다시 세는 데 쓴다.
+    const tx = new Proxy({ project: { update: db.update }, $queryRaw: vi.fn() }, { get: (obj, key) => key in obj ? obj[key as keyof typeof obj] : { count: async () => 0, deleteMany: db.deleted, createMany: vi.fn(), findMany: async () => [] } });
     db.transaction.mockImplementation(async callback => callback(tx));
 });
 it.each([false, true])('현재 export 응답을 수정 없이 복원하고 설정 %s와 개요 필드를 보존한다', async specDetailCollapsed => {

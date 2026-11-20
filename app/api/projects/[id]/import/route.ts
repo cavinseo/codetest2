@@ -5,11 +5,12 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { parseExcelFile, type ParsedExcelData, type ParsedSheet } from '@/lib/excel-parser';
 import { parseWorkbookImport } from '@/lib/workbook-importer';
 import { selectSheets, toSheetPreview } from '@/lib/workbook-import-sheets';
-import { applyImportedRecords, DuplicateTechnicalNameError } from '@/lib/workbook-import-apply';
+import { applyImportedRecords, cascadeReplaceOptions, DuplicateTechnicalNameError } from '@/lib/workbook-import-apply';
 import {
+    CascadeImpactChangedError,
     countCascadeImpact,
     describeCascadeImpact,
-    hasCascadeImpact,
+    isCascadeImpactConfirmed,
 } from '@/lib/import-cascade-guard';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
@@ -28,6 +29,16 @@ function parseRequestedSheetNames(rawValue: FormDataEntryValue | null) {
 
 function parseAction(rawValue: FormDataEntryValue | null) {
     return rawValue === 'apply' ? 'apply' : 'preview';
+}
+
+/** 확인창이 돌려보낸 건수. 폼 필드라 JSON 문자열로 오며, 읽지 못하면 "확인 안 함"이다. */
+function parseConfirmedCascadeImpact(value: FormDataEntryValue | null): unknown {
+    if (typeof value !== 'string') return null;
+    try {
+        return JSON.parse(value);
+    } catch {
+        return null;
+    }
 }
 
 export async function POST(
@@ -49,7 +60,7 @@ export async function POST(
         const requestedSheetNames = parseRequestedSheetNames(formData.get('sheetNames'));
         const action = parseAction(formData.get('action'));
         const writePolicy = parseWritePolicy(formData.get('writePolicy'));
-        const confirmCascade = formData.get('confirmCascade') === 'true';
+        const confirmedImpact = parseConfirmedCascadeImpact(formData.get('confirmedCascadeImpact'));
 
         const accessResult = await requireProjectAccess(request, projectId, { write: action === 'apply' });
         if (accessResult instanceof NextResponse) return accessResult;
@@ -107,17 +118,14 @@ export async function POST(
         // 고객요구사항을 replace 로 덮어쓰면 Kano 응답·벤치마크·QFD 관계가 캐스케이드로
         // 함께 지워진다. preview 단계에서 건수를 보여주고, apply 는 사용자가 확인한
         // 경우에만 진행시킨다.
-        const replacesCustomerRequirements =
-            writePolicy === 'replace' && importResult.records.customerRequirements.length > 0;
-        const cascadeImpact = await countCascadeImpact(prisma, projectId, {
-            replacesCustomerRequirements,
-            replacesProductAttributes: writePolicy === 'replace' && importResult.records.productAttributes.length > 0,
-            replacesTechnicalCharacteristics: writePolicy === 'replace' && importResult.records.technicalCharacteristics.length > 0,
-        });
+        // 확인은 보여 준 건수에 묶인다. 건수가 바뀌면 다시 묻는다(감리 B4).
+        const cascadeImpact = await countCascadeImpact(
+            prisma, projectId, cascadeReplaceOptions(importResult.records, writePolicy)
+        );
 
         let appliedCounts: Record<string, number> | null = null;
         if (action === 'apply') {
-            if (hasCascadeImpact(cascadeImpact) && !confirmCascade) {
+            if (!isCascadeImpactConfirmed(cascadeImpact, confirmedImpact)) {
                 return cascadeConfirmResponse(describeCascadeImpact(cascadeImpact), cascadeImpact);
             }
             if (importResult.formulaIssues.length > 0) {
@@ -134,13 +142,17 @@ export async function POST(
                 fileName: parsedData.fileName,
                 fileSize: parsedData.fileSize,
                 selectedSheets: importResult.selectedSheets,
-            });
+            }, confirmedImpact);
         }
 
         return NextResponse.json(importResponseBody({
             action, writePolicy, requestedSheetNames, parsedData, selectedSheets, importResult, cascadeImpact, appliedCounts,
         }));
     } catch (error: unknown) {
+        // 확인한 뒤 그 사이 지워질 건수가 바뀌었다. 새 건수로 다시 묻는다.
+        if (error instanceof CascadeImpactChangedError) {
+            return cascadeConfirmResponse(describeCascadeImpact(error.impact), error.impact);
+        }
         if (error instanceof DuplicateTechnicalNameError) {
             return NextResponse.json({ error: '중복된 기술특성이 있습니다. 기존 항목과 파일의 기술특성 이름을 확인해 주세요.' }, { status: 409 });
         }

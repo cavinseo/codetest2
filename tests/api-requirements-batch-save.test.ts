@@ -17,20 +17,28 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
-        customerRequirement: { count: mocks.deletedExistingCount, findMany: mocks.foreignFindMany },
+        // 트랜잭션 밖 findMany 는 두 가지다: 다른 프로젝트 id 조회(NOT 조건)와
+        // 캐스케이드 확인 전 개정값 검사. 조건으로 갈라 각자의 mock 으로 보낸다.
+        customerRequirement: {
+            count: mocks.deletedExistingCount,
+            findMany: (args: { where?: { NOT?: unknown } }) =>
+                (args?.where?.NOT ? mocks.foreignFindMany(args) : mocks.findMany(args)),
+        },
         $transaction: mocks.transaction,
     },
 }));
 vi.mock('../lib/authorization', () => ({ requireProjectAccess: mocks.access }));
 
 import { POST } from '../app/api/projects/[id]/requirements/route';
+import { worksheetRevision } from '../lib/worksheet-revision';
 
 const params = { params: Promise.resolve({ id: 'project-1' }) };
 
-function request(requirements: unknown[], extra: Record<string, unknown> = {}) {
+// mocks.findMany 가 기본으로 빈 배열을 돌려주므로 빈 워크시트를 읽은 개정값이 기본이다.
+function request(requirements: unknown[], extra: Record<string, unknown> = {}, revision = worksheetRevision([])) {
     return new NextRequest('http://localhost/api/projects/project-1/requirements', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'If-Match': revision },
         body: JSON.stringify({ requirements, ...extra }),
     });
 }
@@ -47,6 +55,8 @@ beforeEach(() => {
     mocks.transaction.mockImplementation(async (callback) => callback({
         techTreeEntry: downstream(), improvementItem: downstream(), techRoadmap: downstream(), targetSpec: downstream(),
         customerRequirement: {
+            // 지우기 직전 캐스케이드 재확인이 트랜잭션 안에서 다시 센다.
+            count: mocks.deletedExistingCount,
             deleteMany: mocks.deleteMany,
             findMany: mocks.findMany,
             updateMany: mocks.updateMany,
@@ -77,12 +87,13 @@ it('새 요구사항 여러 개를 한 번의 createMany로 저장한다', async
 });
 
 it('기존 요구사항은 연결된 데이터를 보존하도록 ID별 수정 경로를 사용한다', async () => {
-    mocks.findMany.mockResolvedValue([{ id: 'saved-1', requirement: '기존 응답' }]);
+    const saved = [{ id: 'saved-1', requirement: '기존 응답' }];
+    mocks.findMany.mockResolvedValue(saved);
     mocks.updateMany.mockResolvedValue({ count: 1 });
 
     const response = await POST(request([
         { id: 'saved-1', category: '품질', requirement: '개선된 응답', order: 0 },
-    ]), params);
+    ], {}, worksheetRevision(saved)), params);
 
     expect(response.status).toBe(200);
     expect(mocks.updateMany).toHaveBeenCalledWith({
@@ -105,6 +116,52 @@ it('빈 목록은 명시적 전체 삭제 요청 없이 받지 않는다', async
     const response = await POST(request([]), params);
     expect(response.status).toBe(400);
     expect(mocks.transaction).not.toHaveBeenCalled();
+});
+
+// 화면이 읽은 뒤 다른 사람이 요구사항을 추가하면, 그 행은 제출 id 에 없어 notIn
+// 삭제로 지워진다. 읽은 시점의 개정값이 다르면 아무것도 바꾸지 않아야 한다(감리 B3).
+it('읽은 뒤 다른 사람이 요구사항을 추가했으면 캐스케이드 확인 전에 409 로 막는다', async () => {
+    mocks.findMany.mockResolvedValue([{ id: 'added-by-other', requirement: '다른 사람이 추가' }]);
+
+    const response = await POST(request([
+        { id: 'saved-1', category: '품질', requirement: '내 수정', order: 0 },
+    ]), params);
+
+    expect(response.status).toBe(409);
+    expect(mocks.deletedExistingCount).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+});
+
+it('확인 뒤 트랜잭션 안에서 바뀐 것을 발견해도 409 이고 지우지 않는다', async () => {
+    // 첫 조회(확인 전)는 화면이 읽은 그대로, 트랜잭션 안 조회는 그 사이 바뀐 상태다.
+    mocks.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([{ id: 'added-by-other', requirement: '다른 사람이 추가' }]);
+
+    const response = await POST(request([
+        { id: 'saved-1', category: '품질', requirement: '내 수정', order: 0 },
+    ]), params);
+
+    expect(response.status).toBe(409);
+    expect(mocks.deleteMany).not.toHaveBeenCalled();
+});
+
+it('개정값 없이 저장하면 428 이고 바꾸지 않는다', async () => {
+    const withoutRevision = request([{ id: 'saved-1', category: '품질', requirement: '내 수정', order: 0 }]);
+    withoutRevision.headers.delete('If-Match');
+
+    const response = await POST(withoutRevision, params);
+
+    expect(response.status).toBe(428);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+});
+
+it('저장 후 새 개정값을 돌려준다', async () => {
+    const response = await POST(request([
+        { id: 'new-1', category: '품질', requirement: '빠른 응답', order: 0 },
+    ]), params);
+
+    await expect(response.json()).resolves.toMatchObject({ revision: worksheetRevision([]) });
 });
 
 it('명시적으로 전체 삭제를 요청하면 빈 목록을 저장한다', async () => {

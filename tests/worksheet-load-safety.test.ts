@@ -86,12 +86,15 @@ it('적합도 내부 JSON이 손상된 경우 새 기본값으로 덮어쓰지 �
     expect(writes()).toHaveLength(0);
 });
 
+const fitnessImpact = { kanoResponses: 0, benchmarks: 0, qfdMatrices: 0, attributeFitnesses: 6, techCorrelations: 0, technicalBenchmarks: 0 };
+
 it.each([false, true])('제품 속성 엑셀의 연결 자료 삭제 확인 %s에 따라 반영한다', async confirmed => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(confirmed);
     fetchMock.mockImplementation(async (url: string, options?: { method: string; body: FormData }) => {
         if (options?.method === 'POST') {
-            if (!options.body.has('confirmCascade')) return {
-                ok: false, status: 409, json: async () => ({ needsCascadeConfirm: true, error: '적합도 6건이 함께 삭제됩니다.' }),
+            // 서버는 보여 준 건수를 그대로 돌려받아야 확인으로 본다(감리 B4).
+            if (!options.body.has('confirmedCascadeImpact')) return {
+                ok: false, status: 409, json: async () => ({ needsCascadeConfirm: true, error: '적합도 6건이 함께 삭제됩니다.', cascadeImpact: fitnessImpact }),
             };
             return { ok: true, json: async () => ({ appliedCounts: { productAttributes: 1 } }) };
         }
@@ -104,7 +107,9 @@ it.each([false, true])('제품 속성 엑셀의 연결 자료 삭제 확인 %s�
     await act(async () => button('기존 데이터 지우고 업로드')!.click());
     expect(confirm).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('적합도 6건'));
     expect(writes()).toHaveLength(confirmed ? 2 : 1);
-    if (confirmed) expect((writes()[1][1].body as FormData).get('confirmCascade')).toBe('true');
+    if (confirmed) {
+        expect(JSON.parse(String((writes()[1][1].body as FormData).get('confirmedCascadeImpact')))).toEqual(fitnessImpact);
+    }
 });
 afterEach(async () => {
     await act(async () => root.unmount());

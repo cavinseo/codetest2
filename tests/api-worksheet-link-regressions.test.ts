@@ -65,13 +65,19 @@ it('saves multiple WS-16 details independently and does not recreate deleted det
         { category: '정부자금', year1: '지원:1,300.5', year2: '{"source":"운전","amount":"500"}', year3: '', order: 0 },
         { category: '정부자금', year1: '사업:100', year2: '', year3: '200', order: 1 },
     ];
-    expect((await funding.POST(post({ sources }), params)).status).toBe(200);
+    // 화면처럼 GET 이 준 조달계획 개정값을 저장 때 돌려보낸다.
+    const postSources = (body: unknown, revision: string) => new NextRequest('http://localhost/api/projects/project/worksheet', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'If-Match': revision }, body: JSON.stringify(body),
+    });
+    const initial = await (await funding.GET(get(), params)).json();
+    expect((await funding.POST(postSources({ sources }, initial.revisions.sources), params)).status).toBe(200);
     const saved = await (await funding.GET(get(), params)).json();
     expect(saved.sources).toEqual(sources.map(source => expect.objectContaining(source)));
     expect(saved.canWrite).toBe(true);
-    expect((await funding.POST(post({ sources: [sources[1]] }), params)).status).toBe(200);
-    expect((await (await funding.GET(get(), params)).json()).sources).toHaveLength(1);
-    expect((await funding.POST(post({ sources: [] }), params)).status).toBe(200);
+    expect((await funding.POST(postSources({ sources: [sources[1]] }, saved.revisions.sources), params)).status).toBe(200);
+    const trimmed = await (await funding.GET(get(), params)).json();
+    expect(trimmed.sources).toHaveLength(1);
+    expect((await funding.POST(postSources({ sources: [] }, trimmed.revisions.sources), params)).status).toBe(200);
     expect((await (await funding.GET(get(), params)).json()).sources).toEqual([]);
     expect(db.state.fundingPlan).toEqual(plansBefore);
 });

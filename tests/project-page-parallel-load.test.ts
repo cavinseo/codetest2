@@ -19,7 +19,7 @@ const STARTUP_URLS = [
     '/api/projects',
     '/api/projects/project/overview',
     '/api/projects/project/requirements',
-    '/api/projects/project/kano/analysis',
+    '/api/projects/project/kano/analysis?view=summary',
     '/api/projects/project/spec',
 ];
 
@@ -31,7 +31,7 @@ function respond(url: string): Response {
     if (url === '/api/projects') return json({ projects: [project] });
     if (url.endsWith('/overview')) return json({ project });
     if (url.endsWith('/requirements')) return json({ requirements: [{ id: 'r1' }, { id: 'r2' }] });
-    if (url.endsWith('/kano/analysis')) return json({ analysis: [], totalResponses: 7 });
+    if (url.includes('/kano/analysis')) return json({ analysis: [], totalResponses: 7 });
     if (url.endsWith('/spec')) return json({ specFunctions: [{ id: 's1' }, { id: 's2' }, { id: 's3' }] });
     return json({});
 }
@@ -83,7 +83,7 @@ it('개요를 볼 권한이 없으면 건수와 상관없이 권한 오류를 �
 
 it('건수 요청이 실패해도 프로젝트 화면은 뜨고 그 건수만 0 으로 보인다', async () => {
     fetchMock.mockImplementation(async (url: string) => {
-        if (url.endsWith('/kano/analysis')) throw new TypeError('network down');
+        if (url.includes('/kano/analysis')) throw new TypeError('network down');
         if (url.endsWith('/spec')) return json({ error: 'boom' }, 500);
         return respond(url);
     });

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import WorksheetLoadError from './WorksheetLoadError';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { UNSAVED_BEFORE_EXCEL_MESSAGE, useUnsavedWorksheet } from './useUnsavedWorksheet';
+import { shouldAskCascadeAgain } from '@/lib/cascade-confirm-client';
 import {
     groupRequirementsByCategory,
     getRequirementGroupSpans,
@@ -60,6 +61,9 @@ export default function RequirementsTable({ projectId, onDirtyChange }: Requirem
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValues, setEditValues] = useState<Partial<Requirement>>({});
     const savedRequirementCount = useRef(0);
+    // 서버가 읽은 행의 개정값. 저장 때 돌려보내, 그 사이 다른 사람이 추가한 행을
+    // notIn 삭제로 지우지 않게 한다.
+    const [revision, setRevision] = useState<string | null>(null);
 
     // 새 행 입력 상태
     const [newRow, setNewRow] = useState({ category: '', subcategory: '', requirement: '' });
@@ -155,6 +159,7 @@ export default function RequirementsTable({ projectId, onDirtyChange }: Requirem
                 }));
                 setRequirements(loadedRequirements);
                 savedRequirementCount.current = loadedRequirements.length;
+                setRevision(data.revision ?? null);
                 setLoadedProjectId(projectId);
             }
         } catch (e) {
@@ -212,7 +217,9 @@ export default function RequirementsTable({ projectId, onDirtyChange }: Requirem
         };
     };
 
-    const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
+    // confirmedCascadeImpact: 확인창에 보여 준 서버의 건수를 그대로 돌려보낸다. 서버는
+    // 그 사이 건수가 바뀌었으면 새 건수로 다시 묻는다(감리 B4).
+    const handleSave = async (options: { confirmedCascadeImpact?: unknown } = {}) => {
         if (isSaving || isLoading || loadFailed || loadedProjectId !== projectId) return;
         // 열려 있는 인라인 편집을 먼저 반영한다. 예전에는 editValues 를 둔 채
         // requirements 만 보내고 성공하면 editValues 를 버려서, 항목을 고치는
@@ -236,27 +243,39 @@ export default function RequirementsTable({ projectId, onDirtyChange }: Requirem
         try {
             const res = await fetch(`/api/projects/${projectId}/requirements`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({
                     requirements: requirementsToSave,
                     ...(requirementsToSave.length === 0 ? { deleteAll: true } : {}),
-                    ...(options.confirmCascade ? { confirmCascade: true } : {}),
+                    ...(options.confirmedCascadeImpact ? { confirmedCascadeImpact: options.confirmedCascadeImpact } : {}),
                 }),
             });
             const data = await res.json().catch(() => null);
 
             // id 없는 행만 남아 전체 삭제로 이어지면 서버가 409 로 막는다.
-            // 무엇이 함께 지워지는지 보여주고 한 번 더 확인받는다.
+            // 무엇이 함께 지워지는지 보여주고 한 번 더 확인받는다. 확인 뒤 건수가
+            // 바뀌어 다시 409 가 오면 새 건수로 다시 묻는다.
             if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (!shouldAskCascadeAgain(data, options.confirmedCascadeImpact)) {
+                    showToast(data.error || '저장하지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+                    return;
+                }
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await handleSave({ confirmCascade: true });
+                    await handleSave({ confirmedCascadeImpact: data.cascadeImpact });
                     return;
                 }
                 showToast('저장을 취소했습니다.', 'error');
                 return;
             }
 
+            if (res.status === 409 || res.status === 428) {
+                // 다른 화면에서 바뀌었다. 입력은 유지하고 서버 문구로 새로고침을 안내한다.
+                showToast(data?.error || '다른 화면에서 변경되었습니다. 새로고침 후 다시 확인하세요.', 'error');
+                return;
+            }
+
             if (res.ok) {
+                setRevision(data?.revision ?? null);
                 showToast('저장되었습니다.', 'success');
                 setRequirements(requirementsToSave);
                 savedRequirementCount.current = requirementsToSave.length;
@@ -295,7 +314,7 @@ export default function RequirementsTable({ projectId, onDirtyChange }: Requirem
     const uploadExcel = async (
         file: File,
         writePolicy: 'replace' | 'append',
-        options: { confirmCascade?: boolean } = {}
+        options: { confirmedCascadeImpact?: unknown } = {}
     ) => {
         setIsUploadingExcel(true);
         try {
@@ -304,8 +323,8 @@ export default function RequirementsTable({ projectId, onDirtyChange }: Requirem
             formData.append('action', 'apply');
             formData.append('writePolicy', writePolicy);
             formData.append('sheetNames', '고객요구사항도출표');
-            if (options.confirmCascade) {
-                formData.append('confirmCascade', 'true');
+            if (options.confirmedCascadeImpact) {
+                formData.append('confirmedCascadeImpact', JSON.stringify(options.confirmedCascadeImpact));
             }
 
             const res = await fetch(`/api/projects/${projectId}/import`, {
@@ -316,10 +335,15 @@ export default function RequirementsTable({ projectId, onDirtyChange }: Requirem
 
             // replace 로 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다. 서버가
             // 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받은 뒤
-            // 같은 파일을 confirmCascade 와 함께 다시 보낸다.
-            if (res.status === 409 && data?.needsCascadeConfirm && !options.confirmCascade) {
+            // 같은 파일을 확인한 건수와 함께 다시 보낸다. 그 사이 건수가 바뀌어 다시
+            // 409 가 오면 새 건수로 다시 묻는다.
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (!shouldAskCascadeAgain(data, options.confirmedCascadeImpact)) {
+                    showToast(data.error || '업로드하지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+                    return;
+                }
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await uploadExcel(file, writePolicy, { confirmCascade: true });
+                    await uploadExcel(file, writePolicy, { confirmedCascadeImpact: data.cascadeImpact });
                     return;
                 }
                 showToast('업로드를 취소했습니다. 기존 데이터는 그대로 유지됩니다.', 'error');

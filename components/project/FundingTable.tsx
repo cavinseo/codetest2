@@ -73,6 +73,8 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
     const [isSaving, setIsSaving] = useState(false);
     const [canWrite, setCanWrite] = useState(false);
     const [aiMessage, setAiMessage] = useState<string | null>(null);
+    // 소요계획·조달계획은 따로 저장되므로 개정값도 따로 받는다.
+    const [revisions, setRevisions] = useState<{ plans?: string; sources?: string } | null>(null);
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -85,6 +87,7 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
                 if (!Array.isArray(data.plans) || !Array.isArray(data.sources)) throw new Error('자금 계획 응답 형식 오류');
                 setPlans(data.plans || []);
                 setSources(data.sources || []);
+                setRevisions(data.revisions ?? null);
                 setCanWrite(data.canWrite === true);
                 setLoadedProjectId(projectId);
             }
@@ -112,11 +115,18 @@ export default function FundingTable({ projectId, mode = 'plan' }: FundingTableP
         setAiMessage(null);
         try {
             const payload = mode === 'plan' ? { plans } : { sources: sourceGroups.flatMap(group => group.rows).map((source, order) => ({ ...source, order })) };
+            const revision = mode === 'plan' ? revisions?.plans : revisions?.sources;
             const res = await fetch(`/api/projects/${projectId}/funding`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify(payload),
             });
+            if (res.status === 409 || res.status === 428) {
+                // 다른 화면에서 바뀌었다. 입력은 유지하고 서버 문구로 새로고침을 안내한다.
+                const data = await res.json().catch(() => null);
+                setAiMessage(data?.error || '다른 화면에서 변경되었습니다. 입력 내용은 유지됩니다. 새로고침 후 다시 확인하세요.');
+                return;
+            }
             if (!res.ok) throw new Error('저장 실패');
             setAiMessage('저장되었습니다.');
             await loadData();

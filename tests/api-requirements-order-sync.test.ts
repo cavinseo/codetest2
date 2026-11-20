@@ -86,14 +86,22 @@ vi.mock('../lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi
 
 import { GET, POST } from '../app/api/projects/[id]/requirements/route';
 import { requireProjectAccess } from '../lib/authorization';
+import { worksheetRevision } from '../lib/worksheet-revision';
 
 const PROJECT_ID = 'project-order-sync';
 const params = { params: Promise.resolve({ id: PROJECT_ID }) };
 const idsInWorksheetOrder = ['r1', 'r3', 'r2'];
 
+// 화면이 GET 으로 받은 개정값을 흉내 낸다. 배열 orderBy 는 mock 이 정렬하지 않아 저장 순서 그대로다.
+function currentRevision() {
+    return worksheetRevision(db.state.requirements.filter(row => row.projectId === PROJECT_ID).map(row => ({ ...row })));
+}
+
 function request(body?: unknown) {
     return new NextRequest(`http://localhost/api/projects/${PROJECT_ID}/requirements`, body === undefined ? {} : {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'If-Match': currentRevision() },
+        body: JSON.stringify(body),
     });
 }
 
