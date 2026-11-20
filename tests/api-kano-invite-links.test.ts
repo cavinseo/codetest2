@@ -15,7 +15,7 @@ vi.mock('../lib/prisma', () => ({
     prisma: {
         project: { findUnique: mocks.findProject },
         kanoSurveyInvitation: {
-            findUnique: mocks.findInvitation,
+            findFirst: mocks.findInvitation,
             findMany: mocks.findInvitations,
             create: mocks.createInvitation,
         },
@@ -115,5 +115,53 @@ describe.each([
                 index + 1, email, `${REQUEST_ORIGIN}/survey/${TEST_TOKENS[index]}`, PROJECT_NAME
             );
         });
+    });
+});
+
+// 단건과 일괄이 같은 주소를 다른 대소문자로 받아도 같은 사람으로 본다(감리 B12).
+describe('Kano 초청 이메일 대소문자', () => {
+    const singleRequest = (email: string) => new NextRequest(`${REQUEST_ORIGIN}/api/projects/${PROJECT_ID}/kano/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+    });
+
+    it('단건 초청은 일괄과 같이 소문자로 저장하고 대소문자 없이 중복을 찾는다', async () => {
+        const response = await inviteOne(singleRequest(' Foo@Example.TEST '), params);
+
+        expect(response.status).toBe(200);
+        expect(mocks.findInvitation).toHaveBeenCalledWith({
+            where: { projectId: PROJECT_ID, email: { equals: 'foo@example.test', mode: 'insensitive' } },
+        });
+        expect(mocks.createInvitation.mock.calls[0][0].data.email).toBe('foo@example.test');
+        expect(mocks.sendSurveyInvitation.mock.calls[0][0]).toBe('foo@example.test');
+    });
+
+    it('단건 초청은 대소문자만 다른 기존 초대가 있으면 새로 만들지 않는다', async () => {
+        mocks.findInvitation.mockResolvedValue({ id: 'inv_old', email: 'Foo@Example.test' });
+
+        const response = await inviteOne(singleRequest('foo@example.test'), params);
+
+        expect(response.status).toBe(400);
+        expect(mocks.createInvitation).not.toHaveBeenCalled();
+    });
+
+    it('일괄 초청은 예전에 대소문자를 살려 저장된 초대를 이미 초대한 주소로 건너뛴다', async () => {
+        mocks.findInvitations.mockResolvedValue([{ email: 'Foo@Example.test' }]);
+        const request = new NextRequest(`${REQUEST_ORIGIN}/api/projects/${PROJECT_ID}/kano/invite/bulk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ emails: ['foo@example.test'] }),
+        });
+
+        const response = await inviteBulk(request, params);
+        const body = await response.json();
+
+        expect(mocks.findInvitations).toHaveBeenCalledWith({
+            where: { projectId: PROJECT_ID, email: { in: ['foo@example.test'], mode: 'insensitive' } },
+            select: { email: true },
+        });
+        expect(body.results).toEqual([expect.objectContaining({ email: 'foo@example.test', status: 'skipped' })]);
+        expect(mocks.createInvitation).not.toHaveBeenCalled();
     });
 });

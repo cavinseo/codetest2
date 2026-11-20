@@ -115,11 +115,13 @@ export async function POST(
         }
 
         // 이미 초대한 주소는 다시 만들지 않는다.
+        // 행 주소는 이미 소문자다. 예전 단건 초대가 대소문자를 살려 저장했을 수 있어
+        // 대소문자 없이 찾고 소문자로 맞춰 비교한다(감리 B12).
         const existing = await prisma.kanoSurveyInvitation.findMany({
-            where: { projectId, email: { in: parsed.rows.map((row) => row.email) } },
+            where: { projectId, email: { in: parsed.rows.map((row) => row.email), mode: 'insensitive' } },
             select: { email: true },
         });
-        const alreadyInvited = new Set(existing.map((row) => row.email));
+        const alreadyInvited = new Set(existing.map((row) => row.email.toLowerCase()));
 
         const results: InviteResult[] = parsed.skipped.map((item) => ({
             email: item.value,

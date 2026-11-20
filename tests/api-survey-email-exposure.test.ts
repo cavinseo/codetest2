@@ -15,6 +15,8 @@ vi.mock('../lib/prisma', () => ({
     prisma: {
         kanoSurveyInvitation: {
             findUnique: (...args: unknown[]) => invitationFindUnique(...(args as [])),
+            // 단건 초대의 중복 확인은 대소문자 없이 찾으려고 findFirst 를 쓴다.
+            findFirst: (...args: unknown[]) => invitationFindUnique(...(args as [])),
             create: (...args: unknown[]) => invitationCreate(...(args as [])),
         },
         project: { findUnique: (...args: unknown[]) => projectFindUnique(...(args as [])) },

@@ -10,8 +10,11 @@ import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
 const log = createLogger('api/kano/invite');
 
+// 일괄 초대(lib/kano-invite-template)와 같이 소문자로 맞춰 저장한다. 그러지 않으면 단건
+// Foo@x.com 과 일괄 foo@x.com 이 (projectId, email) 유일 제약을 서로 피해 같은 사람에게
+// 초대가 두 건 생긴다(감리 B12).
 const inviteSchema = z.object({
-    email: z.string().email('Valid email is required.'),
+    email: z.string().trim().email('Valid email is required.').transform((value) => value.toLowerCase()),
 });
 
 // POST: Kano 질문지 초대
@@ -39,11 +42,10 @@ export async function POST(
             return NextResponse.json({ error: '프로젝트를 찾을 수 없습니다.' }, { status: 404 });
         }
 
-        // 동일 프로젝트+이메일에 대한 기존 초대 확인
-        const existing = await prisma.kanoSurveyInvitation.findUnique({
-            where: {
-                projectId_email: { projectId, email },
-            },
+        // 동일 프로젝트+이메일에 대한 기존 초대 확인. 이 규칙 전에 대소문자를 살려 저장된
+        // 초대도 같은 사람으로 보도록 대소문자 없이 찾는다.
+        const existing = await prisma.kanoSurveyInvitation.findFirst({
+            where: { projectId, email: { equals: email, mode: 'insensitive' } },
         });
 
         if (existing) {
