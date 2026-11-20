@@ -113,8 +113,8 @@ it('선택 삭제와 전체 삭제를 취소하면 요청·목록·선택이 바
     expect(deletes()).toHaveLength(0);
     expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
     expect(container.querySelector<HTMLInputElement>(`input[aria-label="${sharedEmail} 선택"]`)!.checked).toBe(true);
-    expect(window.confirm).toHaveBeenNthCalledWith(1, expect.stringMatching(/1명.*복구할 수 없습니다.*응답 완료 상태/s));
-    expect(window.confirm).toHaveBeenNthCalledWith(2, expect.stringMatching(/2명.*복구할 수 없습니다.*응답 완료 상태/s));
+    expect(window.confirm).toHaveBeenNthCalledWith(1, expect.stringMatching(/1명[\s\S]*복구할 수 없습니다[\s\S]*응답 완료 상태/));
+    expect(window.confirm).toHaveBeenNthCalledWith(2, expect.stringMatching(/2명[\s\S]*복구할 수 없습니다[\s\S]*응답 완료 상태/));
 });
 
 it('선택 확인 후 이메일 payload로 삭제하고 목록·집계·초대를 다시 읽는다', async () => {

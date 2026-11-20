@@ -111,7 +111,7 @@ it('확인 취소는 요청과 초대·응답을 보존한다', async () => {
     await remove();
     expect(deletes()).toHaveLength(0);
     expect(container.textContent).toContain(pending.email);
-    expect(window.confirm).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/pending@example\.test.*초대 기록.*설문 링크.*무효/s));
+    expect(window.confirm).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/pending@example\.test[\s\S]*초대 기록[\s\S]*설문 링크[\s\S]*무효/));
     expect(responses.project_a).toHaveLength(1);
 });
 it('확인하면 정확한 초대 ID만 요청하고 다른 초대·접수 응답을 보존한다', async () => {
