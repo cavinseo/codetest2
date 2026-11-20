@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
-import { assertAllowedBaseUrl } from '@/lib/ai/openai-compatible';
+import { assertMemberLocalBaseUrl, MEMBER_LOCAL_AI_URL_RULE } from '@/lib/ai/member-local-url';
 import { parseMemberAiMode, parsePersonalAiVendor } from '@/lib/ai/personal-vendors';
 import {
     deletePersonalConnection,
@@ -113,15 +113,14 @@ export async function PUT(request: NextRequest) {
                 break;
             }
             case 'local': {
-                const localBaseUrl = parsed.data.localBaseUrl?.trim() || null;
+                let localBaseUrl = parsed.data.localBaseUrl?.trim() || null;
                 if (localBaseUrl) {
+                    // 서버가 이 주소로 요청을 보내므로, 회원이 정하는 값은 로컬 LLM
+                    // 포트와 /v1 경로로만 좁힌다(감리 B9).
                     try {
-                        assertAllowedBaseUrl(localBaseUrl, false);
-                    } catch (error: unknown) {
-                        const message = error instanceof Error
-                            ? error.message
-                            : '로컬 엔드포인트 주소가 올바르지 않습니다.';
-                        return NextResponse.json({ error: message }, { status: 400 });
+                        localBaseUrl = assertMemberLocalBaseUrl(localBaseUrl);
+                    } catch {
+                        return NextResponse.json({ error: MEMBER_LOCAL_AI_URL_RULE }, { status: 400 });
                     }
                 }
 
