@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
 import {
+    findUnreadableKanoAnswerTexts,
     newAnonymousBatchId,
     normalizeKanoUploadAnswer,
     parseGoogleFormsResponseRows,
@@ -8,6 +9,43 @@ import {
     parseWorksheetMatrixRows,
     separateAnonymousRespondents,
 } from '../lib/kano-upload-parser';
+
+// 응답 문구는 위에서부터 맞춰 보므로 순서가 틀리면 정반대 점수가 나온다.
+// "I dislike it" 에는 "like" 가 들어 있어, 1점을 먼저 보면 싫다가 좋다로 읽혔다(감리 B6).
+describe('normalizeKanoUploadAnswer', () => {
+    it.each([
+        // 자체 설문지 선택지
+        ['마음에 든다', 1], ['당연하다', 2], ['아무런느낌이 없다', 3], ['하는수 없다', 4], ['마음에 안든다', 5],
+        // 예전 Google Forms 의 이중언어 선택지(lib/google-forms.ts ANSWER_MAP)
+        ['😍 매우 만족 (I like it)', 1],
+        ['😊 당연함 (I expect it)', 2],
+        ['😐 상관없음 (I am neutral)', 3],
+        ['😕 견딜만함 (I can tolerate it)', 4],
+        ['😠 매우 불만 (I dislike it)', 5],
+        // 영문만 쓴 응답
+        ['I like it', 1], ['I dislike it', 5], ['Dislike', 5], ['LIKE', 1],
+        // 띄어쓰기·변형 문구
+        ['마음에 안 든다', 5], ['싫다', 5], ['참을 수 있다', 4], ['어쩔 수 없이 할 수 없다', 4], ['아무렇지 않다', 3], ['중립', 3],
+        // 멘티가 Google Forms 에서 직접 만든 설문의 선택지. 못 읽어 4·5점이 통째로 빠졌던 실제 사례.
+        ['어쩔 수 없다', 4], ['마음에 들지 않는다', 5], ['마음에 들지않는다', 5],
+    ] as const)('%s → %i', (text, expected) => {
+        expect(normalizeKanoUploadAnswer(text)).toBe(expected);
+    });
+
+    it.each([
+        [1, 1], [5, 5], ['3', 3], [' 4 ', 4],
+    ] as const)('숫자 %j 는 그 점수로 읽는다', (value, expected) => {
+        expect(normalizeKanoUploadAnswer(value)).toBe(expected);
+    });
+
+    it.each([0, 6, '6', '', '   ', null, undefined, '모르겠다'])('읽을 수 없는 값 %j 은 null', (value) => {
+        expect(normalizeKanoUploadAnswer(value)).toBeNull();
+    });
+
+    it('likely 처럼 like 로 시작하는 다른 낱말은 1점으로 읽지 않는다', () => {
+        expect(normalizeKanoUploadAnswer('likely')).toBeNull();
+    });
+});
 import { writeKanoUploadTemplateBuffer } from '../lib/kano-upload-template';
 
 describe('Kano Google Forms upload parser', () => {
@@ -240,5 +278,38 @@ describe('소수 응답 (B8)', () => {
         expect(answers).toEqual([
             { respondentEmail: 'respondent@example.com', requirementIndex: 1, positiveAnswer: 1, negativeAnswer: 4 },
         ]);
+    });
+});
+
+// 해석기는 못 읽은 칸이 든 문항을 저장하지 않는다. 업로드가 그 사실을 알리려면
+// 어떤 문구를 못 읽었는지 먼저 모아야 한다.
+describe('findUnreadableKanoAnswerTexts', () => {
+    it('Google Forms 응답 열에서 점수로 읽히지 않는 문구만 중복 없이 모은다', () => {
+        const rows = [
+            ['타임스탬프', '이메일 주소', '[1-1] 빠른 주문', '[1-2] 빠른 주문', '기타 의견'],
+            ['2026', 'a@b.c', '그저 그렇다', '마음에 들지 않는다', '아무 말'],
+            ['2026', 'd@e.f', '마음에 든다', '그저 그렇다', ''],
+            ['2026', 'g@h.i', '', '0', '그냥'],
+        ];
+
+        // 빈칸은 응답하지 않은 것이라 세지 않고, 응답 열이 아닌 "기타 의견" 은 보지 않는다.
+        expect(findUnreadableKanoAnswerTexts(rows)).toEqual(['그저 그렇다', '0']);
+    });
+
+    it('전용 양식처럼 머리글이 3행에 있어도 그 아래 응답만 본다', () => {
+        const rows = [
+            ['Kano 응답 업로드 양식'],
+            ['답변 칸에는 1~5 점수를 입력하세요.'],
+            ['email', 'Q1_positive', 'Q1_negative'],
+            ['a@b.c', 1, '모름'],
+        ];
+
+        expect(findUnreadableKanoAnswerTexts(rows)).toEqual(['모름']);
+    });
+
+    it('모두 읽히거나 응답 열이 없으면 빈 목록이다', () => {
+        expect(findUnreadableKanoAnswerTexts([['[1-1] 질문', '[1-2] 질문'], ['어쩔 수 없다', 5]])).toEqual([]);
+        expect(findUnreadableKanoAnswerTexts([['이름', '메모'], ['홍길동', '아무거나']])).toEqual([]);
+        expect(findUnreadableKanoAnswerTexts([])).toEqual([]);
     });
 });

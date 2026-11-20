@@ -4,7 +4,11 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { guardUploadedExcel } from '@/lib/upload-guard';
 import type { KanoAnswer } from '@/lib/kano-algorithm';
+// 응답 문구 해석은 lib 한 곳에만 둔다. 예전에는 이 파일에 내용이 다른 사본이 있어,
+// 같은 엑셀이 어느 경로로 읽히느냐에 따라 점수가 달라졌다(감리 B6·D6).
 import {
+    findUnreadableKanoAnswerTexts,
+    normalizeKanoUploadAnswer,
     parseGoogleFormsResponseSheet,
     parseKanoTemplateResponseSheet,
     parseWorksheetMatrixSheet,
@@ -13,23 +17,6 @@ import {
     type ParsedKanoUploadAnswer,
 } from '@/lib/kano-upload-parser';
 import { KanoUploadConflictError, parseWritePolicy, persistKanoUploadAnswers } from '@/lib/kano-response-store';
-
-// like 를 단어 경계로 감싸야 "dislike" 가 1점(좋다)으로 읽히지 않는다(lib/kano-upload-parser.ts 와 같은 이유).
-const ANSWER_TEXT: Array<[RegExp, KanoAnswer]> = [
-    [/^\s*1\s*$|마음에\s*든다|\blike\b/i, 1],
-    [/^\s*2\s*$|당연|expect/i, 2],
-    [/^\s*3\s*$|아무런\s*느낌|중립|neutral/i, 3],
-    [/^\s*4\s*$|할\s*수\s*없|하는수\s*없|참을|tolerate/i, 4],
-    [/^\s*5\s*$|마음에\s*안\s*든다|마음에\s*안든다|안\s*든다|싫|dislike/i, 5],
-];
-
-function normalizeAnswer(value: unknown): KanoAnswer | null {
-    // 소수(2.5 등)는 정수 열 저장에서 업로드 전체를 실패시키므로 받지 않는다.
-    if (typeof value === 'number') return Number.isInteger(value) && value >= 1 && value <= 5 ? value as KanoAnswer : null;
-    const text = String(value ?? '').trim();
-    if (!text) return null;
-    return ANSWER_TEXT.find(([pattern]) => pattern.test(text))?.[1] ?? null;
-}
 
 function selectedAnswerFromRow(row: unknown[], startCol: number): KanoAnswer | null {
     for (let offset = 0; offset < 5; offset++) {
@@ -69,8 +56,8 @@ function parseTabularResponses(sheet: XLSX.WorkSheet, requirementCount: number):
 
             const loosePositive = entries.find(([key]) => key.includes(`${reqIndex + 1}`) && /positive|긍정/i.test(key))?.[1];
             const looseNegative = entries.find(([key]) => key.includes(`${reqIndex + 1}`) && /negative|부정/i.test(key))?.[1];
-            const positiveAnswer = [...positiveCandidates, loosePositive].map(normalizeAnswer).find(Boolean);
-            const negativeAnswer = [...negativeCandidates, looseNegative].map(normalizeAnswer).find(Boolean);
+            const positiveAnswer = [...positiveCandidates, loosePositive].map(normalizeKanoUploadAnswer).find(Boolean);
+            const negativeAnswer = [...negativeCandidates, looseNegative].map(normalizeKanoUploadAnswer).find(Boolean);
 
             if (positiveAnswer && negativeAnswer) {
                 parsed.push({
@@ -93,16 +80,29 @@ function pickKanoUploadSheet(workbook: XLSX.WorkBook, format: string): string | 
     return workbook.SheetNames.find((name) => name.includes('KANO') || name.includes('Kano') || name.includes('질문지')) ?? workbook.SheetNames[0];
 }
 
-function parseByUploadFormat(sheet: XLSX.WorkSheet, requirementCount: number, format: string): ParsedKanoUploadAnswer[] {
+function parseByUploadFormat(
+    sheet: XLSX.WorkSheet,
+    requirementCount: number,
+    format: string
+): { answers: ParsedKanoUploadAnswer[]; isMatrix: boolean } {
     const parsers = format === 'googleForms'
         ? [parseGoogleFormsResponseSheet, parseKanoTemplateResponseSheet, parseTabularResponses, parseWorksheetMatrixSheet]
         : [parseKanoTemplateResponseSheet, parseWorksheetMatrixSheet, parseTabularResponses, parseGoogleFormsResponseSheet];
 
     for (const parser of parsers) {
         const answers = parser(sheet, requirementCount);
-        if (answers.length > 0) return answers;
+        if (answers.length > 0) return { answers, isMatrix: parser === parseWorksheetMatrixSheet };
     }
-    return [];
+    return { answers: [], isMatrix: false };
+}
+
+// 사용자에게 돌려줄 문구는 사용자가 올린 파일의 칸 값이다. 몇 개만, 짧게 보여 준다.
+function unreadableAnswerMessage(texts: string[]): string {
+    const shown = texts.slice(0, 5).map(text => `"${text.length > 30 ? `${text.slice(0, 30)}…` : text}"`).join(', ');
+    const more = texts.length > 5 ? ` 외 ${texts.length - 5}개` : '';
+    return `점수로 읽을 수 없는 응답 문구가 있습니다: ${shown}${more}. `
+        + '이대로 저장하면 그 칸이 든 문항이 빠져 분석이 틀어지므로 업로드하지 않았습니다. '
+        + '1~5 숫자나 "마음에 든다·당연하다·아무런느낌이 없다·하는수 없다·마음에 안든다"로 바꿔 다시 올려 주세요.';
 }
 
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -141,10 +141,16 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             return NextResponse.json({ error: '엑셀 파일에서 읽을 수 있는 시트를 찾지 못했습니다.' }, { status: 400 });
         }
 
-        const answers = separateAnonymousRespondents(
-            parseByUploadFormat(sheet, requirements.length, uploadFormat),
-            newAnonymousBatchId()
-        );
+        const parsed = parseByUploadFormat(sheet, requirements.length, uploadFormat);
+        // 해석기는 못 읽은 칸이 든 문항을 건너뛴다. 일부만 저장되면 분석이 조용히
+        // 틀어지므로(4·5점만 빠져 불만족 계수가 전부 0 이 된 사례) 아예 저장하지 않는다.
+        if (!parsed.isMatrix) {
+            const unreadable = findUnreadableKanoAnswerTexts(XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }));
+            if (unreadable.length > 0) {
+                return NextResponse.json({ error: unreadableAnswerMessage(unreadable), code: 'KANO_ANSWER_UNREADABLE' }, { status: 400 });
+            }
+        }
+        const answers = separateAnonymousRespondents(parsed.answers, newAnonymousBatchId());
         if (answers.length === 0) {
             return NextResponse.json({ error: 'Kano 응답을 찾지 못했습니다. 전용 업로드 양식 또는 Google Forms 응답 시트의 1~5 점수/응답 텍스트를 확인하세요.' }, { status: 400 });
         }

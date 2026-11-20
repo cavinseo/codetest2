@@ -104,6 +104,40 @@ describe('POST /api/projects/[id]/kano/upload-excel', () => {
         });
     });
 
+    it('직접 만든 Google Forms 의 "어쩔 수 없다"·"마음에 들지 않는다" 를 4·5점으로 저장한다', async () => {
+        const csv = '﻿타임스탬프,이메일 주소,[1-1] 빠른 주문,[1-2] 빠른 주문,[2-1] 안전한 보관,[2-2] 안전한 보관\n'
+            + '2026-10-02,respondent@example.test,마음에 든다,마음에 들지 않는다,아무렇지 않다,어쩔 수 없다';
+        const formData = new FormData();
+        formData.append('file', new File([csv], 'own form.csv', { type: 'text/csv' }));
+        formData.append('format', 'googleForms');
+        formData.append('writePolicy', 'append');
+        const response = await POST(new NextRequest(`http://localhost/api/projects/${PROJECT_ID}/kano/upload-excel`, { method: 'POST', body: formData }), params);
+
+        expect(response.status).toBe(200);
+        expect(tx.kanoResponse.createMany).toHaveBeenCalledWith({ data: [
+            expect.objectContaining({ requirementId: 'requirement_1', positiveAnswer: 1, negativeAnswer: 5, kanoCategory: 'O' }),
+            expect.objectContaining({ requirementId: 'requirement_2', positiveAnswer: 3, negativeAnswer: 4, kanoCategory: 'I' }),
+        ] });
+    });
+
+    it('읽을 수 없는 응답 문구가 있으면 일부만 저장하지 않고 그 문구를 알려 거부한다', async () => {
+        // 예전에는 그 칸이 든 문항만 조용히 빠진 채 저장돼 불만족 계수가 전부 0 으로 나왔다.
+        const csv = '﻿타임스탬프,이메일 주소,[1-1] 빠른 주문,[1-2] 빠른 주문,[2-1] 안전한 보관,[2-2] 안전한 보관\n'
+            + '2026-10-02,respondent@example.test,마음에 든다,그저 그렇다,당연하다,하는수 없다';
+        const formData = new FormData();
+        formData.append('file', new File([csv], 'odd labels.csv', { type: 'text/csv' }));
+        formData.append('format', 'googleForms');
+        formData.append('writePolicy', 'replace');
+        const response = await POST(new NextRequest(`http://localhost/api/projects/${PROJECT_ID}/kano/upload-excel`, { method: 'POST', body: formData }), params);
+        const body = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(body.code).toBe('KANO_ANSWER_UNREADABLE');
+        expect(body.error).toContain('"그저 그렇다"');
+        // 교체 정책이어도 기존 응답을 지우기 전에 멈춘다.
+        expect(transaction).not.toHaveBeenCalled();
+    });
+
     it('전용 Excel 양식 경로에서는 CSV를 받지 않는다', async () => {
         const response = await POST(googleFormsCsvRequest('template'), params);
 
