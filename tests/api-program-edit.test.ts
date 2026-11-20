@@ -41,6 +41,8 @@ describe('프로그램 내용 수정', () => {
         requireAuth.mockResolvedValue({ userId: 'manager_1', role });
         if (role === 'ADMIN') findUnique.mockResolvedValue({ managerId: 'other' });
         expect((await call()).status).toBe(200);
+        // 종료일은 그날 한국 시간 끝으로 저장한다. UTC 자정(=KST 09:00)으로 저장하면
+        // 종료일 당일 오전 9시부터 가입·로그인이 막혔다(감리 B8).
         expect(update).toHaveBeenCalledWith({ where: { id: 'program_1' }, data: {
             name: '수정 프로그램', organization: '기관', startsAt: new Date(valid.startsAt), endsAt: new Date('2026-10-31T23:59:59.999+09:00'),
         }, select: { id: true, name: true, organization: true, startsAt: true, endsAt: true } });

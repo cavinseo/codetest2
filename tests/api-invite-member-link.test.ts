@@ -1,6 +1,9 @@
 // 기존 멘티 연결의 관리자 확인, 계정 보존, 세션 폐기와 첫 로그인 분리를 검증한다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
+// 이 파일의 now 는 KST 09:00 이라 종료일이 오늘인 프로그램은 아직 끝나지 않았다.
+// 끝난 프로그램은 종료일을 어제로 둔다(감리 B8).
+import { programEndDeadline } from '../lib/program';
 
 const mocks = vi.hoisted(() => ({
     admin: vi.fn(), findInvite: vi.fn(), findMember: vi.fn(), findOtherInvites: vi.fn(),
@@ -108,12 +111,13 @@ describe('관리자 회원 연결 확인', () => {
     });
 
     it.each([
-        ['이용 기간 안에 프로그램이 끝나면 종료일', { accessDurationDays: 90 }, 60],
-        ['이용 기간이 먼저 끝나면 기간 만료일', { accessDurationDays: 30 }, 30],
-        ['최초 접속 기한이 더 길면 그 기한', { accessDurationDays: 30, expiresAt: after(40) }, 40],
-    ])('이용만료일이 없는 초대와 회원을 연결하면 %s까지로 정한다', async (_case, invite, days) => {
+        // 프로그램 종료일은 그날 한국 시간 끝까지 유효하다(감리 B8).
+        ['이용 기간 안에 프로그램이 끝나면 종료일 한국 시간 끝', { accessDurationDays: 90 }, programEndDeadline(after(60))],
+        ['이용 기간이 먼저 끝나면 기간 만료일', { accessDurationDays: 30 }, after(30)],
+        ['최초 접속 기한이 더 길면 그 기한', { accessDurationDays: 30, expiresAt: after(40) }, after(40)],
+    ])('이용만료일이 없는 초대와 회원을 연결하면 %s까지로 정한다', async (_case, invite, expected) => {
         mocks.findInvite.mockResolvedValue({ ...inviteRecord(), accessExpiresAt: null, ...invite });
-        expect((await preview()).accessExpiresAt).toBe(after(days).toISOString());
+        expect((await preview()).accessExpiresAt).toBe(expected.toISOString());
     });
 
     it('깨진 요청 본문은 400으로 처리한다', async () => {
@@ -181,7 +185,7 @@ describe('기존 멘티 연결 자격', () => {
     });
 
     it.each([
-        { expiresAt: now }, { program: { ...inviteRecord().program, endsAt: now } },
+        { expiresAt: now }, { program: { ...inviteRecord().program, endsAt: after(-1) } },
     ])('초대나 프로그램 만료 경계에서는 연결하지 않는다 (%j)', async changes => {
         mocks.findInvite.mockResolvedValue({ ...inviteRecord(), ...changes });
         expect((await GET(request(), props())).status).toBe(400);

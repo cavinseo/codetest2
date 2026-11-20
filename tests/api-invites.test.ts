@@ -182,15 +182,16 @@ describe('초대 코드 발행 규칙', () => {
         expect(createInvite).not.toHaveBeenCalled();
     });
 
-    it('프로그램 한국 종료 날짜와 같으면 정확한 종료 시각을 저장한다', async () => {
-        const endsAt = new Date('2026-10-14T16:00:00.000Z');
+    // 프로그램 종료일은 그날 한국 시간 끝까지 유효하다(감리 B8).
+    it('프로그램 한국 종료 날짜와 같으면 그 종료일 한국 시간 끝을 저장한다', async () => {
+        const endsAt = new Date('2026-10-14T16:00:00.000Z'); // KST 2026-10-15 01:00
         findUniqueProgram.mockResolvedValue({ id: 'prog_1', managerId: ISSUER_ID, endsAt });
         const res = await POST(jsonRequest('POST', {
             email: 'm@x.com', role: 'MENTEE', programId: 'prog_1', expiresAt: '2026-10-15',
         }));
 
         expect(res.status).toBe(200);
-        expect(createInvite.mock.calls[0][0].data).toMatchObject({ expiresAt: endsAt });
+        expect(createInvite.mock.calls[0][0].data).toMatchObject({ expiresAt: new Date('2026-10-15T23:59:59.999+09:00') });
     });
 
     it('멘토 역할로는 코드를 만들 수 없다', async () => {
@@ -466,9 +467,10 @@ describe('초대 코드 목록', () => {
         const end = new Date(0);
         findManyInvite.mockResolvedValue([{ id: 'i', usedAt: new Date(), accessDurationDays: 90, expiresAt: new Date(Date.now() + 86400000), program: { name: '종료 프로그램', endsAt: end }, usedBy: { accessExpiresAt: null } }]);
         const result = await GET(new NextRequest('http://localhost/api/invites'));
+        // 이용만료일은 프로그램 종료일 한국 시간 끝으로 계산된다(감리 B8).
         expect((await result.json()).invites[0]).toMatchObject({
             expiresAt: new Date(Date.now() + 86400000).toISOString(),
-            accessExpiresAt: end.toISOString(), programName: '종료 프로그램',
+            accessExpiresAt: new Date('1970-01-01T23:59:59.999+09:00').toISOString(), programName: '종료 프로그램',
         });
     });
 

@@ -2,7 +2,7 @@
 import type { Prisma, User } from '@prisma/client';
 import { prisma } from './prisma';
 import { generateId } from './id';
-import { canManageThisProgram } from './program';
+import { canManageThisProgram, programEndDeadline } from './program';
 import type { InvitableRole, MemberRole } from './member-roles';
 import { inviteAccessExpiresAt } from './invite-access';
 import { formatInviteExpiryDate } from './invite-expiry';
@@ -21,12 +21,15 @@ interface IssueInviteInput {
 }
 
 function resolveInviteExpiry(requestedExpiresAt: Date, programEndsAt: Date, now: Date): { expiresAt: Date } | InviteValidationError {
-    if (programEndsAt <= now) return { error: '종료된 프로그램의 초대 기한은 지정할 수 없습니다.', status: 400 };
+    // 종료일 당일도 그날 한국 시간 끝까지 유효하다. 예전 UTC 자정 값 그대로 Math.min 을
+    // 하면 "12-31까지" 초대가 12-31 오전 9시에 끊겼다(감리 B8).
+    const programDeadline = programEndDeadline(programEndsAt);
+    if (programDeadline <= now) return { error: '종료된 프로그램의 초대 기한은 지정할 수 없습니다.', status: 400 };
     if (requestedExpiresAt <= now) return { error: '최초 접속 기한은 오늘 이후 날짜로 입력하세요.', status: 400 };
-    if (formatInviteExpiryDate(requestedExpiresAt) > formatInviteExpiryDate(programEndsAt)) {
+    if (formatInviteExpiryDate(requestedExpiresAt) > formatInviteExpiryDate(programDeadline)) {
         return { error: '최초 접속 기한은 프로그램 종료일을 넘길 수 없습니다.', status: 400 };
     }
-    return { expiresAt: new Date(Math.min(requestedExpiresAt.getTime(), programEndsAt.getTime())) };
+    return { expiresAt: new Date(Math.min(requestedExpiresAt.getTime(), programDeadline.getTime())) };
 }
 
 function lockInviteEmail(tx: Prisma.TransactionClient, email: string) {

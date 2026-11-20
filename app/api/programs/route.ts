@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
                 name,
                 organization,
                 startsAt,
+                // endsAt 은 위에서 이미 그날 한국 시간 끝으로 맞췄다(감리 B8).
                 endsAt,
                 managerId: managerId ?? authResult.userId,
             },
