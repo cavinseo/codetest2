@@ -1,4 +1,6 @@
 // WS-15 자금계획 초안을 규칙 기반으로 생성하는 유틸리티
+import { apportionAmount } from './apportion-amount';
+
 export interface FundingAiPlan {
     id: string;
     category: string;
@@ -110,13 +112,10 @@ export function generateFundingAiDraft({
             continue;
         }
 
-        let allocated = 0;
+        // 각 몫을 따로 반올림하면 합이 필요액을 넘을 수 있어 합이 정확히 맞게 나눈다(감리 B17).
+        const amounts = apportionAmount(remaining, emptySources.map(sourceWeight));
         emptySources.forEach((source, index) => {
-            const amount = index === emptySources.length - 1
-                ? Math.max(0, remaining - allocated)
-                : roundAmount(remaining * (sourceWeight(source) / weightTotal));
-
-            allocated += amount;
+            const amount = amounts[index];
             source[field] = encodeSourceYear({
                 source: parseSourceYear(source[field]).source || sourceLabel(source),
                 amount: String(amount),
@@ -242,10 +241,6 @@ function sourceLabel(source: FundingAiSource) {
 
 function yearLabel(field: YearField) {
     return field === 'year1' ? '1차년도' : field === 'year2' ? '2차년도' : '3차년도';
-}
-
-function roundAmount(value: number) {
-    return Math.round(value);
 }
 
 function normalize(value: string) {
