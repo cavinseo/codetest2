@@ -1,5 +1,6 @@
 import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { getKanoAnalysisAccess } from '@/lib/kano-analysis-access';
@@ -16,6 +17,25 @@ import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 import { resolveKanoWeight } from '@/lib/kano-weight';
 
 const log = createLogger('api/kano/analysis');
+
+// 가중치는 집계표 입력칸과 같은 0~5 범위만 받는다. 예전에는 검사 없이 Number() 로 읽어
+// weights:[null] 은 500 이 났고 kanoWeight:99 는 그대로 저장돼 '매력'으로 보였다(감리 B16).
+// 빈칸('' 또는 null)은 직접 입력을 지우고 자동값으로 돌아가는 뜻이라 null 로 저장한다.
+// 예전 클라이언트가 보내던 숫자 문자열('4.5')은 계속 받는다.
+const KANO_WEIGHT_MESSAGE = '가중치는 0부터 5 사이의 숫자로 입력해주세요.';
+const WEIGHTS_SHAPE_MESSAGE = '가중치 목록 형식이 올바르지 않습니다.';
+const kanoWeightSchema = z.preprocess(
+    (value) => (typeof value === 'string' ? (value.trim() === '' ? null : Number(value)) : value),
+    z.number({ errorMap: () => ({ message: KANO_WEIGHT_MESSAGE }) })
+        .finite(KANO_WEIGHT_MESSAGE).min(0, KANO_WEIGHT_MESSAGE).max(5, KANO_WEIGHT_MESSAGE)
+        .nullable(),
+);
+const kanoWeightPatchSchema = z.object({
+    weights: z.array(z.object({
+        requirementId: z.string({ errorMap: () => ({ message: WEIGHTS_SHAPE_MESSAGE }) }).min(1, WEIGHTS_SHAPE_MESSAGE),
+        kanoWeight: kanoWeightSchema,
+    }, { errorMap: () => ({ message: WEIGHTS_SHAPE_MESSAGE }) }), { errorMap: () => ({ message: WEIGHTS_SHAPE_MESSAGE }) }),
+}, { errorMap: () => ({ message: WEIGHTS_SHAPE_MESSAGE }) });
 
 // GET: Kano 분석 결과 조회
 export async function GET(
@@ -132,19 +152,17 @@ export async function PATCH(
             return NextResponse.json({ error: 'Kano 분석은 담당 멘토만 수정할 수 있습니다.' }, { status: 403 });
         }
 
-        const body = await readJsonBody(request);
-        const updates = Array.isArray(body.weights) ? body.weights : [];
+        const parsed = kanoWeightPatchSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+            return NextResponse.json({ error: parsed.error.errors[0]?.message ?? KANO_WEIGHT_MESSAGE }, { status: 400 });
+        }
+        const updates = parsed.data.weights;
 
         await prisma.$transaction(
-            updates.map((item: any) => {
-                const weight = item.kanoWeight === null || item.kanoWeight === ''
-                    ? null
-                    : Number(item.kanoWeight);
-                return prisma.customerRequirement.updateMany({
-                    where: { id: String(item.requirementId), projectId },
-                    data: { kanoWeight: Number.isFinite(weight) ? weight : null },
-                });
-            })
+            updates.map((item) => prisma.customerRequirement.updateMany({
+                where: { id: item.requirementId, projectId },
+                data: { kanoWeight: item.kanoWeight },
+            }))
         );
 
         return NextResponse.json({ success: true, count: updates.length });

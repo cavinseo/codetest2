@@ -167,3 +167,34 @@ describe('프로젝트 접근 거부 전달', () => {
         expectNoWrite();
     });
 });
+
+// 예전에는 검사 없이 Number() 로 읽어 weights:[null] 은 500 이 났고 kanoWeight:99 는 그대로
+// 저장돼 '매력'으로 보였다. 집계표 입력칸과 같은 0~5 만 받는다(감리 B16).
+describe('Kano 가중치 입력 검증', () => {
+    it.each([
+        ['목록 항목이 null', { weights: [null] }, '가중치 목록 형식이 올바르지 않습니다.'],
+        ['목록이 아님', { weights: 'x' }, '가중치 목록 형식이 올바르지 않습니다.'],
+        ['목록이 없음', {}, '가중치 목록 형식이 올바르지 않습니다.'],
+        ['요구사항 id 없음', { weights: [{ kanoWeight: 3 }] }, '가중치 목록 형식이 올바르지 않습니다.'],
+        ['5 초과', { weights: [{ requirementId: 'requirement-a', kanoWeight: 99 }] }, '가중치는 0부터 5 사이의 숫자로 입력해주세요.'],
+        ['음수', { weights: [{ requirementId: 'requirement-a', kanoWeight: -1 }] }, '가중치는 0부터 5 사이의 숫자로 입력해주세요.'],
+        ['숫자가 아닌 문자열', { weights: [{ requirementId: 'requirement-a', kanoWeight: 'abc' }] }, '가중치는 0부터 5 사이의 숫자로 입력해주세요.'],
+        ['불리언', { weights: [{ requirementId: 'requirement-a', kanoWeight: true }] }, '가중치는 0부터 5 사이의 숫자로 입력해주세요.'],
+        ['값 없음', { weights: [{ requirementId: 'requirement-a' }] }, '가중치는 0부터 5 사이의 숫자로 입력해주세요.'],
+    ])('%s 이면 400 으로 거절하고 아무것도 저장하지 않는다', async (_label, body, message) => {
+        const response = await PATCH(request('PATCH', '', body), params);
+        expect(response.status).toBe(400);
+        expect((await response.json()).error).toBe(message);
+        expectNoWrite();
+    });
+
+    it('범위 끝값과 빈칸은 받는다', async () => {
+        const response = await PATCH(request('PATCH', '', { weights: [
+            { requirementId: 'requirement-a', kanoWeight: 0 },
+            { requirementId: 'requirement-b', kanoWeight: 5 },
+            { requirementId: 'requirement-c', kanoWeight: '' },
+        ] }), params);
+        expect(response.status).toBe(200);
+        expect(m.updateMany.mock.calls.map(([call]) => call.data.kanoWeight)).toEqual([0, 5, null]);
+    });
+});
