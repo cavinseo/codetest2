@@ -712,6 +712,36 @@ describe('WS-9 세부기능 표시와 빈 스펙 입력', () => {
 
         expect(fieldValue('측정단위')).toBe('초');
     });
+
+    // 감리 B14: 자사·경쟁사 값만 실패 시 되돌리기가 빠져 있었고, 워크시트 저장은 초안이 없는
+    // 칸을 화면의 옛 값으로 보내 방금 보낸 단위를 되돌렸다.
+    it.each([
+        { outcome: 'http' as const, message: 'fixture 저장 또는 조회 실패' },
+        { outcome: 'network' as const, message: '경쟁사 값을 저장하지 못했습니다. 연결을 확인하세요.' },
+    ])('경쟁사 값 저장이 $outcome 오류로 실패하면 입력한 값을 칸에 남긴다 (B14)', async ({ outcome, message }) => {
+        await mount();
+        await typeAndBlur('경쟁사 값', '120');
+
+        await finish(server.pending('qfd/technical-benchmarks', 'POST')[0], outcome);
+
+        expect(fieldValue('경쟁사 값')).toBe('120');
+        expect(container.textContent).toContain(message);
+    });
+
+    it('측정단위 저장을 기다리는 중에 워크시트를 저장해도 새 단위를 되돌리지 않는다 (B14)', async () => {
+        await mount();
+        await typeAndBlur('측정단위', '초');
+        const target = container.querySelector<HTMLInputElement>('[aria-label="처리 속도 설계 목표치"]')!;
+        await act(async () => {
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(target, '10 이내');
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+
+        await click(container.querySelector<HTMLButtonElement>('[data-worksheet-save]')!);
+
+        const [, worksheetRequest] = server.pending('qfd/technical', 'PATCH');
+        expect(worksheetRequest.body).toMatchObject({ unit: '초', targetValue: '10 이내' });
+    });
 });
 
 describe('WS-9 그룹 구성', () => {
