@@ -221,3 +221,16 @@ it('적합도 매트릭스를 개정값 없이 저장하면 428 이고 덮어쓰
     expect(response.status).toBe(428);
     expect(mocks.saveFitnessMatrix).not.toHaveBeenCalled();
 });
+
+// 행마다 순차로 create 해서 기본 5초로는 큰 스펙이 원격 DB 에서 끝까지 저장되지 못한다.
+// 엑셀 업로드와 같은 제한 시간을 써야 한다(감리 B15).
+it('스펙 화면 저장은 엑셀 업로드와 같은 트랜잭션 제한 시간을 쓴다', async () => {
+    const { SPEC_SAVE_TIMEOUT_MS } = await import('../lib/spec-save-timeout');
+    const response = await saveSpecs(requestFor('/api/projects/project-1/spec', {
+        specFunctions: [{ id: 'core', level: 'CORE', name: '핵심 기능', order: 0 }],
+    }), params);
+
+    expect(response.status).toBe(200);
+    expect(SPEC_SAVE_TIMEOUT_MS).toBeGreaterThan(5_000);
+    expect(mocks.transaction.mock.calls[0][1]).toEqual({ isolationLevel: 'Serializable', timeout: SPEC_SAVE_TIMEOUT_MS });
+});

@@ -5,6 +5,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { parseWritePolicy, type WritePolicy } from '@/lib/write-policy';
 import { checkExcelArchiveSafety, checkWorkbookSheetRanges, guardUploadedExcel } from '@/lib/upload-guard';
 import { createLogger } from '@/lib/logger';
+import { SPEC_SAVE_TIMEOUT_MS } from '@/lib/spec-save-timeout';
 
 const log = createLogger('api/spec/upload-excel');
 
@@ -250,8 +251,8 @@ function flattenRowsToSpecs(rows: FlatSpecRow[]) {
 // 새 데이터는 일부만 남았다. 롤백할 방법이 없었다.
 //
 // 부모 id 매핑이 필요해 create 를 순차로 도는 구조는 유지해야 하므로,
-// 행이 많은 파일에서도 트랜잭션이 중간에 끊기지 않도록 timeout 을 늘려 둔다.
-const SPEC_SAVE_TIMEOUT_MS = 20_000;
+// 행이 많은 파일에서도 트랜잭션이 중간에 끊기지 않도록 timeout 을 늘려 둔다
+// (값은 화면 저장과 함께 lib/spec-save-timeout 에서 정한다).
 
 async function saveSpecs(projectId: string, specs: ParsedSpec[], writePolicy: WritePolicy) {
     return prisma.$transaction(async (tx) => {

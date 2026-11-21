@@ -6,6 +6,7 @@ import { toErrorResponse } from '@/lib/api-error';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 import { specFunctionsBodySchema } from '@/lib/bulk-save-schemas';
 import { assertWorksheetRevision, worksheetRevision, WorksheetRevisionConflict, WorksheetRevisionMissing } from '@/lib/worksheet-revision';
+import { SPEC_SAVE_TIMEOUT_MS } from '@/lib/spec-save-timeout';
 
 const log = createLogger('api/spec');
 
@@ -168,7 +169,8 @@ export async function POST(
                 where: { projectId },
                 orderBy: { order: 'asc' },
             });
-        }, { isolationLevel: 'Serializable' });
+            // 행마다 순차로 create 하므로 기본 5초로는 큰 스펙이 끝까지 저장되지 못한다(감리 B15).
+        }, { isolationLevel: 'Serializable', timeout: SPEC_SAVE_TIMEOUT_MS });
 
         log.info('스펙 저장 성공', { projectId, count: updatedSpecs.length });
 
