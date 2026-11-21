@@ -1,8 +1,10 @@
+import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { buildKanoGoogleFormScript } from '@/lib/kano-google-form-script';
+import { EMPTY_KANO_INTRODUCTION, kanoSurveyIntroductionSchema } from '@/lib/kano-survey-introduction';
 
 const log = createLogger('api/kano-form-script');
 
@@ -19,9 +21,12 @@ export async function GET(
             where: { id: projectId },
             select: {
                 name: true,
+                kanoSurveyIntroduction: true,
                 requirements: {
                     orderBy: { order: 'asc' },
                     select: {
+                        id: true,
+                        order: true,
                         category: true,
                         subcategory: true,
                         requirement: true,
@@ -40,7 +45,9 @@ export async function GET(
             return NextResponse.json({ error: '먼저 고객요구사항을 등록하세요.' }, { status: 400 });
         }
 
-        const script = buildKanoGoogleFormScript(project.requirements, project.name);
+        // 오프라인 설문지 화면에서 저장한 소개문을 그대로 쓴다.
+        const introduction = kanoSurveyIntroductionSchema.parse(project.kanoSurveyIntroduction ?? EMPTY_KANO_INTRODUCTION);
+        const script = buildKanoGoogleFormScript(groupRequirementsByCategory(project.requirements), project.name, introduction);
         const fileName = encodeURIComponent('Kano_GoogleForms_생성_스크립트.gs');
 
         return new NextResponse(script, {

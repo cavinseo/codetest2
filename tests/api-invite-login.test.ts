@@ -1,6 +1,9 @@
 // 초대 코드 로그인의 최초 사용, 반복 로그인, 인증 실패 및 트랜잭션 경계를 검증한다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+// 프로그램 종료일은 그날 한국 시간 끝까지 유효하다(감리 B8). 이 파일의 now 는
+// KST 09:00 이라, 종료일이 오늘이면 아직 끝나지 않았다. 끝난 경우는 종료일을 어제로 둔다.
+import { programEndDeadline } from '../lib/program';
 
 const mocks = vi.hoisted(() => ({
     findInvite: vi.fn(), findUser: vi.fn(), create: vi.fn(), update: vi.fn(), lock: vi.fn(),
@@ -101,10 +104,10 @@ describe('초대 코드 로그인', () => {
         expect((await POST(request())).status).toBe(200);
         expect(mocks.create.mock.calls[0][0].data.accessExpiresAt).toEqual(after(days));
     });
-    it('프로그램 종료 시각이 더 빠르면 생성 계정의 이용 기간을 제한한다', async () => {
+    it('프로그램 종료일이 더 빠르면 생성 계정의 이용 기간을 그 종료일 한국 시간 끝까지로 제한한다', async () => {
         mocks.findInvite.mockResolvedValue({ ...invite, program: { endsAt: after(2) } });
         expect((await POST(request())).status).toBe(200);
-        expect(mocks.create.mock.calls[0][0].data.accessExpiresAt).toEqual(after(2));
+        expect(mocks.create.mock.calls[0][0].data.accessExpiresAt).toEqual(programEndDeadline(after(2)));
     });
     it('반복 로그인은 최초 사용 기한이 지나도 계정과 기한을 변경하지 않는다', async () => {
         mocks.findInvite.mockResolvedValue({ ...used, usedAt: after(-20), expiresAt: after(-6) });
@@ -142,7 +145,7 @@ describe('초대 코드 로그인', () => {
         ['매니저 코드', { ...invite, role: 'PROGRAM_MANAGER' }],
         ['관리자 코드', { ...invite, role: 'ADMIN' }],
         ['코드 만료 경계', { ...invite, expiresAt: now }],
-        ['프로그램 만료 경계', { ...invite, program: { endsAt: now } }],
+        ['프로그램 종료일 다음 날', { ...invite, program: { endsAt: after(-1) } }],
         ['첫 사용의 연결 잔여값', { ...invite, usedById: 'user' }],
         ['연결 사용자 없음', { ...used, usedBy: null }],
         ['연결 ID 불일치', { ...used, usedById: 'other' }],
@@ -204,7 +207,7 @@ describe('초대 코드 로그인', () => {
     });
     it.each([
         { expiresAt: now, usedBy: { ...user, accessExpiresAt: after(30) } },
-        { program: { endsAt: now }, usedBy: { ...user, accessExpiresAt: after(30) } },
+        { program: { endsAt: after(-1) }, usedBy: { ...user, accessExpiresAt: after(30) } },
         { usedBy: { ...user, accessExpiresAt: now } },
         { usedBy: { ...user, status: 'PENDING', accessExpiresAt: after(30) } },
         { usedBy: { ...user, programId: 'other', accessExpiresAt: after(30) } },

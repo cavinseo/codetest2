@@ -1,3 +1,4 @@
+import { readKanoOfflineRequirementIds, KanoQuestionOrderError } from '@/lib/kano-requirement-snapshot';
 // 여러 Kano 오프라인 HTML 응답지를 검증해 유효한 응답만 한 번에 저장하는 라우트다.
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -67,7 +68,7 @@ export async function POST(
         const requirements = await prisma.customerRequirement.findMany({
             where: { projectId },
             orderBy: { order: 'asc' },
-            select: { id: true },
+            select: { id: true, requirement: true, kanoPositiveQ: true, kanoNegativeQ: true },
         });
         if (requirements.length === 0) {
             return NextResponse.json(
@@ -101,8 +102,17 @@ export async function POST(
 
             const html = await guarded.file.text();
             const fallbackEmail = `offline-html-${index + 1}-${anonymousBatchId}@import.local`;
+            // 설문 배포 뒤 요구사항 순서가 바뀌어도 응답이 원래 문항에 붙도록 응답지의 문항 스냅샷을 따른다.
+            let requirementIds: string[];
+            try {
+                requirementIds = readKanoOfflineRequirementIds(html, requirements);
+            } catch (error) {
+                if (!(error instanceof KanoQuestionOrderError)) throw error;
+                results.push({ fileName, status: 'failed', reason: error.message });
+                continue;
+            }
             const parsed = parseKanoOfflineResponseHtml(html, {
-                requirementCount: requirements.length,
+                requirementCount: requirementIds.length,
                 projectId,
                 fallbackEmail,
             });
@@ -121,7 +131,7 @@ export async function POST(
             }
 
             respondentEmails.add(parsed.respondentEmail);
-            answers.push(...parsed.answers);
+            answers.push(...parsed.answers.map(answer => ({ ...answer, requirementId: requirementIds[answer.requirementIndex] })));
             results.push({
                 fileName,
                 status: 'ok',

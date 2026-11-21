@@ -78,6 +78,7 @@ describe('GET /api/projects/[id]/kano/offline-form', () => {
             where: { projectId: PROJECT_ID },
             orderBy: { order: 'asc' },
             select: {
+                id: true, category: true, subcategory: true, order: true,
                 requirement: true,
                 kanoPositiveQ: true,
                 kanoNegativeQ: true,

@@ -32,10 +32,12 @@ import { useRouter } from 'next/navigation';
 import { isProjectWriteRole } from '@/lib/project-roles';
 import { useProjectOverviewEditor } from '@/components/project/useProjectOverviewEditor';
 import { UNSAVED_WORKSHEET_MESSAGE, WorksheetDirtyContext } from '@/components/project/useUnsavedWorksheet';
+import { isKanoAnalysisWorksheet } from '@/lib/kano-analysis-access';
 
 interface ProjectData extends ProductOverview {
     id: string;
     name: string;
+    companyName?: string;
     description?: string;
     detailedDescription?: string;
     businessPlanFile?: string;
@@ -94,6 +96,9 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
     const [project, setProject] = useState<ProjectData | null>(null);
     const [reqCount, setReqCount] = useState(0);
     const [kanoCount, setKanoCount] = useState(0);
+    const [kanoAccess, setKanoAccess] = useState({ projectId: '', canRead: false, canEdit: false });
+    const canReadKanoAnalysis = kanoAccess.projectId === projectId && kanoAccess.canRead;
+    const canEditKanoAnalysis = kanoAccess.projectId === projectId && kanoAccess.canEdit;
     const [specCount, setSpecCount] = useState(0);
     const [kanoAnalysis, setKanoAnalysis] = useState<any>(null);
     const [kanoRequirements, setKanoRequirements] = useState<any[]>([]);
@@ -106,7 +111,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
     const {
         overviewForm, setOverviewForm, isOverviewEditing, setIsOverviewEditing, isOverviewSaving,
         isProductImageReading, setIsProductImageReading, isOverviewFileReading, overviewError, setOverviewError,
-        overviewAutoFillNotice, projectBusinessPlanFile, formBusinessPlanFile,
+        overviewAutoFillNotice, projectBusinessPlanFile, formBusinessPlanFile, setOverviewRevision,
         handleOverviewCancel, handleOverviewFileSelect, handleTemplateDownload, handleOverviewFileRemove, handleOverviewSave,
     } = useProjectOverviewEditor(projectId, project, setProject);
 
@@ -114,6 +119,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         let active = true;
         async function loadData() {
             setIsLoading(true); setLoadError(''); setProject(null);
+            setKanoAccess({ projectId, canRead: false, canEdit: false });
             // 서로 기다릴 이유가 없는 요청 다섯 개를 한꺼번에 보낸다. 예전에는 하나씩 차례로 보내
             // 첫 화면이 왕복 다섯 번만큼 늦게 떴다(2026-10-25 코드 리뷰 L5). 개요만 필수이고, 나머지
             // (목록의 멤버 수, 워크시트별 건수)는 실패해도 기본값으로 화면을 띄운다.
@@ -122,7 +128,8 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                 .catch(() => null);
             const projectsRequest = optional('/api/projects');
             const requirementsRequest = optional(`/api/projects/${projectId}/requirements`);
-            const kanoAnalysisRequest = optional(`/api/projects/${projectId}/kano/analysis`);
+            // 설문 진행 건수는 분석 열람 권한 없이도 확인할 수 있어야 하므로 요약 보기로 묻는다.
+            const kanoAnalysisRequest = optional(`/api/projects/${projectId}/kano/analysis?view=summary`);
             const specRequest = optional(`/api/projects/${projectId}/spec`);
             try {
                 const overviewRes = await fetch(`/api/projects/${projectId}/overview`);
@@ -139,11 +146,13 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                 // 목록의 항목(멤버 수 등)을 먼저 넣고, 개요의 최신 값으로 덮는다.
                 const found = projData?.projects?.find((p: any) => p.id === projectId);
                 if (found) setProject(found);
+                setOverviewRevision(typeof overviewData.revision === 'string' ? overviewData.revision : null);
                 setWorksheetCompleteness(overviewData.worksheetCompleteness || null);
                 if (overviewData.project) {
                     setProject((current) => ({
                         id: overviewData.project.id,
                         name: overviewData.project.name,
+                        companyName: overviewData.project.companyName || '',
                         description: overviewData.project.description || '',
                         detailedDescription: overviewData.project.detailedDescription || '',
                         businessPlanFile: overviewData.project.businessPlanFile || '',
@@ -156,6 +165,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                         marketDefinition: overviewData.project.marketDefinition,
                         targetCustomer: overviewData.project.targetCustomer,
                         additionalMarketData: overviewData.project.additionalMarketData,
+                        includeAdditionalMarketDataInReport: overviewData.project.includeAdditionalMarketDataInReport,
                         createdAt: overviewData.project.createdAt,
                         memberCount: current?.memberCount ?? 1,
                         role: overviewData.project.role || current?.role || 'COACH',
@@ -163,7 +173,10 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                 }
 
                 if (reqData) setReqCount((reqData.requirements || []).length);
-                if (kanoAnalysisData) setKanoCount(kanoAnalysisData.totalResponses || 0);
+                if (kanoAnalysisData) {
+                    setKanoCount(kanoAnalysisData.totalResponses || 0);
+                    setKanoAccess({ projectId, canRead: kanoAnalysisData.canRead === true, canEdit: kanoAnalysisData.canEdit === true });
+                }
                 if (specData) setSpecCount(specData.specFunctions?.length || 0);
             } catch (error) {
                 if (!active) return;
@@ -175,10 +188,11 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         }
         loadData();
         return () => { active = false; };
-    }, [projectId]);
+        // setOverviewRevision 은 훅의 useState 세터라 바뀌지 않는다. 프로젝트가 바뀔 때만 다시 불러온다.
+    }, [projectId, setOverviewRevision]);
 
     useEffect(() => {
-        if (activeTab !== 'kano-aggregation') return;
+        if (activeTab !== 'kano-aggregation' || !canReadKanoAnalysis) return;
         const controller = new AbortController();
         setIsKanoAnalysisLoading(true);
         setKanoAnalysisError('');
@@ -204,7 +218,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
         }
         void loadAnalysis();
         return () => controller.abort();
-    }, [activeTab, projectId, kanoAnalysisReload]);
+    }, [activeTab, projectId, kanoAnalysisReload, canReadKanoAnalysis]);
 
     const iconSvg = (d: string) => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={d} /></svg>;
 
@@ -320,7 +334,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                         <>
                             <KanoSatisfactionGraph analysis={analysis} />
                             <KanoAggregationTable
-                                projectId={projectId}
+                                projectId={canEditKanoAnalysis ? projectId : undefined}
                                 onWeightsSaved={async () => {
                                     const res = await fetch(`/api/projects/${projectId}/kano/analysis`);
                                     if (res.ok) setKanoAnalysis(await res.json());
@@ -337,6 +351,9 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
     };
 
     const renderTabContent = (tabId: string) => {
+        if (isKanoAnalysisWorksheet(tabId) && !canReadKanoAnalysis) {
+            return <p role="alert" className="card text-center">Kano 분석은 담당 멘토와 관리자만 열람할 수 있습니다.</p>;
+        }
         if (tabComponents[tabId]) {
             return (
                 <WorksheetImageExport key={tabId} title={tabs.find(tab => tab.id === tabId)?.name ?? tabId} projectId={projectId} worksheetId={tabId}>
@@ -447,7 +464,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
             <div className="relative z-10 border-b border-white/[0.06] bg-surface-900/80 backdrop-blur-sm">
                 <div className="mx-auto w-full max-w-[1800px] px-3 sm:px-4 lg:px-6 2xl:px-8">
                     <nav className="flex gap-1 py-2 overflow-x-auto">
-                        {tabs.filter(tab => canWriteProject || tab.id !== 'import').map((tab) => (
+                        {tabs.filter(tab => (canWriteProject || tab.id !== 'import') && (canReadKanoAnalysis || !isKanoAnalysisWorksheet(tab.id))).map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => changeTab(tab.id)}
@@ -519,6 +536,21 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
 
                             <div className="mb-4"><ProductOverviewFields value={isOverviewEditing ? overviewForm : project} editing={isOverviewEditing} disabled={isOverviewSaving || isProductImageReading} onChange={patch => setOverviewForm(current => ({ ...current, ...patch }))} onBusy={setIsProductImageReading} onError={setOverviewError} /></div>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
+                                    <p className="text-xs text-gray-500 mb-2">기업명(창업자)</p>
+                                    {isOverviewEditing ? (
+                                        <input
+                                            type="text"
+                                            aria-label="기업명(창업자)"
+                                            value={overviewForm.companyName}
+                                            onChange={(event) => setOverviewForm({ ...overviewForm, companyName: event.target.value })}
+                                            maxLength={300}
+                                            className="w-full rounded-md border border-white/[0.08] bg-gray-950 px-3 py-2 text-sm text-white outline-none focus:border-primary-500"
+                                        />
+                                    ) : (
+                                        <p className="text-sm font-semibold text-white whitespace-pre-wrap">{project.companyName || '입력된 기업명(창업자)이 없습니다.'}</p>
+                                    )}
+                                </div>
                                 <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4">
                                     <p className="text-xs text-gray-500 mb-2">프로젝트명</p>
                                     {isOverviewEditing ? (
@@ -631,11 +663,18 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                                 <section aria-labelledby="additional-market-data-title" className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4 lg:col-span-2">
                                     <h3 id="additional-market-data-title" className="mb-2 text-sm font-semibold text-gray-300">추가 시장 자료</h3>
                                     {isOverviewEditing ? (
+                                        <>
+                                        <label className="mb-3 flex items-center gap-2 text-sm text-gray-300">
+                                            <input type="checkbox" checked={Boolean(overviewForm.includeAdditionalMarketDataInReport)} disabled={isOverviewSaving}
+                                                onChange={event => setOverviewForm(current => ({ ...current, includeAdditionalMarketDataInReport: event.target.checked }))} />
+                                            결과보고서에 반영
+                                        </label>
                                         <ProductOverviewDetailEditor label="추가 시장 자료" maxLength={20_000}
                                             value={overviewForm.additionalMarketData ?? ''}
                                             onChange={additionalMarketData => setOverviewForm(current => ({ ...current, additionalMarketData }))}
                                             disabled={isOverviewSaving}
                                         />
+                                        </>
                                     ) : (
                                         <ProductOverviewContent value={project.additionalMarketData} emptyMessage="입력된 추가 시장 자료가 없습니다." />
                                     )}

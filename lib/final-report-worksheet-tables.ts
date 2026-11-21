@@ -1,7 +1,7 @@
 // 작성용 워크시트와 같은 열·집계·그룹으로 편집 가능한 보고서 표를 구성한다.
 import type { FinalReportWorksheetData } from './final-report-document';
 import type { ReportDataTable } from './final-report-table-structure';
-import { formatMoney } from './money';
+import { formatStoredMoney } from './money';
 import { parseSourceYear } from './funding-ai-agent';
 import { buildTechnicalGroups } from './qfd-technical-groups';
 import { buildQfdSpecFooterRows } from './qfd-footer-rows';
@@ -69,7 +69,7 @@ export function buildFundingPlanReportTable(data: FinalReportWorksheetData): Rep
     const rows = [...(revenue ? [revenue] : []), ...costs];
     return worksheetReportTable('WS-15 자금소요계획', ['구분', '항목', ...REPORT_YEAR_LABELS], rows.map((row, index) => [
         index > 0 && rows[index - 1].category === row.category ? '' : fundingLabel(row.category), fundingLabel(row.item),
-        ...YEARS.map(year => row[year] == null ? '' : formatMoney(row[year])),
+        ...YEARS.map(year => row[year] == null ? '' : formatStoredMoney(row[year])),
     ]), { columnWidths: [80, 155, 90, 90, 90] });
 }
 
@@ -79,10 +79,10 @@ export function buildFundingSourceReportTable(data: FinalReportWorksheetData): R
     const rows: Cell[][] = [];
     for (const [category, sources] of groups) {
         if (!sources.length) rows.push([category, '', '', '', '', '', '', '']);
-        sources.forEach((source, index) => rows.push([category, index + 1, ...YEARS.flatMap(year => { const value = parseSourceYear(source[year]); return [value.source, value.amount === '' ? '' : formatMoney(value.amount)]; })]));
+        sources.forEach((source, index) => rows.push([category, index + 1, ...YEARS.flatMap(year => { const value = parseSourceYear(source[year]); return [value.source, value.amount === '' ? '' : formatStoredMoney(value.amount)]; })]));
     }
     const totalIndex = rows.length;
-    rows.push(['자금조달 합계', '', ...YEARS.flatMap(year => ['', formatMoney(data.fundingSources.reduce((sum, row) => sum + parseSourceYear(row[year]).amountNumber, 0))])]);
+    rows.push(['자금조달 합계', '', ...YEARS.flatMap(year => ['', formatStoredMoney(data.fundingSources.reduce((sum, row) => sum + parseSourceYear(row[year]).amountNumber, 0))])]);
     return worksheetReportTable('WS-16 자금조달계획', ['구분', '세부항목', '출처', '금액', '출처', '금액', '출처', '금액'], rows,
         { headerGroups: [null, null, ...REPORT_YEAR_LABELS.flatMap(label => [label, label])], mergeColumns: [0], columnWidths: [100, 35, 75, 40, 75, 40, 75, 40], columnSpans: [{ row: totalIndex, column: 0, span: 2 }] });
 }
@@ -119,7 +119,7 @@ export function buildQfdReportTables(data: FinalReportWorksheetData, showTechnic
             columnSpans.push({ row, column: 3 + selected.length, span: rightHeaders.length });
             rows.push(['', footer.kind === 'target' ? '설계 목표치' : 'Spec', footer.rowLabel ?? '', ...selected.map(tech => footer.kind === 'unit' ? tech.unit : footer.kind === 'target' ? tech.targetValue : data.technicalBenchmarks?.find(value => value.technicalCharId === tech.id && value.company === (footer.kind === 'self' ? 'self' : footer.kind === 'competitor' ? footer.company : ''))?.value), ...rightHeaders.map(() => '')]);
         }
-        tables.push(worksheetReportTable(showTechnicals ? 'WS-9 QFD 관계 행렬' : 'WS-9 경쟁적 우위요인 평가', headers, rows, { headerGroups: [...Array(3).fill('고객요구사항'), ...selected.map(row => row.group), ...Array(3 + companies.length).fill('중요도 및 경쟁 비교'), ...Array(5).fill('기획품질')], columnWidths: [40, 40, 110, ...selected.map(() => 65), ...rightHeaders.map(() => 34)], mergeColumns: [1, 0], columnSpans }));
+        tables.push(worksheetReportTable(showTechnicals ? 'WS-9 QFD 관계 행렬' : 'WS-9 경쟁적 우위요인 평가', headers, rows, { headerGroups: [...Array(3).fill('고객요구사항'), ...selected.map(row => row.group), ...Array(3 + companies.length).fill('중요도 및 경쟁 비교'), ...Array(5).fill('기획품질')], columnWidths: [40, 40, 110, ...selected.map(() => 65), ...rightHeaders.map(() => 34)], mergeColumns: [0, 1], columnSpans }));
     }
     return tables;
 }

@@ -8,6 +8,7 @@ import WorksheetLoadError from './WorksheetLoadError';
 import { UNSAVED_BEFORE_EXCEL_MESSAGE, useUnsavedWorksheet } from './useUnsavedWorksheet';
 import AttributeMentorWizard from './AttributeMentorWizard';
 import type { MentorAppliedRow } from '@/lib/attribute-mentor-utils';
+import { shouldAskCascadeAgain } from '@/lib/cascade-confirm-client';
 import {
     buildSpecPickerRows,
     combineTechnologies,
@@ -355,6 +356,7 @@ function SpecSheetTable({
 export default function ProductAttributesTable({ projectId, onSaved }: ProductAttributesTableProps) {
     const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=attributes`;
     const [rows, setRows] = useState<ProductAttributeRow[]>([]);
+    const [revision, setRevision] = useState<string | null>(null);
     const [specFunctions, setSpecFunctions] = useState<SpecFunction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadFailed, setLoadFailed] = useState(false);
@@ -398,6 +400,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             if (attrRes.ok) {
                 const data = await attrRes.json();
                 if (!Array.isArray(data.attributes)) throw new Error('제품 속성 응답 형식 오류');
+                setRevision(data.revision ?? null);
                 loadedAttrs = data.attributes;
                 // 고객명별로 저장된 기존 행도 세분시장 단위로 합쳐 보여 준다. DB 는 사용자가 저장할 때만 바뀐다.
                 setRows(collapseCustomerRowsToSegments<any>(loadedAttrs).map((a: any) => ({
@@ -522,16 +525,16 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         setRows(rows.filter(r => r.id !== id).map((r, order) => ({ ...r, order })));
     };
 
-    const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
+    const handleSave = async (options: { confirmedCascadeImpact?: { fitnesses: number } } = {}) => {
         if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/attributes`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({
                     attributes: savedAttributes,
-                    ...(options.confirmCascade ? { confirmCascade: true } : {}),
+                    ...(options.confirmedCascadeImpact ? { confirmedCascadeImpact: options.confirmedCascadeImpact } : {}),
                 }),
             });
             const data = await res.json().catch(() => null);
@@ -539,8 +542,13 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             // 속성을 모두 지우면 적합도 시트가 캐스케이드로 함께 사라진다.
             // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
             if (res.status === 409 && data?.needsCascadeConfirm) {
+                // 확인해 보낸 건수와 같은 건수로 또 막혔다면 다시 물어도 풀리지 않으므로 멈춘다.
+                if (!shouldAskCascadeAgain(data, options.confirmedCascadeImpact)) {
+                    showToast(data.error || '저장하지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+                    return;
+                }
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await handleSave({ confirmCascade: true });
+                    await handleSave({ confirmedCascadeImpact: data.cascadeImpact });
                     return;
                 }
                 showToast('저장을 취소했습니다.', 'error');
@@ -548,11 +556,12 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             }
 
             if (res.ok) {
+                setRevision(data?.revision ?? null);
                 markSaved();
                 showToast('저장되었습니다.', 'success');
                 onSaved?.();
             } else {
-                showToast('저장에 실패했습니다.', 'error');
+                showToast(data?.error || '저장에 실패했습니다.', 'error');
             }
         } catch (error) {
             console.error('저장 실패:', error);
@@ -577,7 +586,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         setPendingExcelFile(file);
     };
 
-    const uploadExcelFile = async (file: File, writePolicy: 'append' | 'replace', options: { confirmCascade?: boolean } = {}) => {
+    // confirmedCascadeImpact: 확인창에 보여 준 서버의 건수. 서버는 그 사이 건수가
+    // 바뀌었으면 새 건수로 다시 묻는다(감리 B4).
+    const uploadExcelFile = async (file: File, writePolicy: 'append' | 'replace', options: { confirmedCascadeImpact?: unknown } = {}) => {
         setIsUploadingExcel(true);
         try {
             const formData = new FormData();
@@ -585,7 +596,9 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             formData.append('action', 'apply');
             formData.append('writePolicy', writePolicy);
             formData.append('sheetNames', '제품속성표');
-            if (options.confirmCascade) formData.append('confirmCascade', 'true');
+            if (options.confirmedCascadeImpact) {
+                formData.append('confirmedCascadeImpact', JSON.stringify(options.confirmedCascadeImpact));
+            }
 
             const res = await fetch(`/api/projects/${projectId}/import`, {
                 method: 'POST',
@@ -593,9 +606,13 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
             });
             const data = await res.json().catch(() => null);
 
-            if (res.status === 409 && data?.needsCascadeConfirm && !options.confirmCascade) {
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (!shouldAskCascadeAgain(data, options.confirmedCascadeImpact)) {
+                    showToast(data.error || '업로드하지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+                    return;
+                }
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await uploadExcelFile(file, writePolicy, { confirmCascade: true });
+                    await uploadExcelFile(file, writePolicy, { confirmedCascadeImpact: data.cascadeImpact });
                 }
                 return;
             }
@@ -621,18 +638,36 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
         }
     };
 
-    const handleReset = async () => {
+    const handleReset = async (confirmedCascadeImpact?: { fitnesses: number }) => {
         if (isLoading || loadFailed || loadedProjectId !== projectId) return;
         try {
-            const res = await fetch(`/api/projects/${projectId}/attributes`, { method: 'DELETE' });
+            // 적합도가 함께 지워지는 초기화는 서버가 409 로 막는다. 확인받은 영향 개수를 돌려보내
+            // 그사이 적합도가 바뀌었으면 다시 확인받게 한다.
+            const res = await fetch(`/api/projects/${projectId}/attributes`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
+                body: JSON.stringify(confirmedCascadeImpact ? { confirmedCascadeImpact } : {}),
+            });
+            const data = await res.json().catch(() => null);
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                // 확인해 보낸 건수와 같은 건수로 또 막혔다면 다시 물어도 풀리지 않으므로 멈춘다.
+                if (!shouldAskCascadeAgain(data, confirmedCascadeImpact)) {
+                    showToast(data.error || '초기화하지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+                    return;
+                }
+                if (window.confirm(`${data.error}\n\n계속하면 적합도 평가도 함께 삭제됩니다. 진행하시겠습니까?`)) {
+                    await handleReset(data.cascadeImpact);
+                }
+                return;
+            }
             // 응답을 보지 않고 비우면, 서버가 거절(권한 없음·오류)해도 표가 비고 "초기화되었습니다"
             // 가 떠서 지워진 줄 안다. 실패하면 표와 확인 창을 그대로 두고 서버 문구를 보인다.
             if (!res.ok) {
-                const data = await res.json().catch(() => null);
                 showToast(data?.error || '초기화 중 오류가 발생했습니다.', 'error');
                 return;
             }
             setRows([]);
+            setRevision(data?.revision ?? null);
             setAdditionalTechCapability('');
             markSaved();
             setShowResetConfirm(false);
@@ -863,7 +898,7 @@ export default function ProductAttributesTable({ projectId, onSaved }: ProductAt
                         </div>
                         <div className="flex items-center gap-2">
                             <button onClick={() => setShowResetConfirm(false)} className="btn-secondary text-sm">취소</button>
-                            <button onClick={handleReset} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded-lg transition-colors font-medium">초기화</button>
+                            <button onClick={() => void handleReset()} className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded-lg transition-colors font-medium">초기화</button>
                         </div>
                     </div>
                 </div>

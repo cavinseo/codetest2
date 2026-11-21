@@ -5,6 +5,7 @@ import type { KanoAnswer } from '@/lib/kano-algorithm';
 export type ParsedKanoUploadAnswer = {
     respondentEmail: string;
     requirementIndex: number;
+    requirementId?: string;
     positiveAnswer: KanoAnswer;
     negativeAnswer: KanoAnswer;
 };
@@ -97,20 +98,15 @@ function firstAnswer(row: Record<string, unknown>, keys: string[]): KanoAnswer |
 }
 
 function isPositiveHeader(key: string): boolean {
-    return /\[?긍정\]?|positive|functional/i.test(key);
+    return /\[?긍정\]?|positive|functional|\[\d+-1\]/i.test(key);
 }
 
 function isNegativeHeader(key: string): boolean {
-    return /\[?부정\]?|negative|dysfunctional/i.test(key);
+    return /\[?부정\]?|negative|dysfunctional|\[\d+-2\]/i.test(key);
 }
 
-// 앱의 설문 생성 스크립트와 직접 만든 Google Forms 는 문항 제목을 "[1-1] …"·"[1-2] …" 로 단다.
-// 해석기는 이런 열을 긍정·부정 표시 없이 순서로 읽으므로, 응답 열 판정에서는 따로 알아본다.
-const NUMBERED_QUESTION_HEADER = /\[\d+-[12]\]/;
-
 function isAnswerColumnHeader(header: string): boolean {
-    return !isMetaHeader(header)
-        && (isPositiveHeader(header) || isNegativeHeader(header) || NUMBERED_QUESTION_HEADER.test(header));
+    return !isMetaHeader(header) && (isPositiveHeader(header) || isNegativeHeader(header));
 }
 
 // 응답 칸인데 점수로 읽히지 않는 문구를 모은다. 해석기는 긍정·부정 중 한 칸이라도

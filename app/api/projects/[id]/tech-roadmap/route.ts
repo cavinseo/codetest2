@@ -1,3 +1,7 @@
+import { prisma } from '@/lib/prisma';
+import type { TechRoadmap } from '@prisma/client';
+import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
+import { orderByRequirementText } from '@/lib/requirement-order';
 import { createBulkWorksheetRoute } from '@/lib/bulk-worksheet-route';
 import { techRoadmapBodySchema } from '@/lib/bulk-save-schemas';
 
@@ -7,6 +11,10 @@ export const { GET, POST } = createBulkWorksheetRoute({
     bodySchema: techRoadmapBodySchema,
     selectRows: (body) => body.rows,
     delegate: (client) => client.techRoadmap,
+    mapReadRows: async (rows, projectId) => {
+        const requirements = groupRequirementsByCategory(await prisma.customerRequirement.findMany({ where: { projectId }, orderBy: { order: 'asc' } }));
+        return orderByRequirementText(rows as TechRoadmap[], requirements, row => row.category);
+    },
     toCreateData: (row, projectId) => ({
         category: row.category,
         techItem: row.techItem,

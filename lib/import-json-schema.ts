@@ -11,6 +11,8 @@
 // 값이 있으면 그대로 복원한다.
 import { z } from 'zod';
 import { hasDuplicateTechnicalNames } from './qfd-technical-sync';
+import { productOverviewSchema, validateProductOverview } from './product-overview';
+import { validateBusinessPlanFileStorageValue } from './business-plan-file';
 
 // 한 컬렉션에 한 번에 넣을 수 있는 행수 상한.
 //
@@ -126,18 +128,146 @@ const technicalBenchmarkRow = z.object({
     value: z.string(),
 }).strict();
 
+// ── 독립 워크시트 ─────────────────────────────────────────────
+// 다른 행을 참조하지 않는 워크시트는 원본 ID 대신 새 ID로 바로 복원할 수 있다.
+const techTreeRow = z.object({
+    ...identity,
+    customerVoice: z.string().nullable().optional(),
+    coreSpec: z.string().nullable().optional(),
+    subSpec: z.string().nullable().optional(),
+    techCharacteristic: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const improvementRow = z.object({
+    ...identity,
+    type: z.enum(['need', 'feature']),
+    content: z.string().nullable().optional(),
+    improvementRate: z.string().nullable().optional(),
+    devProportion: z.string().nullable().optional(),
+    priority: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const targetSpecRow = z.object({
+    ...identity,
+    category: z.string().nullable().optional(),
+    subCategory: z.string().nullable().optional(),
+    specItem: z.string().nullable().optional(),
+    unit: z.string().nullable().optional(),
+    currentValue: z.string().nullable().optional(),
+    competitorValue: z.string().nullable().optional(),
+    targetValue: z.string().nullable().optional(),
+    note: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const techRoadmapRow = z.object({
+    ...identity,
+    category: z.string().nullable().optional(),
+    techItem: z.string().nullable().optional(),
+    currentLevel: z.string().nullable().optional(),
+    q1: z.string().nullable().optional(),
+    q2: z.string().nullable().optional(),
+    q3: z.string().nullable().optional(),
+    q4: z.string().nullable().optional(),
+    targetLevel: z.string().nullable().optional(),
+    owner: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const devPlanRow = z.object({
+    ...identity,
+    phase: z.string().nullable().optional(),
+    task: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+    startDate: z.string().nullable().optional(),
+    endDate: z.string().nullable().optional(),
+    owner: z.string().nullable().optional(),
+    status: z.string().default('미시작'),
+    order: z.number().int().default(0),
+}).strict();
+
+const salesEstimateRow = z.object({
+    ...identity,
+    period: z.string().default('Y'),
+    customer: z.string().nullable().optional(),
+    amount: z.number().finite().default(0),
+    futureAmount: z.number().finite().default(0),
+    competitor: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const assetRow = z.object({
+    ...identity,
+    type: z.enum(['CORE', 'COMPLEMENTARY']),
+    category: z.string().nullable().optional(),
+    content: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const fundingPlanRow = z.object({
+    ...identity,
+    category: z.string().nullable().optional(),
+    item: z.string().nullable().optional(),
+    year1: z.number().finite().default(0),
+    year2: z.number().finite().nullable().optional(),
+    year3: z.number().finite().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const fundingSourceRow = z.object({
+    ...identity,
+    category: z.string().nullable().optional(),
+    year1: z.string().nullable().optional(),
+    year2: z.string().nullable().optional(),
+    year3: z.string().nullable().optional(),
+    order: z.number().int().default(0),
+}).strict();
+
+const fitnessMatrixRow = z.object({
+    ...identity,
+    marketsJson: z.string(),
+    matrixJson: z.string(),
+    managerComment: z.string().nullable().optional(),
+    consultantNote: z.string().nullable().optional(),
+    updatedAt: z.string().datetime().optional(),
+}).strict();
+
 export const importJsonSchema = z.object({
+    sourceRevision: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     // export 는 '1.0-prisma' 를 쓴다. 옛 파일에는 숫자가 들어 있을 수 있다.
     version: z.union([z.string(), z.number()]).optional(),
     exportedAt: z.string().optional(),
+    // 예전 확인 방식. 이제 무시한다 — 남겨 두는 것은 이 키가 든 요청이 strict 검사로
+    // 400 이 되지 않게 하려는 것이다. 확인은 아래 건수로만 한다(감리 B4).
     confirmCascade: z.boolean().optional(),
-    project: z.object({
-        // name 은 export 가 내보내지만 복원은 설명만 갱신한다.
+    // 확인창에 보여 준 캐스케이드 건수. 형태 검사는 isCascadeImpactConfirmed 가 한다.
+    confirmedCascadeImpact: z.unknown().optional(),
+    specDetailCollapsed: z.boolean().optional(),
+    project: productOverviewSchema.extend({
+        // 대상 프로젝트의 이름은 유지하고 백업에 명시된 개요 필드만 복원한다.
         name: z.string().optional(),
         description: z.string().nullable().optional(),
         detailedDescription: z.string().nullable().optional(),
-        additionalMarketData: z.string().max(20_000).nullable().optional(),
-    }).strict().optional(),
+        companyName: z.string().trim().max(300).nullable().optional(),
+        businessPlanFile: z.string().nullable().optional().transform((value, ctx) => {
+            if (value === undefined) return undefined;
+            try { return validateBusinessPlanFileStorageValue(value); }
+            catch (error) {
+                // Stryker disable next-line StringLiteral: 검증 함수는 Error 만 던져 이 대체 문구에 닿지 않는다(등가 뮤턴트)
+                ctx.addIssue({ code: z.ZodIssueCode.custom, message: error instanceof Error ? error.message : '사업계획 파일을 확인하세요.' });
+                return z.NEVER;
+            }
+        }),
+    }).strict().transform((project, ctx) => {
+        try { return { ...project, ...validateProductOverview(project) }; }
+        catch (error) {
+            // Stryker disable next-line StringLiteral: validateProductOverview 는 Error 만 던져 이 대체 문구에 닿지 않는다(등가 뮤턴트)
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: error instanceof Error ? error.message : '제품 정보를 확인하세요.' });
+            return z.NEVER;
+        }
+    }).optional(),
     customerRequirements: rows(requirementRow).optional(),
     technicalCharacteristics: rows(technicalRow).refine(
         technicals => !hasDuplicateTechnicalNames(technicals.map(tech => tech.name)),
@@ -151,6 +281,18 @@ export const importJsonSchema = z.object({
     techCorrelations: rows(correlationRow).optional(),
     benchmarks: rows(benchmarkRow).optional(),
     technicalBenchmarks: rows(technicalBenchmarkRow).optional(),
+    techTreeEntries: rows(techTreeRow).optional(),
+    improvementItems: rows(improvementRow).optional(),
+    targetSpecs: rows(targetSpecRow).optional(),
+    techRoadmaps: rows(techRoadmapRow).optional(),
+    devPlans: rows(devPlanRow).optional(),
+    salesEstimates: rows(salesEstimateRow).optional(),
+    assetItems: rows(assetRow).optional(),
+    fundingPlans: rows(fundingPlanRow).optional(),
+    fundingSources: rows(fundingSourceRow).optional(),
+    // 전체 백업은 행이 없다는 사실도 보존해야 한다. null 은 대상 프로젝트의
+    // 기존 적합도 매트릭스를 지우라는 의미이고, 키가 없으면 부분 복원이다.
+    fitnessMatrix: fitnessMatrixRow.nullable().optional(),
 }).strict();
 
 export type ImportJsonPayload = z.infer<typeof importJsonSchema>;

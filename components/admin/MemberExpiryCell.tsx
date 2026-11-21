@@ -5,7 +5,7 @@ import { formatInviteExpiryDate } from '@/lib/invite-expiry';
 import { getMemberAccessExpiryError } from '@/lib/member-access-expiry';
 
 interface MemberExpiryCellProps {
-    member: { id: string; email: string; accessExpiresAt: string | null; inviteExpiresAt?: string | null };
+    member: { id: string; email: string; accessExpiresAt: string | null; inviteExpiresAt?: string | null; isAdmin?: boolean };
     onSaved: () => void;
 }
 
@@ -41,6 +41,14 @@ export default function MemberExpiryCell({ member, onSaved }: MemberExpiryCellPr
             setSaving(false);
         }
     };
+
+    // 관리자 계정은 서버가 이용만료일 지정을 막는다(감리 B10). 누를 수 있는 버튼을 두면
+    // 거절될 편집 화면만 열리므로 값만 보여 준다. 예전에 저장된 날짜는 연장 버튼으로 늘린다.
+    if (member.isAdmin) {
+        return <td className="px-5 py-4 text-xs text-gray-500">
+            {member.accessExpiresAt ? formatInviteExpiryDate(member.accessExpiresAt) : '무기한'}
+        </td>;
+    }
 
     return <td className="px-5 py-4 text-xs text-gray-500">
         {editing ? <div className="space-y-2">

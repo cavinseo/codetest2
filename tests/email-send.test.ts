@@ -148,8 +148,9 @@ describe('sendSurveyInvitation', () => {
         expect(sentMail.to).toBe(RECIPIENT);
         expect(sentMail.html).not.toContain('<a href="https://evil.example.com">');
         expect(sentMail.html).toContain('&lt;a href=&quot;https://evil.example.com&quot;&gt;');
-        // 링크 자체는 본문에 그대로 들어가야 응답자가 설문에 들어올 수 있다.
-        expect(sentMail.html).toContain(SURVEY_LINK);
+        // 설문 버튼의 실제 이동 주소가 전달받은 링크와 일치해야 한다.
+        const invitationLinks = [...sentMail.html.matchAll(/<a\s+[^>]*href="([^"]+)"/g)];
+        expect(invitationLinks.map((link) => link[1])).toEqual([SURVEY_LINK]);
 
         expect(sentMail.subject).not.toContain('\n');
         expect(sentMail.subject.startsWith('[Kano 설문] ')).toBe(true);

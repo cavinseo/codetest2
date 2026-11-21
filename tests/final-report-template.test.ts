@@ -18,7 +18,7 @@ it('반복되는 그룹 열만 보고서에서 병합하도록 지정한다', ()
     ] };
     const model = buildFinalReportModel(overview, worksheets, EMPTY_REPORT_FREE_INPUT, []);
     expect(model.blocks.find(block => block.kind === 'dataTable' && block.title === 'WS-5 고객요구사항'))
-        .toMatchObject({ mergeColumns: [2, 3], rows: [['1', '첫째', '품질', '신뢰'], ['2', '둘째', '품질', '신뢰']] });
+        .toMatchObject({ mergeColumns: [3, 2], rows: [['1', '첫째', '품질', '신뢰'], ['2', '둘째', '품질', '신뢰']] });
 });
 
 it.each(['', ' \t\n '])('WS-2 세세부기술이 비어 있으면 열만 제외하고 적용기술과 모든 행을 보존한다 (%j)', detail => {

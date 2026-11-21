@@ -117,7 +117,8 @@ export function buildKanoOfflineFormHtml(input: KanoOfflineFormInput): string {
         document.body.appendChild(anchor);
         anchor.click();
         document.body.removeChild(anchor);
-        URL.revokeObjectURL(url);
+        // 누른 직후 해제하면 내려받기가 시작되기 전에 주소가 무효가 될 수 있어 잠시 뒤에 푼다.
+        setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
     }
 
     // 응답자마다 파일 이름이 달라야 관리자가 여러 사람의 응답지를 한 폴더에 모아도 겹치지 않는다.

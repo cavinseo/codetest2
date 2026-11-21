@@ -12,7 +12,7 @@ const { GET } = await import('../app/api/projects/[id]/export/route');
 const params = { params: Promise.resolve({ id: 'project-1' }) };
 beforeEach(() => {
     vi.clearAllMocks();
-    requireProjectAccess.mockResolvedValue({ role: 'VIEWER', user: { userId: 'reader' } });
+    requireProjectAccess.mockResolvedValue({ role: 'VIEWER', user: { userId: 'reader', role: 'MENTEE' } });
     findUnique.mockResolvedValue(worksheetExcelProject());
 });
 const request = (query: string) => new NextRequest(`http://localhost/api/projects/project-1/export${query}`);
@@ -30,13 +30,14 @@ it('읽기 전용 사용자도 저장된 개별 양식을 안전한 파일명으
     expect(workbook.worksheets[0].getCell('C7').value).toBe('이송');
 });
 
-it('전체 파일과 독립 페이지의 워크시트 별칭도 지원한다', async () => {
+it('담당 멘토는 전체 파일과 독립 페이지의 워크시트 별칭도 지원한다', async () => {
+    requireProjectAccess.mockResolvedValue({ role: 'EDITOR', user: { userId: 'mentor', role: 'MENTOR' } });
     for (const [query, names] of [['?format=xlsx&worksheet=kano%2Fanalysis', ['WS-7 Kano 분석 집계표']], ['?format=xlsx', null]] as const) {
         const response = await GET(request(query), params);
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(Buffer.from(await response.arrayBuffer()) as never);
         if (names) expect(workbook.worksheets.map(sheet => sheet.name)).toEqual(names);
-        else expect(workbook.worksheets).toHaveLength(17);
+        else expect(workbook.worksheets).toHaveLength(18);
     }
 });
 
@@ -75,4 +76,36 @@ it('WS-4 저장값이 깨져 있어도 그 표만 비우고 엑셀 전체를 만
     findUnique.mockResolvedValueOnce(project);
     const response = await GET(request('?format=xlsx'), params);
     expect(response.status).toBe(200);
+});
+
+it.each(['kano-aggregation', 'kano%2Fanalysis', 'timko'])('멘티는 %s 양식을 개별 다운로드할 수 없다', async worksheet => {
+    const response = await GET(request(`?format=xlsx&worksheet=${worksheet}`), params);
+    expect(response.status).toBe(403);
+    expect(findUnique).not.toHaveBeenCalled();
+});
+
+it.each([
+    { role: 'OWNER', user: { userId: 'mentee', role: 'MENTEE' } },
+    { role: 'VIEWER', user: { userId: 'manager', role: 'PROGRAM_MANAGER' } },
+])('분석 권한이 없으면 전체 엑셀에서 WS-7과 WS-8만 제외한다 ($user.role)', async access => {
+    requireProjectAccess.mockResolvedValue(access);
+    const response = await GET(request('?format=xlsx'), params);
+    expect(response.status).toBe(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Buffer.from(await response.arrayBuffer()) as never);
+    const names = workbook.worksheets.map(sheet => sheet.name);
+    expect(names).toHaveLength(16);
+    expect(names).not.toContain('WS-7 Kano 분석 집계표');
+    expect(names).not.toContain('WS-8 TIMKO');
+    expect(names).toContain('WS-6 Kano 질문지');
+    expect(names).toContain('WS-9 QFD');
+});
+
+it.each(['ADMIN', 'PROGRAM_MANAGER'])('%s의 허용된 분석 열람에는 엑셀 다운로드도 포함된다', async role => {
+    requireProjectAccess.mockResolvedValue({ role: role === 'ADMIN' ? 'ADMIN' : 'EDITOR', user: { userId: 'reader', role } });
+    const response = await GET(request('?format=xlsx&worksheet=timko'), params);
+    expect(response.status).toBe(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Buffer.from(await response.arrayBuffer()) as never);
+    expect(workbook.worksheets.map(sheet => sheet.name)).toEqual(['WS-8 TIMKO']);
 });

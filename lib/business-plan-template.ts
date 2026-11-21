@@ -5,6 +5,7 @@
 // 파싱은 다른 업로드 경로와 맞추기 위해 기존 xlsx 를 그대로 쓴다.
 import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
+import { checkWorkbookSheetRanges } from './upload-guard';
 import {
     BusinessPlanSections,
     SECTION_LABELS,
@@ -226,6 +227,9 @@ export function parseBusinessPlanWorkbook(buffer: Buffer): ParsedBusinessPlan {
     } catch {
         throw new BusinessPlanTemplateError('엑셀 파일을 읽지 못했습니다. 양식 파일이 맞는지 확인하세요.');
     }
+
+    const rangeFailure = checkWorkbookSheetRanges(workbook);
+    if (rangeFailure) throw new BusinessPlanTemplateError(rangeFailure.error);
 
     const sheetName = workbook.SheetNames.find((name) => name.includes(SHEET_NAME))
         ?? workbook.SheetNames[0];

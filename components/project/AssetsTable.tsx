@@ -25,6 +25,8 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
     const [loadFailed, setLoadFailed] = useState(false);
     const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    // 서버가 읽은 행의 개정값. 저장 때 돌려보내 그 사이 다른 사람의 저장을 덮어쓰지 않게 한다.
+    const [revision, setRevision] = useState<string | null>(null);
 
     const loadData = useCallback(async () => {
         setIsLoading(true);
@@ -36,6 +38,7 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
                 const data = await res.json();
                 if (!Array.isArray(data.assets)) throw new Error('자산 응답 형식 오류');
                 setAssets(data.assets);
+                setRevision(data.revision ?? null);
                 setLoadedProjectId(projectId);
             }
         } catch (error) {
@@ -79,7 +82,7 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
         try {
             const res = await fetch(`/api/projects/${projectId}/assets`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({ assets })
             });
             // 실패해도 아무 표시가 없어 저장된 줄 알고 떠나면 입력이 사라졌다(2026-11-08 코드 리뷰 9번).
@@ -88,7 +91,9 @@ export default function AssetsTable({ projectId }: AssetsTableProps) {
                 showToast('저장되었습니다.');
                 loadData();
             } else {
-                showToast('저장에 실패했습니다. 다시 시도하세요.', 'error');
+                // 409(다른 화면에서 변경)·428 이면 서버 문구로 새로고침을 안내하고 입력은 그대로 둔다.
+                const data = await res.json().catch(() => null);
+                showToast(data?.error || '저장에 실패했습니다. 다시 시도하세요.', 'error');
             }
         } catch (error) {
             console.error('Failed to save assets:', error);

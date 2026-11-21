@@ -12,6 +12,7 @@ import { ruleProvider } from './provider-rule';
 import type { AiProvider } from './types';
 import { assertPublicHttpsUrl } from './url-guard';
 import { publicHttpsFetch } from './public-https-fetch';
+import { memberLocalBaseUrlOrNull } from './member-local-url';
 
 export interface PersonalAiConnection {
     mode: MemberAiMode;
@@ -58,7 +59,13 @@ export function createPersonalProvider(conn: PersonalAiConnection): AiProvider {
         case 'local':
             return createOpenAiCompatibleProvider({
                 id: 'personal', label: '내 AI',
-                baseUrls: buildCandidateBaseUrls(conn.localBaseUrl ?? undefined, LOCAL_BASE_URL_DEFAULTS),
+                // 회원이 정한 주소는 로컬 LLM 포트와 /v1 경로일 때만 쓴다. 저장 때도 막지만
+                // 이 규칙 전에 저장된 값이 있을 수 있어 실행 직전에 다시 거른다(감리 B9).
+                // 맞지 않으면 버리고 알려진 기본 주소만 두드린다.
+                baseUrls: buildCandidateBaseUrls(
+                    memberLocalBaseUrlOrNull(conn.localBaseUrl) ?? undefined,
+                    LOCAL_BASE_URL_DEFAULTS
+                ),
                 model: conn.localModel ?? undefined,
                 apiKey: 'local',
                 allowRemoteHost: false, // localhost 만 — 기존 로컬 엔진과 같은 경계다

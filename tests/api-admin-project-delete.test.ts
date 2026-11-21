@@ -39,7 +39,18 @@ function deleteRequest(body: unknown): NextRequest {
 beforeEach(() => {
     findManyProgram.mockResolvedValue([]);
     requireAdmin.mockResolvedValue(ADMIN);
-    findProject.mockResolvedValue({ name: '음료 신제품 개발' });
+    findProject.mockResolvedValue({
+        name: '음료 신제품 개발',
+        finalReport: null,
+        _count: {
+            attributeFitnesses: 0, benchmarks: 0, requirements: 4, kanoResponses: 7,
+            kanoInvitations: 1, migrations: 0, productAttributes: 0, members: 2,
+            qfdMatrices: 1, specFunctions: 0, techCorrelations: 0, technicalCharacteristics: 0,
+            technicalBenchmarks: 0, techTreeEntries: 0, improvementItems: 0, targetSpecs: 0,
+            techRoadmaps: 0, devPlans: 0, salesEstimates: 0, assetItems: 0, fundingPlans: 0,
+            fundingSources: 0, worksheetComments: 0,
+        },
+    });
     deleteProject.mockResolvedValue({ id: 'proj_2' });
 });
 
@@ -68,20 +79,23 @@ describe('admin projects DELETE', () => {
         expect(deleteProject).not.toHaveBeenCalled();
     });
 
-    it('대상을 확인한 뒤에 삭제하고 지운 이름을 돌려준다', async () => {
+    it('연쇄 삭제 영향을 먼저 확인받고 삭제는 하지 않는다', async () => {
         const res = await DELETE(deleteRequest({ projectId: 'proj_2' }));
+        const body = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(body.needsCascadeConfirm).toBe(true);
+        expect(body.preview.relatedRecords).toBe(15);
+        expect(deleteProject).not.toHaveBeenCalled();
+    });
+
+    it('연쇄 삭제를 확인한 경우에만 지정한 프로젝트 하나를 지운다', async () => {
+        const res = await DELETE(deleteRequest({ projectId: 'proj_2', confirmCascade: true }));
         const body = await res.json();
 
         expect(res.status).toBe(200);
         expect(body.success).toBe(true);
-        // 삭제된 이름을 돌려줘야 화면이 "무엇이 사라졌는지" 말할 수 있다.
         expect(body.deletedProject).toBe('음료 신제품 개발');
-        expect(deleteProject).toHaveBeenCalledWith({ where: { id: 'proj_2' } });
-    });
-
-    it('지정한 프로젝트 하나만 지운다', async () => {
-        await DELETE(deleteRequest({ projectId: 'proj_2' }));
-
         expect(deleteProject).toHaveBeenCalledTimes(1);
         // where 절이 비면 전체 삭제가 된다. id 가 반드시 실려야 한다.
         expect(deleteProject.mock.calls[0][0].where.id).toBe('proj_2');
@@ -90,7 +104,7 @@ describe('admin projects DELETE', () => {
     it('관리자가 아니면 삭제 경로에 들어가지 못한다', async () => {
         requireAdmin.mockResolvedValue(NextResponse.json({ error: 'Admin access required.' }, { status: 403 }));
 
-        const res = await DELETE(deleteRequest({ projectId: 'proj_2' }));
+        const res = await DELETE(deleteRequest({ projectId: 'proj_2', confirmCascade: true }));
 
         expect(res.status).toBe(403);
         expect(findProject).not.toHaveBeenCalled();
@@ -122,7 +136,7 @@ describe('admin projects DELETE', () => {
     it('DB 삭제가 실패하면 500 을 돌려주고 성공으로 위장하지 않는다', async () => {
         deleteProject.mockRejectedValue(new Error('connection lost'));
 
-        const res = await DELETE(deleteRequest({ projectId: 'proj_2' }));
+        const res = await DELETE(deleteRequest({ projectId: 'proj_2', confirmCascade: true }));
         const body = await res.json();
 
         expect(res.status).toBe(500);

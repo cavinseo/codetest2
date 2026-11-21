@@ -4,7 +4,7 @@ import { useEffect, useState, type ComponentProps } from 'react';
 import { useParams } from 'next/navigation';
 import KanoSatisfactionGraph from '@/components/project/KanoSatisfactionGraph';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
-import { toKanoChartPoints } from '@/lib/final-report-inputs';
+import WorksheetImageExport from '@/components/project/WorksheetImageExport';
 
 type Analysis = ComponentProps<typeof KanoAggregationTable>['analysis'];
 
@@ -19,6 +19,7 @@ export default function KanoAnalysisPage() {
                     fetch(`/api/projects/${projectId}/kano/analysis`, { signal: controller.signal }),
                     fetch(`/api/projects/${projectId}/requirements`, { signal: controller.signal }),
                 ]);
+                if (analysisResponse.status === 403) throw new Error('Kano 분석은 담당 멘토와 관리자만 열람할 수 있습니다.');
                 if (!analysisResponse.ok || !requirementsResponse.ok) throw new Error('Kano 분석 결과를 불러오지 못했습니다. 화면을 새로고침해 주세요.');
                 const [analysis, requirements] = await Promise.all([analysisResponse.json(), requirementsResponse.json()]);
                 const names = new Map<string, string>(requirements.requirements.map((row: { id: string; requirement: string }) => [row.id, row.requirement]));
@@ -32,12 +33,13 @@ export default function KanoAnalysisPage() {
     }, [projectId]);
     const loading = result?.projectId !== projectId;
     const rows = loading ? [] : result.rows;
-    const points = toKanoChartPoints(rows, rows.map(row => ({ id: row.requirementId, requirement: row.requirementName })));
-    return <main className="mx-auto max-w-7xl space-y-6 px-4 py-8" data-worksheet-state={loading ? 'loading' : result.error ? 'error' : 'ready'}>
+    const points = rows.map(row => ({ ...row, quadrant: row.quadrant ?? '' }));
+    const content = <main className="mx-auto max-w-7xl space-y-6 px-4 py-8" data-worksheet-state={loading ? 'loading' : result.error ? 'error' : 'ready'}>
         <h1 className="text-xl font-bold text-white">[WS-7] Kano 분석 집계표</h1>
         {loading ? <p role="status">분석 결과를 불러오는 중입니다.</p>
             : result.error ? <p role="alert" className="text-red-500">{result.error}</p>
             : rows.length ? <><KanoSatisfactionGraph analysis={points} /><KanoAggregationTable analysis={rows} /></>
             : <p className="text-gray-500">Kano 응답이 없어 분석 결과가 없습니다.</p>}
     </main>;
+    return loading || result.error ? content : <WorksheetImageExport title="[WS-7] Kano 분석 집계표" projectId={projectId} worksheetId="kano/analysis">{content}</WorksheetImageExport>;
 }

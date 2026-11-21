@@ -150,6 +150,8 @@ export default function FitnessMatrix({ projectId, reportTableOnly = false }: Pr
     const [isSaving, setIsSaving] = useState(false);
     const [managerComment, setManagerComment] = useState('');
     const [savedConsultantComment, setSavedConsultantComment] = useState('');
+    // 서버가 읽은 매트릭스의 개정값. 저장 때 돌려보내 그 사이 다른 사람의 저장을 덮어쓰지 않게 한다.
+    const [revision, setRevision] = useState<string | null>(null);
     const { toast, showToast } = useToast();
 
     // ── 데이터 로드 ──
@@ -186,6 +188,7 @@ export default function FitnessMatrix({ projectId, reportTableOnly = false }: Pr
                 const fitnessData = await fitnessRes.json();
                 if (!isLatest()) return;
                 if (!fitnessData || !Object.hasOwn(fitnessData, 'fitnessMatrix')) throw new Error('적합도 응답 형식 오류');
+                setRevision(fitnessData.revision ?? null);
                 if (fitnessData?.fitnessMatrix) {
                     const fm = fitnessData.fitnessMatrix;
                     savedData = {
@@ -444,7 +447,7 @@ export default function FitnessMatrix({ projectId, reportTableOnly = false }: Pr
             setSavedConsultantComment(consultantComment);
             const res = await fetch(`/api/projects/${projectId}/fitness-matrix`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({
                     marketsJson: JSON.stringify(markets),
                     matrixJson: JSON.stringify(matrix),
@@ -452,9 +455,14 @@ export default function FitnessMatrix({ projectId, reportTableOnly = false }: Pr
                     consultantNote: consultantComment,
                 }),
             });
+            const data = await res.json().catch(() => null);
             if (res.ok) {
                 markSaved();
+                setRevision(data?.revision ?? null);
                 showToast('저장되었습니다. 컨설턴트 진단이 업데이트되었습니다.');
+            } else if (res.status === 409 || res.status === 428) {
+                // 다른 화면에서 바뀌었다. 입력은 유지하고 서버 문구로 새로고침을 안내한다.
+                showToast(data?.error || '다른 화면에서 변경되었습니다. 새로고침 후 다시 확인하세요.', 'error');
             } else {
                 showToast('저장에 실패했습니다.', 'error');
             }

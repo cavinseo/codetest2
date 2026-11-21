@@ -165,12 +165,22 @@ describe('발송 가능한 코드와 이용 기한', () => {
         expect(sendMail).not.toHaveBeenCalled();
     });
 
-    it('프로그램 종료 시각과 현재 시각이 같으면 발송하지 않는다', async () => {
+    // 프로그램 종료일은 그날 한국 시간 끝까지 유효하다(감리 B8). NOW 는 KST 12:00 이다.
+    it('프로그램 종료일이 지났으면 발송하지 않는다', async () => {
         const invite = unusedInvite();
-        invite.program.endsAt = NOW;
+        invite.program.endsAt = future(-1);
         findUniqueInvite.mockResolvedValue(invite);
         expect((await POST(request(), context)).status).toBe(400);
         expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('종료일이 오늘이면 UTC 자정으로 저장된 프로그램도 오전 9시 이후 발송한다', async () => {
+        // 예전 저장값 09-10T00:00Z 는 KST 09:00 이다. 예전에는 이 시각부터 발송이 막혔다.
+        const invite = unusedInvite();
+        invite.program.endsAt = new Date('2026-09-10T00:00:00.000Z');
+        findUniqueInvite.mockResolvedValue(invite);
+        expect((await POST(request(), context)).status).toBe(200);
+        expect(sendMail).toHaveBeenCalledOnce();
     });
 
     it('관리자가 연장한 회원은 최초 90일이 지나도 현재 이용 기한으로 발송한다', async () => {

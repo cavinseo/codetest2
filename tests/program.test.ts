@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canManageThisProgram, canOwnProjectIn, isValidProgramPeriod, programMoveOutcome } from '../lib/program';
+import { canManageThisProgram, canOwnProjectIn, isValidProgramPeriod, programEndDeadline, programMoveOutcome } from '../lib/program';
 
 describe('canManageThisProgram', () => {
     it('관리자는 어떤 프로그램이든 만질 수 있다', () => {
@@ -64,6 +64,29 @@ describe('isValidProgramPeriod', () => {
 
     it('종료가 시작보다 앞이면 무효하다', () => {
         expect(isValidProgramPeriod(new Date('2026-06-30'), new Date('2026-01-01'))).toBe(false);
+    });
+});
+
+// 종료일은 그날 한국 시간 끝까지 유효하다. 화면이 보낸 날짜를 그대로 new Date() 에 넣으면
+// UTC 자정(=KST 09:00)이 되어, 종료일 당일 오전 9시부터 가입·로그인이 막혔다(감리 B8).
+describe('programEndDeadline', () => {
+    it.each([
+        ['화면이 보낸 날짜(UTC 자정 = KST 09:00)', '2026-12-31T00:00:00.000Z'],
+        ['KST 자정 직후', '2026-12-30T15:00:00.000Z'],
+        ['KST 하루의 마지막 순간', '2026-12-31T14:59:59.999Z'],
+        ['KST 오후', '2026-12-31T06:30:00.000Z'],
+    ])('%s 은 그날 한국 시간 끝으로 맞춘다', (_label, stored) => {
+        expect(programEndDeadline(new Date(stored)).toISOString()).toBe('2026-12-31T14:59:59.999Z');
+    });
+
+    it('KST 로 다음 날이 되는 시각은 다음 날 끝으로 맞춘다', () => {
+        // UTC 로는 12-31 이지만 KST 로는 이미 01-01 이다.
+        expect(programEndDeadline(new Date('2026-12-31T15:00:00.000Z')).toISOString()).toBe('2027-01-01T14:59:59.999Z');
+    });
+
+    it('두 번 거쳐도 같은 값이다(저장할 때와 판정할 때 모두 거친다)', () => {
+        const once = programEndDeadline(new Date('2026-12-31T00:00:00.000Z'));
+        expect(programEndDeadline(once).getTime()).toBe(once.getTime());
     });
 });
 

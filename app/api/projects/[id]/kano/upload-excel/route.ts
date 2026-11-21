@@ -1,8 +1,9 @@
+import { readKanoExcelRequirementIds, KanoQuestionOrderError } from '@/lib/kano-requirement-snapshot';
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
-import { guardUploadedExcel } from '@/lib/upload-guard';
+import { checkExcelArchiveSafety, checkWorkbookSheetRanges, guardUploadedExcel } from '@/lib/upload-guard';
 import type { KanoAnswer } from '@/lib/kano-algorithm';
 // 응답 문구 해석은 lib 한 곳에만 둔다. 예전에는 이 파일에 내용이 다른 사본이 있어,
 // 같은 엑셀이 어느 경로로 읽히느냐에 따라 점수가 달라졌다(감리 B6·D6).
@@ -16,7 +17,14 @@ import {
     newAnonymousBatchId,
     type ParsedKanoUploadAnswer,
 } from '@/lib/kano-upload-parser';
-import { KanoUploadConflictError, parseWritePolicy, persistKanoUploadAnswers } from '@/lib/kano-response-store';
+import {
+    KanoUploadConflictError,
+    parseWritePolicy,
+    persistKanoUploadAnswers,
+} from '@/lib/kano-response-store';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api/kano/upload-excel');
 
 function selectedAnswerFromRow(row: unknown[], startCol: number): KanoAnswer | null {
     for (let offset = 0; offset < 5; offset++) {
@@ -131,7 +139,15 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         }
 
         const bytes = Buffer.from(await upload.file.arrayBuffer());
+        const archiveFailure = checkExcelArchiveSafety(upload.file.name, bytes);
+        if (archiveFailure) {
+            return NextResponse.json({ error: archiveFailure.error }, { status: archiveFailure.status });
+        }
         const workbook = XLSX.read(bytes, { type: 'buffer' });
+        const rangeFailure = checkWorkbookSheetRanges(workbook);
+        if (rangeFailure) {
+            return NextResponse.json({ error: rangeFailure.error }, { status: rangeFailure.status });
+        }
         const sheetName = pickKanoUploadSheet(workbook, uploadFormat);
         if (!sheetName) {
             return NextResponse.json({ error: '엑셀 파일에서 읽을 수 있는 시트를 찾지 못했습니다.' }, { status: 400 });
@@ -141,7 +157,9 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             return NextResponse.json({ error: '엑셀 파일에서 읽을 수 있는 시트를 찾지 못했습니다.' }, { status: 400 });
         }
 
-        const parsed = parseByUploadFormat(sheet, requirements.length, uploadFormat);
+        // 설문 배포 뒤 요구사항 순서가 바뀌어도 응답이 원래 문항에 붙도록 양식의 문항 스냅샷을 따른다.
+        const requirementIds = readKanoExcelRequirementIds(workbook, sheet, requirements);
+        const parsed = parseByUploadFormat(sheet, requirementIds.length, uploadFormat);
         // 해석기는 못 읽은 칸이 든 문항을 건너뛴다. 일부만 저장되면 분석이 조용히
         // 틀어지므로(4·5점만 빠져 불만족 계수가 전부 0 이 된 사례) 아예 저장하지 않는다.
         if (!parsed.isMatrix) {
@@ -150,7 +168,8 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
                 return NextResponse.json({ error: unreadableAnswerMessage(unreadable), code: 'KANO_ANSWER_UNREADABLE' }, { status: 400 });
             }
         }
-        const answers = separateAnonymousRespondents(parsed.answers, newAnonymousBatchId());
+        const answers = separateAnonymousRespondents(parsed.answers, newAnonymousBatchId())
+            .map(answer => ({ ...answer, requirementId: requirementIds[answer.requirementIndex] }));
         if (answers.length === 0) {
             return NextResponse.json({ error: 'Kano 응답을 찾지 못했습니다. 전용 업로드 양식 또는 Google Forms 응답 시트의 1~5 점수/응답 텍스트를 확인하세요.' }, { status: 400 });
         }
@@ -173,10 +192,11 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
             sheetName,
         });
     } catch (error) {
+        if (error instanceof KanoQuestionOrderError) return NextResponse.json({ error: error.message, code: 'KANO_QUESTION_ORDER_UNKNOWN' }, { status: 400 });
         if (error instanceof KanoUploadConflictError) {
             return NextResponse.json({ error: error.message, code: 'KANO_RESPONSES_EXIST' }, { status: 409 });
         }
-        console.error('Kano Excel upload failed:', error);
+        log.error('Kano Excel upload failed', error);
         return NextResponse.json({ error: 'Kano 엑셀 업로드에 실패했습니다.' }, { status: 500 });
     }
 }

@@ -34,6 +34,13 @@ vi.mock('next/headers', () => ({
     cookies: async () => ({ set: vi.fn() }),
 }));
 
+vi.mock('../lib/rate-limit', () => ({
+    LOGIN_RATE_LIMIT: { windowMs: 1, max: 5 },
+    clientIpFrom: () => 'test-ip',
+    consumeRateLimit: async () => ({ allowed: true, remaining: 4, retryAfterSeconds: 0 }),
+    resetRateLimit: async () => undefined,
+}));
+
 const { encodeSessionCookie, requireAuth } = await import('../lib/auth');
 const { GET: getMyProfile, PUT: putMyProfile } = await import('../app/api/me/profile/route');
 const { POST: changePassword } = await import('../app/api/admin/password/route');

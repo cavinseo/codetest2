@@ -1,6 +1,8 @@
+import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
+import { buildKanoSurveyIntroduction, EMPTY_KANO_INTRODUCTION, kanoSurveyIntroductionSchema } from '@/lib/kano-survey-introduction';
 
 const log = createLogger('api/survey');
 
@@ -34,14 +36,15 @@ export async function GET(
 
         const project = await prisma.project.findUnique({
             where: { id: invitation.projectId },
-            select: { name: true },
+            select: { name: true, kanoSurveyIntroduction: true },
         });
         const projectName = project?.name || '프로젝트';
+        const introduction = kanoSurveyIntroductionSchema.parse(project?.kanoSurveyIntroduction ?? EMPTY_KANO_INTRODUCTION);
 
-        const requirements = await prisma.customerRequirement.findMany({
+        const requirements = groupRequirementsByCategory(await prisma.customerRequirement.findMany({
             where: { projectId: invitation.projectId },
             orderBy: { order: 'asc' },
-        });
+        }));
 
         if (requirements.length === 0) {
             return NextResponse.json(
@@ -55,6 +58,7 @@ export async function GET(
         // 초대받은 사람의 이메일을 알게 된다. 응답 화면도 이 값을 쓰지 않는다.
         return NextResponse.json({
             projectName,
+            introduction: buildKanoSurveyIntroduction(introduction),
             requirements: requirements.map((r: any) => ({
                 id: r.id,
                 category: r.category,

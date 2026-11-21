@@ -6,15 +6,20 @@ import { buildFitnessReportTables } from '../lib/final-report-worksheet-tables';
 import type { FinalReportWorksheetData } from '../lib/final-report-document';
 
 const upsert = vi.fn();
-vi.mock('../lib/prisma', () => ({ prisma: { fitnessMatrix: { upsert } } }));
+// 저장은 개정값 검사와 upsert 를 한 트랜잭션에서 한다(감리 B3). 아직 저장 전인 행렬로 본다.
+const tx = { fitnessMatrix: { upsert, findUnique: vi.fn(async () => null) } };
+vi.mock('../lib/prisma', () => ({
+    prisma: { fitnessMatrix: { upsert }, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
+}));
 vi.mock('../lib/authorization', () => ({ requireProjectAccess: vi.fn(async () => ({ user: { userId: 'u' }, role: 'EDITOR' })) }));
 const { POST } = await import('../app/api/projects/[id]/fitness-matrix/route');
+const { worksheetRevision } = await import('../lib/worksheet-revision');
 
 const markets = '[{"id":"market","name":"제조","subSegments":[{"id":"customer","name":"가공업체"}]}]';
 const matrix = '{"attr":{"market":{"customer":"H"}}}';
 const params = { params: Promise.resolve({ id: 'project' }) };
 const save = (body: unknown) => POST(new NextRequest('http://localhost/api/projects/project/fitness-matrix', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'If-Match': worksheetRevision([]) }, body: JSON.stringify(body),
 }), params);
 
 beforeEach(() => { upsert.mockResolvedValue({}); });

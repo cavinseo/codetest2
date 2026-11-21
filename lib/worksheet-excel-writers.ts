@@ -1,3 +1,4 @@
+import { kanoRequirementSnapshotRows, KANO_ORDER_SHEET } from './kano-requirement-snapshot';
 // 저장된 데이터를 워크시트별 엑셀 양식과 계산 수식으로 작성한다.
 import type ExcelJS from 'exceljs';
 import type { WorksheetExcelContext } from './worksheet-excel';
@@ -7,6 +8,7 @@ import { writeQfdSheet } from './worksheet-excel-qfd';
 import { resolveKanoQuestionPair, kanoSurveyAnswerLabels } from './kano-survey-document';
 import { buildKanoSurveyIntroduction, kanoSurveyIntroductionSchema } from './kano-survey-introduction';
 import { dedupeByAttributeName } from './product-attributes-utils';
+import { toThousandWon } from './money';
 import { parseSourceYear } from './funding-ai-agent';
 import { buildFundingPlansWithSales, buildTargetSpecAdditionsFromTechTree } from './worksheet-links';
 import { addTable, addTotals, sortByOrder, cachedFormula, textDisplayWidth, writeNumericFormula, type ExcelCellValue } from './worksheet-excel-layout';
@@ -18,7 +20,7 @@ function writeSalesSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContex
     sheet.getColumn(2).width = 9;
     for (const [period, title] of [['Y', '현재(Y) 매출'], ['Y_PLUS_1', '향후 1년 목표 매출']] as const) {
         const rows = sortByOrder(project.salesEstimates).filter(row => row.period === period);
-        const table = addTable(sheet, `${title} (단위: 백만원)`, ['번호', '매출처', '매출액', '경쟁사명'], rows.map((row, index) => [index + 1, row.customer, row.amount, row.competitor]));
+        const table = addTable(sheet, `${title} (단위: 천원)`, ['번호', '매출처', '매출액', '경쟁사명'], rows.map((row, index) => [index + 1, row.customer, toThousandWon(row.amount), row.competitor]));
         addTotals(sheet, table, [4]);
     }
 }
@@ -73,6 +75,10 @@ function writeRequirementsSheet(sheet: ExcelJS.Worksheet, context: WorksheetExce
 function writeKanoSurveySheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
     const { project, requirements } = context;
     const workbook = sheet.workbook;
+    if (requirements.length) {
+        const snapshot = workbook.addWorksheet(KANO_ORDER_SHEET, { state: 'hidden' });
+        kanoRequirementSnapshotRows(requirements).forEach(row => snapshot.addRow(row));
+    }
     const parsedIntroduction = kanoSurveyIntroductionSchema.safeParse(project.kanoSurveyIntroduction);
     const introduction = addTable(sheet, '제품/서비스 소개', ['설문 소개'], [[buildKanoSurveyIntroduction(parsedIntroduction.success ? parsedIntroduction.data : undefined)]]);
     sheet.mergeCells(introduction.header, 2, introduction.header, 10);
@@ -123,8 +129,8 @@ function writeTechTreeSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelCon
 
 function writeImprovementsSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
     const { project } = context;
-    addTable(sheet, '개선포인트 우선순위', ['순위', '고객니즈', '경쟁사대비 수준향상율', '개발향상비중'], sortByOrder(project.improvementItems).filter(row => row.type === 'need').map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]));
-    addTable(sheet, '추가 기능 및 성능향상', ['순위', '고객니즈', '추가 기능', '성능향상'], sortByOrder(project.improvementItems).filter(row => row.type === 'feature').map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]));
+    addTable(sheet, '개선포인트 우선순위', ['번호', '고객니즈', '경쟁사대비 수준향상율', '개발향상비중'], sortByOrder(project.improvementItems).filter(row => row.type === 'need').map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]));
+    addTable(sheet, '추가 기능 및 성능향상', ['번호', '고객니즈', '추가 기능', '성능향상'], sortByOrder(project.improvementItems).filter(row => row.type === 'feature').map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]));
 }
 
 function writeTargetSpecSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
@@ -157,14 +163,14 @@ function writeFundingPlanSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcel
     const { project } = context;
     const rows = buildFundingPlansWithSales({ plans: sortByOrder(project.fundingPlans), salesEstimates: project.salesEstimates });
     const isTotal = (row: typeof rows[number]) => `${row.category ?? ''}${row.item ?? ''}`.replace(/\s+/g, '').includes('합계');
-    const table = addTable(sheet, '자금소요계획표 (단위: 백만원)', ['구분', '항목', 'Y+1년차', 'Y+2년차', 'Y+3년차'], rows.map(row => [row.category ?? '', row.item ?? '', row.year1 ?? null, row.year2 ?? null, row.year3 ?? null]), { mergeColumns: [0] });
+    const table = addTable(sheet, '자금소요계획표 (단위: 천원)', ['구분', '항목', 'Y+1년차', 'Y+2년차', 'Y+3년차'], rows.map(row => [row.category ?? '', row.item ?? '', ...[row.year1, row.year2, row.year3].map(value => value == null ? null : toThousandWon(value))]), { mergeColumns: [0] });
     const costs = rows.filter(row => row.category !== '매출액' && row.item !== '매출액' && !isTotal(row));
     const totalIndexes = rows.flatMap((row, index) => isTotal(row) ? [table.start + index] : []);
-    const total = totalIndexes.length ? null : addTable(sheet, '소요자금 합계 (단위: 백만원)', ['Y+1년차', 'Y+2년차', 'Y+3년차'], [[0, 0, 0]]);
+    const total = totalIndexes.length ? null : addTable(sheet, '소요자금 합계 (단위: 천원)', ['Y+1년차', 'Y+2년차', 'Y+3년차'], [[0, 0, 0]]);
     for (const [index, field] of ['year1', 'year2', 'year3'].entries()) {
         const columnLetter = sheet.getColumn(index + 4).letter;
         const references = rows.flatMap((row, rowIndex) => costs.includes(row) ? [`${columnLetter}${table.start + rowIndex}`] : []);
-        const value = cachedFormula(references.length ? `SUM(${references.join(',')})` : '0', costs.reduce((sum, row) => sum + Number(row[field as 'year1' | 'year2' | 'year3'] ?? 0), 0));
+        const value = cachedFormula(references.length ? `SUM(${references.join(',')})` : '0', toThousandWon(costs.reduce((sum, row) => sum + Number(row[field as 'year1' | 'year2' | 'year3'] ?? 0), 0)));
         if (total) writeNumericFormula(sheet.getCell(total.start, index + 2), value);
         totalIndexes.forEach(rowNumber => writeNumericFormula(sheet.getCell(rowNumber, index + 4), value));
     }
@@ -173,7 +179,7 @@ function writeFundingPlanSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcel
 function writeFundingSourceSheet(sheet: ExcelJS.Worksheet, context: WorksheetExcelContext) {
     const { project } = context;
     const sources = sortByOrder(project.fundingSources);
-    const table = addTable(sheet, '자금조달계획표 (단위: 백만원)', ['구분', '출처', '금액', '출처', '금액', '출처', '금액'], sources.map(row => [row.category, ...[row.year1, row.year2, row.year3].flatMap(value => { const parsed = parseSourceYear(value); return [parsed.source, parsed.amount === '' ? null : parsed.amountNumber]; })]), { groupHeaders: ['구분', 'Y+1년차', 'Y+1년차', 'Y+2년차', 'Y+2년차', 'Y+3년차', 'Y+3년차'] });
+    const table = addTable(sheet, '자금조달계획표 (단위: 천원)', ['구분', '출처', '금액', '출처', '금액', '출처', '금액'], sources.map(row => [row.category, ...[row.year1, row.year2, row.year3].flatMap(value => { const parsed = parseSourceYear(value); return [parsed.source, parsed.amount === '' ? null : toThousandWon(parsed.amountNumber)]; })]), { groupHeaders: ['구분', 'Y+1년차', 'Y+1년차', 'Y+2년차', 'Y+2년차', 'Y+3년차', 'Y+3년차'] });
     addTotals(sheet, table, [4, 6, 8]);
 }
 

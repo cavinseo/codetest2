@@ -1,3 +1,4 @@
+import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
@@ -27,11 +28,11 @@ export async function GET(
         }
 
         // 화면의 「설문 질문 구성」과 같은 순서다. 저장하지 않은 편집은 여기 없다.
-        const requirements = await prisma.customerRequirement.findMany({
+        const requirements = groupRequirementsByCategory(await prisma.customerRequirement.findMany({
             where: { projectId },
             orderBy: { order: 'asc' },
-            select: { requirement: true, kanoPositiveQ: true, kanoNegativeQ: true },
-        });
+            select: { id: true, category: true, subcategory: true, order: true, requirement: true, kanoPositiveQ: true, kanoNegativeQ: true },
+        }));
 
         // 저장값이 형식에 맞지 않으면 문서 생성을 막지 않고 빈칸 양식으로 낸다. 엑셀 내보내기와 같은 처리다.
         const introduction = kanoSurveyIntroductionSchema.safeParse(project.kanoSurveyIntroduction);

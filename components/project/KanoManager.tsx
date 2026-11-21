@@ -8,6 +8,8 @@ import KanoAnalysisPanel, { type KanoAnalysisData, type KanoAnalysisViewMode } f
 import KanoInviteModal from '@/components/project/KanoInviteModal';
 import HeaderToast from '@/components/HeaderToast';
 import KanoResponseCollection from './KanoResponseCollection';
+import KanoSummaryCards from './KanoSummaryCards';
+import KanoRespondentTable from './KanoRespondentTable';
 import KanoSurveyIntroductionFields from './KanoSurveyIntroductionFields';
 import { useKanoResponseCollection } from './useKanoResponseCollection';
 import { useUnsavedWorksheet } from './useUnsavedWorksheet';
@@ -15,6 +17,7 @@ import { useToast } from '@/components/useToast';
 import { getKanoTopic } from '@/lib/utils/korean-utils';
 import { resolveKanoQuestionPair } from '@/lib/kano-survey-document';
 import { readJsonOrThrow } from '@/lib/client-fetch';
+import { GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';
 import {
     EMPTY_KANO_INTRODUCTION,
     kanoSurveyIntroductionSchema,
@@ -40,6 +43,8 @@ interface Invitation {
     token?: string;
     expiresAt: string;
     respondedAt?: string;
+    // 응답이 접수된 초대는 지우면 응답의 출처가 사라지므로 서버가 삭제 가능 여부를 함께 내려 준다.
+    canDelete?: boolean;
 }
 
 interface KanoManagerProps {
@@ -48,22 +53,41 @@ interface KanoManagerProps {
 }
 
 export default function KanoManager({ projectId, initialView }: KanoManagerProps) {
-    const [activeTab, setActiveTab] = useState<'manage' | 'analysis'>('manage');
+    const [selectedTab, setActiveTab] = useState<'manage' | 'analysis' | 'respondents'>('manage');
+    // 프로젝트를 바꾼 뒤 늦게 도착한 이전 프로젝트 응답이 새 화면을 덮지 않도록 현재 프로젝트와 요청 순번을 기억한다.
+    const currentProject = useRef(projectId);
+    currentProject.current = projectId;
+    const loadSequence = useRef(0);
+    const deletionPending = useRef(false);
+    const deletionProject = useRef<string | null>(null);
+    const isDeletingCurrentProject = deletionProject.current === projectId;
+    const [respondentState, setRespondentState] = useState({ projectId: '', respondents: [] as any[], canDelete: false });
+    const canReadRespondents = respondentState.projectId === projectId;
+    const canDeleteResponses = canReadRespondents && respondentState.canDelete;
+    const respondentData = canReadRespondents ? respondentState.respondents : [];
+    // 분석 집계는 담당 멘토와 관리자만 본다. 서버 판정을 받기 전에는 탭 자체를 열지 않는다.
+    const [kanoAccess, setKanoAccess] = useState({ projectId: '', canRead: false, canEdit: false });
+    const canReadKanoAnalysis = kanoAccess.projectId === projectId && kanoAccess.canRead;
+    const canEditKanoAnalysis = kanoAccess.projectId === projectId && kanoAccess.canEdit;
+    const activeTab = (selectedTab === 'analysis' && !canReadKanoAnalysis) || (selectedTab === 'respondents' && !canReadRespondents) ? 'manage' : selectedTab;
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const [invitations, setInvitations] = useState<Invitation[]>([]);
+    const [invitationState, setInvitationState] = useState({ projectId: '', invitations: [] as Invitation[], loaded: false });
+    const invitations = invitationState.projectId === projectId ? invitationState.invitations : [];
+    const canReadInvitations = invitationState.projectId === projectId && invitationState.loaded;
+    const [deletingInvitationId, setDeletingInvitationId] = useState<string | null>(null);
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [showPreview, setShowPreview] = useState(false);
     const [showOfflinePreview, setShowOfflinePreview] = useState(false);
     const [googleConfigured, setGoogleConfigured] = useState(false);
     const [isResettingResponses, setIsResettingResponses] = useState(false);
     const [isResettingInvitations, setIsResettingInvitations] = useState(false);
+    const isDeleting = isResettingResponses || isResettingInvitations || deletingInvitationId !== null;
     const [projectName, setProjectName] = useState('');
 
     const [analysis, setAnalysis] = useState<KanoAnalysisData | null>(null);
     const [analysisViewMode, setAnalysisViewMode] = useState<KanoAnalysisViewMode>('charts');
-    const [respondentData, setRespondentData] = useState<any[]>([]);
 
     // Kano 질문 직접 입력 관리
     const [kanoQuestions, setKanoQuestions] = useState<Record<string, { positive: string; negative: string }>>({});
@@ -78,6 +102,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const [savedIntroduction, setSavedIntroduction] = useState<KanoSurveyIntroduction>(EMPTY_KANO_INTRODUCTION);
     const [canEditIntroduction, setCanEditIntroduction] = useState(false);
     const introductionEdited = useRef(false);
+    // 질문 저장은 요구사항 전체를 다시 보내므로, 읽은 시점의 개정값을 함께 보내
+    // 그 사이 다른 화면에서 추가·수정된 요구사항을 덮어쓰지 않게 한다.
+    const [requirementsRevision, setRequirementsRevision] = useState<string | null>(null);
 
     const { toast, showToast } = useToast(3500);
 
@@ -87,19 +114,40 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     const hasLoadedRef = useRef(false);
 
     const loadData = useCallback(async () => {
-        if (!hasLoadedRef.current) setIsLoading(true);
+        if (currentProject.current !== projectId) return;
+        const sequence = ++loadSequence.current;
+        const isCurrent = () => currentProject.current === projectId && sequence === loadSequence.current;
+        // 다시 불러오기는 지금 화면을 둔 채 값만 바꾼다(B20). 처음 열 때(프로젝트 전환 포함)만 이전
+        // 권한·응답 상태를 비워, 다른 프로젝트의 판정이 잠깐이라도 남지 않게 한다.
+        if (!hasLoadedRef.current) {
+            setIsLoading(true);
+            setRespondentState({ projectId: '', respondents: [], canDelete: false });
+            setKanoAccess({ projectId, canRead: false, canEdit: false });
+            setAnalysis(null);
+        }
+        // 초대 행은 그대로 보이되, 다시 확인되기 전에는 오래된 행으로 삭제하지 못하게 한다.
+        setInvitationState(prev => ({ ...prev, loaded: false }));
+        // 재조회에 실패한 응답·권한 상태는 끝에서 비운다. 삭제 직후 재조회가 실패했을 때 오래된
+        // 목록으로 다시 삭제하거나, 잃은 권한으로 분석을 계속 보는 일을 막기 위해서다.
+        let respondentsLoaded = false;
+        let accessLoaded = false;
         try {
-            const projRes = await fetch(`/api/projects/${projectId}`);
+            const projRes = await fetch(`/api/projects/${projectId}/overview`);
+            if (!isCurrent()) return;
             if (projRes.ok) {
                 const projData = await projRes.json();
+                if (!isCurrent()) return;
                 setProjectName(projData.project?.name || projData.name || '프로젝트');
             }
 
             const reqRes = await fetch(`/api/projects/${projectId}/requirements`);
+            if (!isCurrent()) return;
             if (reqRes.ok) {
                 const reqData = await reqRes.json();
+                if (!isCurrent()) return;
                 const reqs = reqData.requirements || [];
                 setRequirements(reqs);
+                setRequirementsRevision(reqData.revision ?? null);
                 // Kano 질문 초기값 — 기본 문구의 정본은 lib/kano-survey-document 다. 화면이
                 // 인쇄물(Word 설문지)과 어긋나면 안 되므로 같은 규칙으로 채운다.
                 const qMap: Record<string, { positive: string; negative: string }> = {};
@@ -118,8 +166,10 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             }
 
             const introRes = await fetch(`/api/projects/${projectId}/kano/offline-form?format=json`, { cache: 'no-store' });
+            if (!isCurrent()) return;
             if (introRes.ok) {
                 const introData = await introRes.json();
+                if (!isCurrent()) return;
                 const parsed = kanoSurveyIntroductionSchema.safeParse(introData.introduction);
                 const serverIntroduction = parsed.success ? parsed.data : EMPTY_KANO_INTRODUCTION;
                 setSavedIntroduction(serverIntroduction);
@@ -128,33 +178,64 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             }
 
             const invRes = await fetch(`/api/projects/${projectId}/kano/invitations`);
+            if (!isCurrent()) return;
             if (invRes.ok) {
                 const invData = await invRes.json();
-                setInvitations(invData.invitations || []);
+                if (!isCurrent()) return;
+                setInvitationState({ projectId, invitations: invData.invitations || [], loaded: true });
             }
 
-            const settingsRes = await fetch('/api/settings');
-            if (settingsRes.ok) {
-                const data = await settingsRes.json();
-                setGoogleConfigured(data.google?.configured || false);
+            if (GOOGLE_FORMS_INTEGRATION_ENABLED) {
+                const googleStatusRes = await fetch(`/api/projects/${projectId}/kano/google-status`);
+                if (!isCurrent()) return;
+                if (googleStatusRes.ok) {
+                    const data = await googleStatusRes.json();
+                    if (!isCurrent()) return;
+                    setGoogleConfigured(data.configured === true);
+                }
             }
 
-            const analysisRes = await fetch(`/api/projects/${projectId}/kano/analysis`);
-            if (analysisRes.ok) {
-                const analysisData = await analysisRes.json();
-                setAnalysis(analysisData);
+            const summaryRes = await fetch(`/api/projects/${projectId}/kano/analysis?view=summary`);
+            if (!isCurrent()) return;
+            if (summaryRes.ok) {
+                const summary = await summaryRes.json();
+                if (!isCurrent()) return;
+                accessLoaded = true;
+                setKanoAccess({ projectId, canRead: summary.canRead === true, canEdit: summary.canEdit === true });
+                const summaryOnly = { totalResponses: summary.totalResponses, uniqueRespondents: summary.uniqueRespondents, requirements: [] };
+                if (summary.canRead === true) {
+                    // 열람 권한이 있으면 집계까지 받은 뒤 한 번에 바꾼다. 요약을 먼저 넣으면 다시
+                    // 불러올 때마다 차트가 빈 집계로 잠깐 바뀐다.
+                    const analysisRes = await fetch(`/api/projects/${projectId}/kano/analysis`);
+                    if (!isCurrent()) return;
+                    const data = analysisRes.ok ? await analysisRes.json() : summaryOnly;
+                    if (!isCurrent()) return;
+                    setAnalysis(data);
+                } else {
+                    setAnalysis(summaryOnly);
+                }
             }
 
             const respondentsRes = await fetch(`/api/projects/${projectId}/kano/responses`);
+            if (!isCurrent()) return;
             if (respondentsRes.ok) {
                 const respData = await respondentsRes.json();
-                setRespondentData(respData.respondents || []);
+                if (!isCurrent()) return;
+                respondentsLoaded = true;
+                setRespondentState({ projectId, respondents: respData.respondents || [], canDelete: respData.canDelete === true });
             }
         } catch (error) {
             console.error('데이터 로드 실패:', error);
         } finally {
-            hasLoadedRef.current = true;
-            setIsLoading(false);
+            if (isCurrent()) {
+                if (!respondentsLoaded) setRespondentState({ projectId: '', respondents: [], canDelete: false });
+                if (!accessLoaded) {
+                    setKanoAccess({ projectId, canRead: false, canEdit: false });
+                    setAnalysis(null);
+                }
+                hasLoadedRef.current = true;
+                setIsLoading(false);
+            }
         }
     }, [projectId]);
 
@@ -178,50 +259,78 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
     // 기본값 그대로라 기준과 같다.
     const { markSaved } = useUnsavedWorksheet({ kanoQuestions, introduction }, !isLoading);
 
-    const handleResetResponses = async () => {
-        const ok = window.confirm('현재 프로젝트의 Kano 응답 데이터와 응답 완료 상태를 모두 리셋할까요? 이 작업은 되돌릴 수 없습니다.');
-        if (!ok) return;
-
-        setIsResettingResponses(true);
+    const handleDeleteRespondents = async (respondentEmails?: string[], includeInvitations = false) => {
+        if (!canDeleteResponses || currentProject.current !== projectId || deletionPending.current) return;
+        deletionPending.current = true;
+        deletionProject.current = projectId;
+        if (includeInvitations) setIsResettingInvitations(true);
+        else setIsResettingResponses(true);
         try {
-            const res = await fetch(`/api/projects/${projectId}/kano/responses`, {
+            const res = await fetch(`/api/projects/${projectId}/kano/responses${includeInvitations ? '?includeInvitations=true' : ''}`, {
                 method: 'DELETE',
+                ...(respondentEmails ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ respondentEmails }) } : {}),
             });
-            const data = await readJsonOrThrow(res, '응답 데이터 리셋에 실패했습니다.');
-
-            collection.forgetCreatedForm();
-            setRespondentData([]);
-            setAnalysis({ totalResponses: 0, uniqueRespondents: 0, requirements: [] });
-            showToast(data.message || '응답 데이터가 리셋되었습니다.', 'success');
+            const data = await res.json().catch(() => null);
+            if (currentProject.current !== projectId) return;
+            if (!res.ok) throw new Error(data?.error || '응답 삭제에 실패했습니다.');
+            // 전체 삭제일 때만 만들어 둔 Google Forms 연결을 버린다. 일부 응답자 삭제는 설문을 계속 쓴다.
+            if (!respondentEmails) collection.forgetCreatedForm();
+            if (includeInvitations) setInvitationState({ projectId, invitations: [], loaded: false });
+            showToast(data?.message || '응답을 삭제했습니다.', 'success');
             await loadData();
-        } catch (error: any) {
-            showToast(error.message || '응답 데이터 리셋에 실패했습니다.', 'error');
         } finally {
-            setIsResettingResponses(false);
+            deletionPending.current = false;
+            deletionProject.current = null;
+            if (includeInvitations) setIsResettingInvitations(false);
+            else setIsResettingResponses(false);
+        }
+    };
+
+    const handleDeleteInvitation = async (invitation: Invitation) => {
+        if (!canReadInvitations || invitation.canDelete !== true || currentProject.current !== projectId || deletionPending.current) return;
+        if (!window.confirm(`${invitation.email}의 초대 기록을 삭제할까요? 삭제하면 해당 설문 링크가 무효화됩니다. 삭제한 초대 기록은 복구할 수 없습니다.`)) return;
+        if (currentProject.current !== projectId || deletionPending.current) return;
+        deletionPending.current = true;
+        deletionProject.current = projectId;
+        setDeletingInvitationId(invitation.id);
+        try {
+            const res = await fetch(`/api/projects/${projectId}/kano/invitations`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ invitationId: invitation.id }),
+            });
+            const data = await res.json();
+            if (currentProject.current !== projectId) return;
+            if (!res.ok) throw new Error(data.error || '초대 기록 삭제에 실패했습니다.');
+            setInvitationState(prev => ({ ...prev, invitations: prev.invitations.filter(inv => inv.id !== invitation.id) }));
+            showToast(data.message || '초대 기록을 삭제했습니다.', 'success');
+            await loadData();
+        } catch (error: unknown) {
+            if (currentProject.current === projectId) showToast(error instanceof Error ? error.message : '초대 기록 삭제에 실패했습니다.', 'error');
+        } finally {
+            deletionPending.current = false;
+            deletionProject.current = null;
+            setDeletingInvitationId(null);
+        }
+    };
+
+    const handleResetResponses = async () => {
+        if (!canDeleteResponses || deletionPending.current) return;
+        if (!window.confirm(`전체 응답자 ${respondentData.length}명의 모든 문항 응답을 삭제할까요? 삭제한 응답은 복구할 수 없습니다. 응답 완료 상태도 초기화되며 초대 내역은 유지됩니다.`)) return;
+        try {
+            await handleDeleteRespondents();
+        } catch (error: unknown) {
+            if (currentProject.current === projectId) showToast(error instanceof Error ? error.message : '응답 삭제에 실패했습니다.', 'error');
         }
     };
 
     const handleResetInvitations = async () => {
-        const ok = window.confirm('현재 프로젝트의 Kano 응답 데이터와 응답자 초대 내역을 모두 리셋할까요? 이 작업은 되돌릴 수 없습니다.');
-        if (!ok) return;
-
-        setIsResettingInvitations(true);
+        if (!canDeleteResponses || deletionPending.current) return;
+        if (!window.confirm(`전체 응답자 ${respondentData.length}명의 응답과 초대 내역을 모두 삭제할까요? 삭제한 데이터는 복구할 수 없습니다. 응답 완료 상태도 초기화됩니다.`)) return;
         try {
-            const res = await fetch(`/api/projects/${projectId}/kano/responses?includeInvitations=true`, {
-                method: 'DELETE',
-            });
-            const data = await readJsonOrThrow(res, '초대 내역 리셋에 실패했습니다.');
-
-            collection.forgetCreatedForm();
-            setInvitations([]);
-            setRespondentData([]);
-            setAnalysis({ totalResponses: 0, uniqueRespondents: 0, requirements: [] });
-            showToast(data.message || '초대 내역이 리셋되었습니다.', 'success');
-            await loadData();
-        } catch (error: any) {
-            showToast(error.message || '초대 내역 리셋에 실패했습니다.', 'error');
-        } finally {
-            setIsResettingInvitations(false);
+            await handleDeleteRespondents(undefined, true);
+        } catch (error: unknown) {
+            if (currentProject.current === projectId) showToast(error instanceof Error ? error.message : '초대 내역 리셋에 실패했습니다.', 'error');
         }
     };
 
@@ -243,12 +352,15 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             }));
             const res = await fetch(`/api/projects/${projectId}/requirements`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(requirementsRevision ? { 'If-Match': requirementsRevision } : {}),
+                },
                 body: JSON.stringify({ requirements: updatedRequirements }),
             });
-            
+
             if (!res.ok) {
-                const errorData = await res.json();
+                const errorData = await res.json().catch(() => ({}));
                 throw new Error(errorData.error || errorData.message || '\uc800\uc7a5 \uc2e4\ud328');
             }
 
@@ -276,7 +388,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
 
     const openResponseResults = () => {
         setAnalysisViewMode('respondents');
-        setActiveTab('analysis');
+        setActiveTab('respondents');
     };
 
     if (isLoading) {
@@ -302,6 +414,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                 <div className="flex gap-1 p-1 bg-white/[0.04] border border-white/[0.06] rounded-xl w-fit">
                     <button
                         onClick={() => setActiveTab('manage')}
+                        disabled={isDeletingCurrentProject}
                         className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'manage'
                                 ? 'bg-primary-600 text-white shadow-sm'
                                 : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
@@ -314,8 +427,13 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                             설문 관리
                         </span>
                     </button>
-                    <button
+                    {canReadRespondents && <button type="button" onClick={openResponseResults} disabled={isDeletingCurrentProject}
+                        className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'respondents' ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'}`}>
+                        응답자별 보기
+                    </button>}
+                    {canReadKanoAnalysis && <button
                         onClick={() => setActiveTab('analysis')}
+                        disabled={isDeletingCurrentProject}
                         className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'analysis'
                                 ? 'bg-primary-600 text-white shadow-sm'
                                 : 'text-gray-400 hover:text-white hover:bg-white/[0.04]'
@@ -332,7 +450,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                 </span>
                             )}
                         </span>
-                    </button>
+                    </button>}
                 </div>
             </div>
 
@@ -347,39 +465,23 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             {/* ===== 설문 관리 탭 ===== */}
             {activeTab === 'manage' && (
                 <div className="space-y-6 animate-fade-in">
-                    {/* 통계 카드 */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {[
-                            { label: '설문 질문', value: `${requirements.length}개`, sub: '긍정/부정 2문항이 1세트', color: 'text-blue-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
-                            { label: '초대 발송', value: `${invitations.length}명`, sub: '응답자 초대', color: 'text-purple-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg> },
-                            { label: '응답 완료', value: `${respondedCount}명`, sub: '설문 완료자', color: 'text-emerald-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
-                            { label: '응답률', value: `${invitations.length > 0 ? Math.round((respondedCount / invitations.length) * 100) : 0}%`, sub: '완료/발송', color: 'text-amber-400', icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg> },
-                        ].map(item => (
-                            <div key={item.label} className="card">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className={item.color}>{item.icon}</span>
-                                    <p className="text-xs text-gray-500">{item.label}</p>
-                                </div>
-                                <p className={`text-2xl font-bold font-display ${item.color}`}>{item.value}</p>
-                                <p className="text-[11px] text-gray-600 mt-1">{item.sub}</p>
-                            </div>
-                        ))}
-                    </div>
+                    <KanoSummaryCards requirementCount={requirements.length} invitationCount={invitations.length} respondedCount={respondedCount} />
 
                     <div className="flex justify-end">
                         <div className="flex flex-wrap justify-end gap-2">
-                            <button
+                            {canReadRespondents && <button
                                 onClick={openResponseResults}
+                                disabled={isDeletingCurrentProject}
                                 className="btn-secondary inline-flex items-center gap-2"
                             >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-6m4 6V7m4 10v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                 </svg>
                                 응답 결과 보기
-                            </button>
+                            </button>}
                             <button
                                 onClick={handleResetResponses}
-                                disabled={isResettingResponses || (!analysis?.totalResponses && respondentData.length === 0)}
+                                disabled={!canDeleteResponses || isDeleting || respondentData.length === 0}
                                 className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50 disabled:hover:bg-red-500/10"
                             >
                                 {isResettingResponses ? (
@@ -579,7 +681,7 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                             <div className="mb-4 flex justify-end">
                                 <button
                                     onClick={handleResetInvitations}
-                                    disabled={isResettingInvitations}
+                                    disabled={!canDeleteResponses || isDeleting}
                                     className="inline-flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-200 transition-colors hover:bg-red-500/25 disabled:opacity-50 disabled:hover:bg-red-500/15"
                                 >
                                     {isResettingInvitations ? (
@@ -625,15 +727,26 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                                             </div>
                                         </div>
                                         {inv.token && (
-                                            <button
-                                                onClick={() => inv.token && copyInvitationLink(inv.token)}
-                                                className="btn-ghost text-sm flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                            >
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                                                </svg>
-                                                링크 복사
-                                            </button>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => inv.token && copyInvitationLink(inv.token)}
+                                                    className="btn-ghost text-sm flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                    </svg>
+                                                    링크 복사
+                                                </button>
+                                                <div className="text-right">
+                                                    <button type="button" aria-label={`${inv.email} 초대 삭제`}
+                                                        onClick={() => handleDeleteInvitation(inv)}
+                                                        disabled={!canReadInvitations || inv.canDelete !== true || isDeleting}
+                                                        className="btn-ghost text-sm text-red-300 disabled:opacity-50">
+                                                        {deletingInvitationId === inv.id ? '삭제 중...' : '초대 삭제'}
+                                                    </button>
+                                                    {inv.canDelete !== true && <p className="text-xs text-gray-500">{inv.canDelete === false ? '접수된 응답이 있어 삭제할 수 없습니다.' : '응답 상태를 확인한 후 삭제할 수 있습니다.'}</p>}
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
                                 ))}
@@ -644,9 +757,16 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
             )}
 
             {/* ===== 분석 결과 탭 ===== */}
+            {activeTab === 'respondents' && (
+                <KanoRespondentTable key={projectId} respondents={respondentData} requirements={requirements}
+                    canDelete={canDeleteResponses} isDeleting={isDeleting}
+                    onDelete={handleDeleteRespondents} />
+            )}
             {activeTab === 'analysis' && (
                 <KanoAnalysisPanel
                     projectId={projectId}
+                    canEdit={canEditKanoAnalysis}
+                    canDeleteResponses={canDeleteResponses}
                     analysis={analysis}
                     requirements={requirements}
                     respondentData={respondentData}
@@ -654,7 +774,9 @@ export default function KanoManager({ projectId, initialView }: KanoManagerProps
                     setAnalysisViewMode={setAnalysisViewMode}
                     onGoToManage={() => setActiveTab('manage')}
                     handleResetResponses={handleResetResponses}
-                    isResettingResponses={isResettingResponses}
+                    onDeleteRespondents={handleDeleteRespondents}
+                    isResettingResponses={isDeleting}
+                    isDeletingCurrentProject={isDeletingCurrentProject}
                     loadData={loadData}
                 />
             )}

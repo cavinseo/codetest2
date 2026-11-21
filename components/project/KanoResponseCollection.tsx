@@ -242,7 +242,7 @@ export default function KanoResponseCollection({
                     fileName={pendingUpload === 'excel' ? excelFile?.name ?? '' : offlineFiles.map(file => file.name).join(', ')}
                     targetLabel="Kano 응답"
                     isUploading={isUploadingExcel || isUploadingOffline}
-                    replaceDescription="기존 데이터 지우고 업로드를 선택하면 기존 응답과 초대 데이터가 삭제됩니다."
+                    replaceDescription="기존 데이터 지우고 업로드를 선택하면 기존 응답과 응답이 끝난 초대가 삭제됩니다. 아직 응답하지 않은 이메일 초대는 그대로 남습니다."
                     onSelect={policy => pendingUpload === 'excel'
                         ? handleUploadExcelResponses(policy) : handleUploadOfflineResponses(policy)}
                     onReplaceRespondents={() => pendingUpload === 'excel'

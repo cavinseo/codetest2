@@ -36,6 +36,24 @@ export function canOwnProjectIn(mentee: { role: MemberRole; programId: string | 
     return mentee.role === 'MENTEE' && mentee.programId === programId;
 }
 
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+/**
+ * 프로그램 종료 시각을 "그 종료일 한국 시간 끝(23:59:59.999)"으로 맞춘다.
+ *
+ * 화면은 종료일을 날짜(YYYY-MM-DD)로 보내는데, 예전에는 그대로 new Date() 에 넣어
+ * UTC 자정, 곧 그날 한국 시간 오전 9시로 저장했다. 초대 기한은 그날 23:59 KST 까지라,
+ * 메일에는 "12-31까지"라고 나가도 멘티는 12-31 오전 9시부터 가입·로그인이 막혔다(감리 B8).
+ *
+ * 저장할 때도, 기한을 판정할 때도 이 함수를 거친다. 판정 쪽에서 다시 맞추는 것은
+ * 이미 UTC 자정으로 저장된 프로그램을 DB 수정 없이 바로잡기 위해서다. 이미 그날 끝인
+ * 값은 그대로 돌아오므로 두 번 거쳐도 같다.
+ */
+export function programEndDeadline(endsAt: Date): Date {
+    const kstDate = new Date(endsAt.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10);
+    return new Date(`${kstDate}T23:59:59.999+09:00`);
+}
+
 /** 프로그램 운영 기간이 올바른가. 종료가 시작보다 뒤여야 한다. */
 export function isValidProgramPeriod(startsAt: Date, endsAt: Date): boolean {
     return endsAt.getTime() > startsAt.getTime();

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { BUSINESS_PLAN_FILE_MAX_BYTES } from '@/lib/business-plan-file';
+import { checkExcelArchiveSafety } from '@/lib/upload-guard';
 import {
     BusinessPlanTemplateError,
     parseBusinessPlanWorkbook,
@@ -33,6 +34,11 @@ export async function POST(
         }
 
         const bytes = Buffer.from(await file.arrayBuffer());
+        // 이 라우트만 압축 폭탄 검사가 빠져 있었다. 다른 엑셀 업로드와 같은 관문을 둔다.
+        const archiveFailure = checkExcelArchiveSafety(file.name, bytes);
+        if (archiveFailure) {
+            return NextResponse.json({ error: archiveFailure.error }, { status: archiveFailure.status });
+        }
         const parsed = parseBusinessPlanWorkbook(bytes);
 
         return NextResponse.json({

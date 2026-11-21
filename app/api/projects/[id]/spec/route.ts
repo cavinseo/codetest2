@@ -4,6 +4,9 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { specFunctionsBodySchema } from '@/lib/bulk-save-schemas';
+import { assertWorksheetRevision, worksheetRevision, WorksheetRevisionConflict, WorksheetRevisionMissing } from '@/lib/worksheet-revision';
+import { SPEC_SAVE_TIMEOUT_MS } from '@/lib/spec-save-timeout';
 
 const log = createLogger('api/spec');
 
@@ -14,7 +17,7 @@ export async function GET(
 ) {
     try {
         const { id: projectId } = await params;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: false });
         if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
@@ -32,7 +35,7 @@ export async function GET(
             orderBy: { order: 'asc' },
         });
 
-        return NextResponse.json({ specFunctions: projectSpecs, specDetailCollapsed: project.specDetailCollapsed });
+        return NextResponse.json({ specFunctions: projectSpecs, specDetailCollapsed: project.specDetailCollapsed, revision: worksheetRevision(projectSpecs) });
     } catch (error: unknown) {
         log.error('스펙 조회 실패', error);
         return NextResponse.json(
@@ -78,7 +81,7 @@ export async function POST(
 ) {
     try {
         const { id: projectId } = await params;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
@@ -91,25 +94,20 @@ export async function POST(
             );
         }
 
-        const body = await readJsonBody(request);
         // 빈 배열은 "전부 지움"(행을 다 지운 저장·초기화 버튼)이라, 키가 빠진 요청까지 빈 목록으로
-        // 받아 주면 잘못된 요청 하나로 스펙 전체가 지워진다. 배열이 아니면 거절한다.
-        if (!Array.isArray(body?.specFunctions)) {
-            return NextResponse.json({ error: 'specFunctions 배열이 필요합니다.' }, { status: 400 });
+        // 받아 주면 잘못된 요청 하나로 스펙 전체가 지워진다. 스키마가 배열·단계·이름을 확인한다.
+        const parsed = specFunctionsBodySchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
+            return NextResponse.json({ error: '유효하지 않은 스펙 데이터입니다.' }, { status: 400 });
         }
-        const newSpecs: Array<{
-            id?: string;
-            level: string;
-            name: string;
-            parentId?: string;
-            technology?: string;
-            order: number;
-        }> = body.specFunctions;
+        const newSpecs = parsed.data.specFunctions;
 
         // 삭제와 삽입을 하나의 트랜잭션으로 묶어 중간 실패 시 롤백한다. 빈 목록이면 삭제만 한다 —
         // 예전에는 빈 목록을 저장 성공으로만 답하고 아무것도 지우지 않아, 행을 다 지우거나
         // 초기화해도 새로고침하면 스펙이 되살아났다.
         const updatedSpecs = await prisma.$transaction(async (tx) => {
+            const currentSpecs = await tx.specFunction.findMany({ where: { projectId }, orderBy: { order: 'asc' } });
+            assertWorksheetRevision(request, currentSpecs);
             await tx.specFunction.deleteMany({ where: { projectId } });
 
             // 임시 ID와 실제 Prisma cuid 매핑 테이블
@@ -171,17 +169,25 @@ export async function POST(
                 where: { projectId },
                 orderBy: { order: 'asc' },
             });
-        });
+            // 행마다 순차로 create 하므로 기본 5초로는 큰 스펙이 끝까지 저장되지 못한다(감리 B15).
+        }, { isolationLevel: 'Serializable', timeout: SPEC_SAVE_TIMEOUT_MS });
 
         log.info('스펙 저장 성공', { projectId, count: updatedSpecs.length });
 
         return NextResponse.json({
             specFunctions: updatedSpecs,
+            revision: worksheetRevision(updatedSpecs),
             message: '스펙이 저장되었습니다',
         });
     } catch (error: unknown) {
         const invalidBody = invalidJsonBodyResponse(error);
         if (invalidBody) return invalidBody;
+        if (error instanceof WorksheetRevisionMissing) {
+            return NextResponse.json({ error: error.message }, { status: 428 });
+        }
+        if (error instanceof WorksheetRevisionConflict || (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2034')) {
+            return NextResponse.json({ error: '다른 화면에서 워크시트가 변경되었습니다. 새로고침 후 다시 확인하세요.' }, { status: 409 });
+        }
         return toErrorResponse(error, { log, message: '스펙 저장에 실패했습니다.' });
     }
 }

@@ -306,9 +306,8 @@ export async function POST(request: NextRequest) {
             programId = program.id;
         }
 
-        // 로그인(app/api/auth/login/route.ts)은 입력값을 그대로(대소문자 구분) 조회하므로
-        // 여기서 소문자로 바꿔 저장하면 관리자가 알려준 주소 그대로는 로그인할 수 없다.
-        // 입력한 그대로 저장하되, 대소문자만 다른 중복 가입은 막는다.
+        // 입력한 그대로 저장하되, 대소문자만 다른 중복 가입은 막는다. 로그인·가입·팀원
+        // 초대는 모두 대소문자 없이 찾으므로 저장된 대소문자가 달라도 같은 사람으로 본다.
         const email = parsed.data.email.trim();
         const existing = await prisma.user.findFirst({
             where: { email: { equals: email, mode: 'insensitive' } },

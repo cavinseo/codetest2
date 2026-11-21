@@ -5,15 +5,15 @@ import { expect, it } from 'vitest';
 import { buildWorksheetExcel } from '../lib/worksheet-excel';
 import { worksheetExcelProject } from './fixtures/worksheet-excel-project';
 
-// c52f6a5 출력에서 이번 수정 대상인 WS-9를 제외한 모든 시트의 내용과 서식을 비교한다.
-// WS-2 세세부 열 이름을 '세세부기술'에서 '세세부기능'으로 바꾼 뒤 그 열이 보이는 네 시나리오의 값을 갱신했다.
-// 2026-11-08 매출·자금 시트의 금액 단위 표기를 '원'에서 '백만원'으로 고친 뒤 다섯 시나리오의 값을 갱신했다.
+// 천원 환산·요구사항 연동 순서·번호 머리글·문항 연결 시트를 반영한 기준으로 전체 수식과 서식을 고정한다.
+// 그 기준에 main 의 WS-2 세세부 열 이름 변경('세세부기술'→'세세부기능')을 합친 값이다. 열 이름을 되돌리면
+// 다섯 시나리오가 모두 천원 기준 해시와 같아지는 것을 확인했고, 그 열이 숨는 collapsed 만 그대로다.
 const baselineHashes = {
-    complete: 'df00a3b4719d6039a39552be60ea0decc4dbf37acb5390f18ce53c39ad9044a6',
-    empty: 'ad981baf111f774a1a60cc1b4c312fe15d2beaf065c7540bc7f4614b84f3b49a',
-    collapsed: 'ca6b15a2e9a9800591323fa9e43292611d28f21206c9c643d17abe1b5ef31877',
-    expanded: '4f23e4f7c2016684947c28bfd747de3be333c47793f9ab211d664c4a8546ec7d',
-    long: 'd6c4391b08bca9b39d616772f39baf58947dbc029b652e204df088aa08b9ce39',
+    complete: '4506206eccc9ad3039f66611a86d60aed2f1bd70319deb2ae14ad62b8890407d',
+    empty: 'fe9db6148533fa2a50ea2eedf37e1ea85e6352cb8eb5cd1f5a57aaad28ba4c7a',
+    collapsed: '5fb80bb9e3ab4578e33da2eb213760a624d7c7304b8000b03d7331dd6e4c5121',
+    expanded: '266368cb9dd7670b95d0941ed01c201ac09c99dc925b662012c0940f04c4bbe1',
+    long: '22fbd985d6f0f166ac6fc86e7004e1cb39196ebf8d43030078549e46616a09be',
 };
 
 function projectForScenario(scenario: keyof typeof baselineHashes) {
@@ -46,7 +46,7 @@ function canonicalize(value: unknown): unknown {
     return value;
 }
 
-it.each(Object.keys(baselineHashes) as Array<keyof typeof baselineHashes>)('%s 프로젝트의 WS-9 이외 내용과 양식을 변경하지 않는다', async scenario => {
+it.each(Object.keys(baselineHashes) as Array<keyof typeof baselineHashes>)('%s 프로젝트의 요구사항 연동 출력 기준과 나머지 수식·양식을 유지한다', async scenario => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(await buildWorksheetExcel(projectForScenario(scenario)) as never);
     const output = canonicalize(workbook.worksheets.filter(sheet => sheet.name !== 'WS-9 QFD').map(sheet => sheet.model));

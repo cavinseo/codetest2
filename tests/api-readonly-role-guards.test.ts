@@ -65,11 +65,12 @@ beforeEach(() => {
             token: 'secret-token',
             expiresAt: new Date('2026-12-31'),
             respondedAt: null,
+            _count: { responses: 0 },
         },
     ]);
 });
 
-describe('자금계획 GET 의 기본행 자동 채움', () => {
+describe('자금계획 GET 의 화면용 기본행', () => {
     it.each(['VIEWER', 'COACH'])('%s 는 조회만 해도 행을 만들지 않는다', async (role) => {
         grantRole(role);
 
@@ -81,15 +82,19 @@ describe('자금계획 GET 의 기본행 자동 채움', () => {
         expect(fundingSourceCreateMany).not.toHaveBeenCalled();
     });
 
-    it.each(['OWNER', 'EDITOR', 'ADMIN'])('%s 는 자금소요 기본행만 채우고 삭제된 자금조달 세부행은 복원하지 않는다', async (role) => {
+    it.each(['OWNER', 'EDITOR', 'ADMIN'])('%s 는 저장 전에도 자금소요 기본행을 보지만 조회로 저장하지 않고 삭제된 자금조달 세부행은 복원하지 않는다', async (role) => {
         grantRole(role);
 
         const response = await getFunding(getRequest('funding'), { params });
+        const body = await response.json();
 
         expect(response.status).toBe(200);
-        expect(transaction).toHaveBeenCalledTimes(1);
+        expect(body.plans).toHaveLength(7);
+        expect(body.sources).toHaveLength(0);
+        expect(body.canWrite).toBe(true);
+        expect(transaction).not.toHaveBeenCalled();
+        expect(fundingPlanCreateMany).not.toHaveBeenCalled();
         expect(fundingSourceCreateMany).not.toHaveBeenCalled();
-        expect(await response.json()).toMatchObject({ sources: [], canWrite: true });
     });
 });
 

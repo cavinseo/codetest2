@@ -156,6 +156,8 @@ it('분석 탭에 다녀와도 고른 응답 수집 방식이 남는다', async 
     fetchMock.mockImplementation((url: string) => {
         if (url.endsWith('/requirements')) return json({ requirements: [{ id: 'r1', category: '사용성', requirement: '빠른 주문', order: 0 }] });
         if (url.endsWith('/kano/invitations')) return json({ invitations: [] });
+        // 분석 탭은 서버가 열람을 허락한 담당 멘토·관리자에게만 보인다.
+        if (url.endsWith('/kano/analysis?view=summary')) return json({ canRead: true, canEdit: true, totalResponses: 0, uniqueRespondents: 0 });
         if (url === '/api/settings') return json({ google: { configured: false } });
         if (url === '/api/projects/p1') return json({ project: { name: '프로젝트' } });
         return json({ error: '없음' }, 404);

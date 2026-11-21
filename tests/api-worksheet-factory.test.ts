@@ -5,6 +5,7 @@
 // 테스트도 하나로 모아, 새 워크시트를 추가할 때 이 표에 한 줄만 더하면 되게 한다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
+import { worksheetRevision } from '../lib/worksheet-revision';
 
 const models = [
     'salesEstimate', 'techRoadmap', 'techTreeEntry', 'targetSpec',
@@ -70,7 +71,7 @@ const params = { params: Promise.resolve({ id: 'project_1' }) };
 function postRequest(body: unknown): NextRequest {
     return new NextRequest('http://localhost/api/projects/project_1/x', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'If-Match': worksheetRevision([]) },
         body: JSON.stringify(body),
     });
 }
@@ -116,6 +117,27 @@ describe.each(cases)('$label 워크시트 저장', ({ post, model, key, validRow
 
         expect(res.status).toBe(200);
         expect(tx[model].deleteMany).toHaveBeenCalledTimes(1);
+        expect(tx[model].createMany).not.toHaveBeenCalled();
+    });
+
+    it('revision이 없는 전체 교체는 기존 행을 보존한다', async () => {
+        const request = postRequest({ [key]: [validRow] });
+        request.headers.delete('If-Match');
+
+        const response = await post(request, params);
+
+        expect(response.status).toBe(428);
+        expect(tx[model].deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('다른 화면에서 저장된 뒤 오래된 revision으로 다시 저장하면 기존 행을 보존한다', async () => {
+        const request = postRequest({ [key]: [validRow] });
+        request.headers.set('If-Match', 'outdated');
+
+        const response = await post(request, params);
+
+        expect(response.status).toBe(409);
+        expect(tx[model].deleteMany).not.toHaveBeenCalled();
         expect(tx[model].createMany).not.toHaveBeenCalled();
     });
 

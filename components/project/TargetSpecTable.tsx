@@ -30,6 +30,7 @@ type GroupField = 'category' | 'subCategory';
 
 export default function TargetSpecTable({ projectId }: Props) {
     const [rows, setRows] = useState<TargetSpecRow[]>([]);
+    const [revision, setRevision] = useState<string | null>(null);
     const [suggestions, setSuggestions] = useState<TargetSpecRow[]>([]);
     const [asIsRows, setAsIsRows] = useState<TargetSpecRow[]>([]);
     const [newSpecs, setNewSpecs] = useState<Array<{ category: string; subCategory: string }>>([]);
@@ -45,6 +46,7 @@ export default function TargetSpecTable({ projectId }: Props) {
             .then(r => { if (!r.ok) throw new Error('목표 사양 조회 실패'); return r.json(); });
         if (!isActive()) return;
         if (!Array.isArray(data?.rows)) throw new Error('목표 사양 응답 형식 오류');
+        setRevision(data.revision ?? null);
         setSuggestions(data?.suggestions || []);
         setAsIsRows(data?.asIsRows || []);
         setNewSpecs(data?.newSpecs || []);
@@ -124,7 +126,7 @@ export default function TargetSpecTable({ projectId }: Props) {
         try {
             const res = await fetch(`/api/projects/${projectId}/target-spec`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({
                     rows: rows.map((row, idx) => ({
                         category: row.category,
@@ -141,11 +143,13 @@ export default function TargetSpecTable({ projectId }: Props) {
             });
 
             if (!res.ok) {
-                showToast('저장에 실패했습니다.', 'error');
+                const error = await res.json().catch(() => null);
+                showToast(error?.error || '저장에 실패했습니다.', 'error');
                 return;
             }
 
             const data = await res.json();
+            setRevision(data.revision ?? null);
             setRows(data.rows.map((r: any) => ({
                 ...r,
                         id: r.id,

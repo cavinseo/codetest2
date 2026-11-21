@@ -167,33 +167,51 @@ describe('초대 연장의 날짜 경계', () => {
         expect(updateInvite).not.toHaveBeenCalled();
     });
 
-    it('프로그램 한국 종료 날짜와 같으면 프로그램의 정확한 종료 시각까지 연장한다', async () => {
+    // 프로그램 종료일은 그날 한국 시간 끝까지 유효하다(감리 B8). 그래서 요청한 날짜가
+    // 종료일과 같으면 종료일 끝(=요청한 날짜의 끝)까지 연장된다.
+    it('프로그램 한국 종료 날짜와 같으면 그 종료일 한국 시간 끝까지 연장한다', async () => {
         const invite = inviteRecord();
-        const endsAt = new Date('2026-10-14T16:00:00.000Z');
+        const endsAt = new Date('2026-10-14T16:00:00.000Z'); // KST 2026-10-15 01:00
         findLockedInvite.mockResolvedValue({ ...invite, program: { ...invite.program, endsAt } });
 
         const res = await PATCH(patchRequest());
 
         expect(res.status).toBe(200);
-        expect(updateInvite).toHaveBeenCalledWith({ where: { id: 'inv_1' }, data: { expiresAt: endsAt, accessExpiresAt: null } });
-        expect((await res.json()).invite.expiresAt).toBe(endsAt.toISOString());
+        expect(updateInvite).toHaveBeenCalledWith({ where: { id: 'inv_1' }, data: { expiresAt: TARGET_EXPIRY, accessExpiresAt: null } });
+        expect((await res.json()).invite.expiresAt).toBe(TARGET_EXPIRY.toISOString());
     });
 
-    it('프로그램 종료 시각으로 제한한 결과가 현재와 같으면 연장하지 않는다', async () => {
+    it('프로그램 종료일 끝으로 제한한 결과가 현재와 같으면 연장하지 않는다', async () => {
         const invite = inviteRecord();
         const endsAt = new Date('2026-10-14T16:00:00.000Z');
-        findLockedInvite.mockResolvedValue({ ...invite, expiresAt: endsAt, program: { ...invite.program, endsAt } });
+        findLockedInvite.mockResolvedValue({ ...invite, expiresAt: TARGET_EXPIRY, program: { ...invite.program, endsAt } });
 
         expect((await PATCH(patchRequest())).status).toBe(400);
         expect(updateInvite).not.toHaveBeenCalled();
     });
 
     it('이미 종료된 프로그램은 만료 초대도 되살리지 않는다', async () => {
+        // 지금은 KST 2026-09-17 12:00. 종료일이 전날(09-16)이면 이미 끝났다.
         const invite = inviteRecord();
-        findLockedInvite.mockResolvedValue({ ...invite, expiresAt: new Date('2026-09-01T00:00:00.000Z'), program: { ...invite.program, endsAt: new Date('2026-09-17T02:00:00.000Z') } });
+        findLockedInvite.mockResolvedValue({ ...invite, expiresAt: new Date('2026-09-01T00:00:00.000Z'), program: { ...invite.program, endsAt: new Date('2026-09-16T02:00:00.000Z') } });
 
         expect((await PATCH(patchRequest({ expiresAt: '2026-09-17' }))).status).toBe(400);
         expect(updateInvite).not.toHaveBeenCalled();
+    });
+
+    it('종료일이 오늘이면 UTC 자정으로 저장된 프로그램도 오전 9시 이후 연장할 수 있다', async () => {
+        // 예전 저장값: 종료일 09-17 을 UTC 자정(=KST 09:00)으로 저장. 지금은 KST 12:00 이다.
+        // 예전에는 이 시각에 이미 "종료된 프로그램"으로 거절됐다(감리 B8).
+        const invite = inviteRecord();
+        findLockedInvite.mockResolvedValue({ ...invite, expiresAt: new Date('2026-09-01T00:00:00.000Z'), program: { ...invite.program, endsAt: new Date('2026-09-17T00:00:00.000Z') } });
+
+        const res = await PATCH(patchRequest({ expiresAt: '2026-09-17' }));
+
+        expect(res.status).toBe(200);
+        expect(updateInvite).toHaveBeenCalledWith({
+            where: { id: 'inv_1' },
+            data: { expiresAt: new Date('2026-09-17T23:59:59.999+09:00'), accessExpiresAt: null },
+        });
     });
 });
 

@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
+import { SPEC_SAVE_TIMEOUT_MS } from '../lib/spec-save-timeout';
 
 const tx = {
     specFunction: {
@@ -114,7 +115,7 @@ describe('spec upload-excel POST', () => {
     it('행이 많은 파일을 위해 트랜잭션 timeout 을 지정한다', async () => {
         await POST(uploadRequest('replace'), params);
 
-        expect(transactionOptions).toMatchObject({ timeout: expect.any(Number) });
+        expect(transactionOptions).toMatchObject({ timeout: SPEC_SAVE_TIMEOUT_MS });
     });
 
     it('권한이 없으면 403 이고 아무것도 지우지 않는다', async () => {

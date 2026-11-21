@@ -24,6 +24,7 @@ const {
     getAiSettings,
     getGoogleSettings,
     getGoogleToken,
+    getStoredGoogleToken,
     getSmtpSettings,
     setGoogleToken,
     updateAiSettings,
@@ -95,12 +96,47 @@ describe('SMTP 설정', () => {
     it('부분 저장이 비밀번호를 지우지 않는다', async () => {
         await updateSmtpSettings({ host: 'smtp.example.com', port: 587, user: 'me@x.com', pass: 'p@ss' });
 
-        await updateSmtpSettings({ host: 'smtp2.example.com' });
+        await updateSmtpSettings({ port: 465, user: 'other@x.com' });
+
+        const smtp = await getSmtpSettings();
+        expect(smtp.host).toBe('smtp.example.com');
+        expect(smtp.port).toBe(465);
+        expect(smtp.pass).toBe('p@ss');
+        expect(smtp.user).toBe('other@x.com');
+    });
+
+    it('호스트만 바꾸는 저장은 거절해 저장된 비밀번호가 새 서버로 가지 않게 한다', async () => {
+        // 빈 비밀번호가 "유지"라서, 호스트만 바꾸면 다음 발송 때 저장된 비밀번호로
+        // 공격자 서버에 로그인한다.
+        await updateSmtpSettings({ host: 'smtp.example.com', port: 587, user: 'me@x.com', pass: 'p@ss' });
+
+        await expect(updateSmtpSettings({ host: 'attacker.example.net' })).rejects.toThrow('비밀번호를 다시 입력');
+        await expect(updateSmtpSettings({ host: 'attacker.example.net', pass: '   ' })).rejects.toThrow('비밀번호를 다시 입력');
+
+        const smtp = await getSmtpSettings();
+        expect(smtp.host).toBe('smtp.example.com');
+        expect(smtp.pass).toBe('p@ss');
+    });
+
+    it('비밀번호를 함께 보내면 호스트를 바꿀 수 있다', async () => {
+        await updateSmtpSettings({ host: 'smtp.example.com', port: 587, user: 'me@x.com', pass: 'p@ss' });
+
+        await updateSmtpSettings({ host: 'smtp2.example.com', pass: 'new-pass' });
 
         const smtp = await getSmtpSettings();
         expect(smtp.host).toBe('smtp2.example.com');
-        expect(smtp.pass).toBe('p@ss');
-        expect(smtp.user).toBe('me@x.com');
+        expect(smtp.pass).toBe('new-pass');
+    });
+
+    it('같은 호스트를 다시 보내는 저장과 대소문자만 다른 호스트는 비밀번호 없이 통과한다', async () => {
+        // 설정 화면은 비밀번호 칸을 비운 채 현재 호스트를 그대로 다시 보낸다.
+        await updateSmtpSettings({ host: 'smtp.example.com', port: 587, user: 'me@x.com', pass: 'p@ss' });
+
+        await expect(updateSmtpSettings({ host: ' SMTP.example.com ', port: 2525 })).resolves.toMatchObject({ port: 2525, pass: 'p@ss' });
+    });
+
+    it('저장된 비밀번호가 없으면 호스트만 먼저 저장할 수 있다', async () => {
+        await expect(updateSmtpSettings({ host: 'smtp.example.com' })).resolves.toMatchObject({ host: 'smtp.example.com', pass: '' });
     });
 });
 
@@ -133,6 +169,18 @@ describe('Google 토큰', () => {
 
         await setGoogleToken({ accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() - 1 });
         expect(await getGoogleToken()).toBeNull();
+    });
+
+    // 액세스 토큰은 1시간이면 만료되지만 refresh token 으로 새로 받을 수 있다.
+    // 갱신하는 쪽이 읽을 수 있도록 만료된 토큰도 그대로 돌려준다(감리 B7).
+    it('저장된 토큰은 만료돼도 갱신용으로 읽을 수 있다', async () => {
+        await setGoogleToken({ accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() - 1 });
+
+        expect(await getStoredGoogleToken()).toMatchObject({ accessToken: 'a', refreshToken: 'r' });
+    });
+
+    it('저장된 토큰이 없으면 갱신용으로도 null 이다', async () => {
+        expect(await getStoredGoogleToken()).toBeNull();
     });
 
     it('refresh token 을 평문으로 저장하지 않는다', async () => {

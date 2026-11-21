@@ -86,12 +86,15 @@ it('적합도 내부 JSON이 손상된 경우 새 기본값으로 덮어쓰지 �
     expect(writes()).toHaveLength(0);
 });
 
+const fitnessImpact = { kanoResponses: 0, benchmarks: 0, qfdMatrices: 0, attributeFitnesses: 6, techCorrelations: 0, technicalBenchmarks: 0 };
+
 it.each([false, true])('제품 속성 엑셀의 연결 자료 삭제 확인 %s에 따라 반영한다', async confirmed => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(confirmed);
     fetchMock.mockImplementation(async (url: string, options?: { method: string; body: FormData }) => {
         if (options?.method === 'POST') {
-            if (!options.body.has('confirmCascade')) return {
-                ok: false, status: 409, json: async () => ({ needsCascadeConfirm: true, error: '적합도 6건이 함께 삭제됩니다.' }),
+            // 서버는 보여 준 건수를 그대로 돌려받아야 확인으로 본다(감리 B4).
+            if (!options.body.has('confirmedCascadeImpact')) return {
+                ok: false, status: 409, json: async () => ({ needsCascadeConfirm: true, error: '적합도 6건이 함께 삭제됩니다.', cascadeImpact: fitnessImpact }),
             };
             return { ok: true, json: async () => ({ appliedCounts: { productAttributes: 1 } }) };
         }
@@ -104,7 +107,9 @@ it.each([false, true])('제품 속성 엑셀의 연결 자료 삭제 확인 %s�
     await act(async () => button('기존 데이터 지우고 업로드')!.click());
     expect(confirm).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('적합도 6건'));
     expect(writes()).toHaveLength(confirmed ? 2 : 1);
-    if (confirmed) expect((writes()[1][1].body as FormData).get('confirmCascade')).toBe('true');
+    if (confirmed) {
+        expect(JSON.parse(String((writes()[1][1].body as FormData).get('confirmedCascadeImpact')))).toEqual(fitnessImpact);
+    }
 });
 afterEach(async () => {
     await act(async () => root.unmount());
@@ -118,7 +123,7 @@ describe.each(worksheets)('$endpoint 조회 실패 보호', ({ Component, endpoi
     it.each(['http', 'network', 'json', 'missing-rows'])('%s 오류 뒤 저장을 차단하고 재시도로 기존 행을 복구한다', async failure => {
         let recovered = false;
         fetchMock.mockImplementation(async (url: string) => {
-            if (!url.endsWith(endpoint)) return { ok: true, json: async () => ({ items: [] }) };
+            if (!url.endsWith(endpoint)) return { ok: true, json: async () => ({ items: [], requirements: [] }) };
             if (recovered) return { ok: true, json: async () => ({ rows: [row], suggestions: [], asIsRows: [] }) };
             if (failure === 'network') throw new Error('offline');
             return { ok: failure !== 'http', json: async () => {
@@ -140,14 +145,14 @@ describe.each(worksheets)('$endpoint 조회 실패 보호', ({ Component, endpoi
     });
 
     it('정상 조회한 빈 워크시트는 편집과 저장을 허용한다', async () => {
-        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ rows: [], items: [], suggestions: [], asIsRows: [] }) });
+        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ rows: [], items: [], requirements: [], suggestions: [], asIsRows: [] }) });
         await act(async () => root.render(createElement(Component, { projectId: 'project-a' })));
         expect(button('저장')?.disabled).toBe(false);
         expect(container.querySelector('[role="alert"]')).toBeNull();
     });
 
     it('프로젝트 전환 후 새 조회가 끝날 때까지 이전 프로젝트를 저장할 수 없다', async () => {
-        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ rows: [row], items: [], suggestions: [], asIsRows: [] }) });
+        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ rows: [row], items: [], requirements: [], suggestions: [], asIsRows: [] }) });
         await act(async () => root.render(createElement(Component, { projectId: 'project-a' })));
         fetchMock.mockImplementation(() => new Promise(() => {}));
         await act(async () => root.render(createElement(Component, { projectId: 'project-b' })));

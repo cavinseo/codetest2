@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isGoogleConfigured, getGoogleToken } from '@/lib/service-settings';
+import { isGoogleConfigured } from '@/lib/service-settings';
+// 만료된 액세스 토큰은 저장된 refresh token 으로 갱신해 쓴다(감리 B7).
+import { getUsableGoogleToken } from '@/lib/google-auth';
 import { getFormResponses } from '@/lib/google-forms';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
@@ -9,10 +11,109 @@ import { classifyKano } from '@/lib/kano';
 import { toErrorResponse } from '@/lib/api-error';
 import { GOOGLE_FORMS_DISABLED_MESSAGE, GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { z } from 'zod';
+import { GoogleFormBindingError, verifyGoogleFormBinding } from '@/lib/google-form-binding';
 
 const log = createLogger('api/kano/form-responses');
+const SYSTEM_INVITATION_EMAIL = 'google-forms-system@internal';
+const SYSTEM_INVITATION_DURATION_MS = 1000 * 60 * 60 * 24 * 365;
 
+type GoogleFormResponse = Awaited<ReturnType<typeof getFormResponses>>['responses'][number];
+type GoogleKanoResponse = {
+    respondentEmail: string;
+    requirementId: string;
+    positiveAnswer: number;
+    negativeAnswer: number;
+    kanoCategory: string;
+    respondedAt: Date;
+};
 
+function kanoAnswerScore(answer: string) {
+    return answer === 'LIKE' ? 1
+        : answer === 'EXPECT' ? 2
+            : answer === 'NEUTRAL' ? 3
+                : answer === 'TOLERATE' ? 4
+                    : 5;
+}
+
+function collectLatestGoogleKanoResponses(
+    formResponses: GoogleFormResponse[],
+    requirements: { id: string }[]
+) {
+    const responsesByKey = new Map<string, GoogleKanoResponse>();
+
+    for (const formResponse of formResponses) {
+        const respondentEmail = formResponse.respondentEmail || 'anonymous@google-forms';
+        const respondedAt = new Date(formResponse.submittedAt);
+
+        for (const answer of formResponse.answers) {
+            const requirement = requirements.find((item) => item.id === answer.requirementId);
+            if (!requirement) continue;
+
+            const response = {
+                requirementId: requirement.id,
+                respondentEmail,
+                positiveAnswer: kanoAnswerScore(answer.functional),
+                negativeAnswer: kanoAnswerScore(answer.dysfunctional),
+                kanoCategory: classifyKano(answer.functional, answer.dysfunctional),
+                respondedAt,
+            };
+            const responseKey = `${respondentEmail}\u0000${requirement.id}`;
+            const previousResponse = responsesByKey.get(responseKey);
+            if (!previousResponse || previousResponse.respondedAt <= respondedAt) {
+                responsesByKey.set(responseKey, response);
+            }
+        }
+    }
+
+    return [...responsesByKey.values()];
+}
+
+const formResponseSchema = z.object({
+    formId: z.string().trim().min(1),
+    formBinding: z.string().trim().min(1),
+});
+
+async function saveGoogleKanoResponses(
+    projectId: string,
+    invitedBy: string,
+    responses: GoogleKanoResponse[]
+) {
+    await prisma.$transaction(async (tx) => {
+        // 같은 프로젝트의 동기화는 하나씩 실행한다. 그렇지 않으면 두 요청이
+        // 모두 기존 행이 없다고 보고 같은 응답을 함께 저장할 수 있다.
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`google-forms-sync:${projectId}`}))::text`;
+        const systemInvitation = await tx.kanoSurveyInvitation.upsert({
+            where: { projectId_email: { projectId, email: SYSTEM_INVITATION_EMAIL } },
+            update: {},
+            create: {
+                id: generateId('inv'),
+                projectId,
+                email: SYSTEM_INVITATION_EMAIL,
+                token: `system_${generateId('inv')}`,
+                invitedBy,
+                expiresAt: new Date(Date.now() + SYSTEM_INVITATION_DURATION_MS),
+            },
+        });
+
+        if (responses.length === 0) return;
+        await tx.kanoResponse.deleteMany({
+            where: {
+                projectId,
+                invitationId: systemInvitation.id,
+                OR: responses.map(({ respondentEmail, requirementId }) => ({ respondentEmail, requirementId })),
+            },
+        });
+        await tx.kanoResponse.createMany({
+            data: responses.map((response) => ({
+                id: generateId('response'),
+                invitationId: systemInvitation.id,
+                projectId,
+                ...response,
+            })),
+        });
+    });
+}
 
 // POST: Google Forms 응답을 가져와 Kano 데이터로 변환
 export async function POST(
@@ -21,7 +122,7 @@ export async function POST(
 ) {
     const params = await props.params;
     const projectId = params.id;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: true });
     if (accessResult instanceof NextResponse) return accessResult;
 
     if (!GOOGLE_FORMS_INTEGRATION_ENABLED) {
@@ -36,7 +137,7 @@ export async function POST(
             );
         }
 
-        const token = await getGoogleToken();
+        const token = await getUsableGoogleToken();
         if (!token) {
             return NextResponse.json(
                 { error: 'Google 인증이 필요합니다.', needsAuth: true },
@@ -44,14 +145,22 @@ export async function POST(
             );
         }
 
-        const body = await readJsonBody(request);
-        const formId = body.formId;
-
-        if (!formId) {
+        const parsed = formResponseSchema.safeParse(await readJsonBody(request));
+        if (!parsed.success) {
             return NextResponse.json(
-                { error: 'formId가 필요합니다.' },
+                { error: '생성한 설문 정보가 필요합니다.' },
                 { status: 400 }
             );
+        }
+        const { formId, formBinding } = parsed.data;
+        let binding;
+        try {
+            binding = verifyGoogleFormBinding(formBinding, projectId, formId);
+        } catch (error) {
+            if (error instanceof GoogleFormBindingError) {
+                return NextResponse.json({ error: error.message }, { status: 400 });
+            }
+            throw error;
         }
 
         const requirements = await prisma.customerRequirement.findMany({
@@ -66,68 +175,10 @@ export async function POST(
             );
         }
 
-        const { responses } = await getFormResponses(token.accessToken, formId);
-
-        const newKanoResponses: any[] = [];
-        let importedCount = 0;
-
-        // Google Form 응답 저장용 시스템 공통 초대(Invitation) 확인 또는 생성
-        // Google Forms 응답은 개별 토큰이 없으므로 시스템용 공통 초대를 하나 만듭니다.
-        const systemEmail = 'google-forms-system@internal';
-        let systemInvitation = await prisma.kanoSurveyInvitation.findUnique({
-            where: {
-                projectId_email: { projectId, email: systemEmail }
-            }
-        });
-
-        if (!systemInvitation) {
-            systemInvitation = await prisma.kanoSurveyInvitation.create({
-                data: {
-                    id: generateId('inv'),
-                    projectId,
-                    email: systemEmail,
-                    token: `system_${generateId('inv')}`,
-                    // invitedBy 는 users.id 에 대한 FK 다. 예전에는 'system' 을
-                    // 넣어서 그런 사용자가 없는 모든 프로젝트에서 P2003 으로 실패했다.
-                    // 컬럼이 nullable 이 됐어도 여기에 null 을 넣으면 안 된다. 빈 값은
-                    // "계정이 파기된 사람"이라는 뜻이지 "발신자가 없다"는 뜻이 아니다.
-                    invitedBy: accessResult.user.userId,
-                    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365), // 1년
-                }
-            });
-        }
-
-        for (const response of responses) {
-            const respondentEmail = response.respondentEmail || 'anonymous@google-forms';
-
-            for (const answer of response.answers) {
-                if (answer.requirementIndex < requirements.length) {
-                    const req = requirements[answer.requirementIndex];
-                    const category = classifyKano(answer.functional, answer.dysfunctional);
-
-                    newKanoResponses.push({
-                        id: generateId('response'),
-                        invitationId: systemInvitation.id,
-                        projectId,
-                        requirementId: req.id,
-                        respondentEmail: respondentEmail,
-                        positiveAnswer: answer.functional === 'LIKE' ? 1 : answer.functional === 'EXPECT' ? 2 : answer.functional === 'NEUTRAL' ? 3 : answer.functional === 'TOLERATE' ? 4 : 5,
-                        negativeAnswer: answer.dysfunctional === 'LIKE' ? 1 : answer.dysfunctional === 'EXPECT' ? 2 : answer.dysfunctional === 'NEUTRAL' ? 3 : answer.dysfunctional === 'TOLERATE' ? 4 : 5,
-                        kanoCategory: category,
-                        respondedAt: new Date(response.submittedAt),
-                    });
-
-                    importedCount++;
-                }
-            }
-        }
-
-        if (newKanoResponses.length > 0) {
-            // 기존 중복 데이터 방지 로직이 필요할 수 있으나 우선 createMany로 처리
-            await prisma.kanoResponse.createMany({
-                data: newKanoResponses,
-            });
-        }
+        const { responses } = await getFormResponses(token.accessToken, formId, binding.questionPairs);
+        const kanoResponses = collectLatestGoogleKanoResponses(responses, requirements);
+        await saveGoogleKanoResponses(projectId, accessResult.user.userId, kanoResponses);
+        const importedCount = kanoResponses.length;
 
         log.info('Kano 응답 가져오기 성공', { projectId, responseCount: responses.length, importedCount });
 

@@ -43,9 +43,11 @@ const report = {
     version: 0, hasPublishedReport: false, hasUnpublishedChanges: false, publishedAt: null, updatedAt: null,
     canEdit: true, mentorName: '멘토', view: 'draft', draft: null,
 };
+const sourceRevision = 'a'.repeat(64);
 const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string) => json(url === '/api/projects/project/report' ? report
-    : url.endsWith('/overview') ? { project: { name: '프로젝트' } } : {}));
+    : url.endsWith('/overview') ? { project: { name: '프로젝트' } }
+        : url.includes('/export') ? { sourceRevision } : {}));
 
 beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -56,7 +58,8 @@ beforeEach(() => {
     m.capture.mockReset().mockResolvedValue({ pngDataUrl: 'data:image/png;base64,AA==', widthPx: 1, heightPx: 1 });
     m.optimize.mockReset().mockResolvedValue({ dataUrl: 'data:image/png;base64,AA==', widthPx: 1, heightPx: 1 });
     fetchMock.mockReset().mockImplementation(async (url: string) => json(url === '/api/projects/project/report' ? report
-        : url.endsWith('/overview') ? { project: { name: '프로젝트' } } : {}));
+        : url.endsWith('/overview') ? { project: { name: '프로젝트' } }
+            : url.includes('/export') ? { sourceRevision } : {}));
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -85,7 +88,7 @@ it('WS-4 조회 실패 화면은 이미지로 캡처하지 않는다', async () 
     m.fitnessError = true;
     fetchMock.mockImplementation(async (url: string) => json(url === '/api/projects/project/report' ? report
         : url.endsWith('/overview') ? { project: { name: '프로젝트' } }
-            : url.endsWith('/export') ? { fitnessMatrix: { marketsJson: '[]', matrixJson: '{}' } } : {}));
+            : url.includes('/export') ? { sourceRevision, fitnessMatrix: { marketsJson: '[]', matrixJson: '{}' } } : {}));
     await render();
     await click('미리보기 만들기');
 
@@ -104,7 +107,8 @@ it('워크시트 다시 불러오기는 WS-4와 QFD 캡처 화면도 새로 조�
 it('요구사항이 있어도 Kano 응답이 없으면 빈 그래프를 보고서 결과로 캡처하지 않는다', async () => {
     fetchMock.mockImplementation(async (url: string) => json(url === '/api/projects/project/report' ? report
         : url.endsWith('/overview') ? { project: { name: '프로젝트' } }
-            : url.endsWith('/kano/analysis') ? { requirements: [{ requirementId: 'req', responseCount: 0, better: 0, worse: 0, kanoWeight: 0, timkoCategory: '' }] } : {}));
+            : url.endsWith('/kano/analysis') ? { requirements: [{ requirementId: 'req', responseCount: 0, better: 0, worse: 0, kanoWeight: 0, timkoCategory: '' }] }
+                : url.includes('/export') ? { sourceRevision } : {}));
     await render();
     await click('미리보기 만들기');
     expect(m.capture).not.toHaveBeenCalled();
@@ -129,7 +133,8 @@ it('그림 반영 후 초안 저장은 실제 캡처 세 장과 교정 내용 �
             if (options?.method === 'PUT') saved = JSON.parse(options.body);
             return json({ ...report, draft: { free, document, previewNeedsRefresh: true } });
         }
-        return json(url.endsWith('/overview') ? { project: { name: '프로젝트' } } : {});
+        return json(url.endsWith('/overview') ? { project: { name: '프로젝트' } }
+            : url.includes('/export') ? { sourceRevision } : {});
     });
     m.capture.mockImplementation(async (node: HTMLElement) => ({ pngDataUrl: `data:image/png;base64,${node.dataset.worksheetId}`, widthPx: 1280, heightPx: 800 }));
     m.optimize.mockImplementation(async (dataUrl: string) => ({ dataUrl, widthPx: 1280, heightPx: 800 }));
@@ -161,7 +166,7 @@ it('기존 샘플 보고서에 빠진 WS-4 그림은 그림 반영으로 복구�
             if (options?.method === 'PUT') saved = JSON.parse(options.body);
             return json({ ...report, draft: { document, previewNeedsRefresh: false } });
         }
-        return json(url.endsWith('/export') ? { fitnessMatrix: { marketsJson: '[]', matrixJson: '{}' } } : {});
+        return json(url.includes('/export') ? { sourceRevision, fitnessMatrix: { marketsJson: '[]', matrixJson: '{}' } } : {});
     });
     await render();
     await click('워크시트 그림 반영');
@@ -171,5 +176,5 @@ it('기존 샘플 보고서에 빠진 WS-4 그림은 그림 반영으로 복구�
     expect(saved.draft.document.blocks[3]).toEqual(document.blocks[3]);
     expect(saved.draft.document.blocks[4]).toMatchObject({ kind: 'image', title: CAPTURED_WORKSHEET_TITLES.fitness });
     expect(saved.draft.document.blocks[5]).toEqual(document.blocks[5]);
-    expect(saved.draft.previewNeedsRefresh).toBe(false);
+    expect(saved.draft.previewNeedsRefresh).toBe(true);
 });

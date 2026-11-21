@@ -44,7 +44,7 @@ beforeEach(() => {
         if (url === '/api/projects') return json({ projects: [project] });
         if (url.endsWith('/overview')) {
             if (options?.method === 'PATCH') project = { ...project, ...JSON.parse(String(options.body)) };
-            return json({ project });
+            return json({ project, revision: 'a'.repeat(64) });
         }
         return json({ requirements: [], specFunctions: [], analysis: [], totalResponses: 0 });
     });
@@ -83,6 +83,18 @@ it('프로젝트명만 고쳐 저장해도 개요 null을 보존하며 보고서
     await click('저장');
     expect(savedBody()).toMatchObject({ ...empty, name: '새 프로젝트명' });
     expect(hasProductOverviewSource(savedBody())).toBe(true);
+});
+it('회원가입 회사명을 개요에서 보여주고 수정값을 저장한다', async () => {
+    project.companyName = '가입 회사';
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    expect(container.textContent).toContain('가입 회사');
+    await click('수정');
+    const company = container.querySelector<HTMLInputElement>('input[aria-label="기업명(창업자)"]')!;
+    expect(company.value).toBe('가입 회사');
+    await input(company, '새 기업명');
+    await click('저장');
+    expect(savedBody().companyName).toBe('새 기업명');
+    expect(container.textContent).toContain('새 기업명');
 });
 
 it('제품 정보를 입력했다 직접 지우면 빈 문자열로 저장해 보고서의 명시적 삭제를 보존한다', async () => {
@@ -311,8 +323,11 @@ it('추가 시장 자료를 개요 마지막 박스에서 입력·저장·재조
     expect(box().parentElement!.lastElementChild).toBe(box());
     await click('수정');
     await input(box().querySelector('textarea')!, text);
+    const reportCheckbox = box().querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    await act(async () => { reportCheckbox.click(); });
     await click('저장');
     expect(savedBody().additionalMarketData).toBe(text);
+    expect(savedBody().includeAdditionalMarketDataInReport).toBe(true);
     expect(box().textContent).toContain(text);
     expect(box().querySelector('textarea')).toBeNull();
     await act(async () => root.unmount());
@@ -377,4 +392,17 @@ it('개발계획서를 제거하고 자산·자금 워크시트를 WS-14~16으�
     expect(container.textContent).not.toContain('[WS-17]');
     expect(WORKSHEET_LINKS.some(item => item.href === 'dev-plan')).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/dev-plan'))).toBe(false);
+});
+
+it('읽은 개정값을 전송하고 충돌 응답 후 사용자의 입력을 유지한다', async () => {
+    await act(async () => root.render(createElement(ProjectDetailPage)));
+    await click('수정');
+    const name = [...container.querySelectorAll('input')].find(element => element.value === '기존 프로젝트')!;
+    await input(name, '내가 작성한 이름');
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: '다른 화면에서 개요가 변경되었습니다.' }), { status: 409 }));
+    await click('저장');
+    const write = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(write?.[1].headers['If-Match']).toBe('a'.repeat(64));
+    expect(name.value).toBe('내가 작성한 이름');
+    expect(container.textContent).toContain('다른 화면에서 개요가 변경되었습니다.');
 });

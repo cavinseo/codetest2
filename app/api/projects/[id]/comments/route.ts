@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireProjectAccess } from '@/lib/authorization';
+import { getKanoAnalysisAccess, isKanoAnalysisWorksheet } from '@/lib/kano-analysis-access';
 import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
@@ -16,6 +17,12 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     try {
         const parsedWorksheet = worksheet.safeParse(request.nextUrl.searchParams.get('worksheetId'));
         if (!parsedWorksheet.success) return NextResponse.json({ error: '워크시트를 선택하세요.' }, { status: 400 });
+        // Kano 분석 워크시트는 담당 멘토와 관리자만 본다. 화면이 탭을 숨겨도 이
+        // 라우트가 열려 있으면 그 워크시트에 달린 멘토 의견을 멘티·미배정
+        // 매니저가 그대로 읽는다. 분석 본문과 같은 판정을 쓴다.
+        if (isKanoAnalysisWorksheet(parsedWorksheet.data) && !getKanoAnalysisAccess(access).canRead) {
+            return NextResponse.json({ error: 'Kano 분석은 담당 멘토와 관리자만 열람할 수 있습니다.' }, { status: 403 });
+        }
         const owner = await prisma.project.findUnique({ where: { id: projectId }, select: { owner: { select: { mentorAssignment: { select: { mentorId: true } } } } } });
         const canComment = access.user.role === 'ADMIN' || owner?.owner.mentorAssignment?.mentorId === access.user.userId;
         const scope = { projectId, worksheetId: parsedWorksheet.data };

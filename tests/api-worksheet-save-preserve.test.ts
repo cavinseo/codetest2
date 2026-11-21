@@ -9,6 +9,7 @@ const findRequirements = vi.fn();
 const transaction = vi.fn();
 const updateRequirements = vi.fn();
 const createRequirement = vi.fn();
+const findTxRequirements = vi.fn();
 const deleteSpecs = vi.fn();
 const createSpec = vi.fn();
 const findSpecs = vi.fn();
@@ -26,6 +27,7 @@ vi.mock('../lib/authorization', () => ({
     requireProjectAccess: (...args: unknown[]) => requireProjectAccess(...(args as [])),
 }));
 
+const { worksheetRevision } = await import('../lib/worksheet-revision');
 const { POST: saveRequirements } = await import('../app/api/projects/[id]/requirements/route');
 const { POST: saveSpecs } = await import('../app/api/projects/[id]/spec/route');
 
@@ -34,7 +36,8 @@ const params = Promise.resolve({ id: 'proj_1' });
 function postRequest(path: string, body: unknown): NextRequest {
     return new NextRequest(`http://localhost/api/projects/proj_1/${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // 전체 교체 저장은 화면이 읽은 개정값을 If-Match 로 보내야 한다(감리 B3).
+        headers: { 'Content-Type': 'application/json', 'If-Match': worksheetRevision([]) },
         body: JSON.stringify(body),
     });
 }
@@ -47,16 +50,28 @@ beforeEach(() => {
     // 다른 프로젝트에 같은 id 가 있는지 보는 조회(B13). 기본은 없음.
     findRequirements.mockResolvedValue([]);
     updateRequirements.mockResolvedValue({ count: 1 });
-    createRequirement.mockResolvedValue({});
+    createRequirement.mockResolvedValue({ count: 1 });
+    findTxRequirements.mockImplementation(async ({ where }: { where: { id?: { in: string[] } } }) =>
+        where.id?.in ? where.id.in.filter((id) => id === 'req_1').map((id) => ({ id })) : []);
     deleteSpecs.mockResolvedValue({ count: 3 });
     createSpec.mockResolvedValue({ id: 'spec_1' });
     findSpecs.mockResolvedValue([]);
     transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
         customerRequirement: {
+            // 지우기 직전 캐스케이드 재확인(감리 B4)이 센다. 지워질 기존 행은 없다.
+            count: vi.fn().mockResolvedValue(0),
             deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+            // 트랜잭션 안에서는 (1) 순서 동기화용 이전 목록과 (2) 제출 id 중 이 프로젝트에
+            // 이미 있는 행을 읽는다. req_1 만 저장돼 있다고 본다.
+            findMany: findTxRequirements,
             updateMany: updateRequirements,
-            create: createRequirement,
+            createMany: createRequirement,
         },
+        // 요구사항 순서를 따르는 후속 워크시트는 비어 있다고 본다.
+        techTreeEntry: { findMany: vi.fn().mockResolvedValue([]) },
+        improvementItem: { findMany: vi.fn().mockResolvedValue([]) },
+        techRoadmap: { findMany: vi.fn().mockResolvedValue([]) },
+        targetSpec: { findMany: vi.fn().mockResolvedValue([]) },
         specFunction: { deleteMany: deleteSpecs, create: createSpec, findMany: findSpecs },
     }));
 });
@@ -79,6 +94,8 @@ describe('요구사항 저장의 Kano 질문·가중치 보존 (B1)', () => {
     });
 
     it('Kano 화면이 보낸 질문·가중치는 그대로 저장하고 명시적 null 은 지운다', async () => {
+        // 가중치는 분석을 편집할 수 있는 담당 멘토만 바꿀 수 있다(lib/kano-analysis-access).
+        requireProjectAccess.mockResolvedValue({ user: { userId: 'mentor_1', role: 'MENTOR' }, role: 'EDITOR' });
         const res = await saveRequirements(postRequest('requirements', {
             requirements: [{
                 id: 'req_1', category: '사용성', subcategory: null, requirement: '빠른 주문', order: 0,
@@ -103,19 +120,23 @@ describe('요구사항 저장의 Kano 질문·가중치 보존 (B1)', () => {
         }), { params });
 
         expect(createRequirement).toHaveBeenCalledWith({
-            data: { id: 'req_new', projectId: 'proj_1', category: '안정성', subcategory: null, requirement: '안전한 보관', order: 1 },
+            // 저장 순서는 1·2차 분류로 다시 매기므로 행 하나는 0번이 된다.
+            data: [{ id: 'req_new', projectId: 'proj_1', category: '안정성', subcategory: null, requirement: '안전한 보관', order: 0 }],
         });
     });
 });
 
 describe('스펙 전체 교체 저장 (B5)', () => {
     it('빈 목록은 그 프로젝트의 스펙을 실제로 모두 지운다', async () => {
-        const res = await saveSpecs(postRequest('spec', { specFunctions: [] }), { params });
+        // 저장은 불러올 때 받은 개정값을 If-Match 로 보내야 한다(동시 편집 덮어쓰기 방지).
+        const request = postRequest('spec', { specFunctions: [] });
+        request.headers.set('If-Match', worksheetRevision([]));
+        const res = await saveSpecs(request, { params });
 
         expect(res.status).toBe(200);
         expect(deleteSpecs).toHaveBeenCalledWith({ where: { projectId: 'proj_1' } });
         expect(createSpec).not.toHaveBeenCalled();
-        expect(await res.json()).toEqual({ specFunctions: [], message: '스펙이 저장되었습니다' });
+        expect(await res.json()).toEqual({ specFunctions: [], message: '스펙이 저장되었습니다', revision: worksheetRevision([]) });
     });
 
     it.each([

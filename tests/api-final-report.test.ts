@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import type { ReportDraft } from '../lib/final-report-payload';
+import { finalReportSourceRevision } from '../lib/final-report-source-revision';
 
 const m = vi.hoisted(() => ({
     access: vi.fn(), project: vi.fn(), findReport: vi.fn(), createReport: vi.fn(), updateReport: vi.fn(),
@@ -21,6 +22,8 @@ const MENTOR = 'mentor_1';
 const MENTEE = 'mentee_1';
 const DATE = new Date('2026-09-11T00:00:00.000Z');
 const params = { params: Promise.resolve({ id: PROJECT }) };
+const SOURCE_PROJECT = { owner: { mentorAssignment: { mentorId: MENTOR, mentor: { name: '배정 멘토' } } } };
+const SOURCE_REVISION = finalReportSourceRevision(SOURCE_PROJECT);
 type StoredReport = {
     projectId: string; draft: ReportDraft; published: ReportDraft['document']; version: number;
     publishedVersion: number | null; updatedById: string; publishedById: string | null;
@@ -37,7 +40,7 @@ function draft(text = '비공개 초안 본문'): ReportDraft {
         free: {
             productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null,
             marketDefinition: '공개 전 시장 메모', targetCustomer: '', finalSpecExplanation: '', improvedProductName: '', improvedProductDescription: '',
-        }, document: document(text), previewNeedsRefresh: false,
+        }, document: document(text), previewNeedsRefresh: false, sourceRevision: SOURCE_REVISION,
     };
 }
 
@@ -49,6 +52,16 @@ function existingReport(published = false): StoredReport {
         publishedAt: published ? DATE : null, updatedAt: DATE,
     };
 }
+
+it('워크시트가 미리보기 생성 뒤 바뀌면 초안 저장과 완료를 거부한다', async () => {
+    m.project.mockResolvedValue({ ...SOURCE_PROJECT, name: '변경된 프로젝트' });
+    expect((await PUT(req('PUT', { version: 0, draft: draft() }), params)).status).toBe(409);
+    expectNoWrite();
+
+    record = existingReport(true);
+    expect((await POST(req('POST', { version: 3 }), params)).status).toBe(409);
+    expect(record?.published).toEqual(document('기존 완료 본문'));
+});
 
 function auth(role = 'MENTOR', userId = MENTOR, projectRole = 'COACH') {
     m.access.mockResolvedValue({ user: { userId, role, isAdmin: role === 'ADMIN' }, role: projectRole });
@@ -79,7 +92,7 @@ beforeEach(() => {
     vi.resetAllMocks();
     record = null;
     auth();
-    m.project.mockResolvedValue({ owner: { mentorAssignment: { mentorId: MENTOR, mentor: { name: '배정 멘토' } } } });
+    m.project.mockResolvedValue(SOURCE_PROJECT);
     m.lock.mockImplementation(async (query: TemplateStringsArray) => query.join('').includes('mentor_assignments')
         ? [{ mentorId: MENTOR }] : [{ ownerId: MENTEE }]);
     m.findReport.mockImplementation(async () => structuredClone(record));
@@ -94,7 +107,8 @@ beforeEach(() => {
     m.transaction.mockImplementation(async (callback) => {
         const before = structuredClone(record);
         try {
-            return await callback({ $queryRaw: m.lock, finalReport: { findUnique: m.findReport, create: m.createReport, update: m.updateReport } });
+            return await callback({ $queryRaw: m.lock, project: { findUnique: m.project },
+                finalReport: { findUnique: m.findReport, create: m.createReport, update: m.updateReport } });
         } catch (error) {
             record = before;
             throw error;
@@ -161,6 +175,12 @@ describe('프로젝트 접근과 멘토 보고서 권한', () => {
 });
 
 describe('초안과 공개본 조회 분리', () => {
+    it('보고서 표지용 기업명은 저장된 개요 값을 우선하고 없으면 가입 정보를 사용한다', async () => {
+        m.project.mockResolvedValue({ companyName: '개요 기업', owner: { profile: { companyName: '가입 기업' }, mentorAssignment: { mentorId: MENTOR, mentor: { name: '배정 멘토' } } } });
+        expect((await read()).companyName).toBe('개요 기업');
+        m.project.mockResolvedValue({ companyName: null, owner: { profile: { companyName: '가입 기업' }, mentorAssignment: { mentorId: MENTOR, mentor: { name: '배정 멘토' } } } });
+        expect((await read()).companyName).toBe('가입 기업');
+    });
     it.each([
         ['MENTOR', MENTOR, true], ['PROGRAM_MANAGER', MENTOR, true],
     ])('%s는 초안을 읽으며 배정 여부에 따라 편집 권한을 받는다', async (role, id, canEdit) => {
