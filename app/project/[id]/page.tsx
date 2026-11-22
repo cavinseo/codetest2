@@ -326,6 +326,7 @@ export function ProjectDetailWorkspace({ initialTab }: { initialTab: string }) {
                                     if (res.ok) setKanoAnalysis(await res.json());
                                 }}
                                 analysis={analysis}
+                                questionable={kanoAnalysis.questionable}
                             />
                         </>
                     );

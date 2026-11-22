@@ -5,12 +5,13 @@ import { useParams } from 'next/navigation';
 import KanoSatisfactionGraph from '@/components/project/KanoSatisfactionGraph';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import { toKanoChartPoints } from '@/lib/final-report-inputs';
+import type { KanoQuestionableSummary } from '@/lib/kano-questionable-summary';
 
 type Analysis = ComponentProps<typeof KanoAggregationTable>['analysis'];
 
 export default function KanoAnalysisPage() {
     const projectId = String(useParams().id);
-    const [result, setResult] = useState<{ projectId: string; rows: Analysis; error?: string } | null>(null);
+    const [result, setResult] = useState<{ projectId: string; rows: Analysis; questionable?: KanoQuestionableSummary; error?: string } | null>(null);
     useEffect(() => {
         const controller = new AbortController();
         async function load() {
@@ -22,7 +23,7 @@ export default function KanoAnalysisPage() {
                 if (!analysisResponse.ok || !requirementsResponse.ok) throw new Error('Kano 분석 결과를 불러오지 못했습니다. 화면을 새로고침해 주세요.');
                 const [analysis, requirements] = await Promise.all([analysisResponse.json(), requirementsResponse.json()]);
                 const names = new Map<string, string>(requirements.requirements.map((row: { id: string; requirement: string }) => [row.id, row.requirement]));
-                if (!controller.signal.aborted) setResult({ projectId, rows: analysis.requirements.map((row: Analysis[number]) => ({ ...row, requirementName: names.get(row.requirementId) })) });
+                if (!controller.signal.aborted) setResult({ projectId, rows: analysis.requirements.map((row: Analysis[number]) => ({ ...row, requirementName: names.get(row.requirementId) })), questionable: analysis.questionable });
             } catch (error) {
                 if (!controller.signal.aborted) setResult({ projectId, rows: [], error: error instanceof Error ? error.message : 'Kano 분석 결과를 불러오지 못했습니다.' });
             }
@@ -37,7 +38,7 @@ export default function KanoAnalysisPage() {
         <h1 className="text-xl font-bold text-white">[WS-7] Kano 분석 집계표</h1>
         {loading ? <p role="status">분석 결과를 불러오는 중입니다.</p>
             : result.error ? <p role="alert" className="text-red-500">{result.error}</p>
-            : rows.length ? <><KanoSatisfactionGraph analysis={points} /><KanoAggregationTable analysis={rows} /></>
+            : rows.length ? <><KanoSatisfactionGraph analysis={points} /><KanoAggregationTable analysis={rows} questionable={result?.questionable} /></>
             : <p className="text-gray-500">Kano 응답이 없어 분석 결과가 없습니다.</p>}
     </main>;
 }

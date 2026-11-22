@@ -1,6 +1,7 @@
 'use client';
 
 import { KanoCategory } from '@/lib/kano-algorithm';
+import type { KanoQuestionableSummary } from '@/lib/kano-questionable-summary';
 import { useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useUnsavedWorksheet } from './useUnsavedWorksheet';
@@ -29,6 +30,38 @@ interface KanoAggregationTableProps {
     analysis: AnalysisResult[];
     projectId?: string;
     onWeightsSaved?: () => void | Promise<void>;
+    /** 모순 응답 요약. 있으면 표 밑에 '주의' 칸으로 알린다. */
+    questionable?: KanoQuestionableSummary | null;
+}
+
+// 모순 응답이 있을 때만 표 밑에 그린다. 번호는 표의 No 와 같은 순서라 어느 행인지 바로 찾는다.
+function QuestionableNotice({ analysis, questionable }: { analysis: AnalysisResult[]; questionable: KanoQuestionableSummary }) {
+    const numberById = new Map(analysis.map((item, idx) => [item.requirementId, idx + 1]));
+    const items = questionable.requirements
+        .filter(({ requirementId }) => numberById.has(requirementId))
+        .map(({ requirementId, count }) => ({ number: numberById.get(requirementId)!, count }))
+        .sort((a, b) => a.number - b.number);
+
+    return (
+        <section data-kano-questionable-notice className="rounded-xl border border-yellow-500/40 bg-yellow-500/[0.08] px-5 py-4 text-sm text-yellow-100">
+            <h4 className="mb-2 font-bold text-yellow-300">주의</h4>
+            <p>
+                모순 응답자가 <strong>{questionable.respondentCount}명</strong> 있습니다
+                (모순 응답 {questionable.responseCount}건).
+                같은 기능에 대해 긍정 질문과 부정 질문에 모두 &lsquo;좋다&rsquo; 또는 모두 &lsquo;싫다&rsquo;로 답한 경우로,
+                표의 <strong>회의적(Q)</strong> 칸에 집계됩니다.
+            </p>
+            {items.length > 0 && (
+                <p className="mt-1">
+                    해당 문항: {items.map(({ number, count }) => `${number}번(${count}건)`).join(', ')}
+                </p>
+            )}
+            <p className="mt-1 text-yellow-100/80">
+                질문을 잘못 이해했거나 성의 없이 응답했을 가능성이 있습니다.
+                해당 응답자에게 다시 확인하거나, 응답을 분석에서 제외할지 검토한 뒤 결과를 해석하세요.
+            </p>
+        </section>
+    );
 }
 
 export function translateKanoCategory(cat: KanoCategory): string {
@@ -68,7 +101,7 @@ function countCell(value: number) {
     return value || '';
 }
 
-export default function KanoAggregationTable({ analysis, projectId, onWeightsSaved }: KanoAggregationTableProps) {
+export default function KanoAggregationTable({ analysis, projectId, onWeightsSaved, questionable }: KanoAggregationTableProps) {
     const [weightDrafts, setWeightDrafts] = useState<Record<string, string>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -218,6 +251,9 @@ export default function KanoAggregationTable({ analysis, projectId, onWeightsSav
                     </table>
                 </div>
             </div>
+            {questionable && questionable.respondentCount > 0 && (
+                <QuestionableNotice analysis={analysis} questionable={questionable} />
+            )}
         </div>
     );
 }
