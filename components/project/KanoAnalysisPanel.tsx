@@ -6,6 +6,7 @@
 import Kano2DChart from '@/components/Kano2DChart';
 import KanoAggregationTable from '@/components/project/KanoAggregationTable';
 import KanoRespondentTable from '@/components/project/KanoRespondentTable';
+import type { KanoQuestionableSummary } from '@/lib/kano-questionable-summary';
 
 export interface KanoAnalysisResult {
     requirementId: string;
@@ -31,6 +32,7 @@ export interface KanoAnalysisData {
     totalResponses: number;
     uniqueRespondents: number;
     requirements: KanoAnalysisResult[];
+    questionable?: KanoQuestionableSummary;
 }
 
 export type KanoAnalysisViewMode = 'list' | 'charts' | 'respondents';
@@ -157,6 +159,7 @@ export default function KanoAnalysisPanel({
                             <KanoAggregationTable
                                 projectId={projectId}
                                 onWeightsSaved={loadData}
+                                questionable={analysis.questionable}
                                 analysis={analysis.requirements.map(req => ({
                                     ...req,
                                     requirementName: getRequirementInfo(req.requirementId)?.requirement
