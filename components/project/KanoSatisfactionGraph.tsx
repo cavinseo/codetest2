@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import TimkoWorksheetGrid from '@/components/TimkoWorksheetGrid';
 import TimkoCoefficientChart from '@/components/project/TimkoCoefficientChart';
 import { clusterLabel, clusterOverlappingPoints } from '@/lib/timko-point-clusters';
+import { estimateLabelWidth, fitLabelFontSize } from '@/lib/timko-point-label';
 
 interface AnalysisResult {
     requirementId: string;
@@ -22,7 +23,21 @@ interface KanoSatisfactionGraphProps {
 }
 
 const KOREAN_CHART_FONT = '"Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", "Segoe UI", sans-serif';
-const POINT_RADIUS = 6;
+// 점과 번호는 화면 캡처·보고서에서도 읽혀야 한다. 6px 점에 8px 번호는 너무 작아 두 배로 키웠다.
+const POINT_RADIUS = 12;
+// 번호는 원 안에 들어가야 어느 점의 번호인지 읽힌다. 테두리(2px)와 양옆 여백을 뺀
+// 폭 안에 들어가도록 자릿수가 늘면 글자를 줄인다.
+const POINT_LABEL_INNER_WIDTH = POINT_RADIUS * 2 - 4;
+const POINT_LABEL_MAX_FONT_SIZE = 14;
+const POINT_LABEL_MIN_FONT_SIZE = 8;
+// 겹친 점의 번호('2·9·16')는 원 하나에 넣으면 읽을 수 없을 만큼 작아진다. 높이는
+// 점 지름과 같고 글자 폭만큼 옆으로 늘어난 캡슐 안에 담는다.
+const CLUSTER_LABEL_FONT_SIZE = 12;
+const CLUSTER_LABEL_PADDING_X = 6;
+// 글자 높이의 약 1/3 만큼 내려야 번호가 원 한가운데에 놓인다.
+const LABEL_BASELINE_RATIO = 0.35;
+// 누르기 쉽도록 보이는 점보다 넓게 잡는 투명 영역.
+const POINT_HIT_RADIUS = POINT_RADIUS + 6;
 const quadrantLabels: Record<string, string> = {
     ATTRACTIVE: '매력적 품질',
     ONE_DIMENSIONAL: '일원적 품질',
@@ -87,6 +102,25 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
     // 번호를 한 라벨로 그린다. 점 자체는 옮기지 않는다 — 점이 놓인 칸이 곧 가중치라
     // 위치를 흐트러뜨리면 차트에서 가중치를 읽을 수 없게 된다.
     const labelClusters = useMemo(() => clusterOverlappingPoints(points, POINT_RADIUS), [points]);
+
+    // 부모가 선택을 관리하지 않아도 번호를 누르면 표 행이 강조되도록 자체 상태를 둔다.
+    const [ownSelectedId, setOwnSelectedId] = useState<string | null>(null);
+    const activeRequirementId = selectedRequirementId ?? ownSelectedId;
+    // 같은 화면에 그래프가 둘 이상 그려질 수 있어 DOM id 대신 행 참조로 찾는다.
+    const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
+
+    const selectRequirement = (requirementId: string) => {
+        setOwnSelectedId(requirementId);
+        onSelectRequirement?.(requirementId);
+        rowRefs.current.get(requirementId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+
+    const pointColor = (quadrant: string) => (
+        quadrant === 'ATTRACTIVE' ? quadrantColors.attractive
+            : quadrant === 'ONE_DIMENSIONAL' ? quadrantColors.oneDimensional
+                : quadrant === 'MUST_BE' ? quadrantColors.mustBe
+                    : quadrantColors.indifferent
+    );
 
     return (
         <div className="space-y-8">
@@ -158,20 +192,21 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                         {points.map((p) => (
                             <g
                                 key={p.requirementId}
+                                data-requirement-point={p.requirementId}
                                 className="cursor-pointer"
-                                onClick={() => onSelectRequirement?.(p.requirementId)}
+                                onClick={() => selectRequirement(p.requirementId)}
                             >
                                 <circle
                                     cx={p.x}
                                     cy={p.y}
-                                    r="12"
+                                    r={POINT_HIT_RADIUS}
                                     fill="transparent"
                                 />
                                 <circle
                                     cx={p.x}
                                     cy={p.y}
                                     r={POINT_RADIUS}
-                                    fill={p.quadrant === 'ATTRACTIVE' ? quadrantColors.attractive : p.quadrant === 'ONE_DIMENSIONAL' ? quadrantColors.oneDimensional : p.quadrant === 'MUST_BE' ? quadrantColors.mustBe : quadrantColors.indifferent}
+                                    fill={pointColor(p.quadrant)}
                                     stroke="#ffffff"
                                     strokeWidth="2"
                                     className="filter drop-shadow-sm"
@@ -181,25 +216,57 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                         ))}
 
                         {/* 점 번호 — 점을 전부 그린 뒤 맨 위 층에 그려 다른 점에 가려지지 않게 한다.
-                            겹친 점은 번호를 '4·7' 처럼 한데 적고 진한 테두리로 원 위에서 읽히게 한다. */}
-                        {labelClusters.map((cluster) => (
-                            <text
-                                key={cluster.members.join('-')}
-                                x={cluster.x}
-                                y={cluster.y + 3}
-                                textAnchor="middle"
-                                fill="#fff"
-                                fontSize="8"
-                                fontWeight="bold"
-                                stroke={cluster.members.length > 1 ? '#1e293b' : undefined}
-                                strokeWidth={cluster.members.length > 1 ? 3 : undefined}
-                                strokeLinejoin="round"
-                                paintOrder="stroke"
-                                className="pointer-events-none"
-                            >
-                                {clusterLabel(cluster.members)}
-                            </text>
-                        ))}
+                            단독 점은 자기 원 안에, 겹친 점은 '4·7' 처럼 한데 적어 캡슐 안에 넣는다.
+                            번호마다 눌러서 아래 표의 해당 행으로 갈 수 있다. */}
+                        {labelClusters.map((cluster) => {
+                            const label = clusterLabel(cluster.members);
+                            const isCluster = cluster.members.length > 1;
+                            const fontSize = isCluster
+                                ? CLUSTER_LABEL_FONT_SIZE
+                                : fitLabelFontSize(label, POINT_LABEL_INNER_WIDTH, POINT_LABEL_MAX_FONT_SIZE, POINT_LABEL_MIN_FONT_SIZE);
+                            const badgeWidth = Math.max(POINT_RADIUS * 2, estimateLabelWidth(label, fontSize) + CLUSTER_LABEL_PADDING_X * 2);
+                            return (
+                                <g key={cluster.members.join('-')} data-point-label={label}>
+                                    {isCluster && (
+                                        <rect
+                                            x={cluster.x - badgeWidth / 2}
+                                            y={cluster.y - POINT_RADIUS}
+                                            width={badgeWidth}
+                                            height={POINT_RADIUS * 2}
+                                            rx={POINT_RADIUS}
+                                            fill={pointColor(points[cluster.members[0]].quadrant)}
+                                            stroke="#ffffff"
+                                            strokeWidth="2"
+                                            className="pointer-events-none"
+                                        />
+                                    )}
+                                    <text
+                                        x={cluster.x}
+                                        y={cluster.y + fontSize * LABEL_BASELINE_RATIO}
+                                        textAnchor="middle"
+                                        fill="#fff"
+                                        fontSize={fontSize}
+                                        fontWeight="bold"
+                                    >
+                                        {cluster.members.map((memberIndex, position) => {
+                                            const requirementId = points[memberIndex].requirementId;
+                                            return (
+                                                <Fragment key={requirementId}>
+                                                    {position > 0 && <tspan className="pointer-events-none">·</tspan>}
+                                                    <tspan
+                                                        data-point-number={memberIndex + 1}
+                                                        className="cursor-pointer hover:underline"
+                                                        onClick={() => selectRequirement(requirementId)}
+                                                    >
+                                                        {memberIndex + 1}
+                                                    </tspan>
+                                                </Fragment>
+                                            );
+                                        })}
+                                    </text>
+                                </g>
+                            );
+                        })}
                     </svg>
                 </div>
             </div>
@@ -220,9 +287,17 @@ export default function KanoSatisfactionGraph({ analysis, selectedRequirementId,
                     </thead>
                     <tbody>
                         {analysis.map((item, idx) => {
-                            const isSelected = item.requirementId === selectedRequirementId;
+                            const isSelected = item.requirementId === activeRequirementId;
                             return (
-                                <tr key={item.requirementId} className={`border-t transition-colors ${isSelected ? 'border-amber-400/40 bg-amber-400/[0.12] ring-1 ring-inset ring-amber-400/30' : 'border-white/[0.04] hover:bg-white/[0.02]'}`}>
+                                <tr
+                                    key={item.requirementId}
+                                    ref={(row) => {
+                                        if (row) rowRefs.current.set(item.requirementId, row);
+                                        else rowRefs.current.delete(item.requirementId);
+                                    }}
+                                    data-requirement-row={item.requirementId}
+                                    data-selected={isSelected ? 'true' : undefined}
+                                    className={`border-t transition-colors ${isSelected ? 'border-amber-400/40 bg-amber-400/[0.12] ring-1 ring-inset ring-amber-400/30' : 'border-white/[0.04] hover:bg-white/[0.02]'}`}>
                                     <td className="px-4 py-3 text-gray-500">{idx + 1}</td>
                                     <td className="px-4 py-3 text-white font-medium">{item.requirementName || `요구사항 ${idx + 1}`}</td>
                                     <td className="px-4 py-3 text-center text-emerald-400 font-mono font-bold">{item.better.toFixed(3)}</td>

@@ -6,6 +6,7 @@ import { requireProjectAccess } from '@/lib/authorization';
 import { getKanoAnalysisAccess } from '@/lib/kano-analysis-access';
 import { createLogger } from '@/lib/logger';
 import { countProjectResponses, countUniqueProjectRespondents } from '@/lib/kano-analysis-stats';
+import { summarizeQuestionableResponses } from '@/lib/kano-questionable-summary';
 import {
     aggregateKanoResponses,
     calculateBetterWorse,
@@ -131,6 +132,8 @@ export async function GET(
             totalResponses: countProjectResponses(projectResponses),
             uniqueRespondents: countUniqueProjectRespondents(projectResponses),
             requirements: results,
+            // 집계표 밑 '주의' 칸에 쓴다. 이메일 없이 인원·문항만 담는다.
+            questionable: summarizeQuestionableResponses(projectResponses),
         });
     } catch (error: unknown) {
         log.error('Kano 분석 오류', error);
