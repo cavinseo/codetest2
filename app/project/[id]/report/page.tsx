@@ -18,6 +18,7 @@ import { optimizeReportImage } from '@/lib/final-report-image';
 import { captureWorksheetNode, waitForWorksheetReady } from '@/lib/worksheet-capture';
 import { reportOutputDate } from '@/lib/final-report-layout';
 import { refreshWorksheetTables } from '@/lib/final-report-table-refresh';
+import { CAPTURED_IMAGE_WORKSHEET, REPORT_WORKSHEET_OPTIONS, excludeAllReportWorksheets, includesReportWorksheet, toggleReportWorksheet, type ReportWorksheetId } from '@/lib/final-report-sections';
 
 const CAPTURE_TARGETS = Object.entries(CAPTURED_WORKSHEET_TITLES) as Array<[CapturedWorksheetImage['worksheetId'], string]>;
 const FREE_FIELDS: Array<{ key: keyof FinalReportFreeInput; label: string; placeholder: string }> = [
@@ -89,10 +90,12 @@ async function getWorksheetJson(url: string): Promise<unknown> {
     }
 }
 
-function reportCaptureTargets(imagesOnly: boolean, document: FinalReportModel | null, worksheets: FinalReportWorksheetData) {
+function reportCaptureTargets(imagesOnly: boolean, document: FinalReportModel | null, worksheets: FinalReportWorksheetData, excluded: readonly ReportWorksheetId[]) {
     const usesSampleTemplate = !imagesOnly || document?.blocks.some(block => block.kind === 'cover');
     const targets = CAPTURE_TARGETS.filter(([worksheetId, title]) => {
         if (!usesSampleTemplate) return true;
+        // 보고서에서 뺀 절의 그림은 넣을 자리가 없으므로 찍지 않는다.
+        if (!imagesOnly && !includesReportWorksheet(excluded, CAPTURED_IMAGE_WORKSHEET[worksheetId])) return false;
         if (imagesOnly) return document?.blocks.some(block => block.kind === 'image' && block.title === title)
             || (worksheetId === 'fitness' && Boolean(worksheets.fitnessMatrix) && document && hasWorksheetImageSlot(document, worksheetId));
         if (worksheetId === 'fitness') return Boolean(worksheets.fitnessMatrix);
@@ -137,6 +140,7 @@ export default function FinalReportPage() {
     const [loadedCount, setLoadedCount] = useState(0);
     const [failedKeys, setFailedKeys] = useState<string[]>([]);
     const [freeInput, setFreeInput] = useState<FinalReportFreeInput>(EMPTY_REPORT_FREE_INPUT);
+    const [excludedWorksheets, setExcludedWorksheets] = useState<ReportWorksheetId[]>([]);
     const [previewBaseline, setPreviewBaseline] = useState<FinalReportModel | null>(null);
     const [draft, setDraft] = useState<FinalReportModel | null>(null);
     const [previewNeedsRefresh, setPreviewNeedsRefresh] = useState(false);
@@ -199,6 +203,7 @@ export default function FinalReportPage() {
             setPublishedAt(data.publishedAt);
             setPublishedDocument(data.view === 'published' ? data.document ?? null : null);
             setFreeInput(data.draft?.free ?? EMPTY_REPORT_FREE_INPUT);
+            setExcludedWorksheets(data.draft?.excludedWorksheets ?? []);
             setDraft(data.draft?.document ?? null);
             setPreviewBaseline(data.draft?.document ?? null);
             setPreviewNeedsRefresh(Boolean(data.draft?.document && !data.draft.sourceRevision) || (data.draft?.previewNeedsRefresh ?? false));
@@ -309,6 +314,12 @@ export default function FinalReportPage() {
         if (draft) setPreviewNeedsRefresh(true);
         setHasLocalChanges(true);
     }
+    function updateExcludedWorksheets(next: ReportWorksheetId[]) {
+        if (busy.current) return;
+        setExcludedWorksheets(next);
+        if (draft) setPreviewNeedsRefresh(true);
+        setHasLocalChanges(true);
+    }
     async function handleImage(file: File | undefined) {
         if (!file || !begin('이미지 최적화 중...')) return;
         try {
@@ -334,7 +345,7 @@ export default function FinalReportPage() {
                 }
             }
             const images: CapturedWorksheetImage[] = [];
-            const { usesSampleTemplate, targets } = reportCaptureTargets(imagesOnly, draft, worksheets);
+            const { usesSampleTemplate, targets } = reportCaptureTargets(imagesOnly, draft, worksheets, excludedWorksheets);
             for (const [index, [id, title]] of targets.entries()) {
                 setProgress(`${index + 1}/${targets.length} 그림 만드는 중...`);
                 images.push(await captureReportImage(captureStage.current, id, title, Boolean(usesSampleTemplate && id === 'kano-aggregation')));
@@ -354,7 +365,7 @@ export default function FinalReportPage() {
                 ...project,
                 projectName: project?.name ?? '프로젝트', description: project?.description ?? null,
                 companyName: latest.companyName ?? null, coachName: latest.mentorName, generatedAt: reportOutputDate(),
-            }, worksheets, freeInput, images, worksheetAnalysis);
+            }, worksheets, freeInput, images, worksheetAnalysis, excludedWorksheets);
             setPreviewBaseline(next);
             setDraft(next);
             setPreviewNeedsRefresh(false);
@@ -388,7 +399,8 @@ export default function FinalReportPage() {
     async function saveDraft() {
         if (!report) throw new Error('보고서 정보를 불러온 후 저장해 주세요.');
         const savedDraft: ReportDraft = { free: freeInput, document: draft, previewNeedsRefresh,
-            ...(sourceRevision ? { sourceRevision } : {}), ...(worksheetAnalysis ? { worksheetAnalysis } : {}) };
+            ...(sourceRevision ? { sourceRevision } : {}), ...(worksheetAnalysis ? { worksheetAnalysis } : {}),
+            ...(excludedWorksheets.length ? { excludedWorksheets } : {}) };
         const body = JSON.stringify({ version: report.version, draft: savedDraft });
         if (new TextEncoder().encode(body).byteLength > REPORT_MAX_BYTES) {
             throw new Error('보고서 저장 용량(3.5MB)을 초과했습니다. 제품 사진의 크기나 보고서 내용을 줄인 뒤 미리보기를 다시 만들어 주세요.');
@@ -411,6 +423,7 @@ export default function FinalReportPage() {
             const latest = await requestReport(reportUrl);
             setReport(latest); setActiveView(latest.view);
             setFreeInput(latest.draft?.free ?? EMPTY_REPORT_FREE_INPUT);
+            setExcludedWorksheets(latest.draft?.excludedWorksheets ?? []);
             setDraft(latest.draft?.document ?? null); setPreviewBaseline(latest.draft?.document ?? null);
             setPublishedDocument(latest.view === 'published' ? latest.document ?? null : publishedDocument);
             setPublishedAt(latest.publishedAt);
@@ -528,6 +541,21 @@ export default function FinalReportPage() {
                     <img src={freeInput.productImageDataUrl} alt="제품 이미지 미리보기" className="max-h-40 rounded border border-white/10" />
                     <button type="button" className="btn-secondary text-sm" onClick={() => updateFree({ productImageDataUrl: null, productImageWidthPx: null, productImageHeightPx: null })}>이미지 제거</button>
                 </div>}
+                <div className="space-y-2" role="group" aria-labelledby="report-worksheet-selection">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h3 id="report-worksheet-selection" className="text-sm font-semibold text-gray-200">보고서에 넣을 워크시트 (선택)</h3>
+                        <span className="text-xs text-gray-400">{REPORT_WORKSHEET_OPTIONS.length - excludedWorksheets.length}/{REPORT_WORKSHEET_OPTIONS.length}개 포함 · 개요(Ⅰ장 제품 정의)는 항상 들어갑니다.</span>
+                        <button type="button" className="btn-ghost text-xs" disabled={excludedWorksheets.length === 0} onClick={() => updateExcludedWorksheets([])}>전체 선택</button>
+                        <button type="button" className="btn-ghost text-xs" disabled={excludedWorksheets.length === REPORT_WORKSHEET_OPTIONS.length} onClick={() => updateExcludedWorksheets(excludeAllReportWorksheets())}>전체 해제</button>
+                    </div>
+                    <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-4">
+                        {REPORT_WORKSHEET_OPTIONS.map(option => <label key={option.id} className="flex items-center gap-2 text-sm text-gray-300">
+                            <input type="checkbox" checked={includesReportWorksheet(excludedWorksheets, option.id)} onChange={() => updateExcludedWorksheets(toggleReportWorksheet(excludedWorksheets, option.id))} />
+                            {option.label}
+                        </label>)}
+                    </div>
+                    <p className="text-xs text-gray-400">선택을 바꾸면 미리보기를 다시 만들어야 반영됩니다. 빼는 워크시트가 한 장(章)의 전부이면 그 장 제목도 빠집니다.</p>
+                </div>
                 {legacyFields.map(field => <label key={field.key} className="block text-sm text-gray-300">{field.label}
                     <textarea value={String(freeInput[field.key] ?? '')} onChange={event => updateFree({ [field.key]: event.target.value })} placeholder={field.placeholder} rows={2} className="input-field mt-1 block w-full" />
                 </label>)}
