@@ -39,6 +39,7 @@
         "lib/project-grouping.ts",
         "lib/spec-tree.ts",
         "lib/add-days.ts",
+        "lib/worksheet-pdf-layout.ts",
         "lib/final-report-sections.ts"
     ],
     "ignorePatterns": [
