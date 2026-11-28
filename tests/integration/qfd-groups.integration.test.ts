@@ -13,7 +13,7 @@ vi.mock('../../lib/prisma', () => ({ get prisma() { return db; } }));
 import { encodeSessionCookie } from '../../lib/auth';
 import { SESSION_COOKIE_NAME } from '../../lib/constants';
 import { GET, POST, PATCH, DELETE } from '../../app/api/projects/[id]/qfd/technical/route';
-import { POST as saveTechTree } from '../../app/api/projects/[id]/tech-tree/route';
+import { GET as readTechTree, POST as saveTechTree } from '../../app/api/projects/[id]/tech-tree/route';
 
 const prefix = 'qfd_groups_' + randomUUID() + '_';
 const ownerId = prefix + 'admin';
@@ -101,7 +101,7 @@ it('최초 동시 조회는 한 번만 채우고 삭제 후 조회는 기능을 
     expect((await add(p.id, '새 기능')).groupIndex).toBe(0);
 });
 
-it('동시 WS-10 저장과 WS-9 조회에서도 핵심스펙별 그룹·관계·실측값을 유지한다', async () => {
+it('동시 WS-10 저장은 충돌을 거절하고 WS-9 재조회에서 그룹·관계·실측값을 유지한다', async () => {
     const p = await project('core-sync');
     const a = await add(p.id, '기능 A'), b = await add(p.id, '기능 B', a.groupIndex), c = await add(p.id, '기능 C', a.groupIndex);
     await db.technicalCharacteristic.update({ where: { id: b.id }, data: { unit: 'ms', targetValue: '100' } });
@@ -114,10 +114,14 @@ it('동시 WS-10 저장과 WS-9 조회에서도 핵심스펙별 그룹·관계·
         { coreSpec: 'CNC', subSpec: '기능 C', order: 2 }, { coreSpec: '이송', subSpec: '신규 기능', order: 3 },
         { coreSpec: 'CNC', subSpec: '기능  A', order: 4 },
     ];
-    const save = () => saveTechTree(request(p.id, 'POST', { entries }), params(p.id));
-    const [first, second] = await Promise.all([save(), save(), list(p.id)]);
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
+    const revision = (await (await readTechTree(request(p.id, 'GET'), params(p.id))).json()).revision;
+    const save = () => {
+        const req = request(p.id, 'POST', { entries });
+        req.headers.set('If-Match', revision);
+        return saveTechTree(req, params(p.id));
+    };
+    const [first, second] = await Promise.all([save(), save()]);
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
     const rows = await list(p.id);
     expect(rows.map(row => [row.name, row.groupIndex])).toEqual([['기능 A', 0], ['기능 C', 0], ['기능 B', 1], ['신규 기능', 1]]);
     expect(rows.find(row => row.name === '기능 C')?.id).toBe(c.id);

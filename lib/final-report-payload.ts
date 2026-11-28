@@ -1,6 +1,7 @@
 // 저장된 결과보고서의 문서 구조와 이미지 형식을 검증해 초안과 완료본을 보호한다.
 import { z } from 'zod';
 import { worksheetAnalysisSchema } from '@/lib/mentor-worksheet-analysis';
+import { excludedReportWorksheetsSchema } from '@/lib/final-report-sections';
 
 // Vercel 요청·응답 한도보다 여유를 두고 메타데이터를 함께 반환한다.
 export const REPORT_MAX_BYTES = 3_500_000;
@@ -85,7 +86,10 @@ export const reportDraftSchema = z.object({
     free: freeSchema,
     document: reportDocumentSchema.nullable(),
     previewNeedsRefresh: z.boolean().default(false),
+    sourceRevision: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     worksheetAnalysis: worksheetAnalysisSchema.optional(),
+    // 결과보고서에서 뺀 워크시트. 없으면 전부 넣는다(이전 초안과 호환).
+    excludedWorksheets: excludedReportWorksheetsSchema.optional(),
 }).strict();
 export const saveReportSchema = z.object({ version: z.number().int().nonnegative(), draft: reportDraftSchema }).strict();
 export const completeReportSchema = z.object({ version: z.number().int().nonnegative() }).strict();

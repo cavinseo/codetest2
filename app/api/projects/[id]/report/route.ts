@@ -2,11 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { FinalReport, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { requireProjectAccess, type ProjectAccess } from '@/lib/authorization';
+import { getFinalReportAccess } from '@/lib/final-report-access';
 import { EMPTY_REPORT_FREE_INPUT, REPORT_MAX_BYTES, completeReportSchema, reportDraftSchema, saveReportSchema, type ReportDraft } from '@/lib/final-report-payload';
 import { emptyWorksheetAnalysis, isAnalysisWorksheetId, saveWorksheetAnalysisSchema, type AnalysisWorksheetId } from '@/lib/mentor-worksheet-analysis';
 import { createLogger } from '@/lib/logger';
 import { errorCodeOf } from '@/lib/api-error';
+import { finalReportSourceRevision, REPORT_SOURCE_INCLUDE } from '@/lib/final-report-source-revision';
 
 const log = createLogger('api/final-report');
 type Props = { params: Promise<{ id: string }> };
@@ -15,23 +16,6 @@ const json = (data: unknown, status = 200) => NextResponse.json(data, { status, 
 
 class ReportError extends Error {
     constructor(message: string, readonly status: number) { super(message); }
-}
-
-function canBeAssignedMentor(access: ProjectAccess) {
-    return access.user.role === 'MENTOR' || access.user.role === 'PROGRAM_MANAGER';
-}
-
-async function getAccess(request: NextRequest, id: string) {
-    const access = await requireProjectAccess(request, id);
-    if (access instanceof NextResponse) return access;
-    const project = await prisma.project.findUnique({ where: { id }, select: {
-        owner: { select: { profile: { select: { companyName: true } }, mentorAssignment: { select: { mentorId: true, mentor: { select: { name: true } } } } } },
-    } });
-    if (!project) return json({ error: '프로젝트를 찾을 수 없습니다.' }, 404);
-    const assignment = project.owner.mentorAssignment;
-    const canEdit = canBeAssignedMentor(access) && assignment?.mentorId === access.user.userId;
-    return { access, canEdit, canReadDraft: canEdit || access.user.role === 'ADMIN', mentorName: assignment?.mentor.name ?? null,
-        companyName: project.owner.profile?.companyName ?? null };
 }
 
 function worksheetAnalysis(draft: ReportDraft | undefined, worksheetId: AnalysisWorksheetId) {
@@ -56,14 +40,24 @@ function metadata(report: FinalReport) {
 
 function failure(error: unknown) {
     if (error instanceof ReportError) return json({ error: error.message }, error.status);
+    if (errorCodeOf(error) === 'P2034') return json({ error: '원본 데이터가 변경되었습니다. 다시 불러와 미리보기를 만드세요.' }, 409);
     log.error('결과보고서 처리 실패', undefined, { code: errorCodeOf(error) ?? undefined });
     return json({ error: '결과보고서 처리에 실패했습니다. 다시 시도하세요.' }, 500);
+}
+
+async function assertCurrentReportSource(tx: Prisma.TransactionClient, projectId: string, revision: string | undefined) {
+    if (!revision) throw new ReportError('워크시트를 다시 불러와 미리보기를 만드세요.', 409);
+    const source = await tx.project.findUnique({ where: { id: projectId }, include: REPORT_SOURCE_INCLUDE });
+    if (!source) throw new ReportError('프로젝트를 찾을 수 없습니다.', 404);
+    if (finalReportSourceRevision(source) !== revision) {
+        throw new ReportError('워크시트가 변경되었습니다. 다시 불러와 미리보기를 만드세요.', 409);
+    }
 }
 
 export async function GET(request: NextRequest, props: Props) {
     try {
         const { id } = await props.params;
-        const actor = await getAccess(request, id);
+        const actor = await getFinalReportAccess(request, id);
         if (actor instanceof NextResponse) return actor;
         const worksheetId = request.nextUrl.searchParams.get('worksheetId');
         if (worksheetId !== null) {
@@ -100,7 +94,7 @@ async function body(request: NextRequest) {
 async function mutate(request: NextRequest, props: Props, action: 'save' | 'complete' | 'analysis') {
     try {
         const { id } = await props.params;
-        const actor = await getAccess(request, id);
+        const actor = await getFinalReportAccess(request, id);
         if (actor instanceof NextResponse) return actor;
         if (!actor.canEdit) return json({ error: '배정된 멘토만 결과보고서를 저장·완료할 수 있습니다.' }, 403);
         const payload = await body(request);
@@ -121,6 +115,7 @@ async function mutate(request: NextRequest, props: Props, action: 'save' | 'comp
                 if (!current || !draft.success || !draft.data.document?.blocks.length || draft.data.previewNeedsRefresh) {
                     throw new ReportError('최신 입력으로 미리보기를 만들고 저장한 뒤 완료하세요.', 400);
                 }
+                await assertCurrentReportSource(tx, id, draft.data.sourceRevision);
                 return tx.finalReport.update({ where: { projectId: id }, data: {
                     published: draft.data.document as Prisma.InputJsonValue, publishedAt: new Date(),
                     publishedById: actor.access.user.userId, updatedById: actor.access.user.userId,
@@ -144,6 +139,9 @@ async function mutate(request: NextRequest, props: Props, action: 'save' | 'comp
                     ...(existingAnalysis === undefined ? {} : { worksheetAnalysis: existingAnalysis }),
                     ...(existingAnalysis && saved.draft.worksheetAnalysis === undefined ? { previewNeedsRefresh: true } : {}),
                 };
+                if (nextDraft.document && !nextDraft.previewNeedsRefresh) {
+                    await assertCurrentReportSource(tx, id, nextDraft.sourceRevision);
+                }
             }
             if (Buffer.byteLength(JSON.stringify(nextDraft), 'utf8') > REPORT_MAX_BYTES) {
                 throw new ReportError('보고서 용량이 큽니다. 이미지 크기나 내용을 줄여 주세요.', 413);
@@ -152,7 +150,7 @@ async function mutate(request: NextRequest, props: Props, action: 'save' | 'comp
             return current
                 ? tx.finalReport.update({ where: { projectId: id }, data })
                 : tx.finalReport.create({ data: { ...data, projectId: id } });
-        }, { timeout: 15_000 });
+        }, { timeout: 15_000, isolationLevel: 'Serializable' });
         return json({ success: true, ...metadata(result) });
     } catch (error) { return failure(error); }
 }

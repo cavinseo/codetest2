@@ -3,7 +3,11 @@ import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { parseWritePolicy, type WritePolicy } from '@/lib/write-policy';
-import { guardUploadedExcel } from '@/lib/upload-guard';
+import { checkExcelArchiveSafety, checkWorkbookSheetRanges, guardUploadedExcel } from '@/lib/upload-guard';
+import { createLogger } from '@/lib/logger';
+import { SPEC_SAVE_TIMEOUT_MS } from '@/lib/spec-save-timeout';
+
+const log = createLogger('api/spec/upload-excel');
 
 type FlatSpecRow = {
     core: string;
@@ -247,8 +251,8 @@ function flattenRowsToSpecs(rows: FlatSpecRow[]) {
 // 새 데이터는 일부만 남았다. 롤백할 방법이 없었다.
 //
 // 부모 id 매핑이 필요해 create 를 순차로 도는 구조는 유지해야 하므로,
-// 행이 많은 파일에서도 트랜잭션이 중간에 끊기지 않도록 timeout 을 늘려 둔다.
-const SPEC_SAVE_TIMEOUT_MS = 20_000;
+// 행이 많은 파일에서도 트랜잭션이 중간에 끊기지 않도록 timeout 을 늘려 둔다
+// (값은 화면 저장과 함께 lib/spec-save-timeout 에서 정한다).
 
 async function saveSpecs(projectId: string, specs: ParsedSpec[], writePolicy: WritePolicy) {
     return prisma.$transaction(async (tx) => {
@@ -334,10 +338,19 @@ export async function POST(
         if (!upload.ok) return NextResponse.json({ error: upload.failure.error }, { status: upload.failure.status });
         const file = upload.file;
 
-        const workbook = XLSX.read(Buffer.from(await file.arrayBuffer()), {
+        const bytes = Buffer.from(await file.arrayBuffer());
+        const archiveFailure = checkExcelArchiveSafety(file.name, bytes);
+        if (archiveFailure) {
+            return NextResponse.json({ error: archiveFailure.error }, { status: archiveFailure.status });
+        }
+        const workbook = XLSX.read(bytes, {
             type: 'buffer',
             cellFormula: true,
         });
+        const rangeFailure = checkWorkbookSheetRanges(workbook);
+        if (rangeFailure) {
+            return NextResponse.json({ error: rangeFailure.error }, { status: rangeFailure.status });
+        }
         const candidateSheetNames = getCandidateSheetNames(workbook, requestedSheetName);
         if (requestedSheetName && !workbook.Sheets[requestedSheetName]) {
             return NextResponse.json({
@@ -384,7 +397,7 @@ export async function POST(
             availableSheets: workbook.SheetNames,
         });
     } catch (error) {
-        console.error('AS-IS spec Excel upload failed:', error);
+        log.error('AS-IS spec Excel upload failed', error);
         return NextResponse.json({ error: 'AS-IS 스펙표 업로드에 실패했습니다.' }, { status: 500 });
     }
 }

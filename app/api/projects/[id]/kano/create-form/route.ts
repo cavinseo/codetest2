@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isGoogleConfigured, getGoogleToken } from '@/lib/service-settings';
+import { isGoogleConfigured } from '@/lib/service-settings';
+// 만료된 액세스 토큰은 저장된 refresh token 으로 갱신해 쓴다(감리 B7).
+import { getUsableGoogleToken } from '@/lib/google-auth';
 import { createKanoForm } from '@/lib/google-forms';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
 import { toErrorResponse } from '@/lib/api-error';
 import { GOOGLE_FORMS_DISABLED_MESSAGE, GOOGLE_FORMS_INTEGRATION_ENABLED } from '@/lib/feature-flags';
+import { issueGoogleFormBinding } from '@/lib/google-form-binding';
 
 const log = createLogger('api/kano/create-form');
 
@@ -16,7 +19,7 @@ export async function POST(
 ) {
     const params = await props.params;
     const projectId = params.id;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: true });
     if (accessResult instanceof NextResponse) return accessResult;
 
     if (!GOOGLE_FORMS_INTEGRATION_ENABLED) {
@@ -31,7 +34,7 @@ export async function POST(
             );
         }
 
-        const token = await getGoogleToken();
+        const token = await getUsableGoogleToken();
         if (!token) {
             return NextResponse.json(
                 { error: 'Google 인증이 필요합니다. 먼저 Google 계정을 연결하세요.', needsAuth: true },
@@ -66,6 +69,11 @@ export async function POST(
             formId: result.formId,
             formUrl: result.formUrl,
             editUrl: result.editUrl,
+            formBinding: issueGoogleFormBinding({
+                projectId,
+                formId: result.formId,
+                questionPairs: result.questionPairs,
+            }),
             questionCount: requirements.length,
         });
     } catch (error: unknown) {

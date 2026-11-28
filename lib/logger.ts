@@ -24,6 +24,17 @@ function formatMessage(level: LogLevel, module: string, message: string, meta?: 
 }
 
 /**
+ * 오류 메시지 속 이메일 주소를 가린다.
+ *
+ * meta 는 호출부가 고르지만 오류 메시지는 라이브러리가 만든다. Prisma 는 실패한
+ * 쿼리의 인자를 메시지에 그대로 싣기 때문에, 이메일로 조회·생성하다 난 오류가
+ * 운영 로그에 주소를 남긴다. 호출부마다 조심하게 두지 않고 여기서 한 번에 가린다.
+ */
+export function redactEmails(text: string): string {
+    return text.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g, '[email]');
+}
+
+/**
  * 모듈별 로거 인스턴스를 생성합니다.
  *
  * @param module - 로그를 남기는 모듈/파일명 (예: 'auth/login')
@@ -51,7 +62,7 @@ export function createLogger(module: string) {
          * 원본 Error 객체는 두 번째 인자로 전달하세요.
          */
         error(message: string, error?: unknown, meta?: LogMeta): void {
-            const errorMessage = error instanceof Error ? error.message : String(error ?? '');
+            const errorMessage = redactEmails(error instanceof Error ? error.message : String(error ?? ''));
             const combinedMeta = errorMessage ? { ...meta, errorMessage } : meta;
             console.error(formatMessage('error', module, message, combinedMeta));
         },

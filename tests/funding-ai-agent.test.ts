@@ -52,6 +52,20 @@ describe('funding AI agent', () => {
         expect(totalYear3).toBe(90);
         expect(result.summary.filledSourceCells).toBe(9);
     });
+
+    // 감리 B17: 앞 항목을 각각 반올림해 필요액 2 를 빈 항목 4개에 1·1·1·0(합 3)으로 나눴다.
+    it('작은 필요액을 여러 빈 항목에 나눠도 합이 필요액을 넘지 않는다', () => {
+        const result = generateFundingAiDraft({
+            plans: [{ id: 'production', category: '소요자금', item: '생산비용', year1: 2, year2: 2, year3: 2, order: 0 }],
+            sources: ['기타', '기타', '기타', '기타'].map((category, order) => ({
+                id: `etc-${order}`, category, year1: '', year2: '', year3: '', order,
+            })),
+        });
+
+        const amounts = result.sources.map((source) => parseSourceYear(source.year1).amountNumber);
+        expect(amounts).toEqual([1, 1, 0, 0]);
+        expect(result.summary.sourcedByYear.year1).toBe(2);
+    });
 });
 
 it('parses commas and decimals in legacy and JSON amounts equally', () => {

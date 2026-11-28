@@ -28,15 +28,15 @@ const { POST } = await import('../app/api/survey/[token]/submit/route');
 
 const params = { params: Promise.resolve({ token: 'survey-token' }) };
 
-function submitRequest() {
+function submitRequest(answers: Record<string, unknown> = {
+    req_1: { functional: 'LIKE', dysfunctional: 'DISLIKE' },
+    req_2: { functional: 'EXPECT', dysfunctional: 'TOLERATE' },
+}) {
     return new NextRequest('http://localhost/api/survey/survey-token/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            answers: {
-                req_1: { functional: 'LIKE', dysfunctional: 'DISLIKE' },
-                req_2: { functional: 'EXPECT', dysfunctional: 'TOLERATE' },
-            },
+            answers,
         }),
     });
 }
@@ -98,6 +98,23 @@ describe('설문 제출 이중 처리 방지', () => {
         const response = await POST(submitRequest(), params);
 
         expect(response.status).toBe(400);
+        expect(invitationUpdateMany).not.toHaveBeenCalled();
+        expect(responseCreateMany).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        {},
+        { req_1: { functional: 'LIKE' as const, dysfunctional: 'DISLIKE' as const } },
+    ])('빈 답변 또는 일부 답변은 초대를 사용 완료 처리하지 않는다', async answers => {
+        invitationFindUnique.mockResolvedValue({
+            id: 'inv_1', projectId: 'proj_1', email: 'respondent@example.com',
+            expiresAt: new Date('2099-12-31'), respondedAt: null,
+        });
+
+        const response = await POST(submitRequest(answers), params);
+
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: '모든 설문 문항에 답변해 주세요.' });
         expect(invitationUpdateMany).not.toHaveBeenCalled();
         expect(responseCreateMany).not.toHaveBeenCalled();
     });

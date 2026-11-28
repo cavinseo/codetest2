@@ -6,6 +6,7 @@ import Link from 'next/link';
 import ThemeToggle from '@/components/ThemeToggle';
 import UploadWritePolicyPrompt, { type UploadWritePolicy } from '@/components/project/UploadWritePolicyPrompt';
 import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
+import { shouldAskCascadeAgain } from '@/lib/cascade-confirm-client';
 
 type UploadMode = 'workbook' | 'worksheet';
 type UploadStatus = 'idle' | 'parsing' | 'success' | 'error';
@@ -127,7 +128,9 @@ export default function ImportPage() {
         }
     };
 
-    const submitImport = async (action: 'preview' | 'apply', options: { confirmCascade?: boolean; writePolicy?: UploadWritePolicy } = {}) => {
+    // confirmedCascadeImpact: 확인창에 보여 준 서버의 건수. 서버는 그 사이 건수가
+    // 바뀌었으면 새 건수로 다시 묻는다(감리 B4).
+    const submitImport = async (action: 'preview' | 'apply', options: { confirmedCascadeImpact?: unknown; writePolicy?: UploadWritePolicy } = {}) => {
         if (!file) return;
         if (action === 'preview') {
             setIsUploading(true);
@@ -146,8 +149,8 @@ export default function ImportPage() {
             if (uploadMode === 'worksheet' && sheetNames.trim()) {
                 formData.append('sheetNames', sheetNames);
             }
-            if (options.confirmCascade) {
-                formData.append('confirmCascade', 'true');
+            if (options.confirmedCascadeImpact) {
+                formData.append('confirmedCascadeImpact', JSON.stringify(options.confirmedCascadeImpact));
             }
 
             const response = await fetch(`/api/projects/${projectId}/import`, {
@@ -158,9 +161,13 @@ export default function ImportPage() {
 
             // 고객요구사항을 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다.
             // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
-            if (response.status === 409 && data.needsCascadeConfirm && !options.confirmCascade) {
+            if (response.status === 409 && data.needsCascadeConfirm) {
+                if (!shouldAskCascadeAgain(data, options.confirmedCascadeImpact)) {
+                    setErrorMessage(data.error || '반영하지 못했습니다. 새로고침 후 다시 시도하세요.');
+                    return;
+                }
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await submitImport('apply', { ...options, confirmCascade: true });
+                    await submitImport('apply', { ...options, confirmedCascadeImpact: data.cascadeImpact });
                     return;
                 }
                 setErrorMessage('반영을 취소했습니다. 기존 데이터는 그대로 유지됩니다.');

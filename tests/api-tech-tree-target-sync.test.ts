@@ -1,6 +1,7 @@
 // WS-10 저장이 WS-12의 신규 세부스펙을 원자적으로 추가하고 기존 목표값을 보존하는지 검증한다.
 import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { worksheetRevision } from '../lib/worksheet-revision';
 
 const db = vi.hoisted(() => {
     const state: Record<string, Array<Record<string, unknown>>> = {};
@@ -16,10 +17,10 @@ const db = vi.hoisted(() => {
             return row;
         }),
     });
-    return { state, $queryRaw: vi.fn(), project: { update: vi.fn() }, techTreeEntry: model('techTreeEntry'), targetSpec: model('targetSpec'), specFunction: model('specFunction'), improvementItem: model('improvementItem'), technicalCharacteristic: model('technicalCharacteristic') };
+    return { customerRequirement: model('customerRequirement'), state, $queryRaw: vi.fn(), project: { update: vi.fn() }, techTreeEntry: model('techTreeEntry'), targetSpec: model('targetSpec'), specFunction: model('specFunction'), improvementItem: model('improvementItem'), technicalCharacteristic: model('technicalCharacteristic') };
 });
 vi.mock('../lib/prisma', () => ({ prisma: {
-    techTreeEntry: db.techTreeEntry, targetSpec: db.targetSpec, specFunction: db.specFunction,
+    customerRequirement: db.customerRequirement, techTreeEntry: db.techTreeEntry, targetSpec: db.targetSpec, specFunction: db.specFunction,
     improvementItem: db.improvementItem, technicalCharacteristic: db.technicalCharacteristic,
     $transaction: async (callback: (client: typeof db) => unknown) => callback(db),
 } }));
@@ -28,7 +29,7 @@ const techTree = await import('../app/api/projects/[id]/tech-tree/route');
 const target = await import('../app/api/projects/[id]/target-spec/route');
 const params = { params: Promise.resolve({ id: 'project' }) };
 const post = (entries: unknown) => new NextRequest('http://localhost/api/projects/project/tech-tree', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries }),
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'If-Match': worksheetRevision(db.state.techTreeEntry || []) }, body: JSON.stringify({ entries }),
 });
 const get = () => new NextRequest('http://localhost/api/projects/project/target-spec');
 
@@ -46,9 +47,9 @@ it('WS-10 신규 세부스펙을 저장하면 WS-12에 색상 구분용 신규 �
     expect((await techTree.POST(post(entries), params)).status).toBe(200);
     const first = await (await target.GET(get(), params)).json();
     expect(first.rows.map((row: { subCategory: string; note: string }) => [row.subCategory, row.note])).toEqual([
-        ['기존 기능', '유지'], ['신규 기능', '신규'],
+        ['신규 기능', '신규'], ['기존 기능', '유지'],
     ]);
-    expect(first.rows[1]).toMatchObject({ category: '구동', specItem: '새 기술' });
+    expect(first.rows[0]).toMatchObject({ category: '구동', specItem: '새 기술' });
     expect(first.newSpecs).toEqual([{ category: '구동', subCategory: '신규 기능' }]);
     expect((await techTree.POST(post(entries), params)).status).toBe(200);
     expect(db.state.targetSpec).toHaveLength(2);
@@ -98,4 +99,16 @@ it('핵심스펙 변경과 빈 WS-10 저장에도 WS-9 입력값을 삭제하지
     expect((await techTree.POST(post([]), params)).status).toBe(200);
     expect(db.state.technicalCharacteristic).toHaveLength(1);
     expect(db.technicalCharacteristic.deleteMany).not.toHaveBeenCalled();
+});
+
+it('WS-10을 읽은 뒤 다른 저장이 끝나면 이전 개정값의 전체 교체를 거절한다', async () => {
+    const before = await (await techTree.GET(new NextRequest('http://localhost/api/projects/project/tech-tree'), params)).json();
+    const first = await techTree.POST(post([{ customerVoice: 'A 입력', order: 0 }]), params);
+    expect(first.status).toBe(200);
+    const firstBody = await first.json(); expect(firstBody.revision).not.toBe(before.revision);
+    const stale = post([{ customerVoice: 'B 입력', order: 0 }]); stale.headers.set('If-Match', before.revision);
+    const deletes = db.techTreeEntry.deleteMany.mock.calls.length;
+    expect((await techTree.POST(stale, params)).status).toBe(409);
+    expect(db.state.techTreeEntry[0].customerVoice).toBe('A 입력');
+    expect(db.techTreeEntry.deleteMany).toHaveBeenCalledTimes(deletes);
 });

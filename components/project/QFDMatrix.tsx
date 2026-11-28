@@ -1,4 +1,5 @@
 'use client';
+import { getRequirementGroupSpans } from '@/lib/requirements-table-utils';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
@@ -71,30 +72,9 @@ function formatNumber(value: number | undefined | null, digits = 1) {
     return Number(value).toFixed(digits);
 }
 
-function getRequirementGroupRowSpan(
-    requirements: Requirement[],
-    startIndex: number,
-    field: 'category' | 'subcategory',
-) {
-    const startRequirement = requirements[startIndex];
-    if (!startRequirement) return 1;
-
-    const category = startRequirement.category || '';
-    const subcategory = startRequirement.subcategory || '';
-    let span = 1;
-
-    for (let index = startIndex + 1; index < requirements.length; index += 1) {
-        const requirement = requirements[index];
-        if ((requirement.category || '') !== category) break;
-        if (field === 'subcategory' && (requirement.subcategory || '') !== subcategory) break;
-        span += 1;
-    }
-
-    return span;
-}
-
 export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }: QFDMatrixProps) {
     const [requirements, setRequirements] = useState<Requirement[]>([]);
+    const requirementGroupSpans = getRequirementGroupSpans(requirements.map((row, order) => ({ ...row, subcategory: row.subcategory ?? null, order })), null);
     const [technicalChars, setTechnicalChars] = useState<TechnicalChar[]>([]);
     const [techTreeEntries, setTechTreeEntries] = useState<TechTreeEntry[]>([]);
     const {
@@ -526,6 +506,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                 value={newCompetitorName}
                                 onChange={(event) => setNewCompetitorName(event.target.value)}
                                 onKeyDown={(event) => {
+                                    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
                                     if (event.key === 'Enter') handleAddCompetitor();
                                 }}
                                 className="h-8 w-28 rounded-md border border-white/[0.08] bg-white px-2 text-sm font-semibold text-slate-950 outline-none placeholder:text-slate-500 focus:border-cyan-300"
@@ -786,9 +767,9 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                             {requirements.map((requirement, requirementIndex) => {
                                 const analysis = getReqAnalysis(requirement.id);
                                 const selfScore = getBenchmark(requirement.id, SELF_COMPANY);
-                                const previousRequirement = requirements[requirementIndex - 1];
-                                const isFirstCategoryRow = !previousRequirement || previousRequirement.category !== requirement.category;
-                                const isFirstSubcategoryRow = isFirstCategoryRow || (previousRequirement?.subcategory || '') !== (requirement.subcategory || '');
+                                const groupSpan = requirementGroupSpans[requirementIndex];
+                                const isFirstCategoryRow = groupSpan.primary > 0;
+                                const isFirstSubcategoryRow = groupSpan.secondary > 0;
                                 const rowDividerClass = requirementIndex > 0
                                     ? isFirstCategoryRow
                                         ? 'border-t-2 border-t-red-300/70'
@@ -801,7 +782,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                     <tr key={requirement.id} className="h-[32px] transition-colors hover:bg-white/[0.03]">
                                         {isFirstSubcategoryRow && (
                                             <td
-                                                rowSpan={getRequirementGroupRowSpan(requirements, requirementIndex, 'subcategory')}
+                                                rowSpan={groupSpan.secondary}
                                                 className="border border-white/[0.08] bg-blue-500/[0.08] px-2 py-1 text-center align-middle text-blue-200"
                                             >
                                                 {requirement.subcategory || ''}
@@ -809,7 +790,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                         )}
                                         {isFirstCategoryRow && (
                                             <td
-                                                rowSpan={getRequirementGroupRowSpan(requirements, requirementIndex, 'category')}
+                                                rowSpan={groupSpan.primary}
                                                 className="border border-white/[0.08] bg-red-500/[0.08] px-2 py-1 text-center align-middle text-red-200"
                                             >
                                                 {requirement.category || ''}
@@ -939,6 +920,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                             }
                                                         }}
                                                         onKeyDown={(event) => {
+                                                            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
                                                             if (event.key === 'Enter') event.currentTarget.blur();
                                                         }}
                                                         className="h-[30px] w-full cursor-text border-none bg-transparent px-1 text-center text-[11px] text-gray-100 outline-none placeholder:text-gray-600 focus:bg-white/[0.06] focus:ring-1 focus:ring-inset focus:ring-cyan-400"
@@ -965,6 +947,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                                             }
                                                         }}
                                                         onKeyDown={(event) => {
+                                                            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
                                                             if (event.key === 'Enter') event.currentTarget.blur();
                                                         }}
                                                         className="h-[30px] w-full cursor-text border-none bg-transparent px-1 text-center text-[11px] text-gray-100 outline-none placeholder:text-gray-600 focus:bg-white/[0.06] focus:ring-1 focus:ring-inset focus:ring-cyan-400"
@@ -1080,6 +1063,7 @@ export default function QFDMatrix({ projectId, onDirtyChange, readOnly = false }
                                     value={newTech.targetValue}
                                     onChange={(event) => setNewTech({ ...newTech, targetValue: event.target.value })}
                                     onKeyDown={(event) => {
+                                        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
                                         if (event.key === 'Enter') handleAddTechnical();
                                     }}
                                     className="input w-full"

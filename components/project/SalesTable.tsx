@@ -1,7 +1,7 @@
 'use client';
 
 import MoneyInput from '@/components/ui/MoneyInput';
-import { formatMoney } from '@/lib/money';
+import { formatStoredMoney, toThousandWon, fromThousandWon } from '@/lib/money';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
@@ -55,12 +55,13 @@ function createRow(period: SalesPeriod, order = 0): SalesRow {
 }
 
 function formatAmount(value: number) {
-    return formatMoney(value || 0);
+    return formatStoredMoney(value || 0);
 }
 
 
 export default function SalesTable({ projectId, onSaved }: Props) {
     const [rows, setRows] = useState<SalesRow[]>([createRow('Y'), createRow('Y_PLUS_1')]);
+    const [revision, setRevision] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const { toast, showToast } = useToast();
     const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -90,6 +91,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
             .then(r => { if (!r.ok) throw new Error('매출 조회 실패'); return r.json(); });
         if (!isActive()) return;
         if (!Array.isArray(data?.rows)) throw new Error('매출 응답 형식 오류');
+        setRevision(data.revision ?? null);
         if (data?.rows && data.rows.length > 0) {
             const loadedRows: SalesRow[] = [];
             for (const r of data.rows) {
@@ -171,12 +173,13 @@ export default function SalesTable({ projectId, onSaved }: Props) {
 
             const res = await fetch(`/api/projects/${projectId}/sales`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({ rows: payload }),
             });
 
             if (res.ok) {
                 const data = await res.json();
+                setRevision(data.revision ?? null);
                 setRows(data.rows.map((r: any) => ({
                     id: r.id,
                     period: r.period === 'Y_PLUS_1' ? 'Y_PLUS_1' : 'Y',
@@ -195,7 +198,8 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                     onSaved?.();
                 }, 1000);
             } else {
-                showToast('저장에 실패했습니다.', 'error');
+                const data = await res.json().catch(() => null);
+                showToast(data?.error || '저장에 실패했습니다.', 'error');
             }
         } catch {
             showToast('저장에 실패했습니다.', 'error');
@@ -210,14 +214,19 @@ export default function SalesTable({ projectId, onSaved }: Props) {
         try {
             const res = await fetch(`/api/projects/${projectId}/sales`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({ rows: [] }),
             });
             if (res.ok) {
+                const data = await res.json();
+                setRevision(data.revision ?? null);
                 setRows([createRow('Y'), createRow('Y_PLUS_1')]);
                 markSaved();
                 setShowResetConfirm(false);
                 showToast('초기화되었습니다.');
+            } else {
+                const data = await res.json().catch(() => null);
+                showToast(data?.error || '초기화에 실패했습니다.', 'error');
             }
         } catch {
             showToast('초기화에 실패했습니다.', 'error');
@@ -242,7 +251,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-xl font-display font-bold text-white">[WS-1] 자사매출추정표</h2>
-                    <p className="mt-1 text-sm text-gray-500">현재(Y)와 미래(Y+1차) 매출표를 각각 독립적으로 작성합니다. (단위: 백만원)</p>
+                    <p className="mt-1 text-sm text-gray-500">현재(Y)와 미래(Y+1차) 매출표를 각각 독립적으로 작성합니다. (단위: 천원)</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={handleSave} disabled={isSaving} className="btn-primary flex items-center gap-1.5 text-sm">
@@ -305,7 +314,7 @@ export default function SalesTable({ projectId, onSaved }: Props) {
                                             <input type="text" value={row.customer} onChange={(e) => updateRow(row.id, 'customer', e.target.value)} list="sales-customers" className="w-full border-none bg-transparent p-2.5 text-sm text-white outline-none placeholder-gray-700 focus:ring-1 focus:ring-primary-500/50" placeholder="매출처명" />
                                         </td>
                                         <td className="border border-white/[0.06] p-0">
-                                            <MoneyInput value={row.amount} onValueChange={(value) => updateRow(row.id, 'amount', value ?? 0)} className={`w-full border-none bg-transparent p-2.5 text-right font-mono text-sm ${period.accent} outline-none placeholder-gray-700 focus:ring-1 ${period.focus}`} placeholder="0" />
+                                            <MoneyInput value={toThousandWon(row.amount)} onValueChange={(value) => updateRow(row.id, 'amount', fromThousandWon(value ?? 0))} className={`w-full border-none bg-transparent p-2.5 text-right font-mono text-sm ${period.accent} outline-none placeholder-gray-700 focus:ring-1 ${period.focus}`} placeholder="0" />
                                         </td>
                                         <td className="border border-white/[0.06] p-0">
                                             <input type="text" value={row.competitor} onChange={(e) => updateRow(row.id, 'competitor', e.target.value)} list="sales-competitors" className="w-full border-none bg-transparent p-2.5 text-sm text-white outline-none placeholder-gray-700 focus:ring-1 focus:ring-primary-500/50" placeholder="경쟁사명" />

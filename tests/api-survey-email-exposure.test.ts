@@ -4,6 +4,7 @@
 // 되면 안 된다. 초대 생성 로그도 lib/logger.ts 규칙대로 식별자만 남긴다.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
+import { buildKanoSurveyIntroduction, EMPTY_KANO_INTRODUCTION } from '../lib/kano-survey-introduction';
 
 const invitationFindUnique = vi.fn();
 const invitationCreate = vi.fn();
@@ -14,6 +15,8 @@ vi.mock('../lib/prisma', () => ({
     prisma: {
         kanoSurveyInvitation: {
             findUnique: (...args: unknown[]) => invitationFindUnique(...(args as [])),
+            // 단건 초대의 중복 확인은 대소문자 없이 찾으려고 findFirst 를 쓴다.
+            findFirst: (...args: unknown[]) => invitationFindUnique(...(args as [])),
             create: (...args: unknown[]) => invitationCreate(...(args as [])),
         },
         project: { findUnique: (...args: unknown[]) => projectFindUnique(...(args as [])) },
@@ -114,6 +117,35 @@ describe('무인증 설문 조회 응답', () => {
                 order: 0,
             },
         ]);
+    });
+
+    it('저장된 소개문은 공개 설문 문자열로 주고 응답자 이메일은 내보내지 않는다', async () => {
+        const introduction = {
+            technology: '검증 기술', productType: '검증 장비', companyName: '검증 기업',
+            representativeName: '검증 대표', offering: '검증 서비스',
+        };
+        projectFindUnique.mockResolvedValue({ name: '테스트 프로젝트', kanoSurveyIntroduction: introduction });
+
+        const response = await getSurvey(surveyRequest(), params);
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(body.introduction).toBe(buildKanoSurveyIntroduction(introduction));
+        expect(projectFindUnique).toHaveBeenCalledWith({
+            where: { id: PROJECT }, select: { name: true, kanoSurveyIntroduction: true },
+        });
+        expect(body).not.toHaveProperty('respondentEmail');
+        expect(JSON.stringify(body)).not.toContain(RESPONDENT_EMAIL);
+    });
+
+    it('소개문을 저장하지 않았다면 공통 빈칸 문구를 반환한다', async () => {
+        projectFindUnique.mockResolvedValue({ name: '테스트 프로젝트', kanoSurveyIntroduction: null });
+
+        const response = await getSurvey(surveyRequest(), params);
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(body.introduction).toBe(buildKanoSurveyIntroduction(EMPTY_KANO_INTRODUCTION));
     });
 });
 

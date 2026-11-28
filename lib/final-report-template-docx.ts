@@ -72,7 +72,8 @@ function gap(height: number): Paragraph {
 function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: FinalReportModel['blocks'][number], indent = REPORT_TABLE_LEFT) {
     const mergeSpans = getTableMergeSpans(item, block);
     const row = (cells: string[][], height: number, header: boolean, rowIndex = -1) => new TableRow({
-        tableHeader: header, cantSplit: true, height: { value: pointsToTwips(height), rule: HeightRule.ATLEAST },
+        // 본문 행은 Word 가 쪽 경계에서 나눌 수 있게 둔다. 긴 셀이 통째로 다음 쪽으로 밀려 큰 빈칸이 생기지 않게 하려는 것이다.
+        tableHeader: header, ...(header ? { cantSplit: true } : {}), height: { value: pointsToTwips(height), rule: HeightRule.ATLEAST },
         children: cells.flatMap((lines, index) => {
             const columnSpan = !header && block.kind === 'dataTable' ? reportColumnSpans(block, item.rows[rowIndex].index)[index] : 1;
             if (!columnSpan) return [];
@@ -101,6 +102,47 @@ function renderTable(item: Extract<ReportLayoutItem, { kind: 'table' }>, block: 
             })),
         })) : item.headers.length ? [row(item.headers, item.headerHeight, true)] : []), ...item.rows.map((r, index) => row(r.lines, r.height, false, index))],
     });
+}
+
+// 화면 미리보기용 배치는 긴 표를 쪽마다 잘라 둔다. Word 에서는 잘린 조각이 별개 표가 되어
+// 머리행 반복·행 나눔이 어긋나므로, 같은 블록의 조각을 첫 등장 위치의 한 표로 다시 합친다.
+function combinePageTableFragments(pages: ReportPageLayout[], blocks: FinalReportModel['blocks']): ReportPageLayout[] {
+    const fullTables = new Map<number, Extract<ReportLayoutItem, { kind: 'table' }>>();
+    for (const page of pages) {
+        for (const item of page.items) {
+            if (item.kind !== 'table') continue;
+            const block = blocks[item.blockIndex];
+            if (block?.kind !== 'dataTable' || block.title === '추가 시장 자료') continue;
+            const existing = fullTables.get(item.blockIndex);
+            if (!existing) {
+                fullTables.set(item.blockIndex, { ...item, rows: [...item.rows], mergeSpans: undefined });
+                continue;
+            }
+            for (const fragment of item.rows) {
+                const previous = existing.rows.find(row => row.index === fragment.index);
+                if (!previous) {
+                    existing.rows.push(fragment);
+                    continue;
+                }
+                previous.lines = previous.lines.map((lines, column) => [...lines, ...(fragment.lines[column] ?? [])]);
+                if (previous.richLines && fragment.richLines) {
+                    previous.richLines = previous.richLines.map((lines, column) => [...lines, ...(fragment.richLines?.[column] ?? [])]);
+                }
+                previous.height += fragment.height;
+            }
+        }
+    }
+
+    const insertedTables = new Set<number>();
+    return pages.map(page => ({
+        ...page,
+        items: page.items.flatMap(item => {
+            if (item.kind !== 'table' || !fullTables.has(item.blockIndex)) return [item];
+            if (insertedTables.has(item.blockIndex)) return [];
+            insertedTables.add(item.blockIndex);
+            return [fullTables.get(item.blockIndex)!];
+        }),
+    })).filter(page => page.cover || page.items.length > 0);
 }
 
 function renderText(item: Extract<ReportLayoutItem, { kind: 'text' }>): Paragraph | Table {
@@ -200,7 +242,7 @@ function createPageSection(page: ReportPageLayout, index: number, projectName: s
 
 export async function renderTemplateReportDocx(input: FinalReportModel): Promise<Blob> {
     const model = withReportOutputDate(input);
-    const pages = layoutReportPages(model.blocks);
+    const pages = combinePageTableFragments(layoutReportPages(model.blocks), model.blocks);
     const projectName = model.blocks.find((block): block is CoverBlock => block.kind === 'cover')?.projectName ?? '';
     const sections = pages.map((page, index) => createPageSection(page, index, projectName, model.blocks));
     // 자동 삽입되는 구역 나눔의 빈 문단이 꽉 찬 표 뒤에 빈 페이지를 만들지 않게 한다.

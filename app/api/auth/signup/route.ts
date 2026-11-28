@@ -12,6 +12,8 @@ import { checkInviteCode, normalizeInviteCode, INVITE_CODE_MESSAGES } from '@/li
 import { parseInvitableRole, type MemberRole } from '@/lib/member-roles';
 import { memberProfileSchemaFor } from '@/lib/member-profile';
 import { inviteAccessExpiresAt } from '@/lib/invite-access';
+// 프로그램은 종료일 한국 시간 끝까지 가입을 받는다(감리 B8).
+import { programEndDeadline } from '@/lib/program';
 import { errorCodeOf } from '@/lib/api-error';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
 
@@ -46,7 +48,7 @@ export async function POST(request: NextRequest) {
 
         // 가입을 무제한 허용하면 승인 대기 큐가 오염되고 DB 행이 소모된다.
         const rateKey = `signup:${clientIpFrom(request.headers)}`;
-        const limit = consumeRateLimit(rateKey, SIGNUP_RATE_LIMIT);
+        const limit = await consumeRateLimit(rateKey, SIGNUP_RATE_LIMIT);
         if (!limit.allowed) {
             log.warn('가입 시도 제한 초과');
             return NextResponse.json(
@@ -81,7 +83,7 @@ export async function POST(request: NextRequest) {
             if (!inviteRole) {
                 return NextResponse.json({ error: INVITE_CODE_MESSAGES.NOT_FOUND }, { status: 400 });
             }
-            if (record.program.endsAt.getTime() <= Date.now()) {
+            if (programEndDeadline(record.program.endsAt).getTime() <= Date.now()) {
                 return NextResponse.json({ error: INVITE_CODE_MESSAGES.EXPIRED }, { status: 400 });
             }
             invite = {
@@ -117,7 +119,7 @@ export async function POST(request: NextRequest) {
                 const current = await tx.inviteCode.findUnique({ where: { id: invite.id }, include: { program: { select: { endsAt: true } } } });
                 if (!current || current.usedAt || current.usedById) throw new InviteAlreadyUsedError();
                 if (checkInviteCode(current, email) || current.role !== 'MENTEE'
-                    || current.program.endsAt.getTime() <= Date.now()) throw new InviteExpiredError();
+                    || programEndDeadline(current.program.endsAt).getTime() <= Date.now()) throw new InviteExpiredError();
                 invite = { id: current.id, role: 'MENTEE',
                     programId: current.programId, endsAt: current.program.endsAt, accessDurationDays: current.accessDurationDays,
                     accessExpiresAt: current.accessExpiresAt };

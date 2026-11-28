@@ -1,3 +1,4 @@
+import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
@@ -23,7 +24,7 @@ export async function GET(
 ) {
     const params = await props.params;
     const projectId = params.id;
-    const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+    const accessResult = await requireProjectAccess(request, projectId, { write: false });
     if (accessResult instanceof NextResponse) return accessResult;
 
     try {
@@ -44,7 +45,7 @@ export async function GET(
             else responsesByRequirement.set(response.requirementId, [response]);
         }
 
-        const requirementAnalysis = reqs.map((req: any) => {
+        const requirementAnalysis = groupRequirementsByCategory(reqs).map((req: any) => {
             const reqResponses = responsesByRequirement.get(req.id) ?? [];
             const responsePairs = reqResponses.map((r: any) => ({
                 positive: r.positiveAnswer as KanoAnswer,

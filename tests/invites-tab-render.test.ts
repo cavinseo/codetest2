@@ -706,3 +706,56 @@ it('프로그램별로 초대 코드를 나눠 보고 다시 열어도 선택을
         window.localStorage.clear();
     }
 });
+
+it('코드 재발급을 취소하면 요청을 보내지 않는다', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await renderInvites();
+    await click('#invites-reissue-existing');
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('기존 코드는 즉시 사용할 수 없게'));
+    // 잃어버린 코드를 다시 보내는 기능과 헷갈리지 않게 안내한다.
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('메일 재발송'));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/reissue'))).toBe(false);
+});
+
+it('코드 재발급에 성공하면 재발급 경로로 한 번만 요청하고 목록의 코드를 새 코드로 바꾼다', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const reissueMock = vi.fn(async () => response({ success: true, emailSent: true, code: 'KSQF-NEW1-NEW2-NEW3' }));
+    const baseFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => (
+        url === '/api/invites/existing/reissue' && options?.method === 'POST' ? reissueMock() : baseFetch(url, options)
+    ));
+    await renderInvites();
+    await act(async () => {
+        const button = container.querySelector<HTMLButtonElement>('#invites-reissue-existing')!;
+        button.click(); button.click();
+    });
+    expect(reissueMock).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('기존 코드는 더 이상 쓸 수 없습니다');
+    expect(container.querySelector('table')!.textContent).toContain('KSQF-NEW1-NEW2-NEW3');
+    expect(container.querySelector('table')!.textContent).not.toContain(invite.code);
+});
+
+it('코드 재발급이 거절되면 서버 안내를 보여 주고 목록의 코드를 그대로 둔다', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const baseFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => (
+        url === '/api/invites/existing/reissue' ? response({ error: '기한을 먼저 연장하세요.' }, 400) : baseFetch(url, options)
+    ));
+    await renderInvites();
+    await click('#invites-reissue-existing');
+    expect(container.textContent).toContain('기한을 먼저 연장하세요.');
+    expect(container.querySelector('table')!.textContent).toContain(invite.code);
+});
+
+it('재발급은 됐지만 메일이 실패하면 재발송을 안내한다', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const baseFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => (
+        url === '/api/invites/existing/reissue'
+            ? response({ success: true, emailSent: false, warning: '코드는 재발급됐지만 메일 발송에 실패했습니다.' })
+            : baseFetch(url, options)
+    ));
+    await renderInvites();
+    await click('#invites-reissue-existing');
+    expect(container.textContent).toContain('코드는 재발급됐지만 메일 발송에 실패했습니다.');
+});

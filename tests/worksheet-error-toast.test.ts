@@ -33,6 +33,8 @@ describe('향후목표고객 저장 알림', () => {
         fetchMock.mockImplementation((url: string, init?: RequestInit) => {
             if (init?.method === 'POST') return saveStatus === 200 ? json({ rows: [] }) : json({ error: '실패' }, saveStatus);
             if (url.endsWith('/tech-roadmap')) return json({ rows: [] });
+            // 로드맵은 요구사항 순서를 따르므로 요구사항 목록이 배열이 아니면 불러오기 실패로 본다.
+            if (url.endsWith('/requirements')) return json({ requirements: [] });
             return json({ items: [] });
         });
     }
@@ -43,7 +45,8 @@ describe('향후목표고객 저장 알림', () => {
         await act(async () => button('저장').click());
 
         const toast = container.querySelector('[role="status"]')!;
-        expect(toast.textContent).toContain('저장에 실패했습니다.');
+        // 서버가 준 이유(충돌·권한 등)를 그대로 보여 줘야 사용자가 무엇을 할지 안다.
+        expect(toast.textContent).toContain('실패');
         expect(toast.className).toContain('toast-error');
         expect(toast.className).not.toContain('toast-success');
     });

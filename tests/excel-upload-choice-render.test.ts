@@ -169,9 +169,11 @@ it.each([
 ] as const)('%s 연관 데이터 삭제 경고에서 확인=%s 선택을 보존한다', async (screenName, confirm) => {
     vi.mocked(window.confirm).mockReturnValue(confirm);
     const original = fetchMock.getMockImplementation()!;
+    // 서버는 보여 준 건수를 그대로 돌려받아야 확인으로 본다(감리 B4).
+    const cascadeImpact = { kanoResponses: 3, benchmarks: 0, qfdMatrices: 0, attributeFitnesses: 0, techCorrelations: 0, technicalBenchmarks: 0 };
     fetchMock.mockImplementation(async (url, init) => {
-        if (init?.method === 'POST' && init.body.get('action') !== 'preview' && !init.body.get('confirmCascade')) {
-            return json({ error: 'Kano 응답도 삭제됩니다.', needsCascadeConfirm: true }, 409);
+        if (init?.method === 'POST' && init.body.get('action') !== 'preview' && !init.body.get('confirmedCascadeImpact')) {
+            return json({ error: 'Kano 응답도 삭제됩니다.', needsCascadeConfirm: true, cascadeImpact }, 409);
         }
         return original(url, init);
     });
@@ -182,6 +184,24 @@ it.each([
     if (confirm) {
         const form = writes()[1][1].body as FormData;
         expect(form.get('writePolicy')).toBe('replace');
-        expect(form.get('confirmCascade')).toBe('true');
+        expect(JSON.parse(String(form.get('confirmedCascadeImpact')))).toEqual(cascadeImpact);
     }
+});
+
+// 확인해 보낸 건수와 같은 건수로 또 막히면 확인으로는 풀리지 않는다. 다시 묻고 보내기를
+// 반복하면 확인을 누를 때마다 같은 요청이 끝없이 돈다.
+it.each(['WS-5', '전체 워크북'] as const)('%s 확인한 건수로도 막히면 다시 묻지 않고 멈춘다', async (screenName) => {
+    vi.mocked(window.confirm).mockReturnValue(true);
+    const cascadeImpact = { kanoResponses: 3, benchmarks: 0, qfdMatrices: 0, attributeFitnesses: 0, techCorrelations: 0, technicalBenchmarks: 0 };
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url, init) => {
+        if (init?.method === 'POST' && init.body.get('action') !== 'preview') {
+            return json({ error: 'Kano 응답도 삭제됩니다.', needsCascadeConfirm: true, cascadeImpact }, 409);
+        }
+        return original(url, init);
+    });
+    await screens.find(screen => screen.name === screenName)!.open();
+    await click('기존 데이터 지우고 업로드');
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(writes()).toHaveLength(2);
 });

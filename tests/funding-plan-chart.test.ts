@@ -56,20 +56,20 @@ describe('WS-15 선 그래프', () => {
         expect(chart().querySelector('[data-series="revenue"]')).not.toBeNull();
         expect(chart().querySelector('[data-series="required"]')).not.toBeNull();
         expect(chart().querySelectorAll('[data-revenue-point]')).toHaveLength(3);
-        for (const text of ['235', '835', '1,770', '+300%', '+100%', '+230', 'Y+1년차부터']) expect(chart().textContent).toContain(text);
+        for (const text of ['235,000', '835,000', '1,770,000', '+300%', '+100%', '+230,000', 'Y+1년차부터']) expect(chart().textContent).toContain(text);
         expect(container.textContent).not.toContain('9,999');
-        expect(container.textContent).toContain('2,840');
+        expect(container.textContent).toContain('2,840,000');
     });
 
     it('매출과 비용을 수정하면 즉시 그래프·분기점을 갱신하고 저장 후에도 유지한다', async () => {
         await mount();
         const initialPath = chart().querySelector('[data-series="revenue"]')!.getAttribute('d');
-        await input('2차년도(Y+2) 매출액', '500');
-        await input('1차년도(Y+1) 생산비용', '300');
+        await input('2차년도(Y+2) 매출액', '500000');
+        await input('1차년도(Y+1) 생산비용', '300000');
         expect(chart().querySelector('[data-series="revenue"]')!.getAttribute('d')).not.toBe(initialPath);
         expect(chart().querySelectorAll('[data-break-even]')).toHaveLength(1);
         expect(chart().textContent).toContain('손익분기점 1 (추정)');
-        expect(chart().textContent).toContain('-335');
+        expect(chart().textContent).toContain('-335,000');
         const beforeSave = chart().textContent;
         await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === '저장')!.click());
         expect(chart().textContent).toBe(beforeSave);
@@ -94,7 +94,7 @@ describe('WS-15 선 그래프', () => {
         { revenue: 0, required: 0, text: '입력하면 손익분기점' },
         { revenue: 100, required: 200, text: '3개년 계획 내 손익분기점에 도달하지 못했습니다.' },
         { revenue: 200, required: 200, text: '손익분기점 1 · Y+1년차' },
-        { revenue: -50, required: 20, text: '-50' },
+        { revenue: -50, required: 20, text: '-50,000' },
     ])('영·음수·미달·일치 금액에서도 유효한 축과 상태를 표시한다 ($revenue/$required)', async value => {
         await act(async () => root.render(createElement(FundingPlanChart, { values: Array.from({ length: 3 }, () => value) })));
         expect(chart().innerHTML).not.toMatch(/NaN|Infinity/);

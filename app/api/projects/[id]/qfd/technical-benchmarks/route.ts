@@ -26,7 +26,7 @@ export async function GET(
     const params = await props.params;
     try {
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: false });
         if (accessResult instanceof NextResponse) return accessResult;
 
         const benchmarks = await prisma.technicalBenchmark.findMany({
@@ -55,7 +55,7 @@ export async function POST(
     const params = await props.params;
     try {
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
         const body = await readJsonBody(request);
         const data = upsertSchema.parse(body);

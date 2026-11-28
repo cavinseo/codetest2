@@ -8,14 +8,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 
 const counts = { kano: 0, benchmark: 0, qfd: 0, fitness: 0, correlation: 0, technicalBenchmark: 0 };
-
 const lockProject = vi.fn();
+
+// 지우기 직전 캐스케이드 재확인이 트랜잭션 안에서 다시 센다. 바깥 count 와 같은 값을 읽게 한다.
+const COUNT_KEY_BY_MODEL: Record<string, keyof typeof counts> = {
+    kanoResponse: 'kano',
+    benchmark: 'benchmark',
+    qFDMatrix: 'qfd',
+    attributeFitness: 'fitness',
+    techCorrelation: 'correlation',
+    technicalBenchmark: 'technicalBenchmark',
+};
 
 const tx = new Proxy({} as Record<string, Record<string, ReturnType<typeof vi.fn>>>, {
     get(target, model: string) {
         if (model === '$queryRaw') return lockProject;
         if (!target[model]) {
             target[model] = {
+                count: vi.fn(async () => (COUNT_KEY_BY_MODEL[model] ? counts[COUNT_KEY_BY_MODEL[model]] : 0)),
                 deleteMany: vi.fn(),
                 createMany: vi.fn(),
                 create: vi.fn(async () => ({ id: 'row_1' })),
@@ -50,6 +60,14 @@ vi.mock('../lib/authorization', () => ({
 const { POST } = await import('../app/api/projects/[id]/import/route');
 
 const params = { params: Promise.resolve({ id: 'project_1' }) };
+
+// 고객요구사항 시트만 replace 하면 Kano·벤치마크·QFD 만 센다. 화면이 돌려보내는 모양 그대로다.
+function confirmedKano(kanoResponses: number): string {
+    return JSON.stringify({
+        kanoResponses, benchmarks: 0, qfdMatrices: 0,
+        attributeFitnesses: 0, techCorrelations: 0, technicalBenchmarks: 0,
+    });
+}
 
 // 고객요구사항 시트가 인식되도록 실제 워크북을 만든다.
 function requirementsWorkbookFile(): File {
@@ -135,7 +153,11 @@ describe('import POST — 캐스케이드 가드', () => {
         const apply = await POST(importRequest({ action: 'apply', writePolicy: 'replace' }, file), params);
         expect(apply.status).toBe(409);
         for (const model of Object.values(tx)) expect(model.deleteMany).not.toHaveBeenCalled();
-        const confirmed = await POST(importRequest({ action: 'apply', writePolicy: 'replace', confirmCascade: 'true' }, file), params);
+        // 화면은 409 가 보여 준 건수를 그대로 돌려보내 확인한다.
+        const { cascadeImpact } = await apply.json();
+        const confirmed = await POST(importRequest({
+            action: 'apply', writePolicy: 'replace', confirmedCascadeImpact: JSON.stringify(cascadeImpact),
+        }, file), params);
         expect(confirmed.status).toBe(200);
     });
 
@@ -156,12 +178,54 @@ describe('import POST — 캐스케이드 가드', () => {
         counts.kano = 37;
 
         const res = await POST(
-            importRequest({ action: 'apply', writePolicy: 'replace', confirmCascade: 'true' }),
+            importRequest({ action: 'apply', writePolicy: 'replace', confirmedCascadeImpact: confirmedKano(37) }),
             params
         );
 
         expect(res.status).toBe(200);
         expect(tx.customerRequirement.deleteMany).toHaveBeenCalledWith({ where: { projectId: 'project_1' } });
+    });
+
+    // 확인은 보여 준 건수에 묶인다. 예전의 confirmCascade=true 는 건수와 무관하게
+    // 통과해, 확인 뒤 들어온 응답까지 지웠다(감리 B4).
+    it('예전 방식의 confirmCascade=true 만으로는 지우지 않는다', async () => {
+        counts.kano = 37;
+
+        const res = await POST(importRequest({ action: 'apply', writePolicy: 'replace', confirmCascade: 'true' }), params);
+
+        expect(res.status).toBe(409);
+        expect(tx.customerRequirement.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('확인한 뒤 응답이 더 들어왔으면 새 건수로 다시 묻고 지우지 않는다', async () => {
+        // 확인창에는 3건이었는데 그 사이 40건이 더 들어왔다.
+        counts.kano = 43;
+
+        const res = await POST(
+            importRequest({ action: 'apply', writePolicy: 'replace', confirmedCascadeImpact: confirmedKano(3) }),
+            params
+        );
+        const body = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(body.cascadeImpact.kanoResponses).toBe(43);
+        expect(tx.customerRequirement.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('확인 직후 트랜잭션 안에서 건수가 바뀌었으면 지우지 않고 다시 묻는다', async () => {
+        counts.kano = 37;
+        // 바깥 확인 뒤, 트랜잭션 안에서 다시 셀 때는 한 건이 더 들어와 있다.
+        tx.kanoResponse.count.mockImplementationOnce(async () => 38);
+
+        const res = await POST(
+            importRequest({ action: 'apply', writePolicy: 'replace', confirmedCascadeImpact: confirmedKano(37) }),
+            params
+        );
+        const body = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(body.cascadeImpact.kanoResponses).toBe(38);
+        expect(tx.customerRequirement.deleteMany).not.toHaveBeenCalled();
     });
 
     it('지워질 부수 데이터가 없으면 확인 없이 진행한다', async () => {

@@ -1,6 +1,7 @@
 // 초대 계정의 저장된 이용 기간과 프로그램 종료 경계를 검증한다.
 import { describe, expect, it } from 'vitest';
 import { inviteAccessExpiresAt, isUserAccessExpired } from '../lib/invite-access';
+import { programEndDeadline } from '../lib/program';
 
 const day = 86_400_000;
 const now = new Date('2026-09-15T00:00:00Z');
@@ -28,8 +29,16 @@ describe('초대 계정 이용 기한', () => {
     it('첫 사용 전에는 코드 만료일을 적용한다', () => {
         expect(inviteAccessExpiresAt({ ...invite, usedAt: null })).toEqual(after(14));
     });
-    it.each([null, now])('프로그램 종료가 더 빠르면 그 시각을 적용한다', (usedAt) => {
-        expect(inviteAccessExpiresAt({ ...invite, usedAt, program: { endsAt: after(3) } })).toEqual(after(3));
+    // 프로그램 종료일은 그날 한국 시간 끝까지 유효하다. 화면이 보낸 날짜를 예전처럼
+    // UTC 자정(=KST 09:00)으로 저장한 값도 그날 끝으로 본다(감리 B8).
+    it.each([null, now])('프로그램 종료가 더 빠르면 그 종료일 한국 시간 끝을 적용한다', (usedAt) => {
+        expect(inviteAccessExpiresAt({ ...invite, usedAt, program: { endsAt: after(3) } }))
+            .toEqual(programEndDeadline(after(3)));
+    });
+    it('예전처럼 UTC 자정으로 저장된 종료일도 오전 9시가 아니라 그날 끝까지 열어 둔다', () => {
+        const legacyEnd = new Date('2026-12-31T00:00:00.000Z');
+        expect(inviteAccessExpiresAt({ ...invite, usedAt: null, expiresAt: after(400), program: { endsAt: legacyEnd } }))
+            .toEqual(new Date('2026-12-31T23:59:59.999+09:00'));
     });
     it('기존 계정의 더 짧은 이용 기한을 보존한다', () => {
         expect(inviteAccessExpiresAt({ ...invite, usedBy: { accessExpiresAt: after(5) } })).toEqual(after(5));

@@ -81,7 +81,8 @@ describe('기능기술체계도 불러오기 실패 (B9)', () => {
             if (url.endsWith('/tech-tree')) {
                 return treeFails()
                     ? json({ error: '실패' }, 500)
-                    : json({ entries: [{ id: 'saved', customerVoice: '더 빠르게', coreSpec: '구동', subSpec: '', techCharacteristic: '', order: 0 }] });
+                    // 불러오기는 저장 충돌 판정용 개정값(64자리 16진수)까지 받아야 성공으로 본다.
+                    : json({ entries: [{ id: 'saved', customerVoice: '더 빠르게', coreSpec: '구동', subSpec: '', techCharacteristic: '', order: 0 }], revision: 'a'.repeat(64) });
             }
             if (url.endsWith('/spec')) return json({ specFunctions: [] });
             if (url.endsWith('/requirements')) return json({ requirements: [] });

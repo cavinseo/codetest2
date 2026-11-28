@@ -4,6 +4,7 @@ import { buildReportTemplate } from './final-report-template';
 import { A4_PORTRAIT_BODY, A4_LANDSCAPE_BODY, fitImageToBody, shouldUseLandscape } from './report-image-fit';
 import type { ProductOverview } from './product-overview';
 import type { WorksheetAnalysis } from './mentor-worksheet-analysis';
+import type { ReportWorksheetId } from './final-report-sections';
 
 export interface FinalReportFreeInput {
     productImageDataUrl: string | null;
@@ -163,7 +164,8 @@ export function buildFinalReportModel(
     freeInput: FinalReportFreeInput,
     images: CapturedWorksheetImage[],
     analysis: WorksheetAnalysis = {},
+    excludedWorksheets: readonly ReportWorksheetId[] = [],
 ): FinalReportModel {
     return { title: REPORT_TITLE, fileName: finalReportFileName(overview.projectName),
-        blocks: buildReportTemplate(overview, worksheets, freeInput, images, analysis) };
+        blocks: buildReportTemplate(overview, worksheets, freeInput, images, analysis, excludedWorksheets) };
 }

@@ -23,7 +23,7 @@ export async function GET(
     try {
         const params = await props.params;
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: false });
         if (accessResult instanceof NextResponse) return accessResult;
 
         const projectBenchmarks = await prisma.benchmark.findMany({
@@ -48,7 +48,7 @@ export async function POST(
     try {
         const params = await props.params;
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
         const body = await readJsonBody(request);
         const { requirementId, company, score } = benchmarkSchema.parse(body);
@@ -101,7 +101,7 @@ export async function DELETE(
     try {
         const params = await props.params;
         const projectId = params.id;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
 
         const deleteScope = resolveBenchmarkDeleteScope(request.nextUrl.searchParams);

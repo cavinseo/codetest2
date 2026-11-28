@@ -59,6 +59,30 @@ it.each(['', '   ', 'x'.repeat(5001)])('잘못된 길이의 코멘트는 저장�
     expect((await POST(req('POST', { content }), params)).status).toBe(400);
     expect(m.create).not.toHaveBeenCalled();
 });
+it.each([
+    ['멘티 소유자', { user: { userId: 'mentee', role: 'MENTEE' }, role: 'OWNER' }],
+    ['초대된 편집자', { user: { userId: 'member', role: 'MENTEE' }, role: 'EDITOR' }],
+    ['미배정 매니저', { user: { userId: 'manager', role: 'PROGRAM_MANAGER' }, role: 'VIEWER' }],
+])('%s는 Kano 분석 워크시트의 코멘트를 읽거나 쓸 수 없다', async (_label, access) => {
+    // 화면은 이 워크시트 탭을 숨기지만, 라우트가 열려 있으면 멘토 의견이 그대로 읽힌다.
+    m.access.mockResolvedValue(access);
+    for (const [handler, method] of [[GET, 'GET'], [POST, 'POST'], [PATCH, 'PATCH'], [DELETE, 'DELETE']] as const) {
+        expect((await handler(req(method, method === 'GET' ? undefined : { id: 'comment', content: '의견' }, 'kano-aggregation'), params)).status).toBe(403);
+    }
+    expect(m.list).not.toHaveBeenCalled(); expect(m.create).not.toHaveBeenCalled();
+    expect(m.update).not.toHaveBeenCalled(); expect(m.remove).not.toHaveBeenCalled();
+});
+it('담당 멘토와 관리자는 Kano 분석 워크시트의 코멘트를 읽고 쓴다', async () => {
+    m.access.mockResolvedValue({ user: { userId: 'mentor', role: 'MENTOR' }, role: 'EDITOR' });
+    expect((await GET(req('GET', undefined, 'kano-aggregation'), params)).status).toBe(200);
+    expect((await POST(req('POST', { content: '의견' }, 'kano-aggregation'), params)).status).toBe(201);
+    m.access.mockResolvedValue({ user: { userId: 'admin', role: 'ADMIN' }, role: 'ADMIN' });
+    expect((await GET(req('GET', undefined, 'kano-aggregation'), params)).status).toBe(200);
+});
+it('멘티는 Kano 설문 워크시트(분석이 아닌 kano)의 코멘트는 계속 읽는다', async () => {
+    m.access.mockResolvedValue({ user: { userId: 'mentee', role: 'MENTEE' }, role: 'OWNER' });
+    expect((await GET(req('GET', undefined, 'kano'), params)).status).toBe(200);
+});
 it('관리자는 배정 없이 코멘트를 작성한다', async () => {
     m.access.mockResolvedValue({ user: { userId: 'admin', role: 'ADMIN' }, role: 'ADMIN' });
     expect((await POST(req('POST', { content: '의견' }), params)).status).toBe(201);

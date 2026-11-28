@@ -2,6 +2,7 @@
 // 남의 id 존재 여부를 드러내지 않는지 확인한다(2026-10-25 코드 리뷰 B13).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { worksheetRevision } from '../lib/worksheet-revision';
 
 const countCustomerRequirement = vi.fn();
 const findRequirements = vi.fn();
@@ -15,7 +16,12 @@ const createFitnesses = vi.fn();
 
 vi.mock('../lib/prisma', () => ({
     prisma: {
-        customerRequirement: { count: countCustomerRequirement, findMany: findRequirements },
+        // 트랜잭션 밖 findMany 는 남의 id 조회(NOT 조건)와 저장 전 개정값 검사(감리 B3) 두 가지다.
+        // 이 파일은 앞의 것만 본다. 개정값 검사는 빈 워크시트를 읽게 둔다.
+        customerRequirement: {
+            count: countCustomerRequirement,
+            findMany: async (args: { where?: { NOT?: unknown } }) => (args?.where?.NOT ? findRequirements(args) : []),
+        },
         productAttribute: { findMany: findAttributes },
         project: { findUnique: findProject },
         $transaction: (...args: unknown[]) => transaction(...(args as [])),
@@ -35,7 +41,8 @@ const params = Promise.resolve({ id: 'proj_1' });
 function postRequest(path: string, body: unknown): NextRequest {
     return new NextRequest(`http://localhost/api/projects/proj_1/${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // 전체 교체 저장은 화면이 읽은 개정값을 If-Match 로 보내야 한다(감리 B3).
+        headers: { 'Content-Type': 'application/json', 'If-Match': worksheetRevision([]) },
         body: JSON.stringify(body),
     });
 }
@@ -52,15 +59,26 @@ beforeEach(() => {
     createFitnesses.mockResolvedValue({ count: 1 });
     transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
         customerRequirement: {
+            // 지우기 직전 캐스케이드 재확인(감리 B4)이 센다. 지워질 기존 행은 없다.
+            count: vi.fn().mockResolvedValue(0),
+            // 개정값 검사·순서 동기화는 빈 워크시트를, 제출 id 조회는 그 id 들을 이미 있는 행으로 본다.
+            findMany: vi.fn(async ({ where }: { where: { id?: { in: string[] } } }) =>
+                (where.id?.in ? where.id.in.map((id) => ({ id })) : [])),
             deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
             updateMany: updateRequirements,
-            create: createRequirement,
+            // 새 행은 한 번의 createMany 로 만든다(대량 저장 리팩터링).
+            createMany: createRequirement,
         },
         attributeFitness: {
             deleteMany: deleteFitnesses,
             createMany: createFitnesses,
             findMany: vi.fn().mockResolvedValue([]),
         },
+        // 요구사항 순서를 따르는 후속 워크시트는 비어 있다고 본다.
+        techTreeEntry: { findMany: vi.fn().mockResolvedValue([]) },
+        improvementItem: { findMany: vi.fn().mockResolvedValue([]) },
+        techRoadmap: { findMany: vi.fn().mockResolvedValue([]) },
+        targetSpec: { findMany: vi.fn().mockResolvedValue([]) },
     }));
 });
 
@@ -81,7 +99,7 @@ describe('요구사항 저장의 남의 id (B13)', () => {
             select: { id: true },
         });
         expect(updateRequirements).not.toHaveBeenCalled();
-        const created = createRequirement.mock.calls[0][0].data;
+        const [created] = createRequirement.mock.calls[0][0].data;
         expect(created.id).not.toBe('req_other');
         expect(created.projectId).toBe('proj_1');
     });
@@ -100,7 +118,7 @@ describe('요구사항 저장의 남의 id (B13)', () => {
         await saveRequirements(postRequest('requirements', { requirements: [{ ...row, id: 'gen_new' }] }), { params });
 
         expect(updateRequirements).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'gen_new', projectId: 'proj_1' } }));
-        expect(createRequirement.mock.calls[0][0].data.id).toBe('gen_new');
+        expect(createRequirement.mock.calls[0][0].data[0].id).toBe('gen_new');
     });
 
     it('id 없는 제출은 남의 id 조회를 하지 않는다', async () => {

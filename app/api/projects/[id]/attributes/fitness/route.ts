@@ -6,8 +6,12 @@ import { generateId } from '@/lib/id';
 import { createLogger } from '@/lib/logger';
 import { fitnessBodySchema } from '@/lib/bulk-save-schemas';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { assertWorksheetRevision, worksheetRevision, worksheetRevisionErrorResponse } from '@/lib/worksheet-revision';
 
 const log = createLogger('api/attributes/fitness');
+
+// 개정값을 해시로 만들려면 GET 과 저장 트랜잭션이 같은 순서로 읽어야 한다.
+const FITNESS_ORDER = { id: 'asc' as const };
 
 // GET: 프로젝트의 제품 속성 적합도 조회
 export async function GET(
@@ -16,7 +20,7 @@ export async function GET(
 ) {
     try {
         const { id: projectId } = await params;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: false });
         if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
@@ -31,9 +35,10 @@ export async function GET(
 
         const fitnessData = await prisma.attributeFitness.findMany({
             where: { projectId },
+            orderBy: FITNESS_ORDER,
         });
 
-        return NextResponse.json({ fitnesses: fitnessData });
+        return NextResponse.json({ fitnesses: fitnessData, revision: worksheetRevision(fitnessData) });
     } catch (error: unknown) {
         log.error('적합도 데이터 조회 실패', error);
         return NextResponse.json(
@@ -50,7 +55,7 @@ export async function POST(
 ) {
     try {
         const { id: projectId } = await params;
-        const accessResult = await requireProjectAccess(request, projectId, { write: request.method !== 'GET' });
+        const accessResult = await requireProjectAccess(request, projectId, { write: true });
         if (accessResult instanceof NextResponse) return accessResult;
         const project = await prisma.project.findUnique({
             where: { id: projectId },
@@ -79,7 +84,10 @@ export async function POST(
             return NextResponse.json({ error: '유효하지 않은 적합도 데이터입니다.' }, { status: 400 });
         }
 
-        const updatedFitnesses = await prisma.$transaction(async (tx: any) => {
+        // 화면이 읽은 뒤 다른 사람이 저장했으면 전체 교체가 그 입력을 지우므로 409 로 막는다(감리 B3).
+        const updatedFitnesses = await prisma.$transaction(async (tx) => {
+            const current = await tx.attributeFitness.findMany({ where: { projectId }, orderBy: FITNESS_ORDER });
+            assertWorksheetRevision(request, current);
             await tx.attributeFitness.deleteMany({
                 where: { projectId },
             });
@@ -102,18 +110,22 @@ export async function POST(
 
             return tx.attributeFitness.findMany({
                 where: { projectId },
+                orderBy: FITNESS_ORDER,
             });
-        });
+        }, { isolationLevel: 'Serializable' });
 
         log.info('적합도 데이터 저장 성공', { projectId, count: newFitnesses.length });
 
         return NextResponse.json({
             fitnesses: updatedFitnesses,
+            revision: worksheetRevision(updatedFitnesses),
             message: '적합도 데이터가 저장되었습니다',
         });
     } catch (error: unknown) {
         const invalidBody = invalidJsonBodyResponse(error);
         if (invalidBody) return invalidBody;
+        const revisionResponse = worksheetRevisionErrorResponse(error);
+        if (revisionResponse) return revisionResponse;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: '유효하지 않은 적합도 데이터입니다.' }, { status: 400 });
         }

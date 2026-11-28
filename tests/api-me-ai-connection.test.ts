@@ -42,6 +42,7 @@ vi.stubEnv('SETTINGS_ENCRYPTION_KEY', 'test-key-material-for-ai-connection');
 
 const { encryptSettingsValue } = await import('../lib/settings-crypto');
 const { GET, PUT, DELETE } = await import('../app/api/me/ai-connection/route');
+const { MEMBER_LOCAL_AI_URL_RULE } = await import('../lib/ai/member-local-url');
 const { POST } = await import('../app/api/me/ai-connection/verify/route');
 
 function authAs(userId = 'user_1') {
@@ -322,10 +323,31 @@ describe('저장', () => {
             localBaseUrl: 'https://example.com/v1',
         }));
         expect(denied.status).toBe(400);
-        expect(await denied.json()).toEqual({
-            error: '로컬 엔진은 localhost 주소만 허용합니다: example.com',
-        });
+        expect(await denied.json()).toEqual({ error: MEMBER_LOCAL_AI_URL_RULE });
         expect(upsertConn).not.toHaveBeenCalled();
+    });
+
+    // 서버가 이 주소로 요청을 보낸다. localhost 이기만 하면 받던 시절에는 일반 회원이
+    // 서버 자신의 내부 포트·경로(예: Redis 6379, 관리 페이지)로 요청을 보내게 할 수 있었다(감리 B9).
+    it.each([
+        ['내부 서비스 포트', 'http://127.0.0.1:6379/v1'],
+        ['포트 생략(80)', 'http://localhost/v1'],
+        ['/v1 이 아닌 경로', 'http://localhost:11434/admin'],
+        ['질의 문자열', 'http://localhost:11434/v1?x=1'],
+        ['계정 정보', 'http://user:pw@localhost:11434/v1'],
+    ])('local 모드는 %s 주소를 저장하지 않는다', async (_label, localBaseUrl) => {
+        const res = await PUT(jsonRequest('PUT', { mode: 'local', localBaseUrl }));
+
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: MEMBER_LOCAL_AI_URL_RULE });
+        expect(upsertConn).not.toHaveBeenCalled();
+    });
+
+    it('local 모드 주소는 끝 슬래시를 떼어 저장한다', async () => {
+        const res = await PUT(jsonRequest('PUT', { mode: 'local', localBaseUrl: 'http://localhost:1234/v1/' }));
+
+        expect(res.status).toBe(200);
+        expect(upsertConn.mock.calls[0][0].update.localBaseUrl).toBe('http://localhost:1234/v1');
     });
 
     it('rule 모드는 부가 필드를 모두 무시한다', async () => {

@@ -1,3 +1,4 @@
+import { orderImprovementItems } from '@/lib/requirement-order';
 // 개선포인트 데이터를 조회하고 현재 화면 상태로 교체 저장하는 API입니다.
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -5,6 +6,13 @@ import { prisma } from '@/lib/prisma';
 import { requireProjectAccess } from '@/lib/authorization';
 import { improvementsBodySchema, type ImprovementRow } from '@/lib/bulk-save-schemas';
 import { invalidJsonBodyResponse, readJsonBody } from '@/lib/request-body';
+import { createLogger } from '@/lib/logger';
+import { assertWorksheetRevision, worksheetRevision, worksheetRevisionErrorResponse } from '@/lib/worksheet-revision';
+
+const log = createLogger('api/improvements');
+
+// 개정값은 화면 표시용 재정렬 전, DB 에서 이 순서로 읽은 행으로 만든다.
+const IMPROVEMENT_ORDER = [{ type: 'asc' as const }, { order: 'asc' as const }, { id: 'asc' as const }];
 
 const cleanItem = (item: ImprovementRow, index: number) => ({
     type: item.type,
@@ -22,7 +30,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 
     try {
         const [items, qfdAnalysis] = await Promise.all([
-            prisma.improvementItem.findMany({ where: { projectId }, orderBy: [{ type: 'asc' }, { order: 'asc' }] }),
+            prisma.improvementItem.findMany({ where: { projectId }, orderBy: IMPROVEMENT_ORDER }),
             fetch(`${request.nextUrl.origin}/api/projects/${projectId}/qfd/analysis`, {
                 headers: {
                     cookie: request.headers.get('cookie') ?? '',
@@ -31,9 +39,13 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
             }).then((response) => (response.ok ? response.json() : null)),
         ]);
 
-        return NextResponse.json({ items, qfdAnalysis });
+        return NextResponse.json({
+            items: orderImprovementItems(items, qfdAnalysis?.requirements ?? []),
+            qfdAnalysis,
+            revision: worksheetRevision(items),
+        });
     } catch (error) {
-        console.error('improvements GET error:', error);
+        log.error('improvements GET error', error);
         return NextResponse.json({ error: '개선포인트 데이터를 불러오지 못했습니다.' }, { status: 500 });
     }
 }
@@ -49,7 +61,10 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         const parsed = improvementsBodySchema.parse(await readJsonBody(request));
         const items = parsed.items.map(cleanItem);
 
+        // 화면이 읽은 뒤 다른 사람이 저장했으면 전체 교체가 그 입력을 지우므로 409 로 막는다(감리 B3).
         const saved = await prisma.$transaction(async (tx) => {
+            const current = await tx.improvementItem.findMany({ where: { projectId }, orderBy: IMPROVEMENT_ORDER });
+            assertWorksheetRevision(request, current);
             await tx.improvementItem.deleteMany({ where: { projectId } });
 
             if (items.length === 0) {
@@ -60,17 +75,19 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
                 data: items.map((item) => ({ ...item, projectId })),
             });
 
-            return tx.improvementItem.findMany({ where: { projectId }, orderBy: [{ type: 'asc' }, { order: 'asc' }] });
-        });
+            return tx.improvementItem.findMany({ where: { projectId }, orderBy: IMPROVEMENT_ORDER });
+        }, { isolationLevel: 'Serializable' });
 
-        return NextResponse.json({ items: saved });
+        return NextResponse.json({ items: saved, revision: worksheetRevision(saved) });
     } catch (error) {
         const invalidBody = invalidJsonBodyResponse(error);
         if (invalidBody) return invalidBody;
+        const revisionResponse = worksheetRevisionErrorResponse(error);
+        if (revisionResponse) return revisionResponse;
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
         }
-        console.error('improvements POST error:', error);
+        log.error('improvements POST error', error);
         return NextResponse.json({ error: '개선포인트 데이터를 저장하지 못했습니다.' }, { status: 500 });
     }
 }

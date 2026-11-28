@@ -143,10 +143,26 @@ export async function getSmtpSettings(): Promise<SmtpSettings> {
     };
 }
 
+/** 저장된 SMTP 비밀번호를 새 호스트로 그대로 넘기려는 요청. 라우트가 400 으로 바꾼다. */
+export class SmtpPasswordRequiredError extends Error {
+    constructor() {
+        super('SMTP 서버 주소를 바꿀 때는 비밀번호를 다시 입력해야 합니다.');
+    }
+}
+
 export async function updateSmtpSettings(
     patch: { host?: string; port?: number; user?: string; pass?: string }
 ): Promise<SmtpSettings> {
     const current = await getSmtpSettings();
+    // 빈 비밀번호는 "바꾸지 않음"이다. 그런데 호스트만 바꾸는 요청까지 그렇게
+    // 받으면, 다음 메일 발송 때 저장된 비밀번호로 새 호스트에 로그인한다.
+    // 조회 API 가 숨기는 비밀번호를 관리자 세션 하나로 임의 서버에 보내게 되므로,
+    // 호스트가 달라질 때는 비밀번호를 함께 받아야만 저장한다.
+    const nextHost = patch.host?.trim();
+    const hostChanges = Boolean(nextHost) && nextHost!.toLowerCase() !== current.host.toLowerCase();
+    if (hostChanges && current.pass && !patch.pass?.trim()) {
+        throw new SmtpPasswordRequiredError();
+    }
     const next: SmtpSettings = {
         host: patch.host?.trim() || current.host,
         port: typeof patch.port === 'number' && patch.port > 0 ? patch.port : current.port,
@@ -185,8 +201,18 @@ export async function setGoogleToken(token: GoogleToken): Promise<void> {
 }
 
 export async function getGoogleToken(): Promise<GoogleToken | null> {
+    const token = await getStoredGoogleToken();
+    if (!token || token.expiresAt < Date.now()) return null;
+    return token;
+}
+
+/**
+ * 만료 여부와 관계없이 저장된 토큰을 돌려준다. 액세스 토큰은 1시간이면 만료되지만
+ * refresh token 으로 새로 받을 수 있으므로, 갱신하는 쪽(lib/google-auth.ts 의
+ * getUsableGoogleToken)은 만료된 토큰도 읽어야 한다(감리 B7).
+ */
+export async function getStoredGoogleToken(): Promise<GoogleToken | null> {
     const token = await readSetting<GoogleToken>(KEYS.googleToken);
-    if (!token) return null;
-    if (typeof token.expiresAt !== 'number' || token.expiresAt < Date.now()) return null;
+    if (!token || typeof token.expiresAt !== 'number' || typeof token.accessToken !== 'string') return null;
     return token;
 }

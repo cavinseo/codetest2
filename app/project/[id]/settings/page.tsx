@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import ThemeToggle from '@/components/ThemeToggle';
 import { downloadBlobAsFile } from '@/lib/file-download';
+import { shouldAskCascadeAgain } from '@/lib/cascade-confirm-client';
 
 interface Member {
     id: string;
@@ -31,7 +32,6 @@ export default function ProjectSettingsPage() {
     const [projectError, setProjectError] = useState('');
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
-    const [inviteRole, setInviteRole] = useState<'EDITOR' | 'COACH'>('EDITOR');
     const [inviteError, setInviteError] = useState('');
     const [isInviting, setIsInviting] = useState(false);
     const [activeTab, setActiveTab] = useState<'members' | 'data'>('members');
@@ -86,7 +86,7 @@ export default function ProjectSettingsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     email: inviteEmail,
-                    role: inviteRole,
+                    role: 'EDITOR',
                 }),
             });
 
@@ -100,7 +100,6 @@ export default function ProjectSettingsPage() {
             await loadMembers();
             setShowInviteModal(false);
             setInviteEmail('');
-            setInviteRole('EDITOR');
         } catch (error: any) {
             setInviteError(error.message);
         } finally {
@@ -130,7 +129,7 @@ export default function ProjectSettingsPage() {
             case 'EDITOR':
                 return '편집 권한';
             case 'COACH':
-                return '코멘트 및 피드백';
+                return '기존 코치 역할(읽기 전용)';
             case 'ADMIN':
                 return '관리 권한';
             default:
@@ -159,7 +158,9 @@ export default function ProjectSettingsPage() {
         }
     };
 
-    const handleImport = async (options: { confirmCascade?: boolean } = {}) => {
+    // confirmedCascadeImpact: 확인창에 보여 준 서버의 건수. 서버는 그 사이 건수가
+    // 바뀌었으면 새 건수로 다시 묻는다(감리 B4).
+    const handleImport = async (options: { confirmedCascadeImpact?: unknown } = {}) => {
         if (!importFile) {
             alert('파일을 선택해주세요.');
             return;
@@ -169,8 +170,8 @@ export default function ProjectSettingsPage() {
         try {
             const text = await importFile.text();
             const data = JSON.parse(text);
-            if (options.confirmCascade) {
-                data.confirmCascade = true;
+            if (options.confirmedCascadeImpact) {
+                data.confirmedCascadeImpact = options.confirmedCascadeImpact;
             }
 
             const response = await fetch(`/api/projects/${projectId}/import-json`, {
@@ -183,8 +184,12 @@ export default function ProjectSettingsPage() {
             // 고객요구사항을 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다.
             // 서버가 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받는다.
             if (response.status === 409 && result.needsCascadeConfirm) {
+                if (!shouldAskCascadeAgain(result, options.confirmedCascadeImpact)) {
+                    alert(result.error || '가져오지 못했습니다. 새로고침 후 다시 시도하세요.');
+                    return;
+                }
                 if (window.confirm(`${result.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await handleImport({ confirmCascade: true });
+                    await handleImport({ confirmedCascadeImpact: result.cascadeImpact });
                 } else {
                     alert('가져오기를 취소했습니다. 기존 데이터는 그대로 유지됩니다.');
                 }
@@ -289,27 +294,9 @@ export default function ProjectSettingsPage() {
                                     </button>
                                 </div>
 
-                                {/* 역할 설명 */}
                                 <div className="card bg-blue-500/10 border border-blue-500/30">
-                                    <h3 className="font-semibold text-white mb-3">역할 안내</h3>
-                                    <div className="grid grid-cols-2 gap-3 text-sm">
-                                        <div>
-                                            <span className="font-medium text-purple-300">👑 OWNER</span>
-                                            <p className="text-gray-400">모든 권한 (삭제, 멤버 관리)</p>
-                                        </div>
-                                        <div>
-                                            <span className="font-medium text-blue-300">✏️ EDITOR</span>
-                                            <p className="text-gray-400">데이터 편집 및 수정</p>
-                                        </div>
-                                        <div>
-                                            <span className="font-medium text-green-300">💬 COACH</span>
-                                            <p className="text-gray-400">코멘트 및 피드백만 가능</p>
-                                        </div>
-                                        <div>
-                                            <span className="font-medium text-red-300">⚙️ ADMIN</span>
-                                            <p className="text-gray-400">설정 및 멤버 관리</p>
-                                        </div>
-                                    </div>
+                                    <h3 className="font-semibold text-white mb-3">팀원 권한 안내</h3>
+                                    <p className="text-sm text-gray-400">이 화면에서는 편집자만 초대할 수 있습니다. 담당 멘토의 편집 권한은 멘토 배정 상태에 따라 결정됩니다.</p>
                                 </div>
 
                                 {/* 팀원 목록 */}
@@ -379,7 +366,7 @@ export default function ProjectSettingsPage() {
                                         📤 데이터 내보내기 (Export)
                                     </h3>
                                     <p className="text-gray-400 mb-6 text-sm">
-                                        프로젝트의 모든 데이터를 JSON 파일로 다운로드합니다. 백업이나 다른 환경으로 이전 시 사용하세요.
+                                        프로젝트 워크시트와 분석 데이터를 JSON 파일로 다운로드합니다. 백업이나 다른 환경으로 이전 시 사용하세요.
                                     </p>
                                     <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-6">
                                         <h4 className="text-white font-semibold mb-2 text-sm">📦 포함되는 데이터</h4>
@@ -390,6 +377,9 @@ export default function ProjectSettingsPage() {
                                             <li>고객 요구사항</li>
                                             <li>기술특성 및 QFD 매트릭스</li>
                                             <li>Kano 설문 응답</li>
+                                            <li>기술트리, 개선항목, 목표사양, 기술로드맵</li>
+                                            <li>개발계획, 매출추정, 자금계획, 핵심자산 및 적합도 매트릭스</li>
+                                            <li>프로젝트 접근 권한, 초대 링크, 워크시트 의견, 결과보고서는 포함하지 않음</li>
                                         </ul>
                                     </div>
                                     <button
@@ -415,7 +405,7 @@ export default function ProjectSettingsPage() {
                                             ⚠️ 주의사항
                                         </h4>
                                         <ul className="text-gray-300 text-sm space-y-1 list-disc list-inside">
-                                            <li>기존 데이터가 모두 덮어씌워집니다</li>
+                                            <li>백업에 포함된 워크시트 데이터가 덮어씌워집니다</li>
                                             <li>이 작업은 되돌릴 수 없습니다</li>
                                             <li>먼저 현재 데이터를 백업하는 것을 권장합니다</li>
                                         </ul>
@@ -490,19 +480,7 @@ export default function ProjectSettingsPage() {
                                 </p>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">
-                                    역할 *
-                                </label>
-                                <select
-                                    value={inviteRole}
-                                    onChange={(e) => setInviteRole(e.target.value as 'EDITOR' | 'COACH')}
-                                    className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white"
-                                >
-                                    <option value="EDITOR">✏️ Editor - 편집 권한</option>
-                                    <option value="COACH">💬 Coach - 코멘트만</option>
-                                </select>
-                            </div>
+                            <p className="text-sm text-gray-300">팀원은 편집 권한으로 초대됩니다. 멘토 배정은 별도 메뉴에서 관리합니다.</p>
 
                             <div className="flex space-x-3 pt-4">
                                 <button

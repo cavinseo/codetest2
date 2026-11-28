@@ -1,3 +1,5 @@
+import { embedKanoRequirementSnapshot } from '@/lib/kano-requirement-snapshot';
+import { groupRequirementsByCategory } from '@/lib/requirements-table-utils';
 // 프로젝트의 Kano 오프라인 HTML 설문지를 첨부 파일로 내려주는 라우트다.
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -28,11 +30,11 @@ export async function GET(
         }
 
         // 오프라인 설문도 화면과 같은 질문 순서여야 저장본의 문항 위치가 일치한다.
-        const requirements = await prisma.customerRequirement.findMany({
+        const requirements = groupRequirementsByCategory(await prisma.customerRequirement.findMany({
             where: { projectId },
             orderBy: { order: 'asc' },
-            select: { requirement: true, kanoPositiveQ: true, kanoNegativeQ: true },
-        });
+            select: { id: true, category: true, subcategory: true, order: true, requirement: true, kanoPositiveQ: true, kanoNegativeQ: true },
+        }));
         const introduction = kanoSurveyIntroductionSchema.parse(project.kanoSurveyIntroduction ?? EMPTY_KANO_INTRODUCTION);
         if (request.nextUrl.searchParams.get('format') === 'json') {
             return NextResponse.json({
@@ -47,12 +49,12 @@ export async function GET(
             );
         }
 
-        const html = buildKanoOfflineFormHtml({
+        const html = embedKanoRequirementSnapshot(buildKanoOfflineFormHtml({
             projectId,
             projectName: project.name,
             requirements,
             introduction,
-        });
+        }), requirements);
         const fileName = kanoOfflineFormFileName(project.name);
 
         return new NextResponse(html, {

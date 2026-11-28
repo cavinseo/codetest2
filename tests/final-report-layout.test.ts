@@ -88,13 +88,13 @@ it('표 열 너비의 개수와 형식을 저장 시 검증한다', () => {
     expect(reportDocumentSchema.safeParse(model([{ ...table, columnWidths: [0, 2] }])).success).toBe(false);
 });
 
-it('Word는 미리보기와 같은 페이지 수·반복 머리글·행 내용을 출력한다', async () => {
+it('Word는 워크시트 표를 하나의 연속된 표로 출력하고 반복 머리글과 모든 행을 보존한다', async () => {
     const document = model([cover, { kind: 'heading', text: 'Ⅰ. 제품 정의', level: 1 }, { kind: 'dataTable', headers: ['항목', '설명'], rows: Array.from({ length: 90 }, (_, i) => [`항목-${i}`, `설명-${i}`]) }]);
     const zip = await JSZip.loadAsync(await (await renderFinalReportDocx(document)).arrayBuffer());
     const xml = await zip.file('word/document.xml')!.async('string');
-    expect(xml.match(/<w:sectPr>/g)).toHaveLength(layoutReportPages(document.blocks).length);
+    expect(xml.match(/<w:tbl>/g)).toHaveLength(2); // 장 제목 박스 하나와 연속 워크시트 표 하나.
     expect(xml).toContain(reportOutputDate()); expect(xml).not.toContain('2020.01.01');
     expect(xml).toContain('기업명: 기업'); expect(xml).toContain('코치명: 멘토');
-    expect(xml.match(/<w:tblHeader\/>/g)!.length).toBeGreaterThan(1);
+    expect(xml.match(/<w:tblHeader\/>/g)).toHaveLength(1);
     for (let i = 0; i < 90; i++) { expect(xml).toContain(`항목-${i}`); expect(xml).toContain(`설명-${i}`); }
 });

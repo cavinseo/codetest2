@@ -1,12 +1,15 @@
+import { orderReportWorksheetData } from './final-report-requirement-order';
 // report.pdf와 승인된 샘플 순서로 실제 저장 내용과 멘토 분석을 배치한다.
 import type { CapturedWorksheetImage, FinalReportBlock, FinalReportFreeInput, FinalReportOverviewInput, FinalReportWorksheetData } from './final-report-document';
 import type { ProductOverview } from './product-overview';
 import type { WorksheetAnalysis } from './mentor-worksheet-analysis';
-import { formatMoney } from './money';
+import { formatStoredMoney } from './money';
 import { buildAssetReportTables, buildFitnessReportTables, buildFundingPlanReportTable, buildFundingSourceReportTable, buildKanoReportTable, buildQfdReportTables } from './final-report-worksheet-tables';
 import { collapseCustomerRowsToSegments } from './product-attributes-utils';
 import { fitImageToBody, A4_PORTRAIT_BODY } from './report-image-fit';
 import { buildSpecTree } from './spec-tree';
+import { groupRequirementsByCategory } from './requirements-table-utils';
+import { includesReportWorksheet, type ReportWorksheetId } from './final-report-sections';
 
 type ReportCell = string | number | null | undefined;
 const displayValue = (text: ReportCell) => text == null || String(text).trim() === '' ? '미입력' : String(text);
@@ -17,7 +20,8 @@ export function hasProductOverviewSource(overview: ProductOverview): boolean {
         .some(key => Object.hasOwn(overview, key));
 }
 
-function createReportWriter(blocks: FinalReportBlock[], images: CapturedWorksheetImage[]) {
+function createReportWriter(blocks: FinalReportBlock[], images: CapturedWorksheetImage[], excluded: readonly ReportWorksheetId[]) {
+    const has = (id: ReportWorksheetId) => includesReportWorksheet(excluded, id);
     const addHeading = (text: string, level: 1 | 2 = 2) => blocks.push({ kind: 'heading', text, level });
     const addParagraph = (text: string, tone?: 'analysis' | 'notice' | 'caption') => blocks.push({ kind: 'paragraph', text, ...(tone ? { tone } : {}) });
     const addPageBreak = () => blocks.push({ kind: 'pageBreak' });
@@ -29,7 +33,13 @@ function createReportWriter(blocks: FinalReportBlock[], images: CapturedWorkshee
         addParagraph(`${ws} 멘토 분석(보고)`, 'analysis');
         addParagraph(text?.trim() ? text : hasInput ? '저장된 멘토 분석(보고)이 없습니다.' : '현재 멘토 분석(보고) 입력란이 없어 저장된 분석이 없습니다.', text?.trim() ? undefined : 'notice');
     };
-    const startWorksheetPage = (title: string, ws: string, text?: string, hasInput = true) => { addPageBreak(); addHeading(title); addMentorAnalysis(ws, text, hasInput); };
+    // 앞 절을 빼면 장 제목 바로 뒤에 새 쪽이 와서 장 제목만 덩그러니 남는다. 그때는 쪽을 넘기지 않는다.
+    const startSection = (title: string) => {
+        const last = blocks.at(-1);
+        if (!(last?.kind === 'heading' && last.level === 1)) addPageBreak();
+        addHeading(title);
+    };
+    const startWorksheetPage = (title: string, ws: string, text?: string, hasInput = true) => { startSection(title); addMentorAnalysis(ws, text, hasInput); };
     const addWorksheetImage = (id: CapturedWorksheetImage['worksheetId'], title: string, emptyText: string) => {
         const image = images.find(item => item.worksheetId === id);
         if (!image) { addParagraph(emptyText, 'notice'); return; }
@@ -37,7 +47,7 @@ function createReportWriter(blocks: FinalReportBlock[], images: CapturedWorkshee
             ...fitImageToBody(image.widthPx, image.heightPx, A4_PORTRAIT_BODY), landscape: false });
     };
 
-    return { blocks, addHeading, addParagraph, addPageBreak, addTable, addMentorAnalysis, startWorksheetPage, addWorksheetImage };
+    return { blocks, has, addHeading, startSection, addParagraph, addPageBreak, addTable, addMentorAnalysis, startWorksheetPage, addWorksheetImage };
 }
 
 type ReportWriter = ReturnType<typeof createReportWriter>;
@@ -77,39 +87,50 @@ function appendProductOverview(writer: ReportWriter, overview: FinalReportOvervi
     writer.addParagraph('시장정의', 'analysis');
     writer.addParagraph(displayValue(source.marketDefinition));
     writer.addParagraph(`목표고객 · ${displayValue(source.targetCustomer)}`);
-    if (overview.additionalMarketData?.trim()) {
+    // 추가 시장 자료는 보고서에 싣겠다고 고른 프로젝트만 넣는다(기본값은 싣지 않음).
+    if (overview.includeAdditionalMarketDataInReport && overview.additionalMarketData?.trim()) {
         writer.addTable('추가 시장 자료', ['추가 시장 자료'], [[overview.additionalMarketData]]);
     }
+    if (!writer.has('ws-1')) return;
     writer.addHeading('매출처별 매출현황 및 목표매출액 (WS-1)');
-    writer.addParagraph('단위: 백만원', 'caption');
+    writer.addParagraph('단위: 천원', 'caption');
     for (const [period, title] of [['Y', '현재 매출현황'], ['Y_PLUS_1', '향후 1년 목표매출액']]) {
         writer.addParagraph(title, 'analysis');
         writer.addTable(`WS-1 ${title}`, ['No.', '매출처', '매출액', '경쟁사명'],
-            [...worksheets.salesEstimates.filter(row => row.period === period).map((row, index) => [index + 1, row.customer, formatMoney(row.amount), row.competitor]), ['합계', '', formatMoney(worksheets.salesEstimates.filter(row => row.period === period).reduce((sum, row) => sum + row.amount, 0)), '']], [25, 140, 130, 216]);
+            [...worksheets.salesEstimates.filter(row => row.period === period).map((row, index) => [index + 1, row.customer, formatStoredMoney(row.amount), row.competitor]), ['합계', '', formatStoredMoney(worksheets.salesEstimates.filter(row => row.period === period).reduce((sum, row) => sum + row.amount, 0)), '']], [25, 140, 130, 216]);
         const table = writer.blocks.at(-1);
         if (table?.kind === 'dataTable') table.columnSpans = [{ row: table.rows.length - 1, column: 0, span: 2 }];
     }
 }
 
 function appendProductDiagnosis(writer: ReportWriter, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
+    if (!(['ws-2', 'ws-3', 'ws-4'] as const).some(writer.has)) return;
     writer.addPageBreak(); writer.addHeading('Ⅱ. 고객과 경쟁자를 고려한 제품/서비스 진단', 1);
+    if (writer.has('ws-2')) appendSpec(writer, worksheets, analysis);
+    if (writer.has('ws-3')) appendAttributes(writer, worksheets, analysis);
+    if (!writer.has('ws-4')) return;
+    writer.startSection('제품/서비스 속성 적합도 (WS-4)');
+    const fitnessTables = buildFitnessReportTables(worksheets);
+    if (fitnessTables.length) writer.blocks.push(...fitnessTables);
+    else writer.addWorksheetImage('fitness', '제품/서비스 속성 적합도', '속성 적합도 행렬이 저장되어 있지 않습니다. 평가 결과 그림은 미작성 상태입니다.');
+}
+
+function appendSpec(writer: ReportWriter, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
     writer.addHeading('(AS-IS) 제품/서비스 스펙표 (WS-2)'); writer.addMentorAnalysis('WS-2', analysis.spec?.analysis);
     const specs = buildSpecRows(worksheets.specFunctions);
     const showDetailColumn = specs.some(row => String(row[3] ?? '').trim() !== '') || !worksheets.specDetailCollapsed;
     writer.addTable('WS-2 AS-IS 스펙표', ['No', '핵심기능', '세부기능', ...(showDetailColumn ? ['세세부기능'] : []), '적용기술'],
         showDetailColumn ? specs : specs.map(row => row.filter((_, column) => column !== 3)),
         [24, 73, 136, ...(showDetailColumn ? [57] : []), 221], [1, 2]);
+}
+
+function appendAttributes(writer: ReportWriter, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
     writer.startWorksheetPage('제품속성표 (WS-3)', 'WS-3', analysis.attributes?.analysis);
     writer.addParagraph(`제품(서비스) 명 : ${displayValue(worksheets.productAttributes.find(row => row.productName?.trim())?.productName)}`);
     writer.addTable('WS-3 제품속성서', ['No', '세분시장', '고객명', '고객 니즈', '제공혜택', '제품속성'],
         collapseCustomerRowsToSegments(worksheets.productAttributes).map((row, index) => [index + 1, row.marketSegment, row.customerName, row.customerNeed, row.benefit, row.attribute]), [24, 53, 46, 139, 131, 118], [1, 2, 3, 4]);
     const capabilities = Array.from(new Set(worksheets.productAttributes.map(row => row.techCapability).filter((text): text is string => Boolean(text?.trim()))));
     if (capabilities.length) { writer.addHeading('공통 기술 역량 (WS-3)'); writer.addTable('WS-3 기술 역량', ['기술 역량'], capabilities.map(text => [text])); }
-
-    writer.addPageBreak(); writer.addHeading('제품/서비스 속성 적합도 (WS-4)');
-    const fitnessTables = buildFitnessReportTables(worksheets);
-    if (fitnessTables.length) writer.blocks.push(...fitnessTables);
-    else writer.addWorksheetImage('fitness', '제품/서비스 속성 적합도', '속성 적합도 행렬이 저장되어 있지 않습니다. 평가 결과 그림은 미작성 상태입니다.');
 }
 
 function appendKanoResults(writer: ReportWriter, worksheets: FinalReportWorksheetData) {
@@ -130,32 +151,52 @@ function appendQfdMatrix(writer: ReportWriter, worksheets: FinalReportWorksheetD
 }
 
 function appendQfdAnalysis(writer: ReportWriter, worksheets: FinalReportWorksheetData) {
+    if (!(['ws-5', 'ws-7', 'ws-9', 'ws-10', 'ws-11'] as const).some(writer.has)) return;
     writer.addPageBreak(); writer.addHeading('Ⅲ. QFD를 통한 제품(서비스)스펙 도출', 1);
-    writer.addHeading('고객요구사항(요구품질) (WS-5)'); writer.addMentorAnalysis('WS-5', undefined, false);
-    writer.addTable('WS-5 고객요구사항', ['No', '항목', '1차 그룹', '2차 그룹'], worksheets.requirements.map((row, index) => [index + 1, row.requirement, row.category, row.subcategory]), [24, 279, 108, 100], [2, 3]);
-    appendKanoResults(writer, worksheets);
+    if (writer.has('ws-5')) {
+        writer.addHeading('고객요구사항(요구품질) (WS-5)'); writer.addMentorAnalysis('WS-5', undefined, false);
+        const groupedRequirements = groupRequirementsByCategory(worksheets.requirements.map((row, order) => ({ ...row, order })));
+        writer.addTable('WS-5 고객요구사항', ['No', '항목', '1차 그룹', '2차 그룹'], groupedRequirements.map((row, index) => [index + 1, row.requirement, row.category, row.subcategory]), [24, 279, 108, 100], [3, 2]);
+    }
+    if (writer.has('ws-7')) appendKanoResults(writer, worksheets);
 
-    writer.startWorksheetPage('Competitive Assessment · 경쟁적 우위요인 평가 (WS-9)', 'WS-9', undefined, false);
-    const competitiveTables = buildQfdReportTables(worksheets, false);
-    if (competitiveTables.length) writer.blocks.push(...competitiveTables);
-    else writer.addParagraph('WS-9 경쟁적 우위요인 평가의 저장 내용이 없습니다. 미작성 상태입니다.', 'notice');
-    writer.startWorksheetPage('개선포인트점수 기반 고객니즈 우선순위 (WS-11)', 'WS-11', undefined, false);
-    writer.addTable('WS-11 고객니즈 우선순위', ['순위', '고객니즈', '경쟁사대비 수준향상율', '개발향상비중'], worksheets.improvementNeeds.map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]), [24, 313, 82, 92]);
-    writer.startWorksheetPage('Engineering Metrics · 기술요구사항 도출 (WS-10)', 'WS-10', undefined, false);
-    writer.addTable('WS-10 기능기술체계도', ['고객의 소리', '핵심스펙(기능)', '세부스펙(기능)', '기술적 특성'], worksheets.techTree.map(row => [row.customerVoice, row.coreSpec, row.subSpec, row.techCharacteristic]), [130, 110, 110, 161], [0, 1, 2, 3]);
-    appendQfdMatrix(writer, worksheets);
+    if (writer.has('ws-9')) {
+        writer.startWorksheetPage('Competitive Assessment · 경쟁적 우위요인 평가 (WS-9)', 'WS-9', undefined, false);
+        const competitiveTables = buildQfdReportTables(worksheets, false);
+        if (competitiveTables.length) writer.blocks.push(...competitiveTables);
+        else writer.addParagraph('WS-9 경쟁적 우위요인 평가의 저장 내용이 없습니다. 미작성 상태입니다.', 'notice');
+    }
+    if (writer.has('ws-11')) {
+        writer.startWorksheetPage('개선포인트점수 기반 고객니즈 우선순위 (WS-11)', 'WS-11', undefined, false);
+        writer.addTable('WS-11 고객니즈 우선순위', ['번호', '고객니즈', '경쟁사대비 수준향상율', '개발향상비중'], worksheets.improvementNeeds.map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]), [24, 313, 82, 92]);
+    }
+    if (writer.has('ws-10')) {
+        writer.startWorksheetPage('Engineering Metrics · 기술요구사항 도출 (WS-10)', 'WS-10', undefined, false);
+        writer.addTable('WS-10 기능기술체계도', ['고객의 소리', '핵심스펙(기능)', '세부스펙(기능)', '기술적 특성'], worksheets.techTree.map(row => [row.customerVoice, row.coreSpec, row.subSpec, row.techCharacteristic]), [130, 110, 110, 161], [0, 1, 2, 3]);
+    }
+    if (writer.has('ws-9')) appendQfdMatrix(writer, worksheets);
+    if (!writer.has('ws-11')) return;
     writer.startWorksheetPage('개선포인트 기반 개선 기능/성능 List (WS-11)', 'WS-11', undefined, false);
-    writer.addTable('WS-11 개선 기능/성능', ['순위', '개선포인트 우선순위(고객니즈)', '추가 기능', '성능향상'], worksheets.improvementFeatures.map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]), [24, 263, 112, 112]);
+    writer.addTable('WS-11 개선 기능/성능', ['번호', '개선포인트 우선순위(고객니즈)', '추가 기능', '성능향상'], worksheets.improvementFeatures.map((row, index) => [index + 1, row.content, row.improvementRate, row.devProportion]), [24, 263, 112, 112]);
 }
 
 function appendTargetProduct(writer: ReportWriter, worksheets: FinalReportWorksheetData, freeInput: FinalReportFreeInput, analysis: WorksheetAnalysis) {
+    if (!(['ws-12', 'ws-13'] as const).some(writer.has)) return;
     writer.addPageBreak(); writer.addHeading('Ⅳ. (To-Be) 최종 고객요구사항기반 제품정의서', 1);
+    if (writer.has('ws-12')) appendTargetSpec(writer, worksheets, freeInput, analysis);
+    if (writer.has('ws-13')) appendImprovementDirections(writer, worksheets, freeInput, analysis);
+}
+
+function appendTargetSpec(writer: ReportWriter, worksheets: FinalReportWorksheetData, freeInput: FinalReportFreeInput, analysis: WorksheetAnalysis) {
     writer.addHeading('최종 목표 스펙 (WS-12)');
     const specAnalysis = analysis['target-spec'];
     writer.addMentorAnalysis('WS-12', specAnalysis ? specAnalysis.items.map(item => `${item.label}\n${displayValue(item.explanation)}`).join('\n\n') : freeInput.finalSpecExplanation);
     writer.addTable('WS-12 최종 제품/서비스 제공 스펙', ['스펙분류', '세부항목', '기술적 특성', '개선여부'], worksheets.targetSpecs.map(row => [row.category, row.subCategory, row.specItem, row.note]), [115, 140, 166, 90], [0, 1]);
     const targetTable = writer.blocks.at(-1);
     if (targetTable?.kind === 'dataTable') targetTable.highlightRows = worksheets.targetSpecs.flatMap((row, index) => row.note?.trim() === '신규' ? [index] : []);
+}
+
+function appendImprovementDirections(writer: ReportWriter, worksheets: FinalReportWorksheetData, freeInput: FinalReportFreeInput, analysis: WorksheetAnalysis) {
     writer.addHeading('개선 제품(서비스)명 및 개선 제품설명 (WS-13)');
     const roadmap = analysis['tech-roadmap'];
     writer.addMentorAnalysis('WS-13', [roadmap?.productName ?? freeInput.improvedProductName, roadmap?.description ?? freeInput.improvedProductDescription].filter(Boolean).join('\n'));
@@ -164,22 +205,29 @@ function appendTargetProduct(writer: ReportWriter, worksheets: FinalReportWorksh
 }
 
 function appendAssetAndFundingPlans(writer: ReportWriter, worksheets: FinalReportWorksheetData, analysis: WorksheetAnalysis) {
+    if (!(['ws-14', 'ws-15', 'ws-16'] as const).some(writer.has)) return;
     writer.addPageBreak(); writer.addHeading('Ⅴ. 자산 및 자금계획', 1);
-    writer.addHeading('핵심자산 및 보완자산 (WS-14)'); writer.addMentorAnalysis('WS-14', [analysis.assets?.core, analysis.assets?.complementary].filter(Boolean).join('\n\n'));
-    for (const table of buildAssetReportTables(worksheets)) { writer.addParagraph(table.title!, 'analysis'); writer.blocks.push(table); }
-    writer.addHeading('자금소요계획 (WS-15)'); writer.addMentorAnalysis('WS-15', analysis['funding-plan']?.analysis);
-    writer.addParagraph('단위: 백만원', 'caption');
-    writer.blocks.push(buildFundingPlanReportTable(worksheets));
-    writer.addParagraph('1차년도 매출액은 WS-1의 향후 1년 목표매출 합계와 연동됩니다.', 'caption');
+    if (writer.has('ws-14')) {
+        writer.addHeading('핵심자산 및 보완자산 (WS-14)'); writer.addMentorAnalysis('WS-14', [analysis.assets?.core, analysis.assets?.complementary].filter(Boolean).join('\n\n'));
+        for (const table of buildAssetReportTables(worksheets)) { writer.addParagraph(table.title!, 'analysis'); writer.blocks.push(table); }
+    }
+    if (writer.has('ws-15')) {
+        writer.addHeading('자금소요계획 (WS-15)'); writer.addMentorAnalysis('WS-15', analysis['funding-plan']?.analysis);
+        writer.addParagraph('단위: 천원', 'caption');
+        writer.blocks.push(buildFundingPlanReportTable(worksheets));
+        writer.addParagraph('1차년도 매출액은 WS-1의 향후 1년 목표매출 합계와 연동됩니다.', 'caption');
+    }
+    if (!writer.has('ws-16')) return;
     writer.startWorksheetPage('자금조달계획 (WS-16)', 'WS-16', analysis['funding-source']?.analysis);
-    writer.addParagraph('단위: 백만원', 'caption');
+    writer.addParagraph('단위: 천원', 'caption');
     writer.blocks.push(buildFundingSourceReportTable(worksheets));
 }
 
-export function buildReportTemplate(overview: FinalReportOverviewInput, worksheets: FinalReportWorksheetData, freeInput: FinalReportFreeInput, images: CapturedWorksheetImage[], analysis: WorksheetAnalysis): FinalReportBlock[] {
+export function buildReportTemplate(overview: FinalReportOverviewInput, worksheets: FinalReportWorksheetData, freeInput: FinalReportFreeInput, images: CapturedWorksheetImage[], analysis: WorksheetAnalysis, excluded: readonly ReportWorksheetId[] = []): FinalReportBlock[] {
+    worksheets = orderReportWorksheetData(worksheets);
     const blocks: FinalReportBlock[] = [{ kind: 'cover', title: 'KS-QFD 활용 제품개선보고서', projectName: overview.projectName,
         companyName: displayValue(overview.companyName), coachName: overview.coachName?.trim() || '미배정', outputDate: overview.generatedAt }];
-    const writer = createReportWriter(blocks, images);
+    const writer = createReportWriter(blocks, images, excluded);
     appendProductOverview(writer, overview, worksheets, freeInput);
     appendProductDiagnosis(writer, worksheets, analysis);
     appendQfdAnalysis(writer, worksheets);

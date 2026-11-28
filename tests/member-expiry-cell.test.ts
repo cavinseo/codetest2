@@ -87,3 +87,11 @@ it('저장 중 날짜 변경과 중복 저장을 막고 통신 오류 뒤 복구
     expect(button('저장').disabled).toBe(false);
     expect(container.querySelector('[role="alert"]')!.textContent).toContain('연결 상태');
 });
+
+it('관리자 계정은 이용만료일을 편집할 수 없게 값만 보여 준다(감리 B10)', async () => {
+    await act(async () => root.render(createElement('table', null,
+        createElement('tbody', null, createElement('tr', null,
+            createElement(MemberExpiryCell, { member: { ...member, accessExpiresAt: null, isAdmin: true }, onSaved }))))));
+    expect(container.textContent).toBe('무기한');
+    expect(container.querySelector('button')).toBeNull();
+});

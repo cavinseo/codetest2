@@ -145,6 +145,9 @@ export default function AttributeFitnessPage() {
     const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const [savedAt, setSavedAt] = useState<string | null>(null);
+    // 서버가 읽은 적합도 행의 개정값. 조회에 실패하면 null 로 남아 저장이 428 로 막힌다 —
+    // 읽지 못한 화면의 기본값으로 저장된 적합도를 덮어쓰지 않기 위해서다.
+    const [revision, setRevision] = useState<string | null>(null);
     const { toast, showToast } = useToast();
 
     useEffect(() => {
@@ -166,6 +169,7 @@ export default function AttributeFitnessPage() {
 
                 const fitnessData = await fitRes.json();
                 const fitnesses: AttributeFitness[] = fitnessData.fitnesses || [];
+                setRevision(fitnessData.revision ?? null);
                 const map: Record<string, AttributeFitness> = {};
                 fitnesses.forEach(f => { map[f.attributeId] = f; });
                 setFitnessMap(map);
@@ -206,12 +210,17 @@ export default function AttributeFitnessPage() {
             const fitnesses = attributes.map((attr) => fitnessMap[attr.id] ?? createDefaultFitness(projectId, attr.id));
             const response = await fetch(`/api/projects/${projectId}/attributes/fitness`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({ fitnesses }),
             });
+            const data = await response.json().catch(() => null);
             if (response.ok) {
+                setRevision(data?.revision ?? null);
                 setSavedAt('저장됨');
                 showToast('적합도 분석이 저장되었습니다.', 'success');
+            } else if (response.status === 409 || response.status === 428) {
+                // 다른 화면에서 바뀌었다. 입력은 유지하고 서버 문구로 새로고침을 안내한다.
+                showToast(data?.error || '다른 화면에서 변경되었습니다. 새로고침 후 다시 확인하세요.', 'error');
             } else {
                 showToast('저장에 실패했습니다.', 'error');
             }

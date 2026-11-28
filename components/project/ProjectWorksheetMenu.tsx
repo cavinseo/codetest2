@@ -2,6 +2,8 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { isKanoAnalysisWorksheet } from '@/lib/kano-analysis-access';
 import { usePathname } from 'next/navigation';
 import ThemeToggle from '@/components/ThemeToggle';
 import { WORKSHEET_LINKS } from '@/lib/worksheet-pages';
@@ -16,6 +18,24 @@ export default function ProjectWorksheetMenu({ projectId }: ProjectWorksheetMenu
     const basePath = `/project/${projectId}`;
     const suffix = pathname.startsWith(basePath) ? pathname.slice(basePath.length).replace(/^\/+/, '') : '';
     const isWorksheetPage = !HIDDEN_SEGMENTS.has(suffix);
+    const [kanoAccess, setKanoAccess] = useState({ projectId: '', canRead: false });
+    const canReadKanoAnalysis = kanoAccess.projectId === projectId && kanoAccess.canRead;
+
+    useEffect(() => {
+        if (!isWorksheetPage) return;
+        const controller = new AbortController();
+        async function loadAccess() {
+            try {
+                const response = await fetch(`/api/projects/${projectId}/kano/analysis?view=summary`, { signal: controller.signal });
+                const summary = response.ok ? await response.json() : null;
+                if (!controller.signal.aborted) setKanoAccess({ projectId, canRead: summary?.canRead === true });
+            } catch {
+                if (!controller.signal.aborted) setKanoAccess({ projectId, canRead: false });
+            }
+        }
+        void loadAccess();
+        return () => controller.abort();
+    }, [projectId, isWorksheetPage]);
 
     if (!isWorksheetPage) {
         return null;
@@ -33,7 +53,7 @@ export default function ProjectWorksheetMenu({ projectId }: ProjectWorksheetMenu
                     >
                         프로젝트 개요
                     </Link>
-                    {WORKSHEET_LINKS.map((item) => {
+                    {WORKSHEET_LINKS.filter(item => canReadKanoAnalysis || !isKanoAnalysisWorksheet(item.href)).map((item) => {
                         const targetHref = `${basePath}/${item.href}`;
                         const isActive = pathname === targetHref || pathname.startsWith(`${targetHref}/`);
 

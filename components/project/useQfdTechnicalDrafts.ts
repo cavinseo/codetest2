@@ -141,13 +141,26 @@ export function useQfdTechnicalDrafts(params: {
 
         if (nextValue === currentValue) return;
 
-        const res = await fetch(`/api/projects/${projectId}/qfd/technical-benchmarks`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ technicalCharId: tech.id, company, value: nextValue }),
-        });
+        // 측정단위·목표치와 같이 실패하면 입력한 값을 칸에 되돌려 놓는다. 자사·경쟁사 값만
+        // 이 처리가 빠져 저장이 실패하면 입력이 사라지고, 연결 오류는 아예 알리지 않았다(감리 B14).
+        const restoreDraft = () =>
+            setTechFieldDrafts((drafts) => (key in drafts ? drafts : { ...drafts, [key]: nextValue }));
+
+        let res: Response;
+        try {
+            res = await fetch(`/api/projects/${projectId}/qfd/technical-benchmarks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ technicalCharId: tech.id, company, value: nextValue }),
+            });
+        } catch {
+            restoreDraft();
+            showToast(`${label} 값을 저장하지 못했습니다. 연결을 확인하세요.`, 'error');
+            return;
+        }
 
         if (!res.ok) {
+            restoreDraft();
             const errorData = await res.json().catch(() => null);
             showToast(errorData?.error || `${label} 값을 저장하지 못했습니다.`, 'error');
             return;
@@ -155,6 +168,11 @@ export function useQfdTechnicalDrafts(params: {
 
         await loadData();
         showToast(`${label} 값을 저장했습니다.`);
+    };
+
+    const draftOrLatestTechFieldValue = (tech: DraftTechnical, field: TechnicalTextField) => {
+        const key = techFieldKey(tech.id, field);
+        return key in techFieldDrafts ? techFieldDrafts[key] : latestTechFieldValue(tech, field);
     };
 
     /** 워크시트 저장이 보낼, 아직 저장하지 않은 초안의 요청들. 기술특성 순서대로 보낸다. */
@@ -165,11 +183,13 @@ export function useQfdTechnicalDrafts(params: {
                 saves.push({
                     path: 'technical',
                     method: 'PATCH',
+                    // 초안이 없는 칸은 칸 저장과 같이 보내 놓고 아직 반영되지 않은 값을 쓴다. 화면의 옛 값을
+                    // 보내면 방금 보낸 단위나 목표치를 되돌린다(감리 B14, B21 과 같은 경우).
                     body: {
                         id: tech.id,
                         name: tech.name,
-                        unit: getTechFieldValue(tech, 'unit').trim(),
-                        targetValue: getTechFieldValue(tech, 'targetValue').trim(),
+                        unit: draftOrLatestTechFieldValue(tech, 'unit').trim(),
+                        targetValue: draftOrLatestTechFieldValue(tech, 'targetValue').trim(),
                     },
                 });
             }

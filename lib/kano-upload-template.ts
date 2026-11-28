@@ -1,6 +1,8 @@
+import { kanoRequirementSnapshotRows, KANO_ORDER_SHEET } from './kano-requirement-snapshot';
 import * as XLSX from 'xlsx';
 
 export interface KanoTemplateRequirement {
+    id?: string;
     category?: string | null;
     subcategory?: string | null;
     requirement: string;
@@ -59,6 +61,7 @@ export function buildKanoUploadTemplateWorkbook(
     XLSX.utils.book_append_sheet(workbook, responsesSheet, 'Kano응답업로드');
     XLSX.utils.book_append_sheet(workbook, questionsSheet, 'Kano질문목록');
     XLSX.utils.book_append_sheet(workbook, guideSheet, '응답점수안내');
+    if (requirements.every(row => row.id)) XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(kanoRequirementSnapshotRows(requirements as { id: string }[])), KANO_ORDER_SHEET);
     return workbook;
 }
 
@@ -80,7 +83,7 @@ function googleFormsQuestionTitle(
         ? `[${requirement.category}${requirement.subcategory ? ` > ${requirement.subcategory}` : ''}] `
         : '';
     const prefix = type === 'positive' ? '👍 [긍정]' : '👎 [부정]';
-    return `${prefix} ${categoryLabel}${requirement.requirement}`;
+    return `${prefix} ${categoryLabel}${requirement.requirement}${requirement.id ? ` {id:${requirement.id}}` : ''}`;
 }
 
 export function buildKanoGoogleFormsTemplateWorkbook(
@@ -111,7 +114,7 @@ export function buildKanoGoogleFormsTemplateWorkbook(
     const guideRows = [
         [`${projectName} Google Forms 응답 시트 업로드 안내`],
         ['Google Forms 응답을 스프레드시트로 연결한 뒤 xlsx로 다운로드한 파일을 그대로 업로드할 수 있습니다.'],
-        ['긍정/부정 질문 열은 Google Forms 생성 시 사용한 순서대로 요구사항과 매칭됩니다.'],
+        ['긍정/부정 질문 열의 항목 식별자로 연결하므로 요구사항 순서가 바뀌어도 기존 응답이 유지됩니다.'],
         [],
         ...ANSWER_GUIDE,
     ];
@@ -121,6 +124,7 @@ export function buildKanoGoogleFormsTemplateWorkbook(
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, responsesSheet, '설문지 응답 시트1');
     XLSX.utils.book_append_sheet(workbook, guideSheet, '응답점수안내');
+    if (requirements.every(row => row.id)) XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(kanoRequirementSnapshotRows(requirements as { id: string }[])), KANO_ORDER_SHEET);
     return workbook;
 }
 

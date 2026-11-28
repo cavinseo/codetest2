@@ -7,10 +7,10 @@ import Link from 'next/link';
 import WorksheetLoadError from './WorksheetLoadError';
 import UploadWritePolicyPrompt from './UploadWritePolicyPrompt';
 import { UNSAVED_BEFORE_EXCEL_MESSAGE, useUnsavedWorksheet } from './useUnsavedWorksheet';
+import { shouldAskCascadeAgain } from '@/lib/cascade-confirm-client';
 import {
     groupRequirementsByCategory,
     getRequirementGroupSpans,
-    sortRequirementsByWorksheetOrder,
 } from '@/lib/requirements-table-utils';
 import { EXCEL_FILE_TYPE_ERROR, isExcelFileName } from '@/lib/upload-guard';
 
@@ -24,6 +24,7 @@ interface Requirement {
 
 interface RequirementsTableProps {
     projectId: string;
+    onDirtyChange?: (dirty: boolean) => void;
 }
 
 // 카테고리별 색상 팔레트 (최대 10개 순환)
@@ -48,7 +49,7 @@ function useCategoryColor(categories: string[]) {
     return map;
 }
 
-export default function RequirementsTable({ projectId }: RequirementsTableProps) {
+export default function RequirementsTable({ projectId, onDirtyChange }: RequirementsTableProps) {
     const templateDownloadUrl = `/api/projects/${projectId}/import/template?sheet=requirements`;
     const [requirements, setRequirements] = useState<Requirement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -59,6 +60,10 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     const [pendingExcelFile, setPendingExcelFile] = useState<File | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValues, setEditValues] = useState<Partial<Requirement>>({});
+    const savedRequirementCount = useRef(0);
+    // 서버가 읽은 행의 개정값. 저장 때 돌려보내, 그 사이 다른 사람이 추가한 행을
+    // notIn 삭제로 지우지 않게 한다.
+    const [revision, setRevision] = useState<string | null>(null);
 
     // 새 행 입력 상태
     const [newRow, setNewRow] = useState({ category: '', subcategory: '', requirement: '' });
@@ -145,13 +150,16 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                 const data = await res.json();
                 if (!Array.isArray(data.requirements)) throw new Error('요구사항 응답 형식 오류');
                 // 엑셀 업로드로 들어온 행은 2차 분류가 비어 있으면 null 이므로 빈 문자열로 맞춰 둔다.
-                setRequirements((data.requirements || []).map((row: Partial<Requirement>) => ({
+                const loadedRequirements = data.requirements.map((row: Partial<Requirement>) => ({
                     id: row.id ?? '',
                     category: row.category ?? '',
                     subcategory: row.subcategory ?? '',
                     requirement: row.requirement ?? '',
                     order: row.order ?? 0,
-                })));
+                }));
+                setRequirements(loadedRequirements);
+                savedRequirementCount.current = loadedRequirements.length;
+                setRevision(data.revision ?? null);
                 setLoadedProjectId(projectId);
             }
         } catch (e) {
@@ -184,6 +192,17 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         !loadFailed && loadedProjectId === projectId,
     );
 
+    // 표를 모두 지운 뒤 저장하면 전체 삭제로 보낸다. 처음부터 빈 표에서는 보낼 것이 없으므로
+    // 마지막으로 불러오거나 저장한 행이 있었는지로 저장 버튼을 연다.
+    const canDeleteAll = requirements.length === 0 && savedRequirementCount.current > 0;
+
+    // 프로젝트 화면이 이 prop 으로 편집 상태를 받던 경로를 유지한다. 판정은 useUnsavedWorksheet 의
+    // 스냅숏 비교 하나만 쓰고, 떠날 때 묻는 일은 그 훅의 이탈 가드가 맡는다.
+    useEffect(() => {
+        onDirtyChange?.(isDirty);
+        return () => onDirtyChange?.(false);
+    }, [isDirty, onDirtyChange]);
+
     const createNewRequirement = (): Requirement | null => {
         if (!newRow.category.trim() || !newRow.requirement.trim()) {
             showToast('카테고리와 요구사항을 입력하세요.', 'error');
@@ -198,7 +217,9 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         };
     };
 
-    const handleSave = async (options: { confirmCascade?: boolean } = {}) => {
+    // confirmedCascadeImpact: 확인창에 보여 준 서버의 건수를 그대로 돌려보낸다. 서버는
+    // 그 사이 건수가 바뀌었으면 새 건수로 다시 묻는다(감리 B4).
+    const handleSave = async (options: { confirmedCascadeImpact?: unknown } = {}) => {
         if (isSaving || isLoading || loadFailed || loadedProjectId !== projectId) return;
         // 열려 있는 인라인 편집을 먼저 반영한다. 예전에는 editValues 를 둔 채
         // requirements 만 보내고 성공하면 editValues 를 버려서, 항목을 고치는
@@ -213,33 +234,51 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         const requirementsToSave = groupRequirementsByCategory(
             newRequirement ? [...editedRequirements, newRequirement] : editedRequirements
         );
+        if (requirementsToSave.some(row => !row.category.trim() || !row.requirement.trim())) {
+            showToast('1차 그룹과 요구사항을 입력하세요.', 'error');
+            return;
+        }
 
         setIsSaving(true);
         try {
             const res = await fetch(`/api/projects/${projectId}/requirements`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
                 body: JSON.stringify({
                     requirements: requirementsToSave,
-                    ...(options.confirmCascade ? { confirmCascade: true } : {}),
+                    ...(requirementsToSave.length === 0 ? { deleteAll: true } : {}),
+                    ...(options.confirmedCascadeImpact ? { confirmedCascadeImpact: options.confirmedCascadeImpact } : {}),
                 }),
             });
             const data = await res.json().catch(() => null);
 
             // id 없는 행만 남아 전체 삭제로 이어지면 서버가 409 로 막는다.
-            // 무엇이 함께 지워지는지 보여주고 한 번 더 확인받는다.
+            // 무엇이 함께 지워지는지 보여주고 한 번 더 확인받는다. 확인 뒤 건수가
+            // 바뀌어 다시 409 가 오면 새 건수로 다시 묻는다.
             if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (!shouldAskCascadeAgain(data, options.confirmedCascadeImpact)) {
+                    showToast(data.error || '저장하지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+                    return;
+                }
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await handleSave({ confirmCascade: true });
+                    await handleSave({ confirmedCascadeImpact: data.cascadeImpact });
                     return;
                 }
                 showToast('저장을 취소했습니다.', 'error');
                 return;
             }
 
+            if (res.status === 409 || res.status === 428) {
+                // 다른 화면에서 바뀌었다. 입력은 유지하고 서버 문구로 새로고침을 안내한다.
+                showToast(data?.error || '다른 화면에서 변경되었습니다. 새로고침 후 다시 확인하세요.', 'error');
+                return;
+            }
+
             if (res.ok) {
+                setRevision(data?.revision ?? null);
                 showToast('저장되었습니다.', 'success');
                 setRequirements(requirementsToSave);
+                savedRequirementCount.current = requirementsToSave.length;
                 setEditingId(null);
                 setEditValues({});
                 if (newRequirement) {
@@ -275,7 +314,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
     const uploadExcel = async (
         file: File,
         writePolicy: 'replace' | 'append',
-        options: { confirmCascade?: boolean } = {}
+        options: { confirmedCascadeImpact?: unknown } = {}
     ) => {
         setIsUploadingExcel(true);
         try {
@@ -284,8 +323,8 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             formData.append('action', 'apply');
             formData.append('writePolicy', writePolicy);
             formData.append('sheetNames', '고객요구사항도출표');
-            if (options.confirmCascade) {
-                formData.append('confirmCascade', 'true');
+            if (options.confirmedCascadeImpact) {
+                formData.append('confirmedCascadeImpact', JSON.stringify(options.confirmedCascadeImpact));
             }
 
             const res = await fetch(`/api/projects/${projectId}/import`, {
@@ -296,10 +335,15 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
             // replace 로 덮어쓰면 Kano 응답이 캐스케이드로 함께 지워진다. 서버가
             // 409 로 막아주므로, 무엇이 사라지는지 보여주고 한 번 더 확인받은 뒤
-            // 같은 파일을 confirmCascade 와 함께 다시 보낸다.
-            if (res.status === 409 && data?.needsCascadeConfirm && !options.confirmCascade) {
+            // 같은 파일을 확인한 건수와 함께 다시 보낸다. 그 사이 건수가 바뀌어 다시
+            // 409 가 오면 새 건수로 다시 묻는다.
+            if (res.status === 409 && data?.needsCascadeConfirm) {
+                if (!shouldAskCascadeAgain(data, options.confirmedCascadeImpact)) {
+                    showToast(data.error || '업로드하지 못했습니다. 새로고침 후 다시 시도하세요.', 'error');
+                    return;
+                }
                 if (window.confirm(`${data.error}\n\n그래도 계속하시겠습니까?`)) {
-                    await uploadExcel(file, writePolicy, { confirmCascade: true });
+                    await uploadExcel(file, writePolicy, { confirmedCascadeImpact: data.cascadeImpact });
                     return;
                 }
                 showToast('업로드를 취소했습니다. 기존 데이터는 그대로 유지됩니다.', 'error');
@@ -338,6 +382,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
     // 새 행 입력에서 Enter → 추가
     const handleNewRowKey = (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleAddNew();
@@ -350,6 +395,11 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
 
     // 인라인 편집 시작
     const startEdit = (req: Requirement) => {
+        if (editingId && editingId !== req.id) {
+            setRequirements(prev => prev.map(row =>
+                row.id === editingId ? { ...row, ...editValues } : row
+            ));
+        }
         setEditingId(req.id);
         setEditValues({ category: req.category, subcategory: req.subcategory, requirement: req.requirement });
     };
@@ -373,8 +423,8 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
         setRequirements(prev => prev.filter(r => r.id !== id));
     };
 
-    // 편집·추가·저장 시 그룹별로 정리한 행 순서를 표시한다.
-    const sorted = sortRequirementsByWorksheetOrder(requirements);
+    // 기존 저장 순서가 섞여 있어도 화면과 저장에 같은 그룹 계층을 적용한다.
+    const sorted = groupRequirementsByCategory(requirements);
     const groupSpans = getRequirementGroupSpans(sorted, editingId);
 
     const groupedCategories = [...new Set(sorted.map(r => r.category))];
@@ -413,7 +463,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-xl font-display font-bold text-white">[WS-5] 고객 요구사항 관리</h2>
-                    <p className="text-sm text-gray-500 mt-1">Kano 설문의 기반이 되는 고객 요구사항 · 항목을 클릭하면 바로 수정할 수 있습니다</p>
+                    <p className="text-sm text-gray-500 mt-1">Kano 설문의 기반이 되는 고객 요구사항 · 행 편집을 반영한 뒤 상단 저장을 눌러주세요</p>
                 </div>
                 <div className="flex items-center gap-2">
                     {/* 통계 */}
@@ -498,7 +548,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                     </button>
                     <button
                         onClick={() => handleSave()}
-                        disabled={isSaving || (requirements.length === 0 && (!isAddingNew || !newRow.category.trim() || !newRow.requirement.trim()))}
+                        disabled={isSaving || (!canDeleteAll && requirements.length === 0 && (!isAddingNew || !newRow.category.trim() || !newRow.requirement.trim()))}
                         className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -558,7 +608,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                     type="text"
                                                     value={editValues.requirement ?? ''}
                                                     onChange={e => setEditValues(v => ({ ...v, requirement: e.target.value }))}
-                                                    onKeyDown={e => { if (e.key === 'Enter') commitEdit(req.id); if (e.key === 'Escape') cancelEdit(); }}
+                                                    onKeyDown={e => { if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return; if (e.key === 'Enter') commitEdit(req.id); if (e.key === 'Escape') cancelEdit(); }}
                                                     className="w-full px-2 py-1.5 bg-white/[0.06] border border-primary-500/30 rounded-lg text-white text-xs outline-none focus:ring-1 focus:ring-primary-500/50"
                                                     autoFocus
                                                 />
@@ -570,7 +620,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                         </td>
 
                                         {/* 1차 그룹 */}
-                                        {primary > 0 && <td data-group-level="primary" rowSpan={primary} className="px-2 py-1.5 align-top">
+                                        {primary > 0 && <td data-group-level="primary" rowSpan={primary} className="px-2 py-1.5 align-middle text-center">
                                             {isEditing ? (
                                                 <>
                                                     <input
@@ -578,7 +628,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                         list="cat_autocomplete"
                                                         value={editValues.category ?? ''}
                                                         onChange={e => setEditValues(v => ({ ...v, category: e.target.value }))}
-                                                        onKeyDown={e => { if (e.key === 'Enter') commitEdit(req.id); if (e.key === 'Escape') cancelEdit(); }}
+                                                        onKeyDown={e => { if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return; if (e.key === 'Enter') commitEdit(req.id); if (e.key === 'Escape') cancelEdit(); }}
                                                         className="w-full px-2 py-1.5 bg-white/[0.06] border border-red-500/30 rounded-lg text-red-100 text-xs outline-none focus:ring-1 focus:ring-red-500/50"
                                                     />
                                                     <datalist id="cat_autocomplete">
@@ -593,7 +643,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                         </td>}
 
                                         {/* 2차 그룹 */}
-                                        {secondary > 0 && <td data-group-level="secondary" rowSpan={secondary} className="px-2 py-1.5 align-top">
+                                        {secondary > 0 && <td data-group-level="secondary" rowSpan={secondary} className="px-2 py-1.5 align-middle text-center">
                                             {isEditing ? (
                                                 <>
                                                     <input
@@ -601,7 +651,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                         list="subcat_autocomplete"
                                                         value={editValues.subcategory ?? ''}
                                                         onChange={e => setEditValues(v => ({ ...v, subcategory: e.target.value }))}
-                                                        onKeyDown={e => { if (e.key === 'Enter') commitEdit(req.id); if (e.key === 'Escape') cancelEdit(); }}
+                                                        onKeyDown={e => { if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return; if (e.key === 'Enter') commitEdit(req.id); if (e.key === 'Escape') cancelEdit(); }}
                                                         placeholder="선택사항"
                                                         className="w-full px-2 py-1.5 bg-white/[0.06] border border-blue-500/30 rounded-lg text-blue-100 text-xs outline-none focus:ring-1 focus:ring-blue-500/50"
                                                     />
@@ -623,7 +673,7 @@ export default function RequirementsTable({ projectId }: RequirementsTableProps)
                                                     <button
                                                         onClick={() => commitEdit(req.id)}
                                                         className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors"
-                                                        title="저장"
+                                                        title="편집 반영"
                                                     >
                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />

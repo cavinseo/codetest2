@@ -5,10 +5,11 @@ import { sendSurveyInvitation } from '@/lib/email';
 import { generateId } from '@/lib/id';
 import { requireProjectAccess } from '@/lib/authorization';
 import { createLogger } from '@/lib/logger';
-import { guardUploadedExcel } from '@/lib/upload-guard';
+import { checkExcelArchiveSafety, guardUploadedExcel } from '@/lib/upload-guard';
 import {
     parseInviteEmailText,
     parseKanoInviteWorkbook,
+    InviteWorkbookTooLargeError,
     type ParsedInviteList,
 } from '@/lib/kano-invite-template';
 
@@ -48,10 +49,18 @@ async function readInviteList(request: NextRequest): Promise<ParsedInviteList> {
         // 다른 엑셀 업로드 라우트와 같은 검사를 거친다.
         const upload = guardUploadedExcel(formData.get('file'));
         if (!upload.ok) throw new InviteListError(upload.failure.error, upload.failure.status);
-        const buffer = Buffer.from(await upload.file.arrayBuffer());
+        const bytes = new Uint8Array(await upload.file.arrayBuffer());
+        // 크기 검사는 압축된 크기만 본다. 압축 해제 크기는 SheetJS 에 넘기기 전에 따로 막는다.
+        const archiveFailure = checkExcelArchiveSafety(upload.file.name, bytes);
+        if (archiveFailure) throw new InviteListError(archiveFailure.error, archiveFailure.status);
+        const buffer = Buffer.from(bytes);
         try {
             return parseKanoInviteWorkbook(buffer);
-        } catch {
+        } catch (error) {
+            // 시트 범위가 너무 큰 명단은 형식 오류가 아니라 크기 초과로 알려야 사용자가 나눠 올릴 수 있다.
+            if (error instanceof InviteWorkbookTooLargeError) throw new InviteListError(error.message, 413);
+            // SheetJS 파싱 오류 문구는 내부 구조를 드러내므로 로그에만 남기고 고정 문구로 바꾼다.
+            log.error('초대 명단 파일 파싱 실패', error);
             throw new InviteListError('명단 파일을 읽을 수 없습니다. 내려받은 양식의 엑셀 파일인지 확인하세요.');
         }
     }
@@ -106,13 +115,14 @@ export async function POST(
         }
 
         // 이미 초대한 주소는 다시 만들지 않는다.
+        // 행 주소는 이미 소문자다. 예전 단건 초대가 대소문자를 살려 저장했을 수 있어
+        // 대소문자 없이 찾고 소문자로 맞춰 비교한다(감리 B12).
         const existing = await prisma.kanoSurveyInvitation.findMany({
-            where: { projectId, email: { in: parsed.rows.map((row) => row.email) } },
+            where: { projectId, email: { in: parsed.rows.map((row) => row.email), mode: 'insensitive' } },
             select: { email: true },
         });
-        const alreadyInvited = new Set(existing.map((row) => row.email));
+        const alreadyInvited = new Set(existing.map((row) => row.email.toLowerCase()));
 
-        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
         const results: InviteResult[] = parsed.skipped.map((item) => ({
             email: item.value,
             status: 'skipped' as const,
@@ -143,7 +153,7 @@ export async function POST(
                     },
                 });
 
-                const surveyLink = `${baseUrl}/survey/${token}`;
+                const surveyLink = new URL(`/survey/${token}`, request.nextUrl.origin).href;
                 const emailSent = await sendSurveyInvitation(row.email, surveyLink, project.name);
                 if (emailSent) emailSentCount++;
 

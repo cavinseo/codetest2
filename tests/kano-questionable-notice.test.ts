@@ -14,7 +14,8 @@ vi.mock('../lib/prisma', () => ({
         customerRequirement: { findMany: (...args: unknown[]) => requirementFindMany(...(args as [])) },
     },
 }));
-vi.mock('../lib/authorization', () => ({ requireProjectAccess: vi.fn(async () => ({ userId: 'u1' })) }));
+// 분석은 담당 멘토·관리자만 볼 수 있다(lib/kano-analysis-access). 관리자로 요청한다.
+vi.mock('../lib/authorization', () => ({ requireProjectAccess: vi.fn(async () => ({ userId: 'u1', role: 'VIEWER', user: { role: 'ADMIN' } })) }));
 vi.mock('../lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
 
 const { default: KanoAggregationTable } = await import('../components/project/KanoAggregationTable');

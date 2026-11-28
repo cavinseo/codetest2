@@ -68,3 +68,15 @@ it('관리자 권한이 없으면 회원을 조회하거나 변경하지 않는�
     expect(mocks.findUser).not.toHaveBeenCalled();
     expect(mocks.updateUser).not.toHaveBeenCalled();
 });
+// 과거 날짜 한 번으로 관리자 전원이 로그인에서 막히지 않게 관리자 계정은 날짜를 받지 않는다(감리 B10).
+it.each([
+    ['과거 날짜', '2020-01-01'],
+    ['미래 날짜', '2026-12-31'],
+])('관리자 계정의 이용만료일은 %s라도 바꾸지 않는다', async (_label, value) => {
+    mocks.findUser.mockResolvedValue({ ...user, role: 'ADMIN', isAdmin: true, accessExpiresAt: null });
+    const response = await PATCH(request(value));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('관리자 계정은 이용만료일을 지정할 수 없습니다.');
+    expect(mocks.updateUser).not.toHaveBeenCalled();
+    expect(mocks.findInvite).not.toHaveBeenCalled();
+});

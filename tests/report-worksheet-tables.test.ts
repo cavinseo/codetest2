@@ -31,23 +31,34 @@ it('각 표가 작성 화면의 열 순서와 단위·합계·자산 구분을 �
     const { model, tables, worksheets } = fixture();
     const find = (title: string) => tables.find(table => table.title === title)!;
     expect(find('WS-1 현재 매출현황').headers).toEqual(['No.', '매출처', '매출액', '경쟁사명']);
-    expect(find('WS-1 향후 1년 목표매출액').rows.at(-1)).toEqual(['합계', '', '1,000', '']);
+    expect(find('WS-1 향후 1년 목표매출액').rows.at(-1)).toEqual(['합계', '', '1,000,000', '']);
     expect(find('WS-10 기능기술체계도').headers).toEqual(['고객의 소리', '핵심스펙(기능)', '세부스펙(기능)', '기술적 특성']);
     expect(find('WS-10 기능기술체계도').mergeColumns).toEqual([0, 1, 2, 3]);
     expect(find('WS-12 최종 제품/서비스 제공 스펙').headers).toEqual(['스펙분류', '세부항목', '기술적 특성', '개선여부']);
-    expect(find('WS-12 최종 제품/서비스 제공 스펙').highlightRows).toEqual([2]);
+    expect(find('WS-12 최종 제품/서비스 제공 스펙').highlightRows).toEqual([0]);
     expect(worksheets.targetSpecs[0].targetValue).toBe('0.05');
     expect(find('WS-14 핵심자산 도출표').rows).toEqual([['1', '핵심 기술']]);
     expect(find('WS-14 보완자산 도출표').rows).toEqual([['설비', '임대']]);
     expect(find('WS-15 자금소요계획').rows.map(row => row[1])).toEqual(['매출액', '생산비']);
     expect(find('WS-15 자금소요계획').headers).toEqual(['구분', '항목', '1차년도(Y+1)', '2차년도(Y+2)', '3차년도(Y+3)']);
     const source = find('WS-16 자금조달계획');
-    expect(source.rows[0]).toEqual(['정부자금', '1', '지원사업', '1,200', '투자자', '0', '', '']);
-    expect(source.rows.at(-1)).toEqual(['자금조달 합계', '', '', '1,200', '', '0', '', '0']);
+    expect(source.rows[0]).toEqual(['정부자금', '1', '지원사업', '1,200,000', '투자자', '0', '', '']);
+    expect(source.rows.at(-1)).toEqual(['자금조달 합계', '', '', '1,200,000', '', '0', '', '0']);
     expect(source.headerGroups).toEqual([null, null, '1차년도(Y+1)', '1차년도(Y+1)', '2차년도(Y+2)', '2차년도(Y+2)', '3차년도(Y+3)', '3차년도(Y+3)']);
-    expect(JSON.stringify(model)).toContain('단위: 백만원');
+    expect(JSON.stringify(model)).toContain('단위: 천원');
     expect(JSON.stringify(model)).not.toContain('차년도(원)');
     expect(reportDocumentSchema.safeParse(model).success).toBe(true);
+});
+
+it('백만원으로 작성한 초안 표를 갱신하면 단위 설명도 천원으로 바꾸고 본문은 보존한다', () => {
+    const { model } = fixture();
+    const current = { ...model, blocks: model.blocks.map(block => block.kind === 'paragraph' && block.text === '단위: 천원'
+        ? { ...block, text: '단위: 백만원' } : block) };
+    const before = JSON.stringify(current);
+    const refreshed = refreshWorksheetTables(current, model);
+    expect(refreshed.blocks).toEqual(model.blocks);
+    expect(JSON.stringify(current)).toBe(before);
+    expect(refreshWorksheetTables(refreshed, model)).toEqual(refreshed);
 });
 
 it('WS-4와 Kano 표의 다단 머리글·집계 및 QFD의 실제 기술명과 비교값을 출력한다', () => {

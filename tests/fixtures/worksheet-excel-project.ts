@@ -4,7 +4,7 @@ import type { WorksheetExcelProject } from '../../lib/worksheet-excel';
 export function worksheetExcelProject(): WorksheetExcelProject {
     const common = { projectId: 'project-1', order: 0, createdAt: new Date('2026-10-03') };
     return {
-        id: 'project-1', name: '시험 프로젝트', description: '제품 개발', specDetailCollapsed: false,
+        id: 'project-1', name: '시험 프로젝트', description: '제품 개발', specDetailCollapsed: false, includeAdditionalMarketDataInReport: false,
         companyName: null, ownerId: 'owner', programId: 'program', createdAt: common.createdAt, updatedAt: common.createdAt,
         businessPlanFile: null, detailedDescription: null, productName: null, relatedImages: null, productImageDataUrl: null,
         productImageWidthPx: null, productImageHeightPx: null, marketDefinition: null, targetCustomer: null, additionalMarketData: null, aiMode: 'rule', qfdTechnicalInitialized: true,

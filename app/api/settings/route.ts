@@ -6,6 +6,7 @@ import {
     updateAiSettings,
     updateGoogleSettings,
     updateSmtpSettings,
+    SmtpPasswordRequiredError,
     type AiSettings,
 } from '@/lib/service-settings';
 import { requireAdmin } from '@/lib/authorization';
@@ -107,6 +108,9 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         const invalidBody = invalidJsonBodyResponse(error);
         if (invalidBody) return invalidBody;
+        if (error instanceof SmtpPasswordRequiredError) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         return toErrorResponse(error, { log, message: '설정 저장에 실패했습니다.' });
     }
 }

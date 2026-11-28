@@ -34,12 +34,17 @@ const { POST: improvementsPost } = await import('../app/api/projects/[id]/improv
 const { POST: assetsPost } = await import('../app/api/projects/[id]/assets/route');
 const { POST: fundingPost } = await import('../app/api/projects/[id]/funding/route');
 
+const { worksheetRevision } = await import('../lib/worksheet-revision');
+
 const params = { params: Promise.resolve({ id: 'project_1' }) };
 
-function post(body: unknown): NextRequest {
+// tx.*.findMany 가 빈 배열을 돌려주므로, 화면이 빈 워크시트를 읽었다는 개정값이 기본이다.
+const EMPTY_REVISION = worksheetRevision([]);
+
+function post(body: unknown, revision: string | null = EMPTY_REVISION): NextRequest {
     return new NextRequest('http://localhost/api/projects/project_1/x', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(revision ? { 'If-Match': revision } : {}) },
         body: JSON.stringify(body),
     });
 }
@@ -196,5 +201,79 @@ describe('funding POST', () => {
         expect(data[0]).not.toHaveProperty('id');
         expect(data[0]).not.toHaveProperty('createdAt');
         expect(data[0].projectId).toBe('project_1');
+    });
+});
+
+// 전체 교체 저장은 화면이 읽은 뒤 다른 사람이 저장한 행을 지운다. 읽은 시점의 개정값이
+// 현재 행과 다르면 아무것도 지우지 않고 409, 개정값이 없으면 428 이어야 한다(감리 B3).
+describe('전체 교체 저장의 개정값 확인', () => {
+    const someoneElsesRow = { id: 'row_other', projectId: 'project_1', order: 0 };
+
+    it.each([
+        ['improvements', () => improvementsPost, tx.improvementItem, { items: [] }],
+        ['assets', () => assetsPost, tx.assetItem, { assets: [] }],
+    ] as const)('%s: 읽은 뒤 다른 사람이 저장했으면 409 이고 지우지 않는다', async (_label, handler, model, body) => {
+        model.findMany.mockResolvedValueOnce([someoneElsesRow] as never);
+
+        const res = await handler()(post(body), params);
+
+        expect(res.status).toBe(409);
+        expect(model.deleteMany).not.toHaveBeenCalled();
+        expect(model.createMany).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['improvements', () => improvementsPost, tx.improvementItem, { items: [] }],
+        ['assets', () => assetsPost, tx.assetItem, { assets: [] }],
+        ['funding', () => fundingPost, tx.fundingPlan, { plans: [] }],
+    ] as const)('%s: 개정값 없이 저장하면 428 이고 지우지 않는다', async (_label, handler, model, body) => {
+        const res = await handler()(post(body, null), params);
+
+        expect(res.status).toBe(428);
+        expect(model.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['improvements', () => improvementsPost, 'items'],
+        ['assets', () => assetsPost, 'assets'],
+    ] as const)('%s: 저장 후 새 개정값을 돌려준다', async (_label, handler, key) => {
+        const res = await handler()(post({ [key]: [] }), params);
+
+        expect(res.status).toBe(200);
+        await expect(res.json()).resolves.toMatchObject({ revision: EMPTY_REVISION });
+    });
+
+    it('funding: 조달계획이 바뀌어도 소요계획 저장은 막지 않는다', async () => {
+        // 소요계획·조달계획은 화면이 따로 저장하므로, 쓰는 컬렉션의 개정값만 본다.
+        tx.fundingSource.findMany.mockResolvedValueOnce([someoneElsesRow] as never);
+
+        const res = await fundingPost(post({ plans: [] }), params);
+
+        expect(res.status).toBe(200);
+        expect(tx.fundingPlan.deleteMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('funding: 소요계획이 바뀌었으면 소요계획 저장은 409 이다', async () => {
+        tx.fundingPlan.findMany.mockResolvedValueOnce([someoneElsesRow] as never);
+
+        const res = await fundingPost(post({ plans: [] }), params);
+
+        expect(res.status).toBe(409);
+        expect(tx.fundingPlan.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('funding: 두 컬렉션을 함께 보내면 둘을 묶은 개정값을 요구한다', async () => {
+        const bothEmpty = worksheetRevision([[], []]);
+
+        expect((await fundingPost(post({ plans: [], sources: [] }), params)).status).toBe(409);
+        expect((await fundingPost(post({ plans: [], sources: [] }, bothEmpty), params)).status).toBe(200);
+    });
+
+    it('funding: 저장 후 컬렉션별 개정값을 돌려준다', async () => {
+        const res = await fundingPost(post({ plans: [] }), params);
+
+        await expect(res.json()).resolves.toMatchObject({
+            revisions: { plans: EMPTY_REVISION, sources: EMPTY_REVISION, all: worksheetRevision([[], []]) },
+        });
     });
 });

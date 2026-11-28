@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { INVITE_CODE_MESSAGES } from '../lib/invite-code';
+import { programEndDeadline } from '../lib/program';
 
 const findUniqueUser = vi.fn();
 const findUniqueInvite = vi.fn();
@@ -241,7 +242,11 @@ describe('초대 코드 가입', () => {
         expect(res.status).toBe(200);
         const firstLogin = txUpdateInvite.mock.calls[0][0].data.usedAt as Date;
         const expiry = txCreateUser.mock.calls[0][0].data.accessExpiresAt as Date;
-        expect(expiry.getTime()).toBe(Math.min(firstLogin.getTime() + accessDurationDays * 86400000, validInvite.program.endsAt.getTime()));
+        // 프로그램 종료일은 그날 한국 시간 끝까지 유효하다(감리 B8).
+        expect(expiry.getTime()).toBe(Math.min(
+            firstLogin.getTime() + accessDurationDays * 86400000,
+            programEndDeadline(validInvite.program.endsAt).getTime(),
+        ));
     });
 
     it('가입에서도 프로그램 종료일을 넘기지 않는다', async () => {
@@ -249,7 +254,27 @@ describe('초대 코드 가입', () => {
         findUniqueInvite.mockResolvedValue({ ...validInvite, accessDurationDays: 365, program: { endsAt: end } });
         const res = await POST(signupRequest({ name: '새회원', email: 'm@x.com', password: 'password123', inviteCode: validInvite.code, profile: menteeProfile }));
         expect(res.status).toBe(200);
-        expect(txCreateUser.mock.calls[0][0].data.accessExpiresAt).toEqual(end);
+        expect(txCreateUser.mock.calls[0][0].data.accessExpiresAt).toEqual(programEndDeadline(end));
+    });
+
+    it('종료일이 오늘이면 UTC 자정으로 저장된 프로그램도 오전 9시 이후 가입을 받는다', async () => {
+        // 예전 저장값: 종료일을 UTC 자정(=KST 09:00)으로 저장. 지금은 그날 KST 12:00 이다.
+        // 예전에는 이 시각에 "만료된 코드"로 거절됐다(감리 B8).
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+            vi.setSystemTime(new Date('2026-12-31T03:00:00.000Z'));
+            const legacyEnd = new Date('2026-12-31T00:00:00.000Z');
+            findUniqueInvite.mockResolvedValue({
+                ...validInvite, expiresAt: new Date('2026-12-31T14:59:59.999Z'), accessExpiresAt: null, program: { endsAt: legacyEnd },
+            });
+
+            const res = await POST(signupRequest({ name: '새회원', email: 'm@x.com', password: 'password123', inviteCode: validInvite.code, profile: menteeProfile }));
+
+            expect(res.status).toBe(200);
+            expect(txCreateUser.mock.calls[0][0].data.accessExpiresAt).toEqual(new Date('2026-12-31T23:59:59.999+09:00'));
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('종료 프로그램과 잠금 이후 만료된 코드를 거부한다', async () => {

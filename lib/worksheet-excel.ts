@@ -1,3 +1,5 @@
+import { orderRequirementLinkedWorksheets } from './requirement-order';
+import { isKanoAnalysisWorksheet } from './kano-analysis-access';
 // 저장된 데이터를 분석하고 워크시트별 엑셀 양식을 하나의 워크북으로 조립한다.
 import ExcelJS from 'exceljs';
 import type { Prisma } from '@prisma/client';
@@ -40,12 +42,15 @@ function prepareWorksheetData(project: WorksheetExcelProject) {
 
 export type WorksheetExcelContext = ReturnType<typeof prepareWorksheetData>;
 
-export async function buildWorksheetExcel(project: WorksheetExcelProject, requestedWorksheetId?: WorksheetExcelId): Promise<Buffer> {
+export async function buildWorksheetExcel(project: WorksheetExcelProject, requestedWorksheetId?: WorksheetExcelId, options: { includeKanoAnalysis?: boolean } = {}): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'KS-QFD';
     workbook.calcProperties.fullCalcOnLoad = true;
-    const context = prepareWorksheetData(project);
-    const selectedSheets = WORKSHEET_EXCEL_SHEETS.filter(sheet => !requestedWorksheetId || sheet.id === requestedWorksheetId);
+    const context = prepareWorksheetData(orderRequirementLinkedWorksheets(project));
+    const selectedSheets = WORKSHEET_EXCEL_SHEETS.filter(sheet =>
+        (!requestedWorksheetId || sheet.id === requestedWorksheetId)
+        && (options.includeKanoAnalysis !== false || !isKanoAnalysisWorksheet(sheet.id))
+    );
     for (const definition of selectedSheets) {
         const sheet = definition.id === 'qfd' ? workbook.addWorksheet(definition.name) : createWorksheet(workbook, definition.name, project.name, context.technicalCharacteristics.length);
         writeWorksheetContents(sheet, definition.id, context);

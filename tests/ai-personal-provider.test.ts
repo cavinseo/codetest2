@@ -113,6 +113,42 @@ describe('createPersonalProvider', () => {
         const body = JSON.parse(String(calls[0].init.body));
         expect(body.model).toBe('gemini-2.0-flash');
     });
+
+    // 규칙 전에 저장된 주소라도 서버 내부 포트로는 요청하지 않아야 한다(감리 B9).
+    it('local 모드는 저장된 주소가 로컬 LLM 포트가 아니면 버리고 기본 주소만 두드린다', async () => {
+        const urls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            urls.push(url);
+            return new Response('not found', { status: 404 });
+        }));
+
+        const available = await createPersonalProvider({
+            mode: 'local', vendor: null, apiKey: null, model: null, remoteBaseUrl: null, remoteModel: null,
+            localBaseUrl: 'http://127.0.0.1:6379/x', localModel: null,
+        }).isAvailable();
+
+        expect(available).toBe(false);
+        expect(urls.some((url) => url.includes(':6379'))).toBe(false);
+        expect(urls.length).toBeGreaterThan(0);
+        for (const url of urls) {
+            expect(url).toMatch(/^http:\/\/localhost:(11434|1234|8000)\//);
+        }
+    });
+
+    it('local 모드는 규칙에 맞는 저장 주소를 가장 먼저 두드린다', async () => {
+        const urls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            urls.push(url);
+            return new Response('not found', { status: 404 });
+        }));
+
+        await createPersonalProvider({
+            mode: 'local', vendor: null, apiKey: null, model: null, remoteBaseUrl: null, remoteModel: null,
+            localBaseUrl: 'http://localhost:8080/v1', localModel: null,
+        }).isAvailable();
+
+        expect(urls[0]).toBe('http://localhost:8080/v1/models');
+    });
 });
 
 describe('verifyPersonalConnection', () => {

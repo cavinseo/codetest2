@@ -1,5 +1,6 @@
 // WS-6 응답자 초대를 한 번에 여러 명 보내기 위한 명단 양식 생성/파싱 유틸리티
 import * as XLSX from 'xlsx';
+import { checkWorkbookSheetRanges } from './upload-guard';
 
 export interface ParsedInviteRow {
     email: string;
@@ -55,10 +56,17 @@ export function writeKanoInviteTemplateBuffer(projectName = 'Kano 설문'): Buff
     });
 }
 
+/** 명단 시트의 범위가 한도를 넘는다. 일괄 초대 라우트가 413 으로 응답한다. */
+export class InviteWorkbookTooLargeError extends Error {
+    readonly status = 413;
+}
+
 // 업로드한 명단 파일에서 이메일을 뽑아낸다.
 // 안내 문구가 위에 몇 줄 있어도 되도록, 헤더 행을 찾아 그 아래부터 읽는다.
 export function parseKanoInviteWorkbook(buffer: Buffer): ParsedInviteList {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const rangeFailure = checkWorkbookSheetRanges(workbook);
+    if (rangeFailure) throw new InviteWorkbookTooLargeError(rangeFailure.error);
     const sheetName = workbook.SheetNames.find((name) => name.includes('명단')) ?? workbook.SheetNames[0];
     if (!sheetName) return { rows: [], skipped: [] };
 

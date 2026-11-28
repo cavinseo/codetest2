@@ -1,6 +1,7 @@
 // 실제 인가 함수로 배정 멘토의 워크시트 편집과 미배정·해제 후 차단을 검증한다.
 import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { worksheetRevision } from '../lib/worksheet-revision';
 const m = vi.hoisted(() => ({
     auth: vi.fn(), project: vi.fn(), specs: vi.fn(), transaction: vi.fn(),
     deleteSpecs: vi.fn(), createSpec: vi.fn(), importSpecs: vi.fn(),
@@ -19,7 +20,11 @@ import { POST as inviteMember } from '../app/api/projects/[id]/members/route';
 import { DELETE as deleteProject } from '../app/api/admin/projects/route';
 const params = { params: Promise.resolve({ id: 'project' }) };
 const specs = [{ name: '조작', level: 'CORE', order: 0 }];
-const req = (method: string, body: unknown = { specFunctions: specs }) => new NextRequest('http://localhost/api/projects/project/spec', { method, ...(method === 'POST' ? { body: JSON.stringify(body) } : {}) });
+const req = (method: string, body: unknown = { specFunctions: specs }) => new NextRequest('http://localhost/api/projects/project/spec', {
+    method,
+    headers: method === 'POST' ? { 'If-Match': worksheetRevision('rows' in (body as object) ? [{ customer: '고객', amount: 100, order: 0 }] : [{ name: '기존 스펙' }]) } : {},
+    ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
+});
 beforeEach(() => {
     vi.resetAllMocks();
     m.auth.mockResolvedValue({ userId: 'mentor', role: 'MENTOR' });

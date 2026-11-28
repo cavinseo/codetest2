@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import HeaderToast from '@/components/HeaderToast';
 import { useToast } from '@/components/useToast';
+import { orderByRequirementIds } from '@/lib/requirement-order';
 import { getTopRankedQfdRequirements, type RankedTechTreeRequirement } from '@/lib/tech-tree-qfd';
 import { buildBlankTechTreeRows, buildTechTreeSpecOptions, applyTechTreeSpecSelection, findTechTreeSpecOptions, filterTechTreeSpecOptionsByCore, type TechTreeSpecOption } from '@/lib/tech-tree-utils';
 import { useUnsavedWorksheet } from './useUnsavedWorksheet';
@@ -70,6 +71,7 @@ export default function TechTreeTable({ projectId }: Props) {
     // 저장된 체계도·스펙·요구사항을 못 불러온 채 편집을 열면 빈 표처럼 보이고, 자동 생성 후
     // 저장하면 실제 체계도를 덮어쓴다. 실패하면 편집 대신 재시도를 보이고 쓰기를 막는다.
     const [loadFailed, setLoadFailed] = useState(false);
+    const [revision, setRevision] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [specPicker, setSpecPicker] = useState<{ rowIndex: number; rowIds: string[] } | null>(null);
@@ -104,18 +106,30 @@ export default function TechTreeTable({ projectId }: Props) {
                 specRes.json(), reqRes.json(), qfdRes.ok ? qfdRes.json() : null, treeRes.json(),
             ]);
             if (!isLatest()) return;
-            const nextSpecs: SpecFunction[] = specData.specFunctions || [];
+            // 응답 모양이 어긋나면 빈 표로 열려 저장 시 실제 체계도를 덮어쓰고, 개정값이 없으면 저장할 수
+            // 없다. 둘 다 편집을 열지 않고 불러오기 실패로 다룬다.
+            if (!Array.isArray(specData?.specFunctions) || !Array.isArray(requirementData?.requirements)
+                || !Array.isArray(treeData?.entries)
+                || typeof treeData.revision !== 'string' || !/^[a-f0-9]{64}$/.test(treeData.revision)) throw new Error('기능기술체계도 응답 형식 오류');
+            const nextSpecs: SpecFunction[] = specData.specFunctions;
             setSpecs(nextSpecs);
 
             setRequirements(requirementData.requirements || []);
 
             if (qfdData) {
-                nextQfdTopRequirements = getTopRankedQfdRequirements(qfdData.requirements || [], 5);
+                // 자동 생성 행은 QFD 상위 순위로 고르되, 표시는 고객요구사항 도출표 순서를 따른다.
+                const qfdRequirements = qfdData.requirements || [];
+                nextQfdTopRequirements = orderByRequirementIds(
+                    getTopRankedQfdRequirements(qfdRequirements, 5),
+                    qfdRequirements.map((row: any) => ({ id: row.requirementId || row.id })),
+                    row => row.id,
+                );
                 setQfdTopRequirements(nextQfdTopRequirements);
             }
 
             const savedRows = normalizeRows(treeData.entries || []);
             setRows(savedRows.length > 0 ? savedRows : buildGeneratedRows(nextQfdTopRequirements, nextSpecs));
+            setRevision(treeData.revision);
         } catch (error) {
             if (!isLatest()) return;
             console.error(error);
@@ -126,16 +140,19 @@ export default function TechTreeTable({ projectId }: Props) {
     }, [projectId]);
 
     useEffect(() => {
-        loadData();
+        void loadData();
+        // 언마운트 뒤 늦게 온 응답이 상태를 바꾸지 않도록 마지막 요청 번호를 넘긴다.
+        return () => { latestLoad.current += 1; };
     }, [loadData]);
 
     const { markSaved } = useUnsavedWorksheet(rows, !isLoading && !loadFailed);
 
     const save = async (data: TechTreeRow[]) => {
-        if (loadFailed) return false;
+        // 개정값 없이 보내면 서버가 428 로 막으므로, 불러오기에 실패했으면 이유를 알리고 멈춘다.
+        if (loadFailed || !revision) throw new Error('데이터를 다시 불러온 후 저장하세요.');
         const response = await fetch(`/api/projects/${projectId}/tech-tree`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'If-Match': revision },
             body: JSON.stringify({
                 entries: data.map((row, index) => ({
                     customerVoice: row.customerVoice,
@@ -147,10 +164,11 @@ export default function TechTreeTable({ projectId }: Props) {
             }),
         });
 
-        if (!response.ok) return false;
-
-        const dataJson = await response.json();
-        setRows(normalizeRows(dataJson.entries || []));
+        const dataJson = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(dataJson?.error || '저장에 실패했습니다.');
+        if (!Array.isArray(dataJson?.entries) || typeof dataJson?.revision !== 'string') throw new Error('저장 결과를 확인하지 못했습니다. 입력을 보존하고 다시 확인하세요.');
+        setRows(normalizeRows(dataJson.entries));
+        setRevision(dataJson.revision);
         markSaved();
         return true;
     };
@@ -162,7 +180,7 @@ export default function TechTreeTable({ projectId }: Props) {
             showToast(ok ? '저장되었습니다.' : '저장에 실패했습니다.', ok ? 'success' : 'error');
         } catch (error) {
             console.error(error);
-            showToast('저장에 실패했습니다.', 'error');
+            showToast(error instanceof Error ? error.message : '저장에 실패했습니다.', 'error');
         } finally {
             setIsSaving(false);
         }
@@ -182,7 +200,7 @@ export default function TechTreeTable({ projectId }: Props) {
             }
         } catch (error) {
             console.error(error);
-            showToast('초기화에 실패했습니다.', 'error');
+            showToast(error instanceof Error ? error.message : '초기화에 실패했습니다.', 'error');
         } finally {
             setIsSaving(false);
         }
